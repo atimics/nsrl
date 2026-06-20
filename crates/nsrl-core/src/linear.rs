@@ -16,6 +16,8 @@ pub struct LinearI16I8Params<'a> {
 pub enum LinearKernel {
     GenericI8,
     Ternary,
+    #[cfg(target_arch = "aarch64")]
+    NeonI8,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -134,6 +136,8 @@ pub fn linear_i16_i8_i16_per_channel_with_kernel_checked(
             linear_i16_i8_i16_per_channel_generic_checked(input, params, output)
         }
         LinearKernel::Ternary => linear_i16_ternary_i16_per_channel_checked(input, params, output),
+        #[cfg(target_arch = "aarch64")]
+        LinearKernel::NeonI8 => linear_i16_i8_i16_per_channel_neon_checked(input, params, output),
     }
 }
 
@@ -146,6 +150,7 @@ const MAX_I8_I16_PRODUCT: i64 = 127 * 32767; // = 4_161_409
 /// Worst case: |bias| + input_dim × 127 × 32767 ≤ i32::MAX.
 /// The arithmetic is done in i64 to avoid overflow in the check itself.
 #[inline]
+#[cfg(test)]
 pub(crate) fn dot_fits_i32(input_dim: usize, bias: i32) -> bool {
     let max_product_sum = (input_dim as i64).saturating_mul(MAX_I8_I16_PRODUCT);
     let bias_abs = i64::from(bias.unsigned_abs());
@@ -343,6 +348,169 @@ pub fn linear_i16_ternary_i16_per_channel_checked(
     }
 
     Some(())
+}
+
+/// NEON tile-4 dispatcher — same structure as the GenericI8 path but calls
+/// `neon::linear_dot4_neon_safe` on the fast path.
+#[cfg(target_arch = "aarch64")]
+pub fn linear_i16_i8_i16_per_channel_neon_checked(
+    input: &[i16],
+    params: LinearI16I8Params<'_>,
+    output: &mut [i16],
+) -> Option<()> {
+    if input.len() != params.input_dim || output.len() != params.output_dim || !params.is_valid() {
+        return None;
+    }
+
+    let input_dim = params.input_dim;
+    let output_dim = params.output_dim;
+    let weights = params.weights;
+    let scales = params.scales;
+    let bias = params.bias;
+    let mps = max_product_sum_for_dim(input_dim);
+
+    let mut out_index = 0_usize;
+    while out_index + 4 <= output_dim {
+        let i0 = out_index;
+        let i1 = i0 + 1;
+        let i2 = i0 + 2;
+        let i3 = i0 + 3;
+        let b0 = bias.map_or(0_i32, |b| b[i0]);
+        let b1 = bias.map_or(0_i32, |b| b[i1]);
+        let b2 = bias.map_or(0_i32, |b| b[i2]);
+        let b3 = bias.map_or(0_i32, |b| b[i3]);
+        let all_fit = dot_fits_i32_with_sum(mps, b0)
+            && dot_fits_i32_with_sum(mps, b1)
+            && dot_fits_i32_with_sum(mps, b2)
+            && dot_fits_i32_with_sum(mps, b3);
+        if all_fit {
+            let w_start = i0 * input_dim;
+            let (acc0, acc1, acc2, acc3) = neon::linear_dot4_neon_safe(
+                input,
+                &weights[w_start..w_start + 4 * input_dim],
+                input_dim,
+                b0, b1, b2, b3,
+            );
+            output[i0] = requantize_i32_to_i16(acc0, scales[i0]);
+            output[i1] = requantize_i32_to_i16(acc1, scales[i1]);
+            output[i2] = requantize_i32_to_i16(acc2, scales[i2]);
+            output[i3] = requantize_i32_to_i16(acc3, scales[i3]);
+        } else {
+            for idx in [i0, i1, i2, i3] {
+                let row_start = idx * input_dim;
+                let row_weights = &weights[row_start..row_start + input_dim];
+                let bias_acc = bias.map_or(0_i32, |b| b[idx]);
+                let mut acc = bias_acc;
+                for (&activation, &weight) in input.iter().zip(row_weights.iter()) {
+                    let product = i32::from(activation) * i32::from(weight);
+                    acc = acc.checked_add(product)?;
+                }
+                output[idx] = requantize_i32_to_i16(acc, scales[idx]);
+            }
+        }
+        out_index += 4;
+    }
+    while out_index < output_dim {
+        let row_start = out_index * input_dim;
+        let row_weights = &weights[row_start..row_start + input_dim];
+        let bias_acc = bias.map_or(0_i32, |b| b[out_index]);
+        let acc = if dot_fits_i32_with_sum(mps, bias_acc) {
+            linear_dot_i16_i8_i32_unchecked(input, row_weights, bias_acc)
+        } else {
+            let mut acc = bias_acc;
+            for (&activation, &weight) in input.iter().zip(row_weights.iter()) {
+                acc = acc.checked_add(i32::from(activation) * i32::from(weight))?;
+            }
+            acc
+        };
+        output[out_index] = requantize_i32_to_i16(acc, scales[out_index]);
+        out_index += 1;
+    }
+    Some(())
+}
+
+mod neon {
+    #![allow(unsafe_code)]
+
+    #[cfg(target_arch = "aarch64")]
+    use core::arch::aarch64::*;
+
+    /// Safe wrapper: caller must have verified via `dot_fits_i32_with_sum` that all four
+    /// dot products (including bias) fit in i32, making wrapping arithmetic exact.
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    pub(super) fn linear_dot4_neon_safe(
+        input: &[i16],
+        weights: &[i8], // 4 × input_dim, row-major
+        input_dim: usize,
+        b0: i32, b1: i32, b2: i32, b3: i32,
+    ) -> (i32, i32, i32, i32) {
+        // SAFETY: `dot_fits_i32_with_sum` guarantees the true result fits in i32,
+        // so wrapping arithmetic produces the correct answer. Slice lengths are
+        // correct by construction from `linear_i16_i8_i16_per_channel_neon_checked`.
+        unsafe { linear_dot4_neon(input, weights, input_dim, b0, b1, b2, b3) }
+    }
+
+    /// Tile-4 NEON kernel: processes 8 input elements per iteration.
+    /// `weights` is 4 × input_dim bytes, row-major.
+    ///
+    /// # Safety
+    /// The true mathematical dot product for each row must fit in i32.
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    unsafe fn linear_dot4_neon(
+        input: &[i16],
+        weights: &[i8],
+        input_dim: usize,
+        b0: i32, b1: i32, b2: i32, b3: i32,
+    ) -> (i32, i32, i32, i32) {
+        unsafe {
+            let acts_ptr = input.as_ptr();
+            let w0 = weights.as_ptr();
+            let w1 = w0.add(input_dim);
+            let w2 = w1.add(input_dim);
+            let w3 = w2.add(input_dim);
+
+            let mut acc0 = vdupq_n_s32(0_i32);
+            let mut acc1 = vdupq_n_s32(0_i32);
+            let mut acc2 = vdupq_n_s32(0_i32);
+            let mut acc3 = vdupq_n_s32(0_i32);
+
+            let mut i = 0_usize;
+            while i + 8 <= input_dim {
+                let acts = vld1q_s16(acts_ptr.add(i));
+                let w0_i16 = vmovl_s8(vld1_s8(w0.add(i)));
+                acc0 = vmlal_s16(acc0, vget_low_s16(acts), vget_low_s16(w0_i16));
+                acc0 = vmlal_high_s16(acc0, acts, w0_i16);
+                let w1_i16 = vmovl_s8(vld1_s8(w1.add(i)));
+                acc1 = vmlal_s16(acc1, vget_low_s16(acts), vget_low_s16(w1_i16));
+                acc1 = vmlal_high_s16(acc1, acts, w1_i16);
+                let w2_i16 = vmovl_s8(vld1_s8(w2.add(i)));
+                acc2 = vmlal_s16(acc2, vget_low_s16(acts), vget_low_s16(w2_i16));
+                acc2 = vmlal_high_s16(acc2, acts, w2_i16);
+                let w3_i16 = vmovl_s8(vld1_s8(w3.add(i)));
+                acc3 = vmlal_s16(acc3, vget_low_s16(acts), vget_low_s16(w3_i16));
+                acc3 = vmlal_high_s16(acc3, acts, w3_i16);
+                i += 8;
+            }
+
+            let mut r0 = b0.wrapping_add(vaddvq_s32(acc0));
+            let mut r1 = b1.wrapping_add(vaddvq_s32(acc1));
+            let mut r2 = b2.wrapping_add(vaddvq_s32(acc2));
+            let mut r3 = b3.wrapping_add(vaddvq_s32(acc3));
+
+            while i < input_dim {
+                let a = i32::from(*acts_ptr.add(i));
+                r0 = r0.wrapping_add(a * i32::from(*w0.add(i)));
+                r1 = r1.wrapping_add(a * i32::from(*w1.add(i)));
+                r2 = r2.wrapping_add(a * i32::from(*w2.add(i)));
+                r3 = r3.wrapping_add(a * i32::from(*w3.add(i)));
+                i += 1;
+            }
+
+            (r0, r1, r2, r3)
+        }
+    }
 }
 
 pub fn linear_backward_input_i16_i8_i16_per_channel_checked(
@@ -927,5 +1095,113 @@ mod tests {
         let expected = crate::numeric::requantize_i32_to_i16(reference_i32, RESIDUAL_Q15_SCALE);
 
         assert_eq!(output_fast[0], expected);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn neon_kernel_matches_generic_i8() {
+        // 8 outputs (tile-4 × 2), exactly 8 inputs (one NEON vector)
+        let input = [100_i16, -200, 300, -400, 50, -25, 12, -6];
+        #[rustfmt::skip]
+        let weights = [
+            -3_i8, -2, -1, 0, 1, 2, 3, -3,
+            -2_i8, -1, 0, 1, 2, 3, -3, -2,
+            -1_i8, 0, 1, 2, 3, -3, -2, -1,
+             0_i8, 1, 2, 3, -3, -2, -1, 0,
+             1_i8, 2, 3, -3, -2, -1, 0, 1,
+             2_i8, 3, -3, -2, -1, 0, 1, 2,
+             3_i8, -3, -2, -1, 0, 1, 2, 3,
+            -3_i8, -2, -1, 0, 1, 2, 3, -3,
+        ];
+        let scales = [RESIDUAL_Q15_SCALE; 8];
+        let bias_vals = [10_i32, -10, 5, -5, 2, -2, 1, -1];
+        let params = LinearI16I8Params {
+            weights: &weights,
+            bias: Some(&bias_vals),
+            scales: &scales,
+            input_dim: 8,
+            output_dim: 8,
+        };
+        let mut generic_out = [0_i16; 8];
+        let mut neon_out = [0_i16; 8];
+
+        assert!(
+            linear_i16_i8_i16_per_channel_generic_checked(&input, params, &mut generic_out)
+                .is_some()
+        );
+        assert!(
+            linear_i16_i8_i16_per_channel_neon_checked(&input, params, &mut neon_out).is_some()
+        );
+        assert_eq!(neon_out, generic_out);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn neon_kernel_matches_generic_i8_with_tail() {
+        // 5 outputs (tile-4 + scalar tail 1), 11 inputs (8 NEON + 3 scalar tail)
+        let input = [0_i16, 50, 100, 150, 200, 250, 300, 350, -250, -200, -150];
+        #[rustfmt::skip]
+        let weights = [
+            -2_i8, -1, 0, 1, 2, -2, -1, 0, 1, 2, -2,
+            -1_i8,  0, 1, 2, -2, -1, 0, 1, 2, -2, -1,
+             0_i8,  1, 2, -2, -1, 0, 1, 2, -2, -1, 0,
+             1_i8,  2, -2, -1, 0, 1, 2, -2, -1, 0, 1,
+             2_i8, -2, -1, 0, 1, 2, -2, -1, 0, 1, 2,
+        ];
+        let scales = [RESIDUAL_Q15_SCALE; 5];
+        let params = LinearI16I8Params {
+            weights: &weights,
+            bias: None,
+            scales: &scales,
+            input_dim: 11,
+            output_dim: 5,
+        };
+        let mut generic_out = [0_i16; 5];
+        let mut neon_out = [0_i16; 5];
+
+        assert!(
+            linear_i16_i8_i16_per_channel_generic_checked(&input, params, &mut generic_out)
+                .is_some()
+        );
+        assert!(
+            linear_i16_i8_i16_per_channel_neon_checked(&input, params, &mut neon_out).is_some()
+        );
+        assert_eq!(neon_out, generic_out);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn neon_kernel_matches_generic_i8_exact_multiple_of_8() {
+        // 4 outputs (one tile-4), 16 inputs (exactly 2 NEON vectors)
+        let input = [
+            -800_i16, -700, -600, -500, -400, -300, -200, -100,
+               0_i16,  100,  200,  300,  400,  500,  600,  700,
+        ];
+        #[rustfmt::skip]
+        let weights = [
+            1_i8, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1,
+            0_i8,  1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0,
+           -1_i8,  0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1, 0, 1, -1,
+            1_i8,  1, -1, -1, 0, 0, 1, 1, -1, -1, 0, 0, 1, 1, -1, -1,
+        ];
+        let scales = [RESIDUAL_Q15_SCALE; 4];
+        let params = LinearI16I8Params {
+            weights: &weights,
+            bias: None,
+            scales: &scales,
+            input_dim: 16,
+            output_dim: 4,
+        };
+        let mut generic_out = [0_i16; 4];
+        let mut neon_out = [0_i16; 4];
+
+        assert!(
+            linear_i16_i8_i16_per_channel_generic_checked(&input, params, &mut generic_out)
+                .is_some()
+        );
+        assert!(
+            linear_i16_i8_i16_per_channel_neon_checked(&input, params, &mut neon_out).is_some()
+        );
+        assert_eq!(neon_out, generic_out);
     }
 }
