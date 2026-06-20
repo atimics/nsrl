@@ -332,17 +332,18 @@ cargo run -p nsrl-train -- \
 Authority: `deterministic_training_replay`
 
 Purpose: wire the first miniature Transformer-shaped training loop:
-byte embeddings -> causal attention forward pass -> trainable gated MLP ->
-trainable byte output head, then backpropagate through the output head, MLP, and
-the attention `Q`/`K`/`V`/`O` matrices.
+trainable byte embeddings -> causal attention -> trainable gated MLP ->
+trainable byte output head, then backpropagate through the output head, MLP,
+attention `Q`/`K`/`V`/`O` matrices, and byte embedding table.
 
 Current task: `wiki_bard_mini_transformer_mlp_first`
 
 This trace consumes Wiki-Bard byte token windows. It caches embedding,
 attention, MLP, and block-output activations, updates the output head, updates
-the MLP `up`, `gate`, and `down` matrices from the cached forward pass, then
-updates all four attention projection matrices. The Q/K path uses a fixed Q15
-`ln(2)` gain for the native base-2 softmax derivative and a separate
+the MLP `up`, `gate`, and `down` matrices from the cached forward pass, updates
+all four attention projection matrices, then applies the combined residual and
+attention input gradient to the byte embedding rows. The Q/K path uses a fixed
+Q15 `ln(2)` gain for the native base-2 softmax derivative and a separate
 Q/K-specific learning-rate shift.
 
 Required top-level fields:
@@ -371,7 +372,8 @@ cargo run -p nsrl-train -- \
   --max-windows 4096 \
   --epochs 1 \
   --lr-shift 18 \
-  --embed-lr-shift 16 \
+  --mlp-lr-shift 16 \
+  --embed-lr-shift 14 \
   --attention-lr-shift 24 \
   --attention-qk-lr-shift 18 \
   --model-out data/processed/wiki-bard-mini-transformer-mlp.nsrlmt \

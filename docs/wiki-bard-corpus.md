@@ -219,16 +219,18 @@ cargo run -p nsrl-train -- \
   --max-windows 4096 \
   --epochs 1 \
   --lr-shift 18 \
-  --embed-lr-shift 16 \
+  --mlp-lr-shift 16 \
+  --embed-lr-shift 14 \
   --attention-lr-shift 24 \
   --attention-qk-lr-shift 18 \
   --model-out data/processed/wiki-bard-mini-transformer-mlp-smoke.nsrlmt \
   --trace data/processed/wiki-bard-mini-transformer-mlp-smoke.trace.jsonl
 ```
 
-The trace uses `nsrl.training_mini_transformer_mlp_trace.v1`. Attention is no
-longer forward-only: `Q`, `K`, `V`, and `O` are all updated from cached
-probabilities, context rows, and the native base-2 softmax derivative.
+The trace uses `nsrl.training_mini_transformer_mlp_trace.v1`. Attention and
+embeddings are no longer forward-only: byte embedding rows, `Q`, `K`, `V`, and
+`O` are updated from cached probabilities, context rows, and the native base-2
+softmax derivative.
 
 The saved `.nsrlmt` artifact can then be reloaded for deterministic greedy byte
 generation:
@@ -256,5 +258,6 @@ This is the deterministic data lane, not the final tokenizer or trainer:
 - The byte tokenizer is intentionally not BPE or WordPiece.
 - The current byte trainers/generators are baseline output-head and learned
   embedding models, not the final Transformer.
-- The mini Transformer training loop updates the output head, gated MLP, and
-  attention `Q`/`K`/`V`/`O`, but byte embeddings are still forward-only.
+- The mini Transformer training loop updates byte embeddings, the output head,
+  gated MLP, and attention `Q`/`K`/`V`/`O`, but still has only one block and one
+  attention head.

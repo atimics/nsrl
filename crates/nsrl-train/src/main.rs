@@ -82,6 +82,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("--embed-lr-shift requires an integer")?
                     .parse()?;
                 byte_embed_softmax_config.embedding_learning_rate_shift = value;
+                mini_transformer_config.embedding_learning_rate_shift = value;
+            }
+            "--mlp-lr-shift" => {
+                let value = args
+                    .next()
+                    .ok_or("--mlp-lr-shift requires an integer")?
+                    .parse()?;
                 mini_transformer_config.mlp_learning_rate_shift = value;
             }
             "--attention-lr-shift" => {
@@ -238,7 +245,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--prompt TEXT] [--max-new-tokens N] [--epochs N] [--learning-rate N] [--lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-qk-lr-shift N] [--seq-len N] [--stride N] [--max-windows N] [--trace PATH]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--prompt TEXT] [--max-new-tokens N] [--epochs N] [--learning-rate N] [--lr-shift N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-qk-lr-shift N] [--seq-len N] [--stride N] [--max-windows N] [--trace PATH]"
     );
     println!();
     println!("Runs a deterministic integer training trace.");
