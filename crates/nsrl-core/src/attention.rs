@@ -52,14 +52,14 @@ pub fn sqrt_power_of_four_shift(value: usize) -> Option<u8> {
     Some((value.trailing_zeros() / 2) as u8)
 }
 
-/// Returns true if a QK dot product of this dimension provably fits in i64.
+/// Returns true if `n` i16×i16 products (worst case 32768²) summed provably fit in i64.
 ///
-/// Worst case: head_dim × 32767² ≤ i64::MAX.
-/// For head_dim=64: 64 × 1_073_692_289 = 68_716_306_496 << i64::MAX (~9.2×10¹⁸).
+/// Used for both QK dot products and probability×value accumulations.
+/// Threshold: i64::MAX / 32768² ≈ 8.59 billion — no realistic model dimension reaches this.
 #[inline]
-fn qk_dot_fits_i64(dim: usize) -> bool {
-    const MAX_PRODUCT: u128 = 32767 * 32767; // = 1_073_692_289
-    (dim as u128).saturating_mul(MAX_PRODUCT) <= i64::MAX as u128
+fn fits_n_i16_products_in_i64(n: usize) -> bool {
+    const MAX_PRODUCT: u128 = 32768 * 32768; // worst case: i16::MIN × i16::MIN
+    (n as u128).saturating_mul(MAX_PRODUCT) <= i64::MAX as u128
 }
 
 pub fn attention_dot_q_k_i16_i32_checked(query: &[i16], key: &[i16]) -> Option<i32> {
@@ -69,7 +69,7 @@ pub fn attention_dot_q_k_i16_i32_checked(query: &[i16], key: &[i16]) -> Option<i
 
     let scale_shift = sqrt_power_of_four_shift(query.len())?;
 
-    let acc = if qk_dot_fits_i64(query.len()) {
+    let acc = if fits_n_i16_products_in_i64(query.len()) {
         // Fast path: wrapping arithmetic so LLVM can auto-vectorize this loop.
         let mut acc = 0_i64;
         for (&q, &k) in query.iter().zip(key.iter()) {
@@ -155,15 +155,6 @@ pub fn base2_softmax_i32_q15(logits_q8: &[i32], output_q15: &mut [i16]) -> Optio
     Some(sum)
 }
 
-/// Returns true if the value-weighting accumulation fits in i64.
-///
-/// Worst case: seq_len × 32767 (prob) × 32767 (value) ≤ i64::MAX.
-/// For seq_len=128: 128 × 32767² ≈ 137.4B << i64::MAX.
-#[inline]
-fn weight_v_fits_i64(seq_len: usize) -> bool {
-    const MAX_PRODUCT: u128 = 32767 * 32767; // probability and value both bounded by 32767
-    (seq_len as u128).saturating_mul(MAX_PRODUCT) <= i64::MAX as u128
-}
 
 pub fn attention_weight_v_i16_q15_checked(
     probabilities_q15: &[i16],
@@ -186,7 +177,7 @@ pub fn attention_weight_v_i16_q15_checked(
 
     let seq_len = probabilities_q15.len();
 
-    if weight_v_fits_i64(seq_len) {
+    if fits_n_i16_products_in_i64(seq_len) {
         // Fast path: wrapping arithmetic so LLVM can auto-vectorize the inner loop.
         for (out_index, out) in output.iter_mut().enumerate() {
             let mut acc = 0_i64;
@@ -345,21 +336,21 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
                 &mut workspace.probabilities_q15[..seq_len],
             )?;
 
-            // Validate probabilities are non-negative before the inner loop.
-            if workspace.probabilities_q15[..seq_len].iter().any(|&p| p < 0) {
-                return None;
-            }
-
             // Pre-compute index bounds (checked once outside the hot loop).
             let base_v_offset = head_offset;
             let base_ctx_offset = token
                 .checked_mul(d_model)?
                 .checked_add(head_offset)?;
 
+            // base2_softmax_i32_q15 guarantees non-negative outputs; no negative-prob scan needed.
+            debug_assert!(workspace.probabilities_q15[..seq_len].iter().all(|&p| p >= 0));
+
+            // Fast path: wrapping arithmetic safe because fits_n_i16_products_in_i64(seq_len).
+            // seq_len is bounded by seq_len * d_model having been checked in validate_self_attention_shapes.
+            debug_assert!(fits_n_i16_products_in_i64(seq_len));
             for out_index in 0..head_dim {
                 let mut acc = 0_i64;
 
-                // Fast path: wrapping arithmetic (seq_len × 32767² fits in i64 easily).
                 for key_index in 0..seq_len {
                     let probability = workspace.probabilities_q15[key_index];
                     let value_index = key_index * d_model + base_v_offset + out_index;

@@ -137,19 +137,34 @@ pub fn linear_i16_i8_i16_per_channel_with_kernel_checked(
     }
 }
 
-/// Returns true if the worst-case dot product accumulation provably fits in i32.
+/// Maximum absolute value of a single i8×i16 product (i8 max = 127, i16 max = 32767).
+const MAX_I8_I16_PRODUCT: i64 = 127 * 32767; // = 4_161_409
+
+/// Returns true if the worst-case i8×i16 dot product accumulation provably fits in i32.
 ///
+/// Assumes i8 weights (max |w| = 127) and i16 activations (max |a| = 32767).
 /// Worst case: |bias| + input_dim × 127 × 32767 ≤ i32::MAX.
 /// The arithmetic is done in i64 to avoid overflow in the check itself.
 #[inline]
-pub fn dot_fits_i32(input_dim: usize, bias: i32) -> bool {
-    // Maximum absolute value of a single i16×i8 product
-    const MAX_PRODUCT: i64 = 127 * 32767; // = 4_161_409
-    let max_product_sum = (input_dim as i64).saturating_mul(MAX_PRODUCT);
-    let bias_abs = i64::from(bias).unsigned_abs() as i64;
-    // Total worst-case magnitude: bias_abs + max_product_sum must fit in i32
+pub(crate) fn dot_fits_i32(input_dim: usize, bias: i32) -> bool {
+    let max_product_sum = (input_dim as i64).saturating_mul(MAX_I8_I16_PRODUCT);
+    let bias_abs = i64::from(bias.unsigned_abs());
     let worst_case = bias_abs.saturating_add(max_product_sum);
     worst_case <= i64::from(i32::MAX)
+}
+
+/// Precomputed per-layer overflow bound: input_dim × MAX_I8_I16_PRODUCT.
+/// Hoisted out of the tile loop so it isn't recomputed per tile group.
+#[inline]
+fn max_product_sum_for_dim(input_dim: usize) -> i64 {
+    (input_dim as i64).saturating_mul(MAX_I8_I16_PRODUCT)
+}
+
+/// Like dot_fits_i32 but uses a precomputed max_product_sum to avoid repeated multiplication.
+#[inline]
+fn dot_fits_i32_with_sum(max_product_sum: i64, bias: i32) -> bool {
+    let bias_abs = i64::from(bias.unsigned_abs());
+    bias_abs.saturating_add(max_product_sum) <= i64::from(i32::MAX)
 }
 
 /// Fast inner dot-product loop using wrapping arithmetic.
@@ -169,6 +184,10 @@ fn linear_dot_i16_i8_i32_unchecked(input: &[i16], weights: &[i8], bias_acc: i32)
 
 /// Tile-4 inner kernel: compute 4 dot products simultaneously over the same input vector.
 ///
+/// `weights` must be exactly 4 × `input_dim` elements stored row-major (rows 0–3 contiguous).
+/// This single-slice + stride calling convention is compatible with future AVX2/NEON kernels
+/// that operate on a packed contiguous weight block rather than four separate slice pointers.
+///
 /// LLVM can vectorize all 4 accumulators simultaneously since they share the same `a` value.
 ///
 /// # Safety (logical)
@@ -176,15 +195,17 @@ fn linear_dot_i16_i8_i32_unchecked(input: &[i16], weights: &[i8], bias_acc: i32)
 #[inline]
 fn linear_dot4_i16_i8_i32_unchecked(
     input: &[i16],
-    w0: &[i8],
-    w1: &[i8],
-    w2: &[i8],
-    w3: &[i8],
+    weights: &[i8], // 4 × input_dim, row-major
+    input_dim: usize,
     b0: i32,
     b1: i32,
     b2: i32,
     b3: i32,
 ) -> (i32, i32, i32, i32) {
+    let w0 = &weights[..input_dim];
+    let w1 = &weights[input_dim..2 * input_dim];
+    let w2 = &weights[2 * input_dim..3 * input_dim];
+    let w3 = &weights[3 * input_dim..];
     let mut acc0 = b0;
     let mut acc1 = b1;
     let mut acc2 = b2;
@@ -214,6 +235,9 @@ pub fn linear_i16_i8_i16_per_channel_generic_checked(
     let scales = params.scales;
     let bias = params.bias;
 
+    // Hoist the input_dim-dependent portion of the overflow check out of the tile loop.
+    let mps = max_product_sum_for_dim(input_dim);
+
     // Tile-4 loop: process 4 output rows at a time to allow LLVM to vectorize
     // all 4 accumulators simultaneously while loading the input vector once.
     let mut out_index = 0_usize;
@@ -228,17 +252,21 @@ pub fn linear_i16_i8_i16_per_channel_generic_checked(
         let b2 = bias.map_or(0_i32, |b| b[i2]);
         let b3 = bias.map_or(0_i32, |b| b[i3]);
 
-        // Use the maximum absolute bias to do a single conservative range check.
-        // dot_fits_i32(dim, max_abs_bias) implies it fits for all four rows.
-        let max_abs_bias = b0.saturating_abs().max(b1.saturating_abs()).max(b2.saturating_abs()).max(b3.saturating_abs());
-        if dot_fits_i32(input_dim, max_abs_bias) {
-            // Fast path: tile-4 wrapping kernel.
-            let w0 = &weights[i0 * input_dim..(i0 + 1) * input_dim];
-            let w1 = &weights[i1 * input_dim..(i1 + 1) * input_dim];
-            let w2 = &weights[i2 * input_dim..(i2 + 1) * input_dim];
-            let w3 = &weights[i3 * input_dim..(i3 + 1) * input_dim];
-            let (acc0, acc1, acc2, acc3) =
-                linear_dot4_i16_i8_i32_unchecked(input, w0, w1, w2, w3, b0, b1, b2, b3);
+        // Check each bias individually so the fast path fires whenever possible.
+        let all_fit = dot_fits_i32_with_sum(mps, b0)
+            && dot_fits_i32_with_sum(mps, b1)
+            && dot_fits_i32_with_sum(mps, b2)
+            && dot_fits_i32_with_sum(mps, b3);
+
+        if all_fit {
+            // Fast path: tile-4 wrapping kernel over a contiguous 4-row weight block.
+            let w_start = i0 * input_dim;
+            let (acc0, acc1, acc2, acc3) = linear_dot4_i16_i8_i32_unchecked(
+                input,
+                &weights[w_start..w_start + 4 * input_dim],
+                input_dim,
+                b0, b1, b2, b3,
+            );
             output[i0] = requantize_i32_to_i16(acc0, scales[i0]);
             output[i1] = requantize_i32_to_i16(acc1, scales[i1]);
             output[i2] = requantize_i32_to_i16(acc2, scales[i2]);
@@ -269,7 +297,7 @@ pub fn linear_i16_i8_i16_per_channel_generic_checked(
         let row_weights = &weights[row_start..row_end];
         let bias_acc = bias.map_or(0_i32, |b| b[out_index]);
 
-        let acc = if dot_fits_i32(input_dim, bias_acc) {
+        let acc = if dot_fits_i32_with_sum(mps, bias_acc) {
             linear_dot_i16_i8_i32_unchecked(input, row_weights, bias_acc)
         } else {
             let mut acc = bias_acc;
