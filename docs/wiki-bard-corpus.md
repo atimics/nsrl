@@ -205,6 +205,30 @@ The trace uses `nsrl.training_gated_mlp_backward_trace.v1`. This is not
 corpus-scale training by itself; it is the chain-rule primitive needed before
 the learned byte embeddings can feed a trainable Transformer block.
 
+The first miniature Transformer-shaped corpus loop now wires byte embeddings
+through causal attention, a trainable gated MLP, and a trainable byte output
+head. The backward path updates the output head, the MLP `up`/`gate`/`down`
+matrices, and the attention `Q`/`K`/`V`/`O` matrices:
+
+```sh
+cargo run -p nsrl-train -- \
+  --mode mini-transformer-mlp \
+  --tokens data/processed/wiki-bard-corpus-smoke.tokens.u8 \
+  --seq-len 4 \
+  --stride 1 \
+  --max-windows 4096 \
+  --epochs 1 \
+  --lr-shift 18 \
+  --embed-lr-shift 16 \
+  --attention-lr-shift 24 \
+  --attention-qk-lr-shift 18 \
+  --trace data/processed/wiki-bard-mini-transformer-mlp-smoke.trace.jsonl
+```
+
+The trace uses `nsrl.training_mini_transformer_mlp_trace.v1`. Attention is no
+longer forward-only: `Q`, `K`, `V`, and `O` are all updated from cached
+probabilities, context rows, and the native base-2 softmax derivative.
+
 ## Current Limits
 
 This is the deterministic data lane, not the final tokenizer or trainer:
@@ -215,3 +239,5 @@ This is the deterministic data lane, not the final tokenizer or trainer:
 - The byte tokenizer is intentionally not BPE or WordPiece.
 - The current byte trainers/generators are baseline output-head and learned
   embedding models, not the final Transformer.
+- The mini Transformer training loop updates the output head, gated MLP, and
+  attention `Q`/`K`/`V`/`O`, but byte embeddings are still forward-only.

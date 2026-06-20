@@ -327,6 +327,56 @@ cargo run -p nsrl-train -- \
   --trace /tmp/nsrl-train-gated-mlp-backward.jsonl
 ```
 
+## `nsrl.training_mini_transformer_mlp_trace.v1`
+
+Authority: `deterministic_training_replay`
+
+Purpose: wire the first miniature Transformer-shaped training loop:
+byte embeddings -> causal attention forward pass -> trainable gated MLP ->
+trainable byte output head, then backpropagate through the output head, MLP, and
+the attention `Q`/`K`/`V`/`O` matrices.
+
+Current task: `wiki_bard_mini_transformer_mlp_first`
+
+This trace consumes Wiki-Bard byte token windows. It caches embedding,
+attention, MLP, and block-output activations, updates the output head, updates
+the MLP `up`, `gate`, and `down` matrices from the cached forward pass, then
+updates all four attention projection matrices. The Q/K path uses a fixed Q15
+`ln(2)` gain for the native base-2 softmax derivative and a separate
+Q/K-specific learning-rate shift.
+
+Required top-level fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema` | string | Literal `nsrl.training_mini_transformer_mlp_trace.v1`. |
+| `authority` | string | Literal `deterministic_training_replay`. |
+| `task` | string | Current mini Transformer MLP-first task name. |
+| `data` | object | Tokenizer ID, token count, token hash, window hash, and window count. |
+| `model` | object | Vocab size, sequence length, model width, heads, hidden width, and trained component. |
+| `optimizer` | object | Base-2 CE/SGD contract, Q format, activation, weight dtype, LR, and LR shifts. |
+| `training` | object | Epochs, sequence length, stride, max windows, examined windows, and updates. |
+| `metrics` | object | Classification/probability error, saturation, zero deltas, and L1 movement. |
+| `steps` | array | One object per byte-window update with cache and weight hashes. |
+| `known_non_claims` | array | Claims explicitly outside this row's authority. |
+
+Mini Transformer MLP-first command:
+
+```sh
+cargo run -p nsrl-train -- \
+  --mode mini-transformer-mlp \
+  --tokens data/processed/wiki-bard-corpus.tokens.u8 \
+  --seq-len 4 \
+  --stride 1 \
+  --max-windows 4096 \
+  --epochs 1 \
+  --lr-shift 18 \
+  --embed-lr-shift 16 \
+  --attention-lr-shift 24 \
+  --attention-qk-lr-shift 18 \
+  --trace data/processed/wiki-bard-mini-transformer-mlp.trace.jsonl
+```
+
 ## `nsrl.training_byte_softmax_trace.v1`
 
 Authority: `deterministic_training_replay`

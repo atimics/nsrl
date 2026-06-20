@@ -5,10 +5,11 @@ use std::path::PathBuf;
 
 use nsrl_train::{
     ByteEmbedSoftmaxModel, ByteEmbedSoftmaxTrainConfig, ByteGenerationConfig, ByteSoftmaxModel,
-    ByteSoftmaxTrainConfig, LinearBackwardConfig, SoftmaxTrainConfig, TrainConfig,
-    generate_byte_embed_softmax, generate_byte_softmax, run_byte_embed_softmax_training_with_model,
-    run_byte_softmax_training_with_model, run_gated_mlp_backward_smoke, run_linear_backward_smoke,
-    run_softmax_training, run_training_smoke,
+    ByteSoftmaxTrainConfig, LinearBackwardConfig, MiniTransformerMlpTrainConfig,
+    SoftmaxTrainConfig, TrainConfig, generate_byte_embed_softmax, generate_byte_softmax,
+    run_byte_embed_softmax_training_with_model, run_byte_softmax_training_with_model,
+    run_gated_mlp_backward_smoke, run_linear_backward_smoke,
+    run_mini_transformer_mlp_training_with_model, run_softmax_training, run_training_smoke,
 };
 
 fn main() {
@@ -24,6 +25,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut linear_backward_config = LinearBackwardConfig::default();
     let mut byte_softmax_config = ByteSoftmaxTrainConfig::default();
     let mut byte_embed_softmax_config = ByteEmbedSoftmaxTrainConfig::default();
+    let mut mini_transformer_config = MiniTransformerMlpTrainConfig::default();
     let mut byte_generation_config = ByteGenerationConfig { max_new_tokens: 32 };
     let mut mode = String::from("softmax");
     let mut tokens_path = None;
@@ -37,7 +39,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         match arg.as_str() {
             "--mode" => {
                 mode = args.next().ok_or(
-                    "--mode requires softmax, perceptron, linear-backward, gated-mlp-backward, byte-softmax, byte-generate, byte-embed-softmax, or byte-embed-generate",
+                    "--mode requires softmax, perceptron, linear-backward, gated-mlp-backward, byte-softmax, byte-generate, byte-embed-softmax, byte-embed-generate, or mini-transformer-mlp",
                 )?;
             }
             "--epochs" => {
@@ -49,6 +51,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 softmax_config.epochs = epochs;
                 byte_softmax_config.epochs = epochs;
                 byte_embed_softmax_config.epochs = epochs;
+                mini_transformer_config.epochs = epochs;
             }
             "--learning-rate" => {
                 let value: i32 = args
@@ -60,6 +63,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 linear_backward_config.learning_rate = value;
                 byte_softmax_config.learning_rate = value;
                 byte_embed_softmax_config.learning_rate = value;
+                mini_transformer_config.learning_rate = value;
             }
             "--lr-shift" => {
                 let value = args
@@ -70,11 +74,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 linear_backward_config.learning_rate_shift = value;
                 byte_softmax_config.learning_rate_shift = value;
                 byte_embed_softmax_config.head_learning_rate_shift = value;
+                mini_transformer_config.output_learning_rate_shift = value;
             }
             "--embed-lr-shift" => {
-                byte_embed_softmax_config.embedding_learning_rate_shift = args
+                let value = args
                     .next()
                     .ok_or("--embed-lr-shift requires an integer")?
+                    .parse()?;
+                byte_embed_softmax_config.embedding_learning_rate_shift = value;
+                mini_transformer_config.mlp_learning_rate_shift = value;
+            }
+            "--attention-lr-shift" => {
+                mini_transformer_config.attention_learning_rate_shift = args
+                    .next()
+                    .ok_or("--attention-lr-shift requires an integer")?
+                    .parse()?;
+            }
+            "--attention-qk-lr-shift" => {
+                mini_transformer_config.attention_qk_learning_rate_shift = args
+                    .next()
+                    .ok_or("--attention-qk-lr-shift requires an integer")?
                     .parse()?;
             }
             "--tokens" => {
@@ -110,11 +129,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("--seq-len requires an integer")?
                     .parse()?;
                 byte_embed_softmax_config.seq_len = byte_softmax_config.seq_len;
+                mini_transformer_config.seq_len = byte_softmax_config.seq_len;
             }
             "--stride" => {
                 byte_softmax_config.stride =
                     args.next().ok_or("--stride requires an integer")?.parse()?;
                 byte_embed_softmax_config.stride = byte_softmax_config.stride;
+                mini_transformer_config.stride = byte_softmax_config.stride;
             }
             "--max-windows" => {
                 byte_softmax_config.max_windows = Some(
@@ -123,6 +144,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         .parse()?,
                 );
                 byte_embed_softmax_config.max_windows = byte_softmax_config.max_windows;
+                mini_transformer_config.max_windows = byte_softmax_config.max_windows;
             }
             "--trace" => {
                 trace_path = Some(PathBuf::from(
@@ -183,6 +205,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let model = ByteEmbedSoftmaxModel::from_bytes(&model_bytes)?;
             generate_byte_embed_softmax(&model, &prompt, byte_generation_config)?.to_json_line()
         }
+        "mini-transformer-mlp" | "mini_transformer_mlp" => {
+            let path = tokens_path.ok_or("--tokens is required for mini-transformer-mlp mode")?;
+            let tokens = fs::read(path)?;
+            run_mini_transformer_mlp_training_with_model(&tokens, mini_transformer_config)?
+                .trace
+                .to_json_line()
+        }
         other => return Err(format!("unknown mode: {other}").into()),
     };
     if let Some(path) = trace_path {
@@ -196,7 +225,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--prompt TEXT] [--max-new-tokens N] [--epochs N] [--learning-rate N] [--lr-shift N] [--embed-lr-shift N] [--seq-len N] [--stride N] [--max-windows N] [--trace PATH]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|mini-transformer-mlp] [--tokens PATH] [--model PATH] [--model-out PATH] [--prompt TEXT] [--max-new-tokens N] [--epochs N] [--learning-rate N] [--lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-qk-lr-shift N] [--seq-len N] [--stride N] [--max-windows N] [--trace PATH]"
     );
     println!();
     println!("Runs a deterministic integer training trace.");
