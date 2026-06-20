@@ -889,6 +889,8 @@ fn linear_kernel_name(kernel: LinearKernel) -> &'static str {
     match kernel {
         LinearKernel::GenericI8 => "generic_i8",
         LinearKernel::Ternary => "ternary",
+        #[cfg(target_arch = "aarch64")]
+        LinearKernel::NeonI8 => "neon_i8",
     }
 }
 

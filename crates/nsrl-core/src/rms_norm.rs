@@ -5,15 +5,37 @@ pub const INV_SQRT_2_Q15: i64 = 23_170;
 pub const RMSNORM_INV_RMS_SHIFT: u8 = 30;
 
 pub fn sum_squares_i16_u64_checked(input: &[i16]) -> Option<u64> {
-    let mut sum = 0_u64;
+    // Range pre-check: for i16 inputs, each squared term is at most 32767² = 1_073_692_169.
+    // For n=128 terms, the maximum sum is 128 × 1_073_692_169 ≈ 137.4B, which fits in u64.
+    // Even for n=16384 the max sum ≈ 17.6T still fits in u64 (max ~1.84×10¹⁹).
+    // So wrapping_add is safe for any realistic dimension.
+    // For adversarial sizes (n > u64::MAX / 32767²) we fall back to checked.
+    const MAX_SQUARE: u64 = 32767 * 32767; // = 1_073_692_289
 
-    for &value in input {
-        let wide = i64::from(value);
-        let square = wide.checked_mul(wide)? as u64;
-        sum = sum.checked_add(square)?;
+    let fits = (input.len() as u128)
+        .checked_mul(MAX_SQUARE as u128)
+        .map_or(false, |max_sum| max_sum <= u64::MAX as u128);
+
+    if fits {
+        // Fast path: use wrapping_add so LLVM can auto-vectorize this loop.
+        // Square in i64 (always non-negative), cast to u64, then wrapping-add the u64 sum.
+        let mut sum = 0_u64;
+        for &value in input {
+            let wide = i64::from(value);
+            let square = (wide * wide) as u64; // wide*wide >= 0, fits in u64 (max 32767²)
+            sum = sum.wrapping_add(square);
+        }
+        Some(sum)
+    } else {
+        // Slow path: checked arithmetic for unrealistically large dimensions.
+        let mut sum = 0_u64;
+        for &value in input {
+            let wide = i64::from(value);
+            let square = wide.checked_mul(wide)? as u64;
+            sum = sum.checked_add(square)?;
+        }
+        Some(sum)
     }
-
-    Some(sum)
 }
 
 pub fn integer_rsqrt_q30(value: u64) -> Option<i64> {

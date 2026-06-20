@@ -93,13 +93,15 @@ fn parse_linear_kernel(value: &str) -> Result<LinearKernel, Box<dyn std::error::
     match value {
         "generic" | "generic_i8" | "i8" => Ok(LinearKernel::GenericI8),
         "ternary" => Ok(LinearKernel::Ternary),
+        #[cfg(target_arch = "aarch64")]
+        "neon" | "neon_i8" => Ok(LinearKernel::NeonI8),
         other => Err(format!("unknown linear kernel: {other}").into()),
     }
 }
 
 fn print_help() {
     println!(
-        "Usage: nsrl-demo [--preset toy|bench-1m] [--input TEXT] [--trace PATH] [--warmup N] [--repeat N] [--linear-kernel generic|ternary]"
+        "Usage: nsrl-demo [--preset toy|bench-1m] [--input TEXT] [--trace PATH] [--warmup N] [--repeat N] [--linear-kernel generic|ternary|neon_i8]"
     );
     println!();
     println!("Runs the fixed NSRL integer transformer demo or benchmark preset.");
