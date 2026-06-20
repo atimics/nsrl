@@ -2,7 +2,10 @@ use std::fmt::Write as _;
 use std::io::{self, BufRead, Read, Write};
 
 pub const SCHEMA: &str = "nsrl.corpus_trace.v1";
+pub const TOKEN_SCHEMA: &str = "nsrl.token_trace.v1";
 pub const AUTHORITY: &str = "deterministic_corpus_preparation";
+pub const TOKEN_AUTHORITY: &str = "deterministic_byte_tokenization";
+pub const TOKENIZER_ID: &str = "byte_identity_u8_v1";
 pub const SHAKESPEARE_SOURCE_ID: &str = "gutenberg_ebook_100";
 pub const SHAKESPEARE_SOURCE_URL: &str = "https://www.gutenberg.org/cache/epub/100/pg100.txt";
 pub const SIMPLEWIKI_SOURCE_ID: &str = "simplewiki_latest_pages_articles";
@@ -20,9 +23,35 @@ const KNOWN_NON_CLAIMS: [&str; 5] = [
     "not_a_semantic_deduplication_pipeline",
 ];
 
+const TOKEN_KNOWN_NON_CLAIMS: [&str; 4] = [
+    "not_bpe_or_wordpiece",
+    "not_trained_yet",
+    "does_not_shuffle_windows",
+    "does_not_materialize_window_rows",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CorpusConfig {
     pub max_simplewiki_pages: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenizeConfig {
+    pub seq_len: usize,
+    pub stride: usize,
+    pub max_windows: Option<usize>,
+    pub preview_tokens: usize,
+}
+
+impl Default for TokenizeConfig {
+    fn default() -> Self {
+        Self {
+            seq_len: 128,
+            stride: 1,
+            max_windows: None,
+            preview_tokens: 16,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +68,23 @@ pub struct CorpusTrace {
     pub output_lines: usize,
     pub output_hash: u64,
     pub max_simplewiki_pages: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenTrace {
+    pub input_bytes: usize,
+    pub output_bytes: usize,
+    pub token_count: usize,
+    pub vocab_size: usize,
+    pub seq_len: usize,
+    pub stride: usize,
+    pub max_windows: Option<usize>,
+    pub windows: usize,
+    pub uncovered_tail_tokens: usize,
+    pub token_hash: u64,
+    pub window_hash: u64,
+    pub first_input_preview: Vec<u8>,
+    pub first_target_preview: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -105,6 +151,52 @@ pub fn prepare_corpus<R: Read, B: BufRead, W: Write>(
         output_lines: corpus.lines().count(),
         output_hash: hash_bytes(corpus.as_bytes()),
         max_simplewiki_pages: config.max_simplewiki_pages,
+    })
+}
+
+pub fn tokenize_corpus<R: Read, W: Write>(
+    corpus: &mut R,
+    tokens_out: &mut W,
+    config: TokenizeConfig,
+) -> Result<TokenTrace, CorpusError> {
+    if config.seq_len == 0 || config.stride == 0 {
+        return Err(CorpusError::InvalidInput(
+            "tokenization requires positive seq_len and stride",
+        ));
+    }
+
+    let mut bytes = Vec::new();
+    corpus.read_to_end(&mut bytes)?;
+    tokens_out.write_all(&bytes)?;
+
+    let window_stats = compute_window_stats(&bytes, config);
+    let preview_len = config.preview_tokens.min(config.seq_len).min(bytes.len());
+    let first_input_preview = bytes.iter().copied().take(preview_len).collect::<Vec<_>>();
+    let first_target_preview = if bytes.len() > 1 {
+        bytes
+            .iter()
+            .copied()
+            .skip(1)
+            .take(preview_len)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
+    Ok(TokenTrace {
+        input_bytes: bytes.len(),
+        output_bytes: bytes.len(),
+        token_count: bytes.len(),
+        vocab_size: 256,
+        seq_len: config.seq_len,
+        stride: config.stride,
+        max_windows: config.max_windows,
+        windows: window_stats.windows,
+        uncovered_tail_tokens: window_stats.uncovered_tail_tokens,
+        token_hash: hash_bytes(&bytes),
+        window_hash: window_stats.hash,
+        first_input_preview,
+        first_target_preview,
     })
 }
 
@@ -196,6 +288,105 @@ impl CorpusTrace {
         out.push('}');
         out.push('\n');
         out
+    }
+}
+
+impl TokenTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", TOKEN_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", TOKEN_AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "tokenizer", TOKENIZER_ID);
+        comma(&mut out);
+        out.push_str("\"config\":{");
+        push_usize_field(&mut out, "seq_len", self.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "stride", self.stride);
+        comma(&mut out);
+        push_optional_usize_field(&mut out, "max_windows", self.max_windows);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"input\":{");
+        push_usize_field(&mut out, "bytes", self.input_bytes);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"tokens\":{");
+        push_usize_field(&mut out, "count", self.token_count);
+        comma(&mut out);
+        push_usize_field(&mut out, "vocab_size", self.vocab_size);
+        comma(&mut out);
+        push_hash_field(&mut out, "hash", self.token_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"windows\":{");
+        push_usize_field(&mut out, "count", self.windows);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "uncovered_tail_tokens",
+            self.uncovered_tail_tokens,
+        );
+        comma(&mut out);
+        push_hash_field(&mut out, "hash", self.window_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"preview\":{");
+        push_u8_array_field(&mut out, "first_input_tokens", &self.first_input_preview);
+        comma(&mut out);
+        push_u8_array_field(&mut out, "first_target_tokens", &self.first_target_preview);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"output\":{");
+        push_usize_field(&mut out, "bytes", self.output_bytes);
+        out.push('}');
+        comma(&mut out);
+        push_string_array_field(&mut out, "known_non_claims", &TOKEN_KNOWN_NON_CLAIMS);
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WindowStats {
+    windows: usize,
+    uncovered_tail_tokens: usize,
+    hash: u64,
+}
+
+fn compute_window_stats(tokens: &[u8], config: TokenizeConfig) -> WindowStats {
+    let mut windows = 0_usize;
+    let mut start = 0_usize;
+    let mut last_end = 0_usize;
+    let mut hash = FNV_OFFSET;
+    hash = fnv_update_usize(hash, tokens.len());
+    hash = fnv_update_usize(hash, config.seq_len);
+    hash = fnv_update_usize(hash, config.stride);
+    hash = fnv_update_usize(hash, config.max_windows.unwrap_or(usize::MAX));
+
+    while start
+        .checked_add(config.seq_len)
+        .is_some_and(|target_index| target_index < tokens.len())
+    {
+        if config.max_windows.is_some_and(|limit| windows >= limit) {
+            break;
+        }
+
+        let end = start + config.seq_len + 1;
+        hash = fnv_update_usize(hash, start);
+        hash = fnv_update_bytes(hash, &tokens[start..end]);
+        windows += 1;
+        last_end = end;
+        start = start.saturating_add(config.stride);
+    }
+
+    WindowStats {
+        windows,
+        uncovered_tail_tokens: tokens.len().saturating_sub(last_end),
+        hash,
     }
 }
 
@@ -554,12 +745,19 @@ fn normalize_marker(input: &str) -> String {
 }
 
 fn hash_bytes(bytes: &[u8]) -> u64 {
-    let mut value = FNV_OFFSET;
+    fnv_update_bytes(FNV_OFFSET, bytes)
+}
+
+fn fnv_update_bytes(mut value: u64, bytes: &[u8]) -> u64 {
     for &byte in bytes {
         value ^= u64::from(byte);
         value = value.wrapping_mul(FNV_PRIME);
     }
     value
+}
+
+fn fnv_update_usize(value: u64, number: usize) -> u64 {
+    fnv_update_bytes(value, &(number as u64).to_le_bytes())
 }
 
 fn comma(out: &mut String) {
@@ -608,6 +806,18 @@ fn push_usize_field(out: &mut String, name: &str, value: usize) {
     push_quoted(out, name);
     out.push(':');
     out.push_str(&value.to_string());
+}
+
+fn push_u8_array_field(out: &mut String, name: &str, values: &[u8]) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, value) in values.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        out.push_str(&value.to_string());
+    }
+    out.push(']');
 }
 
 fn push_hash_field(out: &mut String, name: &str, value: u64) {
@@ -734,5 +944,57 @@ mod tests {
                 .unwrap()
                 .contains("<|source:simplewiki|>")
         );
+    }
+
+    #[test]
+    fn byte_tokenizer_writes_identity_tokens_and_counts_windows() {
+        let corpus = b"abcdef";
+        let mut tokens = Vec::new();
+        let trace = tokenize_corpus(
+            &mut &corpus[..],
+            &mut tokens,
+            TokenizeConfig {
+                seq_len: 3,
+                stride: 2,
+                max_windows: None,
+                preview_tokens: 4,
+            },
+        )
+        .expect("tokenize");
+
+        assert_eq!(tokens, corpus);
+        assert_eq!(trace.input_bytes, 6);
+        assert_eq!(trace.output_bytes, 6);
+        assert_eq!(trace.token_count, 6);
+        assert_eq!(trace.vocab_size, 256);
+        assert_eq!(trace.windows, 2);
+        assert_eq!(trace.uncovered_tail_tokens, 0);
+        assert_eq!(trace.first_input_preview, b"abc".to_vec());
+        assert_eq!(trace.first_target_preview, b"bcd".to_vec());
+    }
+
+    #[test]
+    fn byte_tokenizer_trace_is_byte_stable() {
+        let corpus = b"to be or not to be";
+        let config = TokenizeConfig {
+            seq_len: 4,
+            stride: 1,
+            max_windows: Some(3),
+            preview_tokens: 8,
+        };
+        let mut left_tokens = Vec::new();
+        let mut right_tokens = Vec::new();
+        let left = tokenize_corpus(&mut &corpus[..], &mut left_tokens, config)
+            .expect("left")
+            .to_json_line();
+        let right = tokenize_corpus(&mut &corpus[..], &mut right_tokens, config)
+            .expect("right")
+            .to_json_line();
+
+        assert_eq!(left_tokens, right_tokens);
+        assert_eq!(left, right);
+        assert!(left.contains("\"schema\":\"nsrl.token_trace.v1\""));
+        assert!(left.contains("\"tokenizer\":\"byte_identity_u8_v1\""));
+        assert!(left.contains("\"count\":3"));
     }
 }

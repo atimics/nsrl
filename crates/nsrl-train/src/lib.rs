@@ -9,12 +9,21 @@ use nsrl_core::{
 pub const SCHEMA: &str = "nsrl.training_smoke_trace.v1";
 pub const SOFTMAX_SCHEMA: &str = "nsrl.training_softmax_trace.v1";
 pub const LINEAR_BACKWARD_SCHEMA: &str = "nsrl.training_linear_backward_trace.v1";
+pub const BYTE_SOFTMAX_SCHEMA: &str = "nsrl.training_byte_softmax_trace.v1";
+pub const BYTE_GENERATION_SCHEMA: &str = "nsrl.byte_generation_trace.v1";
 pub const AUTHORITY: &str = "deterministic_training_replay";
+pub const GENERATION_AUTHORITY: &str = "deterministic_integer_generation";
 pub const TASK: &str = "tiny_next_char_output_head";
 pub const SOFTMAX_TASK: &str = "tiny_next_char_output_head_base2_softmax";
 pub const LINEAR_BACKWARD_TASK: &str = "tiny_linear_layer_backward";
+pub const BYTE_SOFTMAX_TASK: &str = "wiki_bard_byte_next_token_output_head";
+pub const BYTE_TOKENIZER_ID: &str = "byte_identity_u8_v1";
+pub const BYTE_SOFTMAX_MODEL_ID: &str = "byte_softmax_bigram_output_head_v1";
+pub const BYTE_SOFTMAX_MODEL_MAGIC: &[u8; 8] = b"NSRLBM1\n";
 pub const VOCAB: usize = 4;
 pub const D_MODEL: usize = 8;
+pub const BYTE_VOCAB: usize = 256;
+pub const BYTE_D_MODEL: usize = 257;
 pub const LINEAR_BACKWARD_INPUT_DIM: usize = 4;
 pub const LINEAR_BACKWARD_OUTPUT_DIM: usize = 3;
 
@@ -26,10 +35,20 @@ const DEFAULT_SOFTMAX_LEARNING_RATE: i32 = 1;
 const DEFAULT_SOFTMAX_LEARNING_RATE_SHIFT: u8 = 22;
 const DEFAULT_LINEAR_BACKWARD_LEARNING_RATE: i32 = 1;
 const DEFAULT_LINEAR_BACKWARD_LEARNING_RATE_SHIFT: u8 = 22;
+const DEFAULT_BYTE_SOFTMAX_EPOCHS: usize = 1;
+const DEFAULT_BYTE_SOFTMAX_SEQ_LEN: usize = 8;
+const DEFAULT_BYTE_SOFTMAX_STRIDE: usize = 1;
+const DEFAULT_BYTE_SOFTMAX_MAX_WINDOWS: usize = 128;
+const DEFAULT_BYTE_SOFTMAX_LEARNING_RATE: i32 = 1;
+const DEFAULT_BYTE_SOFTMAX_LEARNING_RATE_SHIFT: u8 = 22;
 const LOGIT_SCALES: [FixedScale; VOCAB] = [FixedScale {
     multiplier: 1,
     right_shift: 8,
 }; VOCAB];
+const BYTE_LOGIT_SCALES: [FixedScale; BYTE_VOCAB] = [FixedScale {
+    multiplier: 1,
+    right_shift: 8,
+}; BYTE_VOCAB];
 const LINEAR_BACKWARD_INPUT_Q15: [i16; LINEAR_BACKWARD_INPUT_DIM] = [4096, -2048, 1024, -512];
 const LINEAR_BACKWARD_GRAD_OUTPUT_Q15: [i16; LINEAR_BACKWARD_OUTPUT_DIM] = [8192, -4096, 2048];
 const LINEAR_BACKWARD_INITIAL_WEIGHTS: [i8; LINEAR_BACKWARD_INPUT_DIM
@@ -91,6 +110,19 @@ const LINEAR_BACKWARD_KNOWN_NON_CLAIMS: [&str; 4] = [
     "does_not_backpropagate_through_rmsnorm_yet",
     "does_not_claim_language_model_quality",
 ];
+const BYTE_SOFTMAX_KNOWN_NON_CLAIMS: [&str; 5] = [
+    "output_head_only",
+    "features_are_bias_plus_last_byte_one_hot",
+    "does_not_update_transformer_weights_yet",
+    "does_not_claim_language_model_quality",
+    "not_full_wiki_bard_training_yet",
+];
+const BYTE_GENERATION_KNOWN_NON_CLAIMS: [&str; 4] = [
+    "baseline_byte_model_only",
+    "not_transformer_generation_yet",
+    "greedy_decoding_only",
+    "does_not_claim_language_model_quality",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrainConfig {
@@ -135,6 +167,29 @@ impl Default for LinearBackwardConfig {
         Self {
             learning_rate: DEFAULT_LINEAR_BACKWARD_LEARNING_RATE,
             learning_rate_shift: DEFAULT_LINEAR_BACKWARD_LEARNING_RATE_SHIFT,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ByteSoftmaxTrainConfig {
+    pub epochs: usize,
+    pub seq_len: usize,
+    pub stride: usize,
+    pub max_windows: Option<usize>,
+    pub learning_rate: i32,
+    pub learning_rate_shift: u8,
+}
+
+impl Default for ByteSoftmaxTrainConfig {
+    fn default() -> Self {
+        Self {
+            epochs: DEFAULT_BYTE_SOFTMAX_EPOCHS,
+            seq_len: DEFAULT_BYTE_SOFTMAX_SEQ_LEN,
+            stride: DEFAULT_BYTE_SOFTMAX_STRIDE,
+            max_windows: Some(DEFAULT_BYTE_SOFTMAX_MAX_WINDOWS),
+            learning_rate: DEFAULT_BYTE_SOFTMAX_LEARNING_RATE,
+            learning_rate_shift: DEFAULT_BYTE_SOFTMAX_LEARNING_RATE_SHIFT,
         }
     }
 }
@@ -197,6 +252,64 @@ pub struct LinearBackwardTrace {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByteSoftmaxTrainingTrace {
+    pub config: ByteSoftmaxTrainConfig,
+    pub token_count: usize,
+    pub token_hash: u64,
+    pub window_hash: u64,
+    pub windows: usize,
+    pub examined_windows: usize,
+    pub updates: usize,
+    pub initial_weight_hash: u64,
+    pub final_weight_hash: u64,
+    pub initial_total_error: usize,
+    pub final_total_error: usize,
+    pub initial_probability_error_q15: usize,
+    pub final_probability_error_q15: usize,
+    pub initial_mistakes: usize,
+    pub final_mistakes: usize,
+    pub gradient_saturation_count: usize,
+    pub zero_delta_count: usize,
+    pub weight_delta_l1: u64,
+    pub final_accuracy_per_mille: usize,
+    pub final_logits_hash: u64,
+    pub steps: Vec<ByteSoftmaxTrainingStepTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByteSoftmaxTrainingRun {
+    pub trace: ByteSoftmaxTrainingTrace,
+    pub model: ByteSoftmaxModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByteSoftmaxModel {
+    pub weights: Vec<i8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByteGenerationConfig {
+    pub max_new_tokens: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByteGenerationTrace {
+    pub prompt_bytes: Vec<u8>,
+    pub generated_bytes: Vec<u8>,
+    pub model_hash: u64,
+    pub steps: Vec<ByteGenerationStepTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByteGenerationStepTrace {
+    pub step_index: usize,
+    pub input_token: u8,
+    pub predicted_token: u8,
+    pub predicted_logit_q8: i32,
+    pub predicted_probability_q15: i16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrainingStepTrace {
     pub update_index: usize,
     pub epoch: usize,
@@ -239,8 +352,28 @@ pub struct SoftmaxTrainingStepTrace {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByteSoftmaxTrainingStepTrace {
+    pub update_index: usize,
+    pub epoch: usize,
+    pub window_index: usize,
+    pub window_start: usize,
+    pub last_token: u8,
+    pub target_token: u8,
+    pub predicted_token_before: u8,
+    pub predicted_token_after: u8,
+    pub target_probability_before_q15: i16,
+    pub target_probability_after_q15: i16,
+    pub weight_hash_before: u64,
+    pub weight_hash_after: u64,
+    pub gradient_saturation_count: usize,
+    pub zero_delta_count: usize,
+    pub weight_delta_l1: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrainError {
     InvalidConfig,
+    InvalidModel(&'static str),
     CoreRejected(&'static str),
 }
 
@@ -248,6 +381,7 @@ impl core::fmt::Display for TrainError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::InvalidConfig => write!(f, "invalid training config"),
+            Self::InvalidModel(message) => write!(f, "invalid model artifact: {message}"),
             Self::CoreRejected(stage) => write!(f, "nsrl-core rejected training stage: {stage}"),
         }
     }
@@ -515,6 +649,133 @@ pub fn run_linear_backward_smoke(
         output_hash_before,
         output_hash_after,
     })
+}
+
+pub fn run_byte_softmax_training(
+    tokens: &[u8],
+    config: ByteSoftmaxTrainConfig,
+) -> Result<ByteSoftmaxTrainingTrace, TrainError> {
+    Ok(run_byte_softmax_training_with_model(tokens, config)?.trace)
+}
+
+pub fn run_byte_softmax_training_with_model(
+    tokens: &[u8],
+    config: ByteSoftmaxTrainConfig,
+) -> Result<ByteSoftmaxTrainingRun, TrainError> {
+    if config.epochs == 0
+        || config.seq_len == 0
+        || config.stride == 0
+        || config.learning_rate <= 0
+        || config.learning_rate_shift > MAX_RIGHT_SHIFT
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let starts = byte_window_starts(
+        tokens.len(),
+        config.seq_len,
+        config.stride,
+        config.max_windows,
+    );
+    if starts.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut weights = vec![0_i8; BYTE_VOCAB * BYTE_D_MODEL];
+    let token_hash = hash_u8_slice(tokens);
+    let window_hash = hash_byte_windows(tokens, config, &starts);
+    let initial_weight_hash = hash_i8_slice(&weights);
+    let initial_total_error = byte_total_error(tokens, &starts, &weights, config.seq_len)?;
+    let initial_probability_error_q15 =
+        byte_total_probability_error_q15(tokens, &starts, &weights, config.seq_len)?;
+    let initial_mistakes = initial_total_error;
+    let mut updates = 0_usize;
+    let mut examined_windows = 0_usize;
+    let mut gradient_saturation_count = 0_usize;
+    let mut zero_delta_count = 0_usize;
+    let mut weight_delta_l1 = 0_u64;
+    let mut steps = Vec::new();
+
+    for epoch in 0..config.epochs {
+        for (window_index, &window_start) in starts.iter().enumerate() {
+            examined_windows += 1;
+            let features = byte_features_q15(tokens, window_start, config.seq_len);
+            let target_token = tokens[window_start + config.seq_len];
+            let row = byte_softmax_row_for(&weights, &features)?;
+            let predicted_token_before = byte_argmax_i32(&row.logits_q8);
+            let gradient_q15 = byte_softmax_gradient_q15(&row.probabilities_q15, target_token);
+            let weight_hash_before = hash_i8_slice(&weights);
+            let update = apply_byte_softmax_output_head_update(
+                &mut weights,
+                &features,
+                &gradient_q15,
+                config.learning_rate,
+                config.learning_rate_shift,
+            );
+            updates += 1;
+            gradient_saturation_count += update.gradient_saturation_count;
+            zero_delta_count += update.zero_delta_count;
+            weight_delta_l1 = weight_delta_l1.saturating_add(update.weight_delta_l1);
+            let after_row = byte_softmax_row_for(&weights, &features)?;
+            let predicted_token_after = byte_argmax_i32(&after_row.logits_q8);
+            let weight_hash_after = hash_i8_slice(&weights);
+
+            steps.push(ByteSoftmaxTrainingStepTrace {
+                update_index: updates,
+                epoch,
+                window_index,
+                window_start,
+                last_token: tokens[window_start + config.seq_len - 1],
+                target_token,
+                predicted_token_before,
+                predicted_token_after,
+                target_probability_before_q15: row.probabilities_q15[usize::from(target_token)],
+                target_probability_after_q15: after_row.probabilities_q15
+                    [usize::from(target_token)],
+                weight_hash_before,
+                weight_hash_after,
+                gradient_saturation_count: update.gradient_saturation_count,
+                zero_delta_count: update.zero_delta_count,
+                weight_delta_l1: update.weight_delta_l1,
+            });
+        }
+    }
+
+    let final_total_error = byte_total_error(tokens, &starts, &weights, config.seq_len)?;
+    let final_probability_error_q15 =
+        byte_total_probability_error_q15(tokens, &starts, &weights, config.seq_len)?;
+    let final_mistakes = final_total_error;
+    let final_correct = starts.len() - final_mistakes;
+    let final_accuracy_per_mille = final_correct * 1000 / starts.len();
+    let final_logits_hash = hash_byte_logits(tokens, &starts, &weights, config.seq_len)?;
+    let model = ByteSoftmaxModel { weights };
+    let final_weight_hash = model.weight_hash();
+
+    let trace = ByteSoftmaxTrainingTrace {
+        config,
+        token_count: tokens.len(),
+        token_hash,
+        window_hash,
+        windows: starts.len(),
+        examined_windows,
+        updates,
+        initial_weight_hash,
+        final_weight_hash,
+        initial_total_error,
+        final_total_error,
+        initial_probability_error_q15,
+        final_probability_error_q15,
+        initial_mistakes,
+        final_mistakes,
+        gradient_saturation_count,
+        zero_delta_count,
+        weight_delta_l1,
+        final_accuracy_per_mille,
+        final_logits_hash,
+        steps,
+    };
+
+    Ok(ByteSoftmaxTrainingRun { trace, model })
 }
 
 impl TrainingTrace {
@@ -828,6 +1089,268 @@ impl LinearBackwardTrace {
     }
 }
 
+impl ByteSoftmaxTrainingTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", BYTE_SOFTMAX_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "task", BYTE_SOFTMAX_TASK);
+        comma(&mut out);
+        out.push_str("\"data\":{");
+        push_string_field(&mut out, "tokenizer", BYTE_TOKENIZER_ID);
+        comma(&mut out);
+        push_usize_field(&mut out, "token_count", self.token_count);
+        comma(&mut out);
+        push_hash_field(&mut out, "token_hash", self.token_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "window_hash", self.window_hash);
+        comma(&mut out);
+        push_usize_field(&mut out, "windows", self.windows);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"model\":{");
+        push_usize_field(&mut out, "vocab", BYTE_VOCAB);
+        comma(&mut out);
+        push_usize_field(&mut out, "d_model", BYTE_D_MODEL);
+        comma(&mut out);
+        push_string_field(&mut out, "trained_component", "byte_output_head_i8");
+        comma(&mut out);
+        push_string_field(&mut out, "features", "bias_plus_last_byte_one_hot_q15");
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"optimizer\":{");
+        push_string_field(&mut out, "kind", "base2_softmax_cross_entropy_sgd");
+        comma(&mut out);
+        push_string_field(&mut out, "feature_scale", "q15");
+        comma(&mut out);
+        push_string_field(&mut out, "logit_scale", "q8");
+        comma(&mut out);
+        push_string_field(&mut out, "probability_scale", "q15");
+        comma(&mut out);
+        push_string_field(&mut out, "weight_dtype", "i8");
+        comma(&mut out);
+        push_i32_field(&mut out, "learning_rate", self.config.learning_rate);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "learning_rate_shift",
+            usize::from(self.config.learning_rate_shift),
+        );
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"training\":{");
+        push_usize_field(&mut out, "epochs", self.config.epochs);
+        comma(&mut out);
+        push_usize_field(&mut out, "seq_len", self.config.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "stride", self.config.stride);
+        comma(&mut out);
+        push_optional_usize_field(&mut out, "max_windows", self.config.max_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "examined_windows", self.examined_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "updates", self.updates);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"metrics\":{");
+        push_usize_field(&mut out, "initial_total_error", self.initial_total_error);
+        comma(&mut out);
+        push_usize_field(&mut out, "final_total_error", self.final_total_error);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "initial_probability_error_q15",
+            self.initial_probability_error_q15,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "final_probability_error_q15",
+            self.final_probability_error_q15,
+        );
+        comma(&mut out);
+        push_i32_field(
+            &mut out,
+            "probability_error_delta_i32",
+            self.final_probability_error_q15 as i32 - self.initial_probability_error_q15 as i32,
+        );
+        comma(&mut out);
+        push_usize_field(&mut out, "initial_mistakes", self.initial_mistakes);
+        comma(&mut out);
+        push_usize_field(&mut out, "final_mistakes", self.final_mistakes);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "final_accuracy_per_mille",
+            self.final_accuracy_per_mille,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "gradient_saturation_count",
+            self.gradient_saturation_count,
+        );
+        comma(&mut out);
+        push_usize_field(&mut out, "zero_delta_count", self.zero_delta_count);
+        comma(&mut out);
+        push_u64_field(&mut out, "weight_delta_l1", self.weight_delta_l1);
+        out.push('}');
+        comma(&mut out);
+        push_hash_field(&mut out, "initial_weight_hash", self.initial_weight_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "final_weight_hash", self.final_weight_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "final_logits_hash", self.final_logits_hash);
+        comma(&mut out);
+        push_byte_softmax_steps_field(&mut out, "steps", &self.steps);
+        comma(&mut out);
+        push_string_array_field(&mut out, "known_non_claims", &BYTE_SOFTMAX_KNOWN_NON_CLAIMS);
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+impl ByteSoftmaxModel {
+    pub fn new(weights: Vec<i8>) -> Result<Self, TrainError> {
+        if weights.len() != BYTE_VOCAB * BYTE_D_MODEL {
+            return Err(TrainError::InvalidModel("wrong byte-softmax weight count"));
+        }
+        Ok(Self { weights })
+    }
+
+    pub fn weight_hash(&self) -> u64 {
+        hash_i8_slice(&self.weights)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(32 + self.weights.len());
+        out.extend_from_slice(BYTE_SOFTMAX_MODEL_MAGIC);
+        out.extend_from_slice(&(BYTE_VOCAB as u32).to_le_bytes());
+        out.extend_from_slice(&(BYTE_D_MODEL as u32).to_le_bytes());
+        out.extend_from_slice(&(self.weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&self.weight_hash().to_le_bytes());
+        out.extend(self.weights.iter().map(|&weight| weight as u8));
+        out
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
+        let header_len = BYTE_SOFTMAX_MODEL_MAGIC.len() + 4 + 4 + 8 + 8;
+        if bytes.len() < header_len {
+            return Err(TrainError::InvalidModel("artifact too short"));
+        }
+        if &bytes[..BYTE_SOFTMAX_MODEL_MAGIC.len()] != BYTE_SOFTMAX_MODEL_MAGIC {
+            return Err(TrainError::InvalidModel("bad magic"));
+        }
+
+        let mut offset = BYTE_SOFTMAX_MODEL_MAGIC.len();
+        let vocab = read_u32_le(bytes, &mut offset)?;
+        let d_model = read_u32_le(bytes, &mut offset)?;
+        let weight_count = read_u64_le(bytes, &mut offset)? as usize;
+        let expected_hash = read_u64_le(bytes, &mut offset)?;
+
+        if vocab as usize != BYTE_VOCAB || d_model as usize != BYTE_D_MODEL {
+            return Err(TrainError::InvalidModel("shape mismatch"));
+        }
+        if weight_count != BYTE_VOCAB * BYTE_D_MODEL {
+            return Err(TrainError::InvalidModel("weight count mismatch"));
+        }
+        if bytes.len() != offset + weight_count {
+            return Err(TrainError::InvalidModel("artifact length mismatch"));
+        }
+
+        let weights = bytes[offset..]
+            .iter()
+            .map(|&byte| byte as i8)
+            .collect::<Vec<_>>();
+        let model = Self::new(weights)?;
+        if model.weight_hash() != expected_hash {
+            return Err(TrainError::InvalidModel("weight hash mismatch"));
+        }
+        Ok(model)
+    }
+}
+
+impl ByteGenerationTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", BYTE_GENERATION_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", GENERATION_AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "model", BYTE_SOFTMAX_MODEL_ID);
+        comma(&mut out);
+        push_string_field(&mut out, "tokenizer", BYTE_TOKENIZER_ID);
+        comma(&mut out);
+        push_hash_field(&mut out, "model_hash", self.model_hash);
+        comma(&mut out);
+        out.push_str("\"prompt\":{");
+        push_usize_field(&mut out, "bytes", self.prompt_bytes.len());
+        comma(&mut out);
+        push_u8_array_field(&mut out, "tokens", &self.prompt_bytes);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"generation\":{");
+        push_usize_field(&mut out, "new_tokens", self.generated_bytes.len());
+        comma(&mut out);
+        push_u8_array_field(&mut out, "tokens", &self.generated_bytes);
+        out.push('}');
+        comma(&mut out);
+        push_generation_steps_field(&mut out, "steps", &self.steps);
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "known_non_claims",
+            &BYTE_GENERATION_KNOWN_NON_CLAIMS,
+        );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+pub fn generate_byte_softmax(
+    model: &ByteSoftmaxModel,
+    prompt: &[u8],
+    config: ByteGenerationConfig,
+) -> Result<ByteGenerationTrace, TrainError> {
+    if prompt.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut context = prompt.to_vec();
+    let mut generated_bytes = Vec::with_capacity(config.max_new_tokens);
+    let mut steps = Vec::with_capacity(config.max_new_tokens);
+
+    for step_index in 0..config.max_new_tokens {
+        let input_token = *context.last().ok_or(TrainError::InvalidConfig)?;
+        let features = byte_single_token_features_q15(input_token);
+        let row = byte_softmax_row_for(&model.weights, &features)?;
+        let predicted_token = byte_argmax_i32(&row.logits_q8);
+        let predicted_index = usize::from(predicted_token);
+        generated_bytes.push(predicted_token);
+        context.push(predicted_token);
+        steps.push(ByteGenerationStepTrace {
+            step_index,
+            input_token,
+            predicted_token,
+            predicted_logit_q8: row.logits_q8[predicted_index],
+            predicted_probability_q15: row.probabilities_q15[predicted_index],
+        });
+    }
+
+    Ok(ByteGenerationTrace {
+        prompt_bytes: prompt.to_vec(),
+        generated_bytes,
+        model_hash: model.weight_hash(),
+        steps,
+    })
+}
+
 fn total_error(weights: &[i8]) -> Result<usize, TrainError> {
     count_mistakes(weights)
 }
@@ -895,11 +1418,157 @@ fn linear_backward_output_for(
     Ok(output)
 }
 
+fn byte_window_starts(
+    token_count: usize,
+    seq_len: usize,
+    stride: usize,
+    max_windows: Option<usize>,
+) -> Vec<usize> {
+    let mut starts = Vec::new();
+    if seq_len == 0 || stride == 0 {
+        return starts;
+    }
+
+    let mut start = 0_usize;
+    while start
+        .checked_add(seq_len)
+        .is_some_and(|target_index| target_index < token_count)
+    {
+        if max_windows.is_some_and(|limit| starts.len() >= limit) {
+            break;
+        }
+        starts.push(start);
+        start = start.saturating_add(stride);
+    }
+    starts
+}
+
+fn byte_features_q15(tokens: &[u8], window_start: usize, seq_len: usize) -> [i16; BYTE_D_MODEL] {
+    byte_single_token_features_q15(tokens[window_start + seq_len - 1])
+}
+
+fn byte_single_token_features_q15(token: u8) -> [i16; BYTE_D_MODEL] {
+    let mut features = [0_i16; BYTE_D_MODEL];
+    features[0] = 4096;
+    features[1 + usize::from(token)] = 8192;
+    features
+}
+
+fn byte_total_error(
+    tokens: &[u8],
+    starts: &[usize],
+    weights: &[i8],
+    seq_len: usize,
+) -> Result<usize, TrainError> {
+    let mut mistakes = 0_usize;
+    for &start in starts {
+        let features = byte_features_q15(tokens, start, seq_len);
+        let row = byte_softmax_row_for(weights, &features)?;
+        if byte_argmax_i32(&row.logits_q8) != tokens[start + seq_len] {
+            mistakes += 1;
+        }
+    }
+    Ok(mistakes)
+}
+
+fn byte_total_probability_error_q15(
+    tokens: &[u8],
+    starts: &[usize],
+    weights: &[i8],
+    seq_len: usize,
+) -> Result<usize, TrainError> {
+    let mut error = 0_usize;
+    for &start in starts {
+        let features = byte_features_q15(tokens, start, seq_len);
+        let row = byte_softmax_row_for(weights, &features)?;
+        error = error.saturating_add(byte_sample_probability_error_q15(
+            &row.probabilities_q15,
+            tokens[start + seq_len],
+        ));
+    }
+    Ok(error)
+}
+
+fn byte_sample_probability_error_q15(probabilities_q15: &[i16; BYTE_VOCAB], target: u8) -> usize {
+    let target = usize::from(target);
+    let mut error = (i32::from(i16::MAX) - i32::from(probabilities_q15[target])).max(0) as usize;
+    for (class_id, &probability) in probabilities_q15.iter().enumerate() {
+        if class_id != target {
+            error = error.saturating_add(i32::from(probability).max(0) as usize);
+        }
+    }
+    error
+}
+
+fn hash_byte_logits(
+    tokens: &[u8],
+    starts: &[usize],
+    weights: &[i8],
+    seq_len: usize,
+) -> Result<u64, TrainError> {
+    let mut hasher = StableHasher::new();
+    for &start in starts {
+        let features = byte_features_q15(tokens, start, seq_len);
+        let row = byte_softmax_row_for(weights, &features)?;
+        hasher.update_i32_slice(&row.logits_q8);
+    }
+    Ok(hasher.finish())
+}
+
+fn hash_byte_windows(tokens: &[u8], config: ByteSoftmaxTrainConfig, starts: &[usize]) -> u64 {
+    let mut hasher = StableHasher::new();
+    hasher.update_usize(tokens.len());
+    hasher.update_usize(config.seq_len);
+    hasher.update_usize(config.stride);
+    hasher.update_usize(config.max_windows.unwrap_or(usize::MAX));
+    for &start in starts {
+        hasher.update_usize(start);
+        hasher.update_bytes(&tokens[start..start + config.seq_len + 1]);
+    }
+    hasher.finish()
+}
+
+fn read_u32_le(bytes: &[u8], offset: &mut usize) -> Result<u32, TrainError> {
+    let end = offset
+        .checked_add(4)
+        .ok_or(TrainError::InvalidModel("offset overflow"))?;
+    let chunk = bytes
+        .get(*offset..end)
+        .ok_or(TrainError::InvalidModel("missing u32"))?;
+    *offset = end;
+    Ok(u32::from_le_bytes(
+        chunk
+            .try_into()
+            .map_err(|_| TrainError::InvalidModel("bad u32"))?,
+    ))
+}
+
+fn read_u64_le(bytes: &[u8], offset: &mut usize) -> Result<u64, TrainError> {
+    let end = offset
+        .checked_add(8)
+        .ok_or(TrainError::InvalidModel("offset overflow"))?;
+    let chunk = bytes
+        .get(*offset..end)
+        .ok_or(TrainError::InvalidModel("missing u64"))?;
+    *offset = end;
+    Ok(u64::from_le_bytes(
+        chunk
+            .try_into()
+            .map_err(|_| TrainError::InvalidModel("bad u64"))?,
+    ))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SoftmaxRow {
     logits_q8: [i32; VOCAB],
     probabilities_q15: [i16; VOCAB],
     softmax_sum_q15: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ByteSoftmaxRow {
+    logits_q8: [i32; BYTE_VOCAB],
+    probabilities_q15: [i16; BYTE_VOCAB],
 }
 
 fn softmax_row_for(weights: &[i8], input_id: usize) -> Result<SoftmaxRow, TrainError> {
@@ -920,11 +1589,56 @@ fn softmax_row_for(weights: &[i8], input_id: usize) -> Result<SoftmaxRow, TrainE
     })
 }
 
+fn byte_softmax_row_for(
+    weights: &[i8],
+    features: &[i16; BYTE_D_MODEL],
+) -> Result<ByteSoftmaxRow, TrainError> {
+    let params = LinearI16I8Params {
+        weights,
+        bias: None,
+        scales: &BYTE_LOGIT_SCALES,
+        input_dim: BYTE_D_MODEL,
+        output_dim: BYTE_VOCAB,
+    };
+    let mut logits = [0_i16; BYTE_VOCAB];
+    linear_i16_i8_i16_per_channel_checked(features, params, &mut logits)
+        .ok_or(TrainError::CoreRejected("byte_output_head_linear"))?;
+
+    let mut logits_q8 = [0_i32; BYTE_VOCAB];
+    for (out, &logit) in logits_q8.iter_mut().zip(logits.iter()) {
+        *out = i32::from(logit);
+    }
+
+    let mut probabilities_q15 = [0_i16; BYTE_VOCAB];
+    base2_softmax_i32_q15(&logits_q8, &mut probabilities_q15)
+        .ok_or(TrainError::CoreRejected("byte_output_head_softmax"))?;
+
+    Ok(ByteSoftmaxRow {
+        logits_q8,
+        probabilities_q15,
+    })
+}
+
 fn softmax_gradient_q15(probabilities_q15: &[i16; VOCAB], target_id: usize) -> [i32; VOCAB] {
     let mut gradient = [0_i32; VOCAB];
     for (class_id, out) in gradient.iter_mut().enumerate() {
         *out = i32::from(probabilities_q15[class_id]);
         if class_id == target_id {
+            *out -= i32::from(i16::MAX);
+        }
+    }
+    gradient
+}
+
+fn byte_softmax_gradient_q15(
+    probabilities_q15: &[i16; BYTE_VOCAB],
+    target: u8,
+) -> [i32; BYTE_VOCAB] {
+    let mut gradient = [0_i32; BYTE_VOCAB];
+    let target = usize::from(target);
+    for (class_id, out) in gradient.iter_mut().enumerate() {
+        *out = i32::from(probabilities_q15[class_id]);
+        if class_id == target {
             *out -= i32::from(i16::MAX);
         }
     }
@@ -949,6 +1663,15 @@ fn argmax_i32(logits: &[i32; VOCAB]) -> usize {
         .unwrap_or(0)
 }
 
+fn byte_argmax_i32(logits: &[i32; BYTE_VOCAB]) -> u8 {
+    logits
+        .iter()
+        .enumerate()
+        .max_by_key(|&(index, &logit)| (logit, core::cmp::Reverse(index)))
+        .map(|(index, _)| index as u8)
+        .unwrap_or(0)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SoftmaxUpdateStats {
     gradient_saturation_count: usize,
@@ -970,6 +1693,53 @@ fn apply_softmax_output_head_update(
     for (class_id, &gradient) in gradient_q15.iter().enumerate() {
         let row_start = class_id * D_MODEL;
         for (feature_index, &activation) in FEATURES_Q15[input_id].iter().enumerate() {
+            if activation == 0 || gradient == 0 {
+                continue;
+            }
+
+            let product = i64::from(gradient)
+                .saturating_mul(i64::from(activation))
+                .saturating_mul(i64::from(learning_rate));
+            let scaled_gradient = round_shift_rhu_i64(product, learning_rate_shift);
+            let delta = -scaled_gradient;
+            if delta == 0 {
+                zero_delta_count += 1;
+            }
+
+            let weight = &mut weights[row_start + feature_index];
+            let previous = *weight;
+            let unclamped = i64::from(previous).saturating_add(delta);
+            let clamped = saturate_i8(unclamped);
+            if i64::from(clamped) != unclamped {
+                gradient_saturation_count += 1;
+            }
+            let applied_delta = i64::from(clamped) - i64::from(previous);
+            weight_delta_l1 = weight_delta_l1.saturating_add(applied_delta.unsigned_abs());
+            *weight = clamped;
+        }
+    }
+
+    SoftmaxUpdateStats {
+        gradient_saturation_count,
+        zero_delta_count,
+        weight_delta_l1,
+    }
+}
+
+fn apply_byte_softmax_output_head_update(
+    weights: &mut [i8],
+    features: &[i16; BYTE_D_MODEL],
+    gradient_q15: &[i32; BYTE_VOCAB],
+    learning_rate: i32,
+    learning_rate_shift: u8,
+) -> SoftmaxUpdateStats {
+    let mut gradient_saturation_count = 0_usize;
+    let mut zero_delta_count = 0_usize;
+    let mut weight_delta_l1 = 0_u64;
+
+    for (class_id, &gradient) in gradient_q15.iter().enumerate() {
+        let row_start = class_id * BYTE_D_MODEL;
+        for (feature_index, &activation) in features.iter().enumerate() {
             if activation == 0 || gradient == 0 {
                 continue;
             }
@@ -1050,6 +1820,12 @@ fn hash_i16_slice(values: &[i16]) -> u64 {
     hasher.finish()
 }
 
+fn hash_u8_slice(values: &[u8]) -> u64 {
+    let mut hasher = StableHasher::new();
+    hasher.update_u8_slice(values);
+    hasher.finish()
+}
+
 struct StableHasher(u64);
 
 impl StableHasher {
@@ -1084,6 +1860,18 @@ impl StableHasher {
         for &value in values {
             self.update_u8(value as u8);
         }
+    }
+
+    fn update_i32_slice(&mut self, values: &[i32]) {
+        self.update_usize(values.len());
+        for &value in values {
+            self.update_bytes(&value.to_le_bytes());
+        }
+    }
+
+    fn update_u8_slice(&mut self, values: &[u8]) {
+        self.update_usize(values.len());
+        self.update_bytes(values);
     }
 
     fn update_usize(&mut self, value: usize) {
@@ -1229,6 +2017,98 @@ fn push_softmax_steps_field(out: &mut String, name: &str, steps: &[SoftmaxTraini
     out.push(']');
 }
 
+fn push_byte_softmax_steps_field(
+    out: &mut String,
+    name: &str,
+    steps: &[ByteSoftmaxTrainingStepTrace],
+) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, step) in steps.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        out.push('{');
+        push_usize_field(out, "update_index", step.update_index);
+        comma(out);
+        push_usize_field(out, "epoch", step.epoch);
+        comma(out);
+        push_usize_field(out, "window_index", step.window_index);
+        comma(out);
+        push_usize_field(out, "window_start", step.window_start);
+        comma(out);
+        push_usize_field(out, "last_token", usize::from(step.last_token));
+        comma(out);
+        push_usize_field(out, "target_token", usize::from(step.target_token));
+        comma(out);
+        push_usize_field(
+            out,
+            "predicted_token_before",
+            usize::from(step.predicted_token_before),
+        );
+        comma(out);
+        push_usize_field(
+            out,
+            "predicted_token_after",
+            usize::from(step.predicted_token_after),
+        );
+        comma(out);
+        push_i16_field(
+            out,
+            "target_probability_before_q15",
+            step.target_probability_before_q15,
+        );
+        comma(out);
+        push_i16_field(
+            out,
+            "target_probability_after_q15",
+            step.target_probability_after_q15,
+        );
+        comma(out);
+        push_hash_field(out, "weight_hash_before", step.weight_hash_before);
+        comma(out);
+        push_hash_field(out, "weight_hash_after", step.weight_hash_after);
+        comma(out);
+        push_usize_field(
+            out,
+            "gradient_saturation_count",
+            step.gradient_saturation_count,
+        );
+        comma(out);
+        push_usize_field(out, "zero_delta_count", step.zero_delta_count);
+        comma(out);
+        push_u64_field(out, "weight_delta_l1", step.weight_delta_l1);
+        out.push('}');
+    }
+    out.push(']');
+}
+
+fn push_generation_steps_field(out: &mut String, name: &str, steps: &[ByteGenerationStepTrace]) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, step) in steps.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        out.push('{');
+        push_usize_field(out, "step_index", step.step_index);
+        comma(out);
+        push_usize_field(out, "input_token", usize::from(step.input_token));
+        comma(out);
+        push_usize_field(out, "predicted_token", usize::from(step.predicted_token));
+        comma(out);
+        push_i32_field(out, "predicted_logit_q8", step.predicted_logit_q8);
+        comma(out);
+        push_i16_field(
+            out,
+            "predicted_probability_q15",
+            step.predicted_probability_q15,
+        );
+        out.push('}');
+    }
+    out.push(']');
+}
+
 fn push_hash_field(out: &mut String, name: &str, value: u64) {
     push_quoted(out, name);
     out.push(':');
@@ -1247,7 +2127,23 @@ fn push_usize_field(out: &mut String, name: &str, value: usize) {
     out.push_str(&value.to_string());
 }
 
+fn push_optional_usize_field(out: &mut String, name: &str, value: Option<usize>) {
+    push_quoted(out, name);
+    out.push(':');
+    if let Some(value) = value {
+        out.push_str(&value.to_string());
+    } else {
+        out.push_str("null");
+    }
+}
+
 fn push_i8_field(out: &mut String, name: &str, value: i8) {
+    push_quoted(out, name);
+    out.push(':');
+    out.push_str(&value.to_string());
+}
+
+fn push_i16_field(out: &mut String, name: &str, value: i16) {
     push_quoted(out, name);
     out.push(':');
     out.push_str(&value.to_string());
@@ -1272,6 +2168,18 @@ fn push_i16_array_field(out: &mut String, name: &str, values: &[i16]) {
 }
 
 fn push_i8_array_field(out: &mut String, name: &str, values: &[i8]) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, value) in values.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        out.push_str(&value.to_string());
+    }
+    out.push(']');
+}
+
+fn push_u8_array_field(out: &mut String, name: &str, values: &[u8]) {
     push_quoted(out, name);
     out.push_str(":[");
     for (index, value) in values.iter().enumerate() {
@@ -1430,5 +2338,100 @@ mod tests {
         assert!(left.contains("\"schema\":\"nsrl.training_linear_backward_trace.v1\""));
         assert!(left.contains("\"intermediate\":\"i64_outer_product\""));
         assert!(left.contains("\"scaled_grad_output_i32\":[8192,-6144,512]"));
+    }
+
+    #[test]
+    fn byte_softmax_training_learns_alternating_token_windows() {
+        let tokens = b"abababababababab";
+        let trace = run_byte_softmax_training(
+            tokens,
+            ByteSoftmaxTrainConfig {
+                epochs: 2,
+                seq_len: 1,
+                stride: 1,
+                max_windows: Some(12),
+                learning_rate: 1,
+                learning_rate_shift: 25,
+            },
+        )
+        .expect("byte train");
+
+        assert_eq!(trace.token_count, tokens.len());
+        assert_eq!(trace.windows, 12);
+        assert_eq!(trace.updates, 24);
+        assert!(trace.initial_probability_error_q15 > trace.final_probability_error_q15);
+        assert!(trace.initial_total_error > trace.final_total_error);
+        assert_eq!(trace.final_total_error, 0);
+        assert_eq!(trace.gradient_saturation_count, 0);
+        assert_ne!(trace.initial_weight_hash, trace.final_weight_hash);
+        assert!(
+            trace
+                .steps
+                .iter()
+                .any(|step| step.target_probability_after_q15 > step.target_probability_before_q15)
+        );
+    }
+
+    #[test]
+    fn byte_softmax_training_trace_is_byte_stable() {
+        let tokens = b"abababab";
+        let config = ByteSoftmaxTrainConfig {
+            epochs: 1,
+            seq_len: 1,
+            stride: 1,
+            max_windows: Some(6),
+            learning_rate: 1,
+            learning_rate_shift: 25,
+        };
+        let left = run_byte_softmax_training(tokens, config)
+            .expect("left")
+            .to_json_line();
+        let right = run_byte_softmax_training(tokens, config)
+            .expect("right")
+            .to_json_line();
+
+        assert_eq!(left, right);
+        assert!(left.contains("\"schema\":\"nsrl.training_byte_softmax_trace.v1\""));
+        assert!(left.contains("\"tokenizer\":\"byte_identity_u8_v1\""));
+        assert!(left.contains("\"features\":\"bias_plus_last_byte_one_hot_q15\""));
+    }
+
+    #[test]
+    fn byte_softmax_model_round_trips_and_generates() {
+        let tokens = b"abababababababab";
+        let run = run_byte_softmax_training_with_model(
+            tokens,
+            ByteSoftmaxTrainConfig {
+                epochs: 2,
+                seq_len: 1,
+                stride: 1,
+                max_windows: Some(12),
+                learning_rate: 1,
+                learning_rate_shift: 25,
+            },
+        )
+        .expect("train");
+        let bytes = run.model.to_bytes();
+        let decoded = ByteSoftmaxModel::from_bytes(&bytes).expect("model");
+
+        assert_eq!(decoded, run.model);
+        assert_eq!(decoded.weight_hash(), run.trace.final_weight_hash);
+
+        let generation =
+            generate_byte_softmax(&decoded, b"a", ByteGenerationConfig { max_new_tokens: 6 })
+                .expect("generate");
+
+        assert_eq!(generation.generated_bytes, b"bababa".to_vec());
+        assert_eq!(generation.steps.len(), 6);
+        assert!(
+            generation
+                .to_json_line()
+                .contains("\"schema\":\"nsrl.byte_generation_trace.v1\"")
+        );
+        assert!(
+            generation
+                .to_json_line()
+                .contains("\"model\":\"byte_softmax_bigram_output_head_v1\"")
+        );
     }
 }
