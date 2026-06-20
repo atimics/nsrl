@@ -1,6 +1,9 @@
 use crate::linear::{
-    LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace, LinearI16I8Params, LinearKernel,
-    linear_backward_input_i16_i8_i16_per_channel_checked,
+    LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
+    LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
+    LinearKernel, LinearWeightUpdateStats, linear_backward_input_i16_i8_i16_per_channel_checked,
+    linear_backward_input_prescaled_i32_i8_i16_per_channel_checked,
+    linear_backward_prescale_grad_output_i16_i32_checked, linear_backward_weight_update_i8_checked,
     linear_i16_i8_i16_per_channel_with_kernel_checked,
 };
 use crate::numeric::{FixedScale, round_shift_rhu_i64, saturate_i16, saturating_add_i16};
@@ -51,6 +54,56 @@ pub struct GatedMlpBackwardWorkspace<'a> {
     pub grad_gate_input: &'a mut [i16],
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct GatedMlpWeightUpdateParams<'a> {
+    pub up_scales: &'a [FixedScale],
+    pub gate_scales: &'a [FixedScale],
+    pub down_scales: &'a [FixedScale],
+    pub down_to_hidden_scales: &'a [FixedScale],
+    pub seq_len: usize,
+    pub d_model: usize,
+    pub hidden_dim: usize,
+    pub learning_rate: i32,
+    pub learning_rate_shift: u8,
+}
+
+pub struct GatedMlpWeightUpdateWorkspace<'a> {
+    pub scaled_grad_output: &'a mut [i32],
+    pub grad_gated: &'a mut [i16],
+    pub grad_up: &'a mut [i16],
+    pub grad_gate: &'a mut [i16],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GatedMlpWeightUpdateStats {
+    pub down: LinearWeightUpdateStats,
+    pub up: LinearWeightUpdateStats,
+    pub gate: LinearWeightUpdateStats,
+}
+
+impl GatedMlpWeightUpdateStats {
+    pub fn gradient_saturation_count(self) -> Option<usize> {
+        self.down
+            .gradient_saturation_count
+            .checked_add(self.up.gradient_saturation_count)?
+            .checked_add(self.gate.gradient_saturation_count)
+    }
+
+    pub fn zero_delta_count(self) -> Option<usize> {
+        self.down
+            .zero_delta_count
+            .checked_add(self.up.zero_delta_count)?
+            .checked_add(self.gate.zero_delta_count)
+    }
+
+    pub fn weight_delta_l1(self) -> Option<u64> {
+        self.down
+            .weight_delta_l1
+            .checked_add(self.up.weight_delta_l1)?
+            .checked_add(self.gate.weight_delta_l1)
+    }
+}
+
 impl GatedMlpI16Params<'_> {
     pub fn is_valid(self) -> bool {
         if self.seq_len == 0 || self.d_model == 0 || self.hidden_dim == 0 {
@@ -66,6 +119,29 @@ impl GatedMlpI16Params<'_> {
             && self.up.is_valid()
             && self.gate.is_valid()
             && self.down.is_valid()
+    }
+}
+
+impl GatedMlpWeightUpdateParams<'_> {
+    pub fn is_valid(self) -> bool {
+        self.seq_len != 0
+            && self.d_model != 0
+            && self.hidden_dim != 0
+            && self.learning_rate > 0
+            && self.learning_rate_shift <= crate::numeric::MAX_RIGHT_SHIFT
+            && self.up_scales.len() == self.hidden_dim
+            && self.gate_scales.len() == self.hidden_dim
+            && self.down_scales.len() == self.d_model
+            && self.down_to_hidden_scales.len() == self.hidden_dim
+            && self
+                .up_scales
+                .iter()
+                .chain(self.gate_scales.iter())
+                .chain(self.down_scales.iter())
+                .chain(self.down_to_hidden_scales.iter())
+                .all(|scale| {
+                    scale.multiplier >= 0 && scale.right_shift <= crate::numeric::MAX_RIGHT_SHIFT
+                })
     }
 }
 
@@ -278,6 +354,150 @@ pub fn gated_mlp_backward_input_i16_q15_checked(
     Some(saturation_count)
 }
 
+pub fn gated_mlp_backward_weight_update_i8_checked(
+    input: &[i16],
+    grad_output: &[i16],
+    forward_up: &[i16],
+    forward_gate: &[i16],
+    forward_gated: &[i16],
+    up_weights: &mut [i8],
+    gate_weights: &mut [i8],
+    down_weights: &mut [i8],
+    params: GatedMlpWeightUpdateParams<'_>,
+    workspace: GatedMlpWeightUpdateWorkspace<'_>,
+) -> Option<GatedMlpWeightUpdateStats> {
+    validate_gated_mlp_weight_update_shapes(
+        input,
+        grad_output,
+        forward_up,
+        forward_gate,
+        forward_gated,
+        up_weights,
+        gate_weights,
+        down_weights,
+        params,
+        &workspace,
+    )?;
+
+    let GatedMlpWeightUpdateWorkspace {
+        scaled_grad_output,
+        grad_gated,
+        grad_up,
+        grad_gate,
+    } = workspace;
+
+    let mut total = GatedMlpWeightUpdateStats {
+        down: LinearWeightUpdateStats {
+            gradient_saturation_count: 0,
+            zero_delta_count: 0,
+            weight_delta_l1: 0,
+        },
+        up: LinearWeightUpdateStats {
+            gradient_saturation_count: 0,
+            zero_delta_count: 0,
+            weight_delta_l1: 0,
+        },
+        gate: LinearWeightUpdateStats {
+            gradient_saturation_count: 0,
+            zero_delta_count: 0,
+            weight_delta_l1: 0,
+        },
+    };
+
+    for token in 0..params.seq_len {
+        let input_start = token.checked_mul(params.d_model)?;
+        let input_end = input_start.checked_add(params.d_model)?;
+        let hidden_start = token.checked_mul(params.hidden_dim)?;
+        let hidden_end = hidden_start.checked_add(params.hidden_dim)?;
+
+        let grad_row = &grad_output[input_start..input_end];
+        let input_row = &input[input_start..input_end];
+        let up_row = &forward_up[hidden_start..hidden_end];
+        let gate_row = &forward_gate[hidden_start..hidden_end];
+        let gated_row = &forward_gated[hidden_start..hidden_end];
+        let grad_gated_row = &mut grad_gated[hidden_start..hidden_end];
+        let grad_up_row = &mut grad_up[hidden_start..hidden_end];
+        let grad_gate_row = &mut grad_gate[hidden_start..hidden_end];
+
+        linear_backward_prescale_grad_output_i16_i32_checked(
+            grad_row,
+            params.down_scales,
+            &mut scaled_grad_output[..params.d_model],
+        )?;
+        linear_backward_input_prescaled_i32_i8_i16_per_channel_checked(
+            &scaled_grad_output[..params.d_model],
+            down_weights,
+            params.hidden_dim,
+            params.d_model,
+            params.down_to_hidden_scales,
+            grad_gated_row,
+        )?;
+
+        for hidden_index in 0..params.hidden_dim {
+            let grad = gated_activation_backward_i16_q15(
+                up_row[hidden_index],
+                gate_row[hidden_index],
+                grad_gated_row[hidden_index],
+            );
+            grad_up_row[hidden_index] = grad.up;
+            grad_gate_row[hidden_index] = grad.gate;
+        }
+
+        let down_stats = linear_backward_weight_update_i8_checked(
+            gated_row,
+            grad_row,
+            down_weights,
+            LinearBackwardWeightUpdateI8Params {
+                forward_scales: params.down_scales,
+                input_dim: params.hidden_dim,
+                output_dim: params.d_model,
+                learning_rate: params.learning_rate,
+                learning_rate_shift: params.learning_rate_shift,
+            },
+            LinearBackwardWeightUpdateWorkspace {
+                scaled_grad_output: &mut scaled_grad_output[..params.d_model],
+            },
+        )?;
+        total.down = add_linear_weight_update_stats(total.down, down_stats)?;
+
+        let up_stats = linear_backward_weight_update_i8_checked(
+            input_row,
+            grad_up_row,
+            up_weights,
+            LinearBackwardWeightUpdateI8Params {
+                forward_scales: params.up_scales,
+                input_dim: params.d_model,
+                output_dim: params.hidden_dim,
+                learning_rate: params.learning_rate,
+                learning_rate_shift: params.learning_rate_shift,
+            },
+            LinearBackwardWeightUpdateWorkspace {
+                scaled_grad_output: &mut scaled_grad_output[..params.hidden_dim],
+            },
+        )?;
+        total.up = add_linear_weight_update_stats(total.up, up_stats)?;
+
+        let gate_stats = linear_backward_weight_update_i8_checked(
+            input_row,
+            grad_gate_row,
+            gate_weights,
+            LinearBackwardWeightUpdateI8Params {
+                forward_scales: params.gate_scales,
+                input_dim: params.d_model,
+                output_dim: params.hidden_dim,
+                learning_rate: params.learning_rate,
+                learning_rate_shift: params.learning_rate_shift,
+            },
+            LinearBackwardWeightUpdateWorkspace {
+                scaled_grad_output: &mut scaled_grad_output[..params.hidden_dim],
+            },
+        )?;
+        total.gate = add_linear_weight_update_stats(total.gate, gate_stats)?;
+    }
+
+    Some(total)
+}
+
 pub fn gated_mlp_residual_block_i16_q15_checked(
     input: &[i16],
     params: GatedMlpI16Params<'_>,
@@ -429,6 +649,60 @@ fn validate_gated_mlp_backward_shapes(
     }
 
     Some(())
+}
+
+fn validate_gated_mlp_weight_update_shapes(
+    input: &[i16],
+    grad_output: &[i16],
+    forward_up: &[i16],
+    forward_gate: &[i16],
+    forward_gated: &[i16],
+    up_weights: &[i8],
+    gate_weights: &[i8],
+    down_weights: &[i8],
+    params: GatedMlpWeightUpdateParams<'_>,
+    workspace: &GatedMlpWeightUpdateWorkspace<'_>,
+) -> Option<()> {
+    if !params.is_valid() {
+        return None;
+    }
+
+    let total = params.seq_len.checked_mul(params.d_model)?;
+    let hidden_total = params.seq_len.checked_mul(params.hidden_dim)?;
+    let up_gate_weights = params.d_model.checked_mul(params.hidden_dim)?;
+    let down_weight_count = params.hidden_dim.checked_mul(params.d_model)?;
+    let scaled_len = params.d_model.max(params.hidden_dim);
+
+    if input.len() != total
+        || grad_output.len() != total
+        || forward_up.len() != hidden_total
+        || forward_gate.len() != hidden_total
+        || forward_gated.len() != hidden_total
+        || up_weights.len() != up_gate_weights
+        || gate_weights.len() != up_gate_weights
+        || down_weights.len() != down_weight_count
+        || workspace.scaled_grad_output.len() < scaled_len
+        || workspace.grad_gated.len() != hidden_total
+        || workspace.grad_up.len() != hidden_total
+        || workspace.grad_gate.len() != hidden_total
+    {
+        return None;
+    }
+
+    Some(())
+}
+
+fn add_linear_weight_update_stats(
+    left: LinearWeightUpdateStats,
+    right: LinearWeightUpdateStats,
+) -> Option<LinearWeightUpdateStats> {
+    Some(LinearWeightUpdateStats {
+        gradient_saturation_count: left
+            .gradient_saturation_count
+            .checked_add(right.gradient_saturation_count)?,
+        zero_delta_count: left.zero_delta_count.checked_add(right.zero_delta_count)?,
+        weight_delta_l1: left.weight_delta_l1.checked_add(right.weight_delta_l1)?,
+    })
 }
 
 fn add_grad_rows_i16_checked(left: &[i16], right: &[i16], output: &mut [i16]) -> Option<usize> {
@@ -637,6 +911,141 @@ mod tests {
         assert_ne!(grad_up, [0; 4]);
         assert_ne!(grad_gate, [0; 4]);
         assert_ne!(grad_input, [0; 2]);
+    }
+
+    #[test]
+    fn gated_mlp_weight_update_mutates_all_three_matrices() {
+        let input = [4096_i16, -2048];
+        let mut up_weights = UP_2_TO_4;
+        let mut gate_weights = UP_2_TO_4;
+        let mut down_weights = DOWN_4_TO_2;
+        let mut up = [0_i16; 4];
+        let mut gate = [0_i16; 4];
+        let mut gated = [0_i16; 4];
+        let mut output_before = [0_i16; 2];
+
+        gated_mlp_i16_q15_checked(
+            &input,
+            GatedMlpI16Params {
+                up: LinearI16I8Params {
+                    weights: &up_weights,
+                    bias: None,
+                    scales: &SCALES_4,
+                    input_dim: 2,
+                    output_dim: 4,
+                },
+                gate: LinearI16I8Params {
+                    weights: &gate_weights,
+                    bias: None,
+                    scales: &SCALES_4,
+                    input_dim: 2,
+                    output_dim: 4,
+                },
+                down: LinearI16I8Params {
+                    weights: &down_weights,
+                    bias: None,
+                    scales: &SCALES_2,
+                    input_dim: 4,
+                    output_dim: 2,
+                },
+                seq_len: 1,
+                d_model: 2,
+                hidden_dim: 4,
+            },
+            GatedMlpWorkspace {
+                up: &mut up,
+                gate: &mut gate,
+                gated: &mut gated,
+            },
+            &mut output_before,
+        )
+        .expect("forward before");
+
+        let grad_output = [8192_i16, -4096];
+        let mut scaled_grad_output = [0_i32; 4];
+        let mut grad_gated = [0_i16; 4];
+        let mut grad_up = [0_i16; 4];
+        let mut grad_gate = [0_i16; 4];
+        let stats = gated_mlp_backward_weight_update_i8_checked(
+            &input,
+            &grad_output,
+            &up,
+            &gate,
+            &gated,
+            &mut up_weights,
+            &mut gate_weights,
+            &mut down_weights,
+            GatedMlpWeightUpdateParams {
+                up_scales: &SCALES_4,
+                gate_scales: &SCALES_4,
+                down_scales: &SCALES_2,
+                down_to_hidden_scales: &SCALES_4,
+                seq_len: 1,
+                d_model: 2,
+                hidden_dim: 4,
+                learning_rate: 1,
+                learning_rate_shift: 20,
+            },
+            GatedMlpWeightUpdateWorkspace {
+                scaled_grad_output: &mut scaled_grad_output,
+                grad_gated: &mut grad_gated,
+                grad_up: &mut grad_up,
+                grad_gate: &mut grad_gate,
+            },
+        )
+        .expect("weight update");
+
+        assert_eq!(stats.gradient_saturation_count(), Some(0));
+        assert!(stats.weight_delta_l1().unwrap() > 0);
+        assert!(stats.down.weight_delta_l1 > 0);
+        assert!(stats.up.weight_delta_l1 > 0);
+        assert!(stats.gate.weight_delta_l1 > 0);
+        assert_ne!(up_weights, UP_2_TO_4);
+        assert_ne!(gate_weights, UP_2_TO_4);
+        assert_ne!(down_weights, DOWN_4_TO_2);
+        assert_ne!(grad_gated, [0; 4]);
+        assert_ne!(grad_up, [0; 4]);
+        assert_ne!(grad_gate, [0; 4]);
+
+        let mut output_after = [0_i16; 2];
+        gated_mlp_i16_q15_checked(
+            &input,
+            GatedMlpI16Params {
+                up: LinearI16I8Params {
+                    weights: &up_weights,
+                    bias: None,
+                    scales: &SCALES_4,
+                    input_dim: 2,
+                    output_dim: 4,
+                },
+                gate: LinearI16I8Params {
+                    weights: &gate_weights,
+                    bias: None,
+                    scales: &SCALES_4,
+                    input_dim: 2,
+                    output_dim: 4,
+                },
+                down: LinearI16I8Params {
+                    weights: &down_weights,
+                    bias: None,
+                    scales: &SCALES_2,
+                    input_dim: 4,
+                    output_dim: 2,
+                },
+                seq_len: 1,
+                d_model: 2,
+                hidden_dim: 4,
+            },
+            GatedMlpWorkspace {
+                up: &mut up,
+                gate: &mut gate,
+                gated: &mut gated,
+            },
+            &mut output_after,
+        )
+        .expect("forward after");
+
+        assert_ne!(output_before, output_after);
     }
 
     #[test]

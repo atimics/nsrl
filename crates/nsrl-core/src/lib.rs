@@ -41,9 +41,11 @@ pub use lut::{
 };
 pub use mlp::{
     GatedActivationGradQ15, GatedMlpBackwardScales, GatedMlpBackwardWorkspace, GatedMlpI16Params,
-    GatedMlpResidualWorkspace, GatedMlpWorkspace, HARD_SILU_GATE_BIAS_Q15, HARD_SILU_GATE_SHIFT,
-    PreNormGatedMlpResidualWorkspace, gated_activation_backward_i16_q15, gated_activation_i16_q15,
-    gated_mlp_backward_input_i16_q15_checked, gated_mlp_i16_q15_checked,
+    GatedMlpResidualWorkspace, GatedMlpWeightUpdateParams, GatedMlpWeightUpdateStats,
+    GatedMlpWeightUpdateWorkspace, GatedMlpWorkspace, HARD_SILU_GATE_BIAS_Q15,
+    HARD_SILU_GATE_SHIFT, PreNormGatedMlpResidualWorkspace, gated_activation_backward_i16_q15,
+    gated_activation_i16_q15, gated_mlp_backward_input_i16_q15_checked,
+    gated_mlp_backward_weight_update_i8_checked, gated_mlp_i16_q15_checked,
     gated_mlp_i16_q15_with_linear_kernel_checked, gated_mlp_residual_block_i16_q15_checked,
     gated_mlp_residual_block_i16_q15_with_linear_kernel_checked, hard_silu_derivative_q15,
     hard_silu_gate_q15, hard_silu_q15, prenorm_gated_mlp_residual_block_i16_q15_checked,
