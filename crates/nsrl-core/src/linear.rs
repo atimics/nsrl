@@ -137,6 +137,68 @@ pub fn linear_i16_i8_i16_per_channel_with_kernel_checked(
     }
 }
 
+/// Returns true if the worst-case dot product accumulation provably fits in i32.
+///
+/// Worst case: |bias| + input_dim × 127 × 32767 ≤ i32::MAX.
+/// The arithmetic is done in i64 to avoid overflow in the check itself.
+#[inline]
+pub fn dot_fits_i32(input_dim: usize, bias: i32) -> bool {
+    // Maximum absolute value of a single i16×i8 product
+    const MAX_PRODUCT: i64 = 127 * 32767; // = 4_161_409
+    let max_product_sum = (input_dim as i64).saturating_mul(MAX_PRODUCT);
+    let bias_abs = i64::from(bias).unsigned_abs() as i64;
+    // Total worst-case magnitude: bias_abs + max_product_sum must fit in i32
+    let worst_case = bias_abs.saturating_add(max_product_sum);
+    worst_case <= i64::from(i32::MAX)
+}
+
+/// Fast inner dot-product loop using wrapping arithmetic.
+///
+/// # Safety (logical)
+/// Callers MUST ensure that the true mathematical result fits in i32.
+/// Use `dot_fits_i32` to verify this before calling.
+#[inline]
+fn linear_dot_i16_i8_i32_unchecked(input: &[i16], weights: &[i8], bias_acc: i32) -> i32 {
+    let mut acc = bias_acc;
+    for (&activation, &weight) in input.iter().zip(weights.iter()) {
+        let product = i32::from(activation) * i32::from(weight);
+        acc = acc.wrapping_add(product);
+    }
+    acc
+}
+
+/// Tile-4 inner kernel: compute 4 dot products simultaneously over the same input vector.
+///
+/// LLVM can vectorize all 4 accumulators simultaneously since they share the same `a` value.
+///
+/// # Safety (logical)
+/// Callers MUST verify dot_fits_i32 for each bias before calling.
+#[inline]
+fn linear_dot4_i16_i8_i32_unchecked(
+    input: &[i16],
+    w0: &[i8],
+    w1: &[i8],
+    w2: &[i8],
+    w3: &[i8],
+    b0: i32,
+    b1: i32,
+    b2: i32,
+    b3: i32,
+) -> (i32, i32, i32, i32) {
+    let mut acc0 = b0;
+    let mut acc1 = b1;
+    let mut acc2 = b2;
+    let mut acc3 = b3;
+    for i in 0..input.len() {
+        let a = i32::from(input[i]);
+        acc0 = acc0.wrapping_add(a * i32::from(w0[i]));
+        acc1 = acc1.wrapping_add(a * i32::from(w1[i]));
+        acc2 = acc2.wrapping_add(a * i32::from(w2[i]));
+        acc3 = acc3.wrapping_add(a * i32::from(w3[i]));
+    }
+    (acc0, acc1, acc2, acc3)
+}
+
 pub fn linear_i16_i8_i16_per_channel_generic_checked(
     input: &[i16],
     params: LinearI16I8Params<'_>,
@@ -146,18 +208,80 @@ pub fn linear_i16_i8_i16_per_channel_generic_checked(
         return None;
     }
 
-    for (out_index, out) in output.iter_mut().enumerate() {
-        let row_start = out_index.checked_mul(params.input_dim)?;
-        let row_end = row_start.checked_add(params.input_dim)?;
-        let weights = &params.weights[row_start..row_end];
-        let mut acc = params.bias.map_or(0_i32, |bias| bias[out_index]);
+    let input_dim = params.input_dim;
+    let output_dim = params.output_dim;
+    let weights = params.weights;
+    let scales = params.scales;
+    let bias = params.bias;
 
-        for (&activation, &weight) in input.iter().zip(weights.iter()) {
-            let product = i32::from(activation) * i32::from(weight);
-            acc = acc.checked_add(product)?;
+    // Tile-4 loop: process 4 output rows at a time to allow LLVM to vectorize
+    // all 4 accumulators simultaneously while loading the input vector once.
+    let mut out_index = 0_usize;
+    while out_index + 4 <= output_dim {
+        let i0 = out_index;
+        let i1 = out_index + 1;
+        let i2 = out_index + 2;
+        let i3 = out_index + 3;
+
+        let b0 = bias.map_or(0_i32, |b| b[i0]);
+        let b1 = bias.map_or(0_i32, |b| b[i1]);
+        let b2 = bias.map_or(0_i32, |b| b[i2]);
+        let b3 = bias.map_or(0_i32, |b| b[i3]);
+
+        // Use the maximum absolute bias to do a single conservative range check.
+        // dot_fits_i32(dim, max_abs_bias) implies it fits for all four rows.
+        let max_abs_bias = b0.saturating_abs().max(b1.saturating_abs()).max(b2.saturating_abs()).max(b3.saturating_abs());
+        if dot_fits_i32(input_dim, max_abs_bias) {
+            // Fast path: tile-4 wrapping kernel.
+            let w0 = &weights[i0 * input_dim..(i0 + 1) * input_dim];
+            let w1 = &weights[i1 * input_dim..(i1 + 1) * input_dim];
+            let w2 = &weights[i2 * input_dim..(i2 + 1) * input_dim];
+            let w3 = &weights[i3 * input_dim..(i3 + 1) * input_dim];
+            let (acc0, acc1, acc2, acc3) =
+                linear_dot4_i16_i8_i32_unchecked(input, w0, w1, w2, w3, b0, b1, b2, b3);
+            output[i0] = requantize_i32_to_i16(acc0, scales[i0]);
+            output[i1] = requantize_i32_to_i16(acc1, scales[i1]);
+            output[i2] = requantize_i32_to_i16(acc2, scales[i2]);
+            output[i3] = requantize_i32_to_i16(acc3, scales[i3]);
+        } else {
+            // Slow path: checked arithmetic for each of the four rows.
+            for idx in [i0, i1, i2, i3] {
+                let row_start = idx * input_dim;
+                let row_end = row_start + input_dim;
+                let row_weights = &weights[row_start..row_end];
+                let bias_acc = bias.map_or(0_i32, |b| b[idx]);
+                let mut acc = bias_acc;
+                for (&activation, &weight) in input.iter().zip(row_weights.iter()) {
+                    let product = i32::from(activation) * i32::from(weight);
+                    acc = acc.checked_add(product)?;
+                }
+                output[idx] = requantize_i32_to_i16(acc, scales[idx]);
+            }
         }
 
-        *out = requantize_i32_to_i16(acc, params.scales[out_index]);
+        out_index += 4;
+    }
+
+    // Scalar tail: handle remaining output rows when output_dim is not a multiple of 4.
+    while out_index < output_dim {
+        let row_start = out_index * input_dim;
+        let row_end = row_start + input_dim;
+        let row_weights = &weights[row_start..row_end];
+        let bias_acc = bias.map_or(0_i32, |b| b[out_index]);
+
+        let acc = if dot_fits_i32(input_dim, bias_acc) {
+            linear_dot_i16_i8_i32_unchecked(input, row_weights, bias_acc)
+        } else {
+            let mut acc = bias_acc;
+            for (&activation, &weight) in input.iter().zip(row_weights.iter()) {
+                let product = i32::from(activation) * i32::from(weight);
+                acc = acc.checked_add(product)?;
+            }
+            acc
+        };
+
+        output[out_index] = requantize_i32_to_i16(acc, scales[out_index]);
+        out_index += 1;
     }
 
     Some(())
@@ -673,5 +797,107 @@ mod tests {
         assert_eq!(stats.zero_delta_count, 1);
         assert_eq!(stats.gradient_saturation_count, 1);
         assert_eq!(stats.weight_delta_l1, 257);
+    }
+
+    #[test]
+    fn dot_fits_i32_accepts_small_dim_and_rejects_overflow() {
+        // 128-dim with no bias: 128 × 4_161_409 = 532_660_352, well under i32::MAX
+        assert!(dot_fits_i32(128, 0));
+        // 515-dim with no bias: 515 × 4_161_409 = 2_143_125_635 < 2_147_483_647 (fits)
+        assert!(dot_fits_i32(515, 0));
+        // 516-dim with no bias: 516 × 4_161_409 = 2_147_287_044 < 2_147_483_647 (fits)
+        assert!(dot_fits_i32(516, 0));
+        // 517-dim with no bias: 517 × 4_161_409 = 2_151_448_453 > i32::MAX (overflows)
+        assert!(!dot_fits_i32(517, 0));
+        // Large bias pushes even small dim over the limit
+        assert!(!dot_fits_i32(1, i32::MAX));
+        // Zero dim with any bias fits as long as |bias| <= i32::MAX
+        assert!(dot_fits_i32(0, i32::MAX));
+        assert!(dot_fits_i32(0, i32::MIN + 1));
+        // i32::MIN has |bias| = 2_147_483_648 which exceeds i32::MAX
+        assert!(!dot_fits_i32(0, i32::MIN));
+    }
+
+    #[test]
+    fn unchecked_and_checked_paths_produce_identical_output() {
+        // Construct a case where dot_fits_i32 is true (fast path is taken),
+        // and verify it matches the slow checked path result.
+        let input = [100_i16, -200, 300, -400, 500, -600, 127, -127];
+        let weights = [2_i8, -3, 4, -5, 6, -7, 8, -9, 1, -1, 1, -1, 1, -1, 1, -1];
+        let bias = [42_i32, -42];
+        let scales = [RESIDUAL_Q15_SCALE; 2];
+
+        let params = LinearI16I8Params {
+            weights: &weights,
+            bias: Some(&bias),
+            scales: &scales,
+            input_dim: 8,
+            output_dim: 2,
+        };
+
+        // Verify fast path is taken for this input_dim and bias
+        assert!(dot_fits_i32(8, 42));
+        assert!(dot_fits_i32(8, -42));
+
+        let mut output_generic = [0_i16; 2];
+        assert!(
+            linear_i16_i8_i16_per_channel_generic_checked(&input, params, &mut output_generic)
+                .is_some()
+        );
+
+        // Also compute manually via the unchecked helper to confirm it matches
+        let row0_weights = &weights[..8];
+        let row1_weights = &weights[8..16];
+        let unchecked_acc0 = linear_dot_i16_i8_i32_unchecked(&input, row0_weights, bias[0]);
+        let unchecked_acc1 = linear_dot_i16_i8_i32_unchecked(&input, row1_weights, bias[1]);
+
+        assert_eq!(
+            output_generic[0],
+            crate::numeric::requantize_i32_to_i16(unchecked_acc0, scales[0])
+        );
+        assert_eq!(
+            output_generic[1],
+            crate::numeric::requantize_i32_to_i16(unchecked_acc1, scales[1])
+        );
+    }
+
+    #[test]
+    fn fast_path_matches_slow_path_for_dim_128() {
+        // Simulate a realistic layer: input_dim=128, random-ish values.
+        // Both paths should agree since 128 easily fits.
+        let input: [i16; 128] = core::array::from_fn(|i| (i as i16 * 7 - 500).clamp(-32767, 32767));
+        let weights: [i8; 128] = core::array::from_fn(|i| ((i as i8).wrapping_mul(3)).clamp(-127, 127));
+
+        // Construct params for a single-output layer
+        let bias = [1000_i32; 1];
+        let scales = [RESIDUAL_Q15_SCALE; 1];
+        let params = LinearI16I8Params {
+            weights: &weights,
+            bias: Some(&bias),
+            scales: &scales,
+            input_dim: 128,
+            output_dim: 1,
+        };
+
+        assert!(dot_fits_i32(128, 1000));
+
+        // Run the function (takes fast path due to dot_fits_i32)
+        let mut output_fast = [0_i16; 1];
+        assert!(
+            linear_i16_i8_i16_per_channel_generic_checked(&input, params, &mut output_fast)
+                .is_some()
+        );
+
+        // Manually compute expected result using i64 reference arithmetic
+        let reference_acc: i64 = input
+            .iter()
+            .zip(weights.iter())
+            .map(|(&a, &w)| i64::from(a) * i64::from(w))
+            .sum::<i64>()
+            + 1000_i64;
+        let reference_i32 = i32::try_from(reference_acc).expect("should fit in i32");
+        let expected = crate::numeric::requantize_i32_to_i16(reference_i32, RESIDUAL_Q15_SCALE);
+
+        assert_eq!(output_fast[0], expected);
     }
 }

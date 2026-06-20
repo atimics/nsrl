@@ -27,7 +27,8 @@ pub use attention::{
 pub use linear::{
     LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
     LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
-    LinearKernel, LinearWeightUpdateStats, linear_backward_input_i16_i8_i16_per_channel_checked,
+    LinearKernel, LinearWeightUpdateStats, dot_fits_i32,
+    linear_backward_input_i16_i8_i16_per_channel_checked,
     linear_backward_input_prescaled_i32_i8_i16_per_channel_checked,
     linear_backward_prescale_grad_output_i16_i32_checked, linear_backward_weight_update_i8_checked,
     linear_backward_weight_update_prescaled_i32_i8_checked, linear_i16_i8_i16_per_channel_checked,
