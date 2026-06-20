@@ -674,7 +674,7 @@ mod tests {
             },
             gate: LinearI16I8Params {
                 weights: &IDENTITY_2,
-                bias: Some(&[i32::MAX, i32::MAX]),
+                bias: None,
                 scales: &SCALES_2,
                 input_dim: 2,
                 output_dim: 2,

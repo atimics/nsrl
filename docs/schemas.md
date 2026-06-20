@@ -4,6 +4,41 @@ This file defines the machine-readable trace contracts used by NSRL demos and
 future training runs. Schema rows are JSON Lines: one complete JSON object per
 line, with deterministic field order for byte-for-byte replay checks.
 
+## `nsrl.corpus_trace.v1`
+
+Authority: `deterministic_corpus_preparation`
+
+Purpose: prove that a fixed Shakespeare text file and fixed decompressed
+Simple English Wikipedia XML stream produce the same training corpus bytes,
+source counts, and output hash.
+
+Non-purpose: this schema does not claim tokenization, training, language-model
+quality, semantic deduplication, or exhaustive wiki markup extraction.
+
+Required top-level fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema` | string | Literal `nsrl.corpus_trace.v1`. |
+| `authority` | string | Literal `deterministic_corpus_preparation`. |
+| `sources` | array | Source IDs, URLs, and expected input formats. |
+| `config` | object | Corpus preparation options, including page limits. |
+| `shakespeare` | object | Input and output byte counts for Project Gutenberg text. |
+| `simplewiki` | object | Input bytes and wiki page acceptance/skipping counts. |
+| `output` | object | Final corpus bytes, line count, and stable hash. |
+| `known_non_claims` | array | Claims explicitly outside this row's authority. |
+
+Corpus command:
+
+```sh
+bzip2 -dc data/raw/simplewiki-latest-pages-articles.xml.bz2 | \
+  cargo run -p nsrl-corpus -- prepare \
+    --shakespeare data/raw/shakespeare-gutenberg-100.txt \
+    --simplewiki-xml - \
+    --out data/processed/wiki-bard-corpus.txt \
+    --trace data/processed/wiki-bard-corpus.trace.jsonl
+```
+
 ## `nsrl.forward_trace.v1`
 
 Authority: `integer_runtime_determinism`
@@ -168,6 +203,47 @@ Softmax command:
 
 ```sh
 cargo run -p nsrl-train -- --mode softmax --trace /tmp/nsrl-train-softmax.jsonl
+```
+
+## `nsrl.training_linear_backward_trace.v1`
+
+Authority: `deterministic_training_replay`
+
+Purpose: prove the checked Linear backward infrastructure: per-channel
+pre-scaling of `dY`, transposed `dX = W^T dY`, and an i64 outer-product weight
+update for the i8 matrix.
+
+Current task: `tiny_linear_layer_backward`
+
+This trace is deliberately one layer wide. It does not claim full Transformer
+backpropagation. Its job is to prove the numerically dangerous primitive that
+all deeper backprop will reuse.
+
+Required top-level fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema` | string | Literal `nsrl.training_linear_backward_trace.v1`. |
+| `authority` | string | Literal `deterministic_training_replay`. |
+| `task` | string | Current linear backward smoke task name. |
+| `model` | object | Input/output dimensions and trained component. |
+| `optimizer` | object | Outer-product SGD contract, Q formats, weight dtype, LR, and LR shift. |
+| `forward` | object | Input features, forward scales, and pre/post update outputs. |
+| `backward` | object | Raw Q15 `dY`, pre-scaled i32 `dY`, input-gradient scales, and Q15 `dX`. |
+| `weights` | object | Tiny before/after i8 matrix for inspection. |
+| `metrics` | object | Saturation count, zero-delta count, and L1 weight movement. |
+| `initial_weight_hash` | string | Stable hash before the update. |
+| `final_weight_hash` | string | Stable hash after the update. |
+| `output_hash_before` | string | Stable hash of the pre-update forward output. |
+| `output_hash_after` | string | Stable hash of the post-update forward output. |
+| `known_non_claims` | array | Claims explicitly outside this row's authority. |
+
+Linear backward command:
+
+```sh
+cargo run -p nsrl-train -- \
+  --mode linear-backward \
+  --trace /tmp/nsrl-train-linear-backward.jsonl
 ```
 
 ## `nsrl.benchmark_trace.v1`

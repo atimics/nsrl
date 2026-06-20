@@ -3,7 +3,10 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use nsrl_train::{SoftmaxTrainConfig, TrainConfig, run_softmax_training, run_training_smoke};
+use nsrl_train::{
+    LinearBackwardConfig, SoftmaxTrainConfig, TrainConfig, run_linear_backward_smoke,
+    run_softmax_training, run_training_smoke,
+};
 
 fn main() {
     if let Err(error) = run() {
@@ -15,6 +18,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = TrainConfig::default();
     let mut softmax_config = SoftmaxTrainConfig::default();
+    let mut linear_backward_config = LinearBackwardConfig::default();
     let mut mode = String::from("softmax");
     let mut trace_path = None;
 
@@ -22,7 +26,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--mode" => {
-                mode = args.next().ok_or("--mode requires perceptron or softmax")?;
+                mode = args
+                    .next()
+                    .ok_or("--mode requires softmax, perceptron, or linear-backward")?;
             }
             "--epochs" => {
                 let epochs = args
@@ -39,12 +45,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .parse()?;
                 config.learning_rate = value;
                 softmax_config.learning_rate = i32::from(value);
+                linear_backward_config.learning_rate = i32::from(value);
             }
             "--lr-shift" => {
-                softmax_config.learning_rate_shift = args
+                let value = args
                     .next()
                     .ok_or("--lr-shift requires a following integer")?
                     .parse()?;
+                softmax_config.learning_rate_shift = value;
+                linear_backward_config.learning_rate_shift = value;
             }
             "--trace" => {
                 trace_path = Some(PathBuf::from(
@@ -62,6 +71,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let line = match mode.as_str() {
         "perceptron" | "smoke" => run_training_smoke(config)?.to_json_line(),
         "softmax" => run_softmax_training(softmax_config)?.to_json_line(),
+        "linear-backward" | "linear_backward" => {
+            run_linear_backward_smoke(linear_backward_config)?.to_json_line()
+        }
         other => return Err(format!("unknown mode: {other}").into()),
     };
     if let Some(path) = trace_path {
@@ -75,8 +87,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron] [--epochs N] [--learning-rate N] [--lr-shift N] [--trace PATH]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward] [--epochs N] [--learning-rate N] [--lr-shift N] [--trace PATH]"
     );
     println!();
-    println!("Runs a deterministic integer output-head training trace.");
+    println!("Runs a deterministic integer training trace.");
 }

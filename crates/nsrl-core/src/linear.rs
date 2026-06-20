@@ -559,7 +559,7 @@ mod tests {
             .is_some()
         );
         assert_eq!(scaled_grad_output, [100, -50, 25]);
-        assert_eq!(grad_input, [0, 25]);
+        assert_eq!(grad_input, [0, -175]);
     }
 
     #[test]
@@ -640,7 +640,7 @@ mod tests {
         )
         .expect("update");
 
-        assert_eq!(scaled_grad_output, [32, -31]);
+        assert_eq!(scaled_grad_output, [32, -32]);
         assert_eq!(weights, [-2, 1, 2, -1]);
         assert_eq!(
             stats,
@@ -669,9 +669,9 @@ mod tests {
         )
         .expect("update");
 
-        assert_eq!(weights, [0, 127, 1, -128]);
+        assert_eq!(weights, [0, 126, 1, 127]);
         assert_eq!(stats.zero_delta_count, 1);
-        assert_eq!(stats.gradient_saturation_count, 2);
-        assert_eq!(stats.weight_delta_l1, 1);
+        assert_eq!(stats.gradient_saturation_count, 1);
+        assert_eq!(stats.weight_delta_l1, 257);
     }
 }

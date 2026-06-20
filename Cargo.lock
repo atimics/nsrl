@@ -100,6 +100,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nsrl-corpus"
+version = "0.1.0"
+
+[[package]]
 name = "nsrl-demo"
 version = "0.1.0"
 dependencies = [

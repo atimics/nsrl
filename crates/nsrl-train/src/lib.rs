@@ -1,15 +1,22 @@
 use nsrl_core::{
-    FixedScale, LinearI16I8Params, MAX_RIGHT_SHIFT, base2_softmax_i32_q15,
+    FixedScale, LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
+    LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
+    LinearWeightUpdateStats, MAX_RIGHT_SHIFT, base2_softmax_i32_q15,
+    linear_backward_input_i16_i8_i16_per_channel_checked, linear_backward_weight_update_i8_checked,
     linear_i16_i8_i16_per_channel_checked, round_shift_rhu_i64, saturate_i8,
 };
 
 pub const SCHEMA: &str = "nsrl.training_smoke_trace.v1";
 pub const SOFTMAX_SCHEMA: &str = "nsrl.training_softmax_trace.v1";
+pub const LINEAR_BACKWARD_SCHEMA: &str = "nsrl.training_linear_backward_trace.v1";
 pub const AUTHORITY: &str = "deterministic_training_replay";
 pub const TASK: &str = "tiny_next_char_output_head";
 pub const SOFTMAX_TASK: &str = "tiny_next_char_output_head_base2_softmax";
+pub const LINEAR_BACKWARD_TASK: &str = "tiny_linear_layer_backward";
 pub const VOCAB: usize = 4;
 pub const D_MODEL: usize = 8;
+pub const LINEAR_BACKWARD_INPUT_DIM: usize = 4;
+pub const LINEAR_BACKWARD_OUTPUT_DIM: usize = 3;
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -17,10 +24,39 @@ const DEFAULT_EPOCHS: usize = 8;
 const DEFAULT_LEARNING_RATE: i8 = 4;
 const DEFAULT_SOFTMAX_LEARNING_RATE: i32 = 1;
 const DEFAULT_SOFTMAX_LEARNING_RATE_SHIFT: u8 = 22;
+const DEFAULT_LINEAR_BACKWARD_LEARNING_RATE: i32 = 1;
+const DEFAULT_LINEAR_BACKWARD_LEARNING_RATE_SHIFT: u8 = 22;
 const LOGIT_SCALES: [FixedScale; VOCAB] = [FixedScale {
     multiplier: 1,
     right_shift: 8,
 }; VOCAB];
+const LINEAR_BACKWARD_INPUT_Q15: [i16; LINEAR_BACKWARD_INPUT_DIM] = [4096, -2048, 1024, -512];
+const LINEAR_BACKWARD_GRAD_OUTPUT_Q15: [i16; LINEAR_BACKWARD_OUTPUT_DIM] = [8192, -4096, 2048];
+const LINEAR_BACKWARD_INITIAL_WEIGHTS: [i8; LINEAR_BACKWARD_INPUT_DIM
+    * LINEAR_BACKWARD_OUTPUT_DIM] = [
+    3, -2, 1, 0, //
+    -1, 4, 0, 2, //
+    2, 1, -3, 1,
+];
+const LINEAR_BACKWARD_FORWARD_SCALES: [FixedScale; LINEAR_BACKWARD_OUTPUT_DIM] = [
+    FixedScale {
+        multiplier: 1,
+        right_shift: 0,
+    },
+    FixedScale {
+        multiplier: 3,
+        right_shift: 1,
+    },
+    FixedScale {
+        multiplier: 1,
+        right_shift: 2,
+    },
+];
+const LINEAR_BACKWARD_GRAD_INPUT_SCALES: [FixedScale; LINEAR_BACKWARD_INPUT_DIM] = [FixedScale {
+    multiplier: 1,
+    right_shift: 3,
+};
+    LINEAR_BACKWARD_INPUT_DIM];
 const FEATURES_Q15: [[i16; D_MODEL]; VOCAB] = [
     [4096, 0, 0, 0, 2048, -1024, 512, 256],
     [0, 4096, 0, 0, -1024, 2048, -512, 256],
@@ -47,6 +83,12 @@ const SOFTMAX_KNOWN_NON_CLAIMS: [&str; 4] = [
     "not_full_transformer_backprop_yet",
     "does_not_update_attention_or_mlp_weights_yet",
     "does_not_update_gated_mlp_weights_yet",
+    "does_not_claim_language_model_quality",
+];
+const LINEAR_BACKWARD_KNOWN_NON_CLAIMS: [&str; 4] = [
+    "single_linear_layer_only",
+    "does_not_backpropagate_through_attention_yet",
+    "does_not_backpropagate_through_rmsnorm_yet",
     "does_not_claim_language_model_quality",
 ];
 
@@ -78,6 +120,21 @@ impl Default for SoftmaxTrainConfig {
             epochs: DEFAULT_EPOCHS,
             learning_rate: DEFAULT_SOFTMAX_LEARNING_RATE,
             learning_rate_shift: DEFAULT_SOFTMAX_LEARNING_RATE_SHIFT,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinearBackwardConfig {
+    pub learning_rate: i32,
+    pub learning_rate_shift: u8,
+}
+
+impl Default for LinearBackwardConfig {
+    fn default() -> Self {
+        Self {
+            learning_rate: DEFAULT_LINEAR_BACKWARD_LEARNING_RATE,
+            learning_rate_shift: DEFAULT_LINEAR_BACKWARD_LEARNING_RATE_SHIFT,
         }
     }
 }
@@ -119,6 +176,24 @@ pub struct SoftmaxTrainingTrace {
     pub final_accuracy_per_mille: usize,
     pub final_logits_hash: u64,
     pub steps: Vec<SoftmaxTrainingStepTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinearBackwardTrace {
+    pub config: LinearBackwardConfig,
+    pub input_q15: [i16; LINEAR_BACKWARD_INPUT_DIM],
+    pub grad_output_q15: [i16; LINEAR_BACKWARD_OUTPUT_DIM],
+    pub scaled_grad_output_i32: [i32; LINEAR_BACKWARD_OUTPUT_DIM],
+    pub grad_input_q15: [i16; LINEAR_BACKWARD_INPUT_DIM],
+    pub output_before_q15: [i16; LINEAR_BACKWARD_OUTPUT_DIM],
+    pub output_after_q15: [i16; LINEAR_BACKWARD_OUTPUT_DIM],
+    pub weights_before_i8: [i8; LINEAR_BACKWARD_INPUT_DIM * LINEAR_BACKWARD_OUTPUT_DIM],
+    pub weights_after_i8: [i8; LINEAR_BACKWARD_INPUT_DIM * LINEAR_BACKWARD_OUTPUT_DIM],
+    pub update_stats: LinearWeightUpdateStats,
+    pub initial_weight_hash: u64,
+    pub final_weight_hash: u64,
+    pub output_hash_before: u64,
+    pub output_hash_after: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,6 +441,82 @@ pub fn run_softmax_training(
     })
 }
 
+pub fn run_linear_backward_smoke(
+    config: LinearBackwardConfig,
+) -> Result<LinearBackwardTrace, TrainError> {
+    if config.learning_rate <= 0 || config.learning_rate_shift > MAX_RIGHT_SHIFT {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut weights = LINEAR_BACKWARD_INITIAL_WEIGHTS;
+    let weights_before_i8 = weights;
+    let initial_weight_hash = hash_i8_slice(&weights);
+    let output_before_q15 = linear_backward_output_for(&weights)?;
+    let output_hash_before = hash_i16_slice(&output_before_q15);
+
+    let mut scaled_grad_output_i32 = [0_i32; LINEAR_BACKWARD_OUTPUT_DIM];
+    let mut grad_input_q15 = [0_i16; LINEAR_BACKWARD_INPUT_DIM];
+    linear_backward_input_i16_i8_i16_per_channel_checked(
+        &LINEAR_BACKWARD_GRAD_OUTPUT_Q15,
+        LinearBackwardInputI16I8Params {
+            weights: &weights,
+            forward_scales: &LINEAR_BACKWARD_FORWARD_SCALES,
+            grad_input_scales: &LINEAR_BACKWARD_GRAD_INPUT_SCALES,
+            input_dim: LINEAR_BACKWARD_INPUT_DIM,
+            output_dim: LINEAR_BACKWARD_OUTPUT_DIM,
+        },
+        LinearBackwardInputWorkspace {
+            scaled_grad_output: &mut scaled_grad_output_i32,
+        },
+        &mut grad_input_q15,
+    )
+    .ok_or(TrainError::CoreRejected("linear_backward_input"))?;
+
+    let mut update_scaled_grad_output = [0_i32; LINEAR_BACKWARD_OUTPUT_DIM];
+    let update_stats = linear_backward_weight_update_i8_checked(
+        &LINEAR_BACKWARD_INPUT_Q15,
+        &LINEAR_BACKWARD_GRAD_OUTPUT_Q15,
+        &mut weights,
+        LinearBackwardWeightUpdateI8Params {
+            forward_scales: &LINEAR_BACKWARD_FORWARD_SCALES,
+            input_dim: LINEAR_BACKWARD_INPUT_DIM,
+            output_dim: LINEAR_BACKWARD_OUTPUT_DIM,
+            learning_rate: config.learning_rate,
+            learning_rate_shift: config.learning_rate_shift,
+        },
+        LinearBackwardWeightUpdateWorkspace {
+            scaled_grad_output: &mut update_scaled_grad_output,
+        },
+    )
+    .ok_or(TrainError::CoreRejected("linear_backward_weight_update"))?;
+
+    if update_scaled_grad_output != scaled_grad_output_i32 {
+        return Err(TrainError::CoreRejected(
+            "linear_backward_prescale_replay_mismatch",
+        ));
+    }
+
+    let output_after_q15 = linear_backward_output_for(&weights)?;
+    let output_hash_after = hash_i16_slice(&output_after_q15);
+
+    Ok(LinearBackwardTrace {
+        config,
+        input_q15: LINEAR_BACKWARD_INPUT_Q15,
+        grad_output_q15: LINEAR_BACKWARD_GRAD_OUTPUT_Q15,
+        scaled_grad_output_i32,
+        grad_input_q15,
+        output_before_q15,
+        output_after_q15,
+        weights_before_i8,
+        weights_after_i8: weights,
+        update_stats,
+        initial_weight_hash,
+        final_weight_hash: hash_i8_slice(&weights),
+        output_hash_before,
+        output_hash_after,
+    })
+}
+
 impl TrainingTrace {
     pub fn to_json_line(&self) -> String {
         let mut out = String::new();
@@ -566,6 +717,117 @@ impl SoftmaxTrainingTrace {
     }
 }
 
+impl LinearBackwardTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", LINEAR_BACKWARD_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "task", LINEAR_BACKWARD_TASK);
+        comma(&mut out);
+        out.push_str("\"model\":{");
+        push_usize_field(&mut out, "input_dim", LINEAR_BACKWARD_INPUT_DIM);
+        comma(&mut out);
+        push_usize_field(&mut out, "output_dim", LINEAR_BACKWARD_OUTPUT_DIM);
+        comma(&mut out);
+        push_string_field(&mut out, "trained_component", "linear_i16_i8_i16");
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"optimizer\":{");
+        push_string_field(&mut out, "kind", "outer_product_sgd_checked");
+        comma(&mut out);
+        push_string_field(&mut out, "feature_scale", "q15");
+        comma(&mut out);
+        push_string_field(&mut out, "grad_output_scale", "q15_prescaled_per_channel");
+        comma(&mut out);
+        push_string_field(&mut out, "weight_dtype", "i8");
+        comma(&mut out);
+        push_string_field(&mut out, "intermediate", "i64_outer_product");
+        comma(&mut out);
+        push_i32_field(&mut out, "learning_rate", self.config.learning_rate);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "learning_rate_shift",
+            usize::from(self.config.learning_rate_shift),
+        );
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"forward\":{");
+        push_i16_array_field(&mut out, "input_q15", &self.input_q15);
+        comma(&mut out);
+        push_fixed_scales_field(&mut out, "forward_scales", &LINEAR_BACKWARD_FORWARD_SCALES);
+        comma(&mut out);
+        push_i16_array_field(&mut out, "output_before_q15", &self.output_before_q15);
+        comma(&mut out);
+        push_i16_array_field(&mut out, "output_after_q15", &self.output_after_q15);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"backward\":{");
+        push_i16_array_field(&mut out, "grad_output_q15", &self.grad_output_q15);
+        comma(&mut out);
+        push_i32_array_field(
+            &mut out,
+            "scaled_grad_output_i32",
+            &self.scaled_grad_output_i32,
+        );
+        comma(&mut out);
+        push_fixed_scales_field(
+            &mut out,
+            "grad_input_scales",
+            &LINEAR_BACKWARD_GRAD_INPUT_SCALES,
+        );
+        comma(&mut out);
+        push_i16_array_field(&mut out, "grad_input_q15", &self.grad_input_q15);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"weights\":{");
+        push_i8_array_field(&mut out, "before_i8", &self.weights_before_i8);
+        comma(&mut out);
+        push_i8_array_field(&mut out, "after_i8", &self.weights_after_i8);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"metrics\":{");
+        push_usize_field(
+            &mut out,
+            "gradient_saturation_count",
+            self.update_stats.gradient_saturation_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "zero_delta_count",
+            self.update_stats.zero_delta_count,
+        );
+        comma(&mut out);
+        push_u64_field(
+            &mut out,
+            "weight_delta_l1",
+            self.update_stats.weight_delta_l1,
+        );
+        out.push('}');
+        comma(&mut out);
+        push_hash_field(&mut out, "initial_weight_hash", self.initial_weight_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "final_weight_hash", self.final_weight_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "output_hash_before", self.output_hash_before);
+        comma(&mut out);
+        push_hash_field(&mut out, "output_hash_after", self.output_hash_after);
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "known_non_claims",
+            &LINEAR_BACKWARD_KNOWN_NON_CLAIMS,
+        );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
 fn total_error(weights: &[i8]) -> Result<usize, TrainError> {
     count_mistakes(weights)
 }
@@ -615,6 +877,22 @@ fn logits_for(weights: &[i8], input_id: usize) -> Result<[i16; VOCAB], TrainErro
     linear_i16_i8_i16_per_channel_checked(&FEATURES_Q15[input_id], params, &mut logits)
         .ok_or(TrainError::CoreRejected("linear_output_head"))?;
     Ok(logits)
+}
+
+fn linear_backward_output_for(
+    weights: &[i8],
+) -> Result<[i16; LINEAR_BACKWARD_OUTPUT_DIM], TrainError> {
+    let params = LinearI16I8Params {
+        weights,
+        bias: None,
+        scales: &LINEAR_BACKWARD_FORWARD_SCALES,
+        input_dim: LINEAR_BACKWARD_INPUT_DIM,
+        output_dim: LINEAR_BACKWARD_OUTPUT_DIM,
+    };
+    let mut output = [0_i16; LINEAR_BACKWARD_OUTPUT_DIM];
+    linear_i16_i8_i16_per_channel_checked(&LINEAR_BACKWARD_INPUT_Q15, params, &mut output)
+        .ok_or(TrainError::CoreRejected("linear_backward_forward_replay"))?;
+    Ok(output)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -763,6 +1041,12 @@ fn hash_logits(weights: &[i8]) -> Result<u64, TrainError> {
 fn hash_i8_slice(values: &[i8]) -> u64 {
     let mut hasher = StableHasher::new();
     hasher.update_i8_slice(values);
+    hasher.finish()
+}
+
+fn hash_i16_slice(values: &[i16]) -> u64 {
+    let mut hasher = StableHasher::new();
+    hasher.update_i16_slice(values);
     hasher.finish()
 }
 
@@ -987,6 +1271,18 @@ fn push_i16_array_field(out: &mut String, name: &str, values: &[i16]) {
     out.push(']');
 }
 
+fn push_i8_array_field(out: &mut String, name: &str, values: &[i8]) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, value) in values.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        out.push_str(&value.to_string());
+    }
+    out.push(']');
+}
+
 fn push_i32_array_field(out: &mut String, name: &str, values: &[i32]) {
     push_quoted(out, name);
     out.push_str(":[");
@@ -995,6 +1291,22 @@ fn push_i32_array_field(out: &mut String, name: &str, values: &[i32]) {
             comma(out);
         }
         out.push_str(&value.to_string());
+    }
+    out.push(']');
+}
+
+fn push_fixed_scales_field(out: &mut String, name: &str, scales: &[FixedScale]) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, scale) in scales.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        out.push('{');
+        push_i32_field(out, "multiplier", scale.multiplier);
+        comma(out);
+        push_usize_field(out, "right_shift", usize::from(scale.right_shift));
+        out.push('}');
     }
     out.push(']');
 }
@@ -1081,5 +1393,42 @@ mod tests {
         assert!(left.contains("\"schema\":\"nsrl.training_softmax_trace.v1\""));
         assert!(left.contains("\"gradient\":\"prob_q15_minus_target_q15\""));
         assert!(left.contains("\"probabilities_q15_before\""));
+    }
+
+    #[test]
+    fn linear_backward_trace_updates_weights_and_transposes_gradient() {
+        let trace = run_linear_backward_smoke(LinearBackwardConfig::default()).expect("linear bw");
+
+        assert_eq!(trace.scaled_grad_output_i32, [8192, -6144, 512]);
+        assert_eq!(trace.grad_input_q15, [3968, -5056, 832, -1472]);
+        assert_eq!(trace.output_before_q15, [17408, -19968, 640]);
+        assert_eq!(trace.output_after_q15, [-26112, 28416, -384]);
+        assert_eq!(
+            trace.weights_after_i8,
+            [
+                -5, 2, -1, 1, //
+                5, 1, 1, 1, //
+                1, 1, -3, 1,
+            ]
+        );
+        assert_eq!(trace.update_stats.gradient_saturation_count, 0);
+        assert_eq!(trace.update_stats.zero_delta_count, 3);
+        assert_eq!(trace.update_stats.weight_delta_l1, 27);
+        assert_ne!(trace.initial_weight_hash, trace.final_weight_hash);
+    }
+
+    #[test]
+    fn linear_backward_trace_is_byte_stable() {
+        let left = run_linear_backward_smoke(LinearBackwardConfig::default())
+            .expect("left")
+            .to_json_line();
+        let right = run_linear_backward_smoke(LinearBackwardConfig::default())
+            .expect("right")
+            .to_json_line();
+
+        assert_eq!(left, right);
+        assert!(left.contains("\"schema\":\"nsrl.training_linear_backward_trace.v1\""));
+        assert!(left.contains("\"intermediate\":\"i64_outer_product\""));
+        assert!(left.contains("\"scaled_grad_output_i32\":[8192,-6144,512]"));
     }
 }
