@@ -21,6 +21,7 @@ pub const BYTE_GENERATION_SCHEMA: &str = "nsrl.byte_generation_trace.v1";
 pub const BYTE_EMBED_SOFTMAX_SCHEMA: &str = "nsrl.training_byte_embed_softmax_trace.v1";
 pub const BYTE_EMBED_GENERATION_SCHEMA: &str = "nsrl.byte_embed_generation_trace.v1";
 pub const MINI_TRANSFORMER_MLP_SCHEMA: &str = "nsrl.training_mini_transformer_mlp_trace.v1";
+pub const MINI_TRANSFORMER_GENERATION_SCHEMA: &str = "nsrl.mini_transformer_generation_trace.v1";
 pub const AUTHORITY: &str = "deterministic_training_replay";
 pub const GENERATION_AUTHORITY: &str = "deterministic_integer_generation";
 pub const TASK: &str = "tiny_next_char_output_head";
@@ -35,6 +36,8 @@ pub const BYTE_SOFTMAX_MODEL_ID: &str = "byte_softmax_bigram_output_head_v1";
 pub const BYTE_SOFTMAX_MODEL_MAGIC: &[u8; 8] = b"NSRLBM1\n";
 pub const BYTE_EMBED_SOFTMAX_MODEL_ID: &str = "byte_embed_softmax_context_head_v1";
 pub const BYTE_EMBED_SOFTMAX_MODEL_MAGIC: &[u8; 8] = b"NSRLEM1\n";
+pub const MINI_TRANSFORMER_MODEL_ID: &str = "mini_transformer_byte_qkvo_mlp_v1";
+pub const MINI_TRANSFORMER_MODEL_MAGIC: &[u8; 8] = b"NSRLMT1\n";
 pub const VOCAB: usize = 4;
 pub const D_MODEL: usize = 8;
 pub const BYTE_VOCAB: usize = 256;
@@ -238,6 +241,12 @@ const BYTE_EMBED_SOFTMAX_KNOWN_NON_CLAIMS: [&str; 5] = [
 const BYTE_EMBED_GENERATION_KNOWN_NON_CLAIMS: [&str; 4] = [
     "baseline_embedding_byte_model_only",
     "not_transformer_generation_yet",
+    "greedy_decoding_only",
+    "does_not_claim_language_model_quality",
+];
+const MINI_TRANSFORMER_GENERATION_KNOWN_NON_CLAIMS: [&str; 4] = [
+    "single_mini_transformer_block_only",
+    "embedding_table_forward_only_no_embedding_update_yet",
     "greedy_decoding_only",
     "does_not_claim_language_model_quality",
 ];
@@ -591,6 +600,7 @@ pub struct ByteEmbedSoftmaxModel {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MiniTransformerMlpModel {
+    pub context_seq_len: usize,
     pub embeddings: Vec<i16>,
     pub q_weights: Vec<i8>,
     pub k_weights: Vec<i8>,
@@ -631,6 +641,19 @@ pub struct ByteEmbedGenerationTrace {
     pub model_hash: u64,
     pub embedding_hash: u64,
     pub output_weight_hash: u64,
+    pub context_seq_len: usize,
+    pub steps: Vec<ByteGenerationStepTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerGenerationTrace {
+    pub prompt_bytes: Vec<u8>,
+    pub generated_bytes: Vec<u8>,
+    pub model_hash: u64,
+    pub embedding_hash: u64,
+    pub attention_hash: u64,
+    pub mlp_hash: u64,
+    pub output_head_hash: u64,
     pub context_seq_len: usize,
     pub steps: Vec<ByteGenerationStepTrace>,
 }
@@ -1548,7 +1571,7 @@ pub fn run_mini_transformer_mlp_training_with_model(
 
     let token_hash = hash_u8_slice(tokens);
     let window_hash = hash_mini_transformer_windows(tokens, config, &starts);
-    let mut model = MiniTransformerMlpModel::new_initial();
+    let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
     let initial_model_hash = model.model_hash();
     let initial_output_head_hash = model.output_head_hash();
     let initial_mlp_hash = model.mlp_hash();
@@ -3033,7 +3056,12 @@ impl ByteEmbedSoftmaxModel {
 
 impl MiniTransformerMlpModel {
     pub fn new_initial() -> Self {
+        Self::new_initial_with_seq_len(DEFAULT_MINI_TRANSFORMER_SEQ_LEN)
+    }
+
+    pub fn new_initial_with_seq_len(context_seq_len: usize) -> Self {
         Self {
+            context_seq_len,
             embeddings: initial_mini_transformer_embeddings(),
             q_weights: identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
             k_weights: identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
@@ -3044,6 +3072,69 @@ impl MiniTransformerMlpModel {
             down_weights: initial_mini_transformer_mlp_down_weights(),
             output_weights: initial_mini_transformer_output_weights(),
         }
+    }
+
+    pub fn new(
+        context_seq_len: usize,
+        embeddings: Vec<i16>,
+        q_weights: Vec<i8>,
+        k_weights: Vec<i8>,
+        v_weights: Vec<i8>,
+        o_weights: Vec<i8>,
+        up_weights: Vec<i8>,
+        gate_weights: Vec<i8>,
+        down_weights: Vec<i8>,
+        output_weights: Vec<i8>,
+    ) -> Result<Self, TrainError> {
+        if context_seq_len == 0 {
+            return Err(TrainError::InvalidModel(
+                "bad mini transformer context seq_len",
+            ));
+        }
+        if embeddings.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL {
+            return Err(TrainError::InvalidModel(
+                "wrong mini transformer embedding count",
+            ));
+        }
+        let attention_weight_count = MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL;
+        if q_weights.len() != attention_weight_count
+            || k_weights.len() != attention_weight_count
+            || v_weights.len() != attention_weight_count
+            || o_weights.len() != attention_weight_count
+        {
+            return Err(TrainError::InvalidModel(
+                "wrong mini transformer attention weight count",
+            ));
+        }
+        let up_or_gate_count = MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM;
+        if up_weights.len() != up_or_gate_count || gate_weights.len() != up_or_gate_count {
+            return Err(TrainError::InvalidModel(
+                "wrong mini transformer up/gate weight count",
+            ));
+        }
+        if down_weights.len() != MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL {
+            return Err(TrainError::InvalidModel(
+                "wrong mini transformer down weight count",
+            ));
+        }
+        if output_weights.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL {
+            return Err(TrainError::InvalidModel(
+                "wrong mini transformer output weight count",
+            ));
+        }
+
+        Ok(Self {
+            context_seq_len,
+            embeddings,
+            q_weights,
+            k_weights,
+            v_weights,
+            o_weights,
+            up_weights,
+            gate_weights,
+            down_weights,
+            output_weights,
+        })
     }
 
     pub fn embedding_hash(&self) -> u64 {
@@ -3085,6 +3176,7 @@ impl MiniTransformerMlpModel {
 
     pub fn model_hash(&self) -> u64 {
         let mut hasher = StableHasher::new();
+        hasher.update_usize(self.context_seq_len);
         hasher.update_i16_slice(&self.embeddings);
         hasher.update_i8_slice(&self.q_weights);
         hasher.update_i8_slice(&self.k_weights);
@@ -3095,6 +3187,184 @@ impl MiniTransformerMlpModel {
         hasher.update_i8_slice(&self.down_weights);
         hasher.update_i8_slice(&self.output_weights);
         hasher.finish()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let embedding_bytes = self.embeddings.len() * 2;
+        let weight_bytes = self.q_weights.len()
+            + self.k_weights.len()
+            + self.v_weights.len()
+            + self.o_weights.len()
+            + self.up_weights.len()
+            + self.gate_weights.len()
+            + self.down_weights.len()
+            + self.output_weights.len();
+        let mut out = Vec::with_capacity(128 + embedding_bytes + weight_bytes);
+        out.extend_from_slice(MINI_TRANSFORMER_MODEL_MAGIC);
+        out.extend_from_slice(&(BYTE_VOCAB as u32).to_le_bytes());
+        out.extend_from_slice(&(MINI_TRANSFORMER_D_MODEL as u32).to_le_bytes());
+        out.extend_from_slice(&(MINI_TRANSFORMER_HEADS as u32).to_le_bytes());
+        out.extend_from_slice(&(MINI_TRANSFORMER_HIDDEN_DIM as u32).to_le_bytes());
+        out.extend_from_slice(&(self.context_seq_len as u32).to_le_bytes());
+        out.extend_from_slice(&(self.embeddings.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(self.q_weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(self.k_weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(self.v_weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(self.o_weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(self.up_weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(self.gate_weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(self.down_weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(self.output_weights.len() as u64).to_le_bytes());
+        out.extend_from_slice(&self.embedding_hash().to_le_bytes());
+        out.extend_from_slice(&self.attention_q_hash().to_le_bytes());
+        out.extend_from_slice(&self.attention_k_hash().to_le_bytes());
+        out.extend_from_slice(&self.attention_v_hash().to_le_bytes());
+        out.extend_from_slice(&self.attention_o_hash().to_le_bytes());
+        out.extend_from_slice(&self.mlp_hash().to_le_bytes());
+        out.extend_from_slice(&self.output_head_hash().to_le_bytes());
+        out.extend_from_slice(&self.model_hash().to_le_bytes());
+        for &embedding in self.embeddings.iter() {
+            out.extend_from_slice(&embedding.to_le_bytes());
+        }
+        out.extend(self.q_weights.iter().map(|&weight| weight as u8));
+        out.extend(self.k_weights.iter().map(|&weight| weight as u8));
+        out.extend(self.v_weights.iter().map(|&weight| weight as u8));
+        out.extend(self.o_weights.iter().map(|&weight| weight as u8));
+        out.extend(self.up_weights.iter().map(|&weight| weight as u8));
+        out.extend(self.gate_weights.iter().map(|&weight| weight as u8));
+        out.extend(self.down_weights.iter().map(|&weight| weight as u8));
+        out.extend(self.output_weights.iter().map(|&weight| weight as u8));
+        out
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
+        let header_len = MINI_TRANSFORMER_MODEL_MAGIC.len() + 4 * 5 + 8 * 9 + 8 * 8;
+        if bytes.len() < header_len {
+            return Err(TrainError::InvalidModel("artifact too short"));
+        }
+        if &bytes[..MINI_TRANSFORMER_MODEL_MAGIC.len()] != MINI_TRANSFORMER_MODEL_MAGIC {
+            return Err(TrainError::InvalidModel("bad magic"));
+        }
+
+        let mut offset = MINI_TRANSFORMER_MODEL_MAGIC.len();
+        let vocab = read_u32_le(bytes, &mut offset)? as usize;
+        let d_model = read_u32_le(bytes, &mut offset)? as usize;
+        let heads = read_u32_le(bytes, &mut offset)? as usize;
+        let hidden_dim = read_u32_le(bytes, &mut offset)? as usize;
+        let context_seq_len = read_u32_le(bytes, &mut offset)? as usize;
+        let embedding_count = read_u64_le(bytes, &mut offset)? as usize;
+        let q_count = read_u64_le(bytes, &mut offset)? as usize;
+        let k_count = read_u64_le(bytes, &mut offset)? as usize;
+        let v_count = read_u64_le(bytes, &mut offset)? as usize;
+        let o_count = read_u64_le(bytes, &mut offset)? as usize;
+        let up_count = read_u64_le(bytes, &mut offset)? as usize;
+        let gate_count = read_u64_le(bytes, &mut offset)? as usize;
+        let down_count = read_u64_le(bytes, &mut offset)? as usize;
+        let output_count = read_u64_le(bytes, &mut offset)? as usize;
+        let expected_embedding_hash = read_u64_le(bytes, &mut offset)?;
+        let expected_q_hash = read_u64_le(bytes, &mut offset)?;
+        let expected_k_hash = read_u64_le(bytes, &mut offset)?;
+        let expected_v_hash = read_u64_le(bytes, &mut offset)?;
+        let expected_o_hash = read_u64_le(bytes, &mut offset)?;
+        let expected_mlp_hash = read_u64_le(bytes, &mut offset)?;
+        let expected_output_hash = read_u64_le(bytes, &mut offset)?;
+        let expected_model_hash = read_u64_le(bytes, &mut offset)?;
+
+        if vocab != BYTE_VOCAB
+            || d_model != MINI_TRANSFORMER_D_MODEL
+            || heads != MINI_TRANSFORMER_HEADS
+            || hidden_dim != MINI_TRANSFORMER_HIDDEN_DIM
+            || context_seq_len == 0
+        {
+            return Err(TrainError::InvalidModel("shape mismatch"));
+        }
+
+        let expected_attention_count = MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL;
+        if embedding_count != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
+            || q_count != expected_attention_count
+            || k_count != expected_attention_count
+            || v_count != expected_attention_count
+            || o_count != expected_attention_count
+            || up_count != MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM
+            || gate_count != MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM
+            || down_count != MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL
+            || output_count != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
+        {
+            return Err(TrainError::InvalidModel("tensor count mismatch"));
+        }
+
+        let embedding_bytes = embedding_count
+            .checked_mul(2)
+            .ok_or(TrainError::InvalidModel("embedding length overflow"))?;
+        let weight_bytes = q_count
+            .checked_add(k_count)
+            .and_then(|value| value.checked_add(v_count))
+            .and_then(|value| value.checked_add(o_count))
+            .and_then(|value| value.checked_add(up_count))
+            .and_then(|value| value.checked_add(gate_count))
+            .and_then(|value| value.checked_add(down_count))
+            .and_then(|value| value.checked_add(output_count))
+            .ok_or(TrainError::InvalidModel("weight length overflow"))?;
+        let expected_len = offset
+            .checked_add(embedding_bytes)
+            .and_then(|value| value.checked_add(weight_bytes))
+            .ok_or(TrainError::InvalidModel("artifact length overflow"))?;
+        if bytes.len() != expected_len {
+            return Err(TrainError::InvalidModel("artifact length mismatch"));
+        }
+
+        let embedding_end = offset + embedding_bytes;
+        let mut embeddings = Vec::with_capacity(embedding_count);
+        for chunk in bytes[offset..embedding_end].chunks_exact(2) {
+            embeddings.push(i16::from_le_bytes(
+                chunk
+                    .try_into()
+                    .map_err(|_| TrainError::InvalidModel("bad embedding"))?,
+            ));
+        }
+        offset = embedding_end;
+
+        let q_weights = read_i8_vec(bytes, &mut offset, q_count)?;
+        let k_weights = read_i8_vec(bytes, &mut offset, k_count)?;
+        let v_weights = read_i8_vec(bytes, &mut offset, v_count)?;
+        let o_weights = read_i8_vec(bytes, &mut offset, o_count)?;
+        let up_weights = read_i8_vec(bytes, &mut offset, up_count)?;
+        let gate_weights = read_i8_vec(bytes, &mut offset, gate_count)?;
+        let down_weights = read_i8_vec(bytes, &mut offset, down_count)?;
+        let output_weights = read_i8_vec(bytes, &mut offset, output_count)?;
+
+        let model = Self::new(
+            context_seq_len,
+            embeddings,
+            q_weights,
+            k_weights,
+            v_weights,
+            o_weights,
+            up_weights,
+            gate_weights,
+            down_weights,
+            output_weights,
+        )?;
+        if model.embedding_hash() != expected_embedding_hash {
+            return Err(TrainError::InvalidModel("embedding hash mismatch"));
+        }
+        if model.attention_q_hash() != expected_q_hash
+            || model.attention_k_hash() != expected_k_hash
+            || model.attention_v_hash() != expected_v_hash
+            || model.attention_o_hash() != expected_o_hash
+        {
+            return Err(TrainError::InvalidModel("attention hash mismatch"));
+        }
+        if model.mlp_hash() != expected_mlp_hash {
+            return Err(TrainError::InvalidModel("mlp hash mismatch"));
+        }
+        if model.output_head_hash() != expected_output_hash {
+            return Err(TrainError::InvalidModel("output hash mismatch"));
+        }
+        if model.model_hash() != expected_model_hash {
+            return Err(TrainError::InvalidModel("model hash mismatch"));
+        }
+        Ok(model)
     }
 }
 
@@ -3182,6 +3452,55 @@ impl ByteEmbedGenerationTrace {
     }
 }
 
+impl MiniTransformerGenerationTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", MINI_TRANSFORMER_GENERATION_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", GENERATION_AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "model", MINI_TRANSFORMER_MODEL_ID);
+        comma(&mut out);
+        push_string_field(&mut out, "tokenizer", BYTE_TOKENIZER_ID);
+        comma(&mut out);
+        push_hash_field(&mut out, "model_hash", self.model_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "embedding_hash", self.embedding_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "attention_hash", self.attention_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "mlp_hash", self.mlp_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "output_head_hash", self.output_head_hash);
+        comma(&mut out);
+        push_usize_field(&mut out, "context_seq_len", self.context_seq_len);
+        comma(&mut out);
+        out.push_str("\"prompt\":{");
+        push_usize_field(&mut out, "bytes", self.prompt_bytes.len());
+        comma(&mut out);
+        push_u8_array_field(&mut out, "tokens", &self.prompt_bytes);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"generation\":{");
+        push_usize_field(&mut out, "new_tokens", self.generated_bytes.len());
+        comma(&mut out);
+        push_u8_array_field(&mut out, "tokens", &self.generated_bytes);
+        out.push('}');
+        comma(&mut out);
+        push_generation_steps_field(&mut out, "steps", &self.steps);
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "known_non_claims",
+            &MINI_TRANSFORMER_GENERATION_KNOWN_NON_CLAIMS,
+        );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
 pub fn generate_byte_softmax(
     model: &ByteSoftmaxModel,
     prompt: &[u8],
@@ -3259,6 +3578,50 @@ pub fn generate_byte_embed_softmax(
         embedding_hash: model.embedding_hash(),
         output_weight_hash: model.output_weight_hash(),
         context_seq_len: model.seq_len,
+        steps,
+    })
+}
+
+pub fn generate_mini_transformer(
+    model: &MiniTransformerMlpModel,
+    prompt: &[u8],
+    config: ByteGenerationConfig,
+) -> Result<MiniTransformerGenerationTrace, TrainError> {
+    if prompt.is_empty() || model.context_seq_len == 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut context = prompt.to_vec();
+    let mut generated_bytes = Vec::with_capacity(config.max_new_tokens);
+    let mut steps = Vec::with_capacity(config.max_new_tokens);
+
+    for step_index in 0..config.max_new_tokens {
+        let input_token = *context.last().ok_or(TrainError::InvalidConfig)?;
+        let context_len = model.context_seq_len.min(context.len());
+        let context_start = context.len() - context_len;
+        let cache = mini_transformer_forward_for(model, &context[context_start..])?;
+        let predicted_token = byte_argmax_i32(&cache.logits_q8);
+        let predicted_index = usize::from(predicted_token);
+        generated_bytes.push(predicted_token);
+        context.push(predicted_token);
+        steps.push(ByteGenerationStepTrace {
+            step_index,
+            input_token,
+            predicted_token,
+            predicted_logit_q8: cache.logits_q8[predicted_index],
+            predicted_probability_q15: cache.probabilities_q15[predicted_index],
+        });
+    }
+
+    Ok(MiniTransformerGenerationTrace {
+        prompt_bytes: prompt.to_vec(),
+        generated_bytes,
+        model_hash: model.model_hash(),
+        embedding_hash: model.embedding_hash(),
+        attention_hash: model.attention_hash(),
+        mlp_hash: model.mlp_hash(),
+        output_head_hash: model.output_head_hash(),
+        context_seq_len: model.context_seq_len,
         steps,
     })
 }
@@ -4547,6 +4910,17 @@ fn read_u64_le(bytes: &[u8], offset: &mut usize) -> Result<u64, TrainError> {
             .try_into()
             .map_err(|_| TrainError::InvalidModel("bad u64"))?,
     ))
+}
+
+fn read_i8_vec(bytes: &[u8], offset: &mut usize, count: usize) -> Result<Vec<i8>, TrainError> {
+    let end = offset
+        .checked_add(count)
+        .ok_or(TrainError::InvalidModel("offset overflow"))?;
+    let chunk = bytes
+        .get(*offset..end)
+        .ok_or(TrainError::InvalidModel("missing i8 tensor"))?;
+    *offset = end;
+    Ok(chunk.iter().map(|&byte| byte as i8).collect())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6001,5 +6375,52 @@ mod tests {
         assert!(left.contains(
             "\"trained_component\":\"output_head_i8_plus_gated_mlp_i8_plus_attention_qkvo_i8\""
         ));
+    }
+
+    #[test]
+    fn mini_transformer_model_round_trips_and_generates() {
+        let tokens = b"To be or not to be, that is the question. To be or not to be. ";
+        let run = run_mini_transformer_mlp_training_with_model(
+            tokens,
+            MiniTransformerMlpTrainConfig {
+                epochs: 1,
+                seq_len: 4,
+                stride: 1,
+                max_windows: Some(32),
+                learning_rate: 1,
+                output_learning_rate_shift: 18,
+                mlp_learning_rate_shift: 16,
+                attention_learning_rate_shift: 24,
+                attention_qk_learning_rate_shift: 18,
+            },
+        )
+        .expect("mini train");
+        let bytes = run.model.to_bytes();
+        let decoded = MiniTransformerMlpModel::from_bytes(&bytes).expect("model");
+
+        assert_eq!(decoded, run.model);
+        assert_eq!(decoded.model_hash(), run.trace.final_model_hash);
+        assert_eq!(decoded.embedding_hash(), run.model.embedding_hash());
+        assert_eq!(decoded.attention_hash(), run.trace.final_attention_hash);
+        assert_eq!(decoded.mlp_hash(), run.trace.final_mlp_hash);
+        assert_eq!(decoded.output_head_hash(), run.trace.final_output_head_hash);
+
+        let generation = generate_mini_transformer(
+            &decoded,
+            b"To be",
+            ByteGenerationConfig { max_new_tokens: 8 },
+        )
+        .expect("generate");
+
+        assert_eq!(generation.generated_bytes.len(), 8);
+        assert_eq!(generation.steps.len(), 8);
+        assert_eq!(generation.context_seq_len, decoded.context_seq_len);
+        assert_eq!(generation.model_hash, decoded.model_hash());
+        assert_eq!(generation.attention_hash, decoded.attention_hash());
+        assert_eq!(generation.mlp_hash, decoded.mlp_hash());
+        assert_eq!(generation.output_head_hash, decoded.output_head_hash());
+        let line = generation.to_json_line();
+        assert!(line.contains("\"schema\":\"nsrl.mini_transformer_generation_trace.v1\""));
+        assert!(line.contains("\"model\":\"mini_transformer_byte_qkvo_mlp_v1\""));
     }
 }

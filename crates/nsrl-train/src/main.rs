@@ -5,10 +5,10 @@ use std::path::PathBuf;
 
 use nsrl_train::{
     ByteEmbedSoftmaxModel, ByteEmbedSoftmaxTrainConfig, ByteGenerationConfig, ByteSoftmaxModel,
-    ByteSoftmaxTrainConfig, LinearBackwardConfig, MiniTransformerMlpTrainConfig,
-    SoftmaxTrainConfig, TrainConfig, generate_byte_embed_softmax, generate_byte_softmax,
-    run_byte_embed_softmax_training_with_model, run_byte_softmax_training_with_model,
-    run_gated_mlp_backward_smoke, run_linear_backward_smoke,
+    ByteSoftmaxTrainConfig, LinearBackwardConfig, MiniTransformerMlpModel,
+    MiniTransformerMlpTrainConfig, SoftmaxTrainConfig, TrainConfig, generate_byte_embed_softmax,
+    generate_byte_softmax, generate_mini_transformer, run_byte_embed_softmax_training_with_model,
+    run_byte_softmax_training_with_model, run_gated_mlp_backward_smoke, run_linear_backward_smoke,
     run_mini_transformer_mlp_training_with_model, run_softmax_training, run_training_smoke,
 };
 
@@ -39,7 +39,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         match arg.as_str() {
             "--mode" => {
                 mode = args.next().ok_or(
-                    "--mode requires softmax, perceptron, linear-backward, gated-mlp-backward, byte-softmax, byte-generate, byte-embed-softmax, byte-embed-generate, or mini-transformer-mlp",
+                    "--mode requires softmax, perceptron, linear-backward, gated-mlp-backward, byte-softmax, byte-generate, byte-embed-softmax, byte-embed-generate, mini-transformer-mlp, or mini-transformer-generate",
                 )?;
             }
             "--epochs" => {
@@ -208,9 +208,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "mini-transformer-mlp" | "mini_transformer_mlp" => {
             let path = tokens_path.ok_or("--tokens is required for mini-transformer-mlp mode")?;
             let tokens = fs::read(path)?;
-            run_mini_transformer_mlp_training_with_model(&tokens, mini_transformer_config)?
-                .trace
-                .to_json_line()
+            let run =
+                run_mini_transformer_mlp_training_with_model(&tokens, mini_transformer_config)?;
+            if let Some(path) = model_out_path {
+                fs::write(path, run.model.to_bytes())?;
+            }
+            run.trace.to_json_line()
+        }
+        "mini-transformer-generate" | "mini_transformer_generate" => {
+            let path =
+                model_path.ok_or("--model is required for mini-transformer-generate mode")?;
+            if prompt.is_empty() {
+                return Err("--prompt is required for mini-transformer-generate mode".into());
+            }
+            let model_bytes = fs::read(path)?;
+            let model = MiniTransformerMlpModel::from_bytes(&model_bytes)?;
+            generate_mini_transformer(&model, &prompt, byte_generation_config)?.to_json_line()
         }
         other => return Err(format!("unknown mode: {other}").into()),
     };
@@ -225,7 +238,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|mini-transformer-mlp] [--tokens PATH] [--model PATH] [--model-out PATH] [--prompt TEXT] [--max-new-tokens N] [--epochs N] [--learning-rate N] [--lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-qk-lr-shift N] [--seq-len N] [--stride N] [--max-windows N] [--trace PATH]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--prompt TEXT] [--max-new-tokens N] [--epochs N] [--learning-rate N] [--lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-qk-lr-shift N] [--seq-len N] [--stride N] [--max-windows N] [--trace PATH]"
     );
     println!();
     println!("Runs a deterministic integer training trace.");

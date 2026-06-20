@@ -222,12 +222,29 @@ cargo run -p nsrl-train -- \
   --embed-lr-shift 16 \
   --attention-lr-shift 24 \
   --attention-qk-lr-shift 18 \
+  --model-out data/processed/wiki-bard-mini-transformer-mlp-smoke.nsrlmt \
   --trace data/processed/wiki-bard-mini-transformer-mlp-smoke.trace.jsonl
 ```
 
 The trace uses `nsrl.training_mini_transformer_mlp_trace.v1`. Attention is no
 longer forward-only: `Q`, `K`, `V`, and `O` are all updated from cached
 probabilities, context rows, and the native base-2 softmax derivative.
+
+The saved `.nsrlmt` artifact can then be reloaded for deterministic greedy byte
+generation:
+
+```sh
+cargo run -p nsrl-train -- \
+  --mode mini-transformer-generate \
+  --model data/processed/wiki-bard-mini-transformer-mlp-smoke.nsrlmt \
+  --prompt "To be" \
+  --max-new-tokens 128 \
+  --trace data/processed/wiki-bard-mini-transformer-generation-smoke.trace.jsonl
+```
+
+The generation trace uses `nsrl.mini_transformer_generation_trace.v1` and
+records full-model, embedding, attention, MLP, and output-head hashes from the
+loaded artifact.
 
 ## Current Limits
 
