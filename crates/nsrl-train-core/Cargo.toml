@@ -1,11 +1,12 @@
 [package]
-name = "nsrl-train"
+name = "nsrl-train-core"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
 nsrl-core = { path = "../nsrl-core" }
-nsrl-corpus = { path = "../nsrl-corpus" }
-nsrl-train-core = { path = "../nsrl-train-core" }

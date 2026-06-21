@@ -1103,6 +1103,42 @@ pub struct MiniTransformerMlpTrainingTrace {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpTrainingProgressTrace {
+    pub config: MiniTransformerMlpTrainConfig,
+    pub token_count: usize,
+    pub token_hash: u64,
+    pub window_hash: u64,
+    pub windows: usize,
+    pub examined_windows: usize,
+    pub updates: usize,
+    pub accepted_batch_count: usize,
+    pub rejected_batch_count: usize,
+    pub rollback_count: usize,
+    pub rejected_window_count: usize,
+    pub output_head_delta_l1: u64,
+    pub mlp_delta_l1: u64,
+    pub embedding_delta_l1: u64,
+    pub attention_delta_l1: u64,
+    pub attention_q_delta_l1: u64,
+    pub attention_k_delta_l1: u64,
+    pub attention_v_delta_l1: u64,
+    pub attention_o_delta_l1: u64,
+    pub adaptive_rule_shift_adjustment_count: usize,
+    pub adaptive_holographic_shift_adjustment_count: usize,
+    pub current_output_learning_rate_shift: u8,
+    pub current_mlp_learning_rate_shift: u8,
+    pub current_embedding_learning_rate_shift: u8,
+    pub current_attention_learning_rate_shift: u8,
+    pub current_attention_q_learning_rate_shift: u8,
+    pub current_attention_qk_learning_rate_shift: u8,
+    pub model_hash: u64,
+    pub embedding_hash: u64,
+    pub attention_hash: u64,
+    pub mlp_hash: u64,
+    pub output_head_hash: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MiniTransformerMlpTrainingRun {
     pub trace: MiniTransformerMlpTrainingTrace,
     pub model: MiniTransformerMlpModel,
@@ -4005,6 +4041,68 @@ fn mini_transformer_attention_k_teacher_delta(
     0
 }
 
+#[allow(clippy::too_many_arguments)]
+fn mini_transformer_training_progress_trace(
+    config: MiniTransformerMlpTrainConfig,
+    token_count: usize,
+    token_hash: u64,
+    window_hash: u64,
+    windows: usize,
+    examined_windows: usize,
+    updates: usize,
+    accepted_batch_count: usize,
+    rejected_batch_count: usize,
+    rollback_count: usize,
+    rejected_window_count: usize,
+    output_head_delta_l1: u64,
+    mlp_delta_l1: u64,
+    embedding_delta_l1: u64,
+    attention_delta_l1: u64,
+    attention_q_delta_l1: u64,
+    attention_k_delta_l1: u64,
+    attention_v_delta_l1: u64,
+    attention_o_delta_l1: u64,
+    adaptive_attention_shifts: &MiniTransformerAdaptiveShiftState,
+    model: &MiniTransformerMlpModel,
+) -> MiniTransformerMlpTrainingProgressTrace {
+    let runtime_config = adaptive_attention_shifts.runtime_config(config);
+    MiniTransformerMlpTrainingProgressTrace {
+        config,
+        token_count,
+        token_hash,
+        window_hash,
+        windows,
+        examined_windows,
+        updates,
+        accepted_batch_count,
+        rejected_batch_count,
+        rollback_count,
+        rejected_window_count,
+        output_head_delta_l1,
+        mlp_delta_l1,
+        embedding_delta_l1,
+        attention_delta_l1,
+        attention_q_delta_l1,
+        attention_k_delta_l1,
+        attention_v_delta_l1,
+        attention_o_delta_l1,
+        adaptive_rule_shift_adjustment_count: adaptive_attention_shifts.rule_adjustment_count,
+        adaptive_holographic_shift_adjustment_count: adaptive_attention_shifts
+            .holographic_adjustment_count,
+        current_output_learning_rate_shift: runtime_config.output_learning_rate_shift,
+        current_mlp_learning_rate_shift: runtime_config.mlp_learning_rate_shift,
+        current_embedding_learning_rate_shift: runtime_config.embedding_learning_rate_shift,
+        current_attention_learning_rate_shift: runtime_config.attention_learning_rate_shift,
+        current_attention_q_learning_rate_shift: runtime_config.attention_q_learning_rate_shift,
+        current_attention_qk_learning_rate_shift: runtime_config.attention_qk_learning_rate_shift,
+        model_hash: model.model_hash(),
+        embedding_hash: model.embedding_hash(),
+        attention_hash: model.attention_hash(),
+        mlp_hash: model.mlp_hash(),
+        output_head_hash: model.output_head_hash(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrainError {
     InvalidConfig,
@@ -5844,8 +5942,21 @@ pub fn run_mini_transformer_mlp_training_with_model(
 pub fn run_mini_transformer_mlp_training_from_model(
     tokens: &[u8],
     config: MiniTransformerMlpTrainConfig,
-    mut model: MiniTransformerMlpModel,
+    model: MiniTransformerMlpModel,
 ) -> Result<MiniTransformerMlpTrainingRun, TrainError> {
+    run_mini_transformer_mlp_training_from_model_with_progress(tokens, config, model, 0, |_| Ok(()))
+}
+
+pub fn run_mini_transformer_mlp_training_from_model_with_progress<F>(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    mut model: MiniTransformerMlpModel,
+    progress_interval_batches: usize,
+    mut progress: F,
+) -> Result<MiniTransformerMlpTrainingRun, TrainError>
+where
+    F: FnMut(&MiniTransformerMlpTrainingProgressTrace) -> Result<(), TrainError>,
+{
     if config.epochs == 0
         || config.seq_len == 0
         || config.stride == 0
@@ -5961,6 +6072,31 @@ pub fn run_mini_transformer_mlp_training_from_model(
     let use_mlp_accumulator = config.batch_windows > 1;
     let use_attention_accumulator = config.batch_windows > 1;
     let use_embedding_accumulator = config.batch_windows > 1;
+    if progress_interval_batches > 0 {
+        progress(&mini_transformer_training_progress_trace(
+            config,
+            tokens.len(),
+            token_hash,
+            window_hash,
+            starts.len(),
+            examined_windows,
+            updates,
+            accepted_batch_count,
+            rejected_batch_count,
+            rollback_count,
+            rejected_window_count,
+            output_head_delta_l1,
+            mlp_delta_l1,
+            embedding_delta_l1,
+            attention_delta_l1,
+            attention_q_delta_l1,
+            attention_k_delta_l1,
+            attention_v_delta_l1,
+            attention_o_delta_l1,
+            &adaptive_attention_shifts,
+            &model,
+        ))?;
+    }
 
     for epoch in 0..config.epochs {
         let mut batch_start_index = 0_usize;
@@ -6737,6 +6873,35 @@ pub fn run_mini_transformer_mlp_training_from_model(
                     &mut adaptive_shift_events,
                 );
             }
+            let observed_batch_count = accepted_batch_count.saturating_add(rejected_batch_count);
+            if progress_interval_batches > 0
+                && observed_batch_count > 0
+                && observed_batch_count.is_multiple_of(progress_interval_batches)
+            {
+                progress(&mini_transformer_training_progress_trace(
+                    config,
+                    tokens.len(),
+                    token_hash,
+                    window_hash,
+                    starts.len(),
+                    examined_windows,
+                    updates,
+                    accepted_batch_count,
+                    rejected_batch_count,
+                    rollback_count,
+                    rejected_window_count,
+                    output_head_delta_l1,
+                    mlp_delta_l1,
+                    embedding_delta_l1,
+                    attention_delta_l1,
+                    attention_q_delta_l1,
+                    attention_k_delta_l1,
+                    attention_v_delta_l1,
+                    attention_o_delta_l1,
+                    &adaptive_attention_shifts,
+                    &model,
+                ))?;
+            }
             batch_start_index = batch_end_index;
         }
     }
@@ -6755,6 +6920,31 @@ pub fn run_mini_transformer_mlp_training_from_model(
     let final_correct = starts.len() - final_mistakes;
     let final_accuracy_per_mille = final_correct * 1000 / starts.len();
     let final_logits_hash = final_eval.logits_hash;
+    if progress_interval_batches > 0 {
+        progress(&mini_transformer_training_progress_trace(
+            config,
+            tokens.len(),
+            token_hash,
+            window_hash,
+            starts.len(),
+            examined_windows,
+            updates,
+            accepted_batch_count,
+            rejected_batch_count,
+            rollback_count,
+            rejected_window_count,
+            output_head_delta_l1,
+            mlp_delta_l1,
+            embedding_delta_l1,
+            attention_delta_l1,
+            attention_q_delta_l1,
+            attention_k_delta_l1,
+            attention_v_delta_l1,
+            attention_o_delta_l1,
+            &adaptive_attention_shifts,
+            &model,
+        ))?;
+    }
 
     let trace = MiniTransformerMlpTrainingTrace {
         config,
@@ -8587,6 +8777,157 @@ impl MiniTransformerMlpTrainingTrace {
             "known_non_claims",
             &MINI_TRANSFORMER_MLP_KNOWN_NON_CLAIMS,
         );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+impl MiniTransformerMlpTrainingProgressTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(
+            &mut out,
+            "schema",
+            "nsrl.training_mini_transformer_progress.v1",
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "authority", AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "task", MINI_TRANSFORMER_MLP_TASK);
+        comma(&mut out);
+        out.push_str("\"data\":{");
+        push_string_field(&mut out, "tokenizer", self.config.tokenizer_id.as_str());
+        comma(&mut out);
+        push_usize_field(&mut out, "token_count", self.token_count);
+        comma(&mut out);
+        push_hash_field(&mut out, "token_hash", self.token_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "window_hash", self.window_hash);
+        comma(&mut out);
+        push_usize_field(&mut out, "windows", self.windows);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"model\":{");
+        push_usize_field(&mut out, "seq_len", self.config.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "d_model", MINI_TRANSFORMER_D_MODEL);
+        comma(&mut out);
+        push_usize_field(&mut out, "heads", MINI_TRANSFORMER_HEADS);
+        comma(&mut out);
+        push_string_field(
+            &mut out,
+            "attention_kind",
+            self.config.attention_kind.as_str(),
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "position", self.config.position_policy.as_str());
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"training\":{");
+        push_usize_field(&mut out, "epochs", self.config.epochs);
+        comma(&mut out);
+        push_usize_field(&mut out, "stride", self.config.stride);
+        comma(&mut out);
+        push_usize_field(&mut out, "window_offset", self.config.window_offset);
+        comma(&mut out);
+        push_optional_usize_field(&mut out, "max_windows", self.config.max_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "batch_windows", self.config.batch_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "examined_windows", self.examined_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "updates", self.updates);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"metrics\":{");
+        push_usize_field(&mut out, "accepted_batch_count", self.accepted_batch_count);
+        comma(&mut out);
+        push_usize_field(&mut out, "rejected_batch_count", self.rejected_batch_count);
+        comma(&mut out);
+        push_usize_field(&mut out, "rollback_count", self.rollback_count);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "rejected_window_count",
+            self.rejected_window_count,
+        );
+        comma(&mut out);
+        push_u64_field(&mut out, "output_head_delta_l1", self.output_head_delta_l1);
+        comma(&mut out);
+        push_u64_field(&mut out, "mlp_delta_l1", self.mlp_delta_l1);
+        comma(&mut out);
+        push_u64_field(&mut out, "embedding_delta_l1", self.embedding_delta_l1);
+        comma(&mut out);
+        push_u64_field(&mut out, "attention_delta_l1", self.attention_delta_l1);
+        comma(&mut out);
+        push_u64_field(&mut out, "attention_q_delta_l1", self.attention_q_delta_l1);
+        comma(&mut out);
+        push_u64_field(&mut out, "attention_k_delta_l1", self.attention_k_delta_l1);
+        comma(&mut out);
+        push_u64_field(&mut out, "attention_v_delta_l1", self.attention_v_delta_l1);
+        comma(&mut out);
+        push_u64_field(&mut out, "attention_o_delta_l1", self.attention_o_delta_l1);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "adaptive_rule_shift_adjustment_count",
+            self.adaptive_rule_shift_adjustment_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "adaptive_holographic_shift_adjustment_count",
+            self.adaptive_holographic_shift_adjustment_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "current_output_learning_rate_shift",
+            usize::from(self.current_output_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "current_mlp_learning_rate_shift",
+            usize::from(self.current_mlp_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "current_embedding_learning_rate_shift",
+            usize::from(self.current_embedding_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "current_attention_learning_rate_shift",
+            usize::from(self.current_attention_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "current_attention_q_learning_rate_shift",
+            usize::from(self.current_attention_q_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "current_attention_qk_learning_rate_shift",
+            usize::from(self.current_attention_qk_learning_rate_shift),
+        );
+        out.push('}');
+        comma(&mut out);
+        push_hash_field(&mut out, "model_hash", self.model_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "embedding_hash", self.embedding_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "attention_hash", self.attention_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "mlp_hash", self.mlp_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "output_head_hash", self.output_head_hash);
         out.push('}');
         out.push('\n');
         out
@@ -22631,6 +22972,336 @@ mod tests {
         assert!(left.contains(
             "\"trained_component\":\"embedding_i16_plus_output_head_i8_plus_gated_mlp_i8_plus_attention_qkvo_i8\""
         ));
+    }
+
+    struct MiniTransformerTrainCoreWorkspaceBuffers {
+        embedding_output: Vec<i16>,
+        attention_norm: Vec<i16>,
+        attention_q: Vec<i16>,
+        attention_k: Vec<i16>,
+        attention_v: Vec<i16>,
+        attention_context: Vec<i16>,
+        attention_output: Vec<i16>,
+        attention_residual: Vec<i16>,
+        attention_state_kv: Vec<i64>,
+        attention_key_sums: Vec<i64>,
+        mlp_norm: Vec<i16>,
+        mlp_up: Vec<i16>,
+        mlp_gate: Vec<i16>,
+        mlp_gated: Vec<i16>,
+        mlp_output: Vec<i16>,
+        block_output: Vec<i16>,
+        logits_q8: Vec<i32>,
+        probabilities_q15: Vec<i16>,
+        grad_output_q15: Vec<i16>,
+        output_scaled_grad: Vec<i32>,
+        grad_last_features: Vec<i16>,
+        grad_mlp_output: Vec<i16>,
+        grad_mlp_input: Vec<i16>,
+        mlp_scaled_grad: Vec<i32>,
+        mlp_input_grad_gated: Vec<i16>,
+        mlp_input_grad_up: Vec<i16>,
+        mlp_input_grad_gate: Vec<i16>,
+        mlp_input_grad_up_input: Vec<i16>,
+        mlp_input_grad_gate_input: Vec<i16>,
+        mlp_update_grad_gated: Vec<i16>,
+        mlp_update_grad_up: Vec<i16>,
+        mlp_update_grad_gate: Vec<i16>,
+        grad_attention_output: Vec<i16>,
+        grad_attention_context: Vec<i16>,
+        attention_scaled_grad: Vec<i32>,
+        linear_prefix_states: Vec<i64>,
+        linear_denominators: Vec<i64>,
+        linear_grad_state_q15: Vec<i64>,
+        linear_grad_q_acc: Vec<i64>,
+        linear_grad_k_acc: Vec<i64>,
+        linear_grad_v_acc: Vec<i64>,
+        grad_attention_q: Vec<i16>,
+        grad_attention_k: Vec<i16>,
+        grad_attention_v: Vec<i16>,
+        grad_attention_norm_input: Vec<i16>,
+        grad_embedding_output: Vec<i16>,
+    }
+
+    impl MiniTransformerTrainCoreWorkspaceBuffers {
+        fn new(seq_len: usize) -> Self {
+            assert_eq!(
+                nsrl_train_core::MINI_TRANSFORMER_D_MODEL,
+                MINI_TRANSFORMER_D_MODEL
+            );
+            assert_eq!(
+                nsrl_train_core::MINI_TRANSFORMER_HEADS,
+                MINI_TRANSFORMER_HEADS
+            );
+            assert_eq!(
+                nsrl_train_core::MINI_TRANSFORMER_HIDDEN_DIM,
+                MINI_TRANSFORMER_HIDDEN_DIM
+            );
+            assert_eq!(nsrl_train_core::BYTE_VOCAB, BYTE_VOCAB);
+
+            let total = seq_len * MINI_TRANSFORMER_D_MODEL;
+            let hidden_total = seq_len * MINI_TRANSFORMER_HIDDEN_DIM;
+            let head_dim = MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS;
+            let head_state_len = head_dim * head_dim;
+            let state_len = MINI_TRANSFORMER_HEADS * head_state_len;
+            let key_sum_len = MINI_TRANSFORMER_HEADS * head_dim;
+            let prefix_len = seq_len * state_len;
+            let denom_len = seq_len * MINI_TRANSFORMER_HEADS;
+            let scaled_len = MINI_TRANSFORMER_D_MODEL.max(MINI_TRANSFORMER_HIDDEN_DIM);
+
+            Self {
+                embedding_output: vec![0_i16; total],
+                attention_norm: vec![0_i16; total],
+                attention_q: vec![0_i16; total],
+                attention_k: vec![0_i16; total],
+                attention_v: vec![0_i16; total],
+                attention_context: vec![0_i16; total],
+                attention_output: vec![0_i16; total],
+                attention_residual: vec![0_i16; total],
+                attention_state_kv: vec![0_i64; state_len],
+                attention_key_sums: vec![0_i64; key_sum_len],
+                mlp_norm: vec![0_i16; total],
+                mlp_up: vec![0_i16; hidden_total],
+                mlp_gate: vec![0_i16; hidden_total],
+                mlp_gated: vec![0_i16; hidden_total],
+                mlp_output: vec![0_i16; total],
+                block_output: vec![0_i16; total],
+                logits_q8: vec![0_i32; BYTE_VOCAB],
+                probabilities_q15: vec![0_i16; BYTE_VOCAB],
+                grad_output_q15: vec![0_i16; BYTE_VOCAB],
+                output_scaled_grad: vec![0_i32; BYTE_VOCAB],
+                grad_last_features: vec![0_i16; MINI_TRANSFORMER_D_MODEL],
+                grad_mlp_output: vec![0_i16; total],
+                grad_mlp_input: vec![0_i16; total],
+                mlp_scaled_grad: vec![0_i32; scaled_len],
+                mlp_input_grad_gated: vec![0_i16; hidden_total],
+                mlp_input_grad_up: vec![0_i16; hidden_total],
+                mlp_input_grad_gate: vec![0_i16; hidden_total],
+                mlp_input_grad_up_input: vec![0_i16; total],
+                mlp_input_grad_gate_input: vec![0_i16; total],
+                mlp_update_grad_gated: vec![0_i16; hidden_total],
+                mlp_update_grad_up: vec![0_i16; hidden_total],
+                mlp_update_grad_gate: vec![0_i16; hidden_total],
+                grad_attention_output: vec![0_i16; total],
+                grad_attention_context: vec![0_i16; total],
+                attention_scaled_grad: vec![0_i32; MINI_TRANSFORMER_D_MODEL],
+                linear_prefix_states: vec![0_i64; prefix_len],
+                linear_denominators: vec![0_i64; denom_len],
+                linear_grad_state_q15: vec![0_i64; head_state_len],
+                linear_grad_q_acc: vec![0_i64; total],
+                linear_grad_k_acc: vec![0_i64; total],
+                linear_grad_v_acc: vec![0_i64; total],
+                grad_attention_q: vec![0_i16; total],
+                grad_attention_k: vec![0_i16; total],
+                grad_attention_v: vec![0_i16; total],
+                grad_attention_norm_input: vec![0_i16; total],
+                grad_embedding_output: vec![0_i16; total],
+            }
+        }
+
+        fn as_workspace(&mut self) -> nsrl_train_core::MiniTransformerStepWorkspace<'_> {
+            nsrl_train_core::MiniTransformerStepWorkspace {
+                embedding_output: &mut self.embedding_output,
+                attention_norm: &mut self.attention_norm,
+                attention_q: &mut self.attention_q,
+                attention_k: &mut self.attention_k,
+                attention_v: &mut self.attention_v,
+                attention_context: &mut self.attention_context,
+                attention_output: &mut self.attention_output,
+                attention_residual: &mut self.attention_residual,
+                attention_state_kv: &mut self.attention_state_kv,
+                attention_key_sums: &mut self.attention_key_sums,
+                mlp_norm: &mut self.mlp_norm,
+                mlp_up: &mut self.mlp_up,
+                mlp_gate: &mut self.mlp_gate,
+                mlp_gated: &mut self.mlp_gated,
+                mlp_output: &mut self.mlp_output,
+                block_output: &mut self.block_output,
+                logits_q8: &mut self.logits_q8,
+                probabilities_q15: &mut self.probabilities_q15,
+                grad_output_q15: &mut self.grad_output_q15,
+                output_scaled_grad: &mut self.output_scaled_grad,
+                grad_last_features: &mut self.grad_last_features,
+                grad_mlp_output: &mut self.grad_mlp_output,
+                grad_mlp_input: &mut self.grad_mlp_input,
+                mlp_scaled_grad: &mut self.mlp_scaled_grad,
+                mlp_input_grad_gated: &mut self.mlp_input_grad_gated,
+                mlp_input_grad_up: &mut self.mlp_input_grad_up,
+                mlp_input_grad_gate: &mut self.mlp_input_grad_gate,
+                mlp_input_grad_up_input: &mut self.mlp_input_grad_up_input,
+                mlp_input_grad_gate_input: &mut self.mlp_input_grad_gate_input,
+                mlp_update_grad_gated: &mut self.mlp_update_grad_gated,
+                mlp_update_grad_up: &mut self.mlp_update_grad_up,
+                mlp_update_grad_gate: &mut self.mlp_update_grad_gate,
+                grad_attention_output: &mut self.grad_attention_output,
+                grad_attention_context: &mut self.grad_attention_context,
+                attention_scaled_grad: &mut self.attention_scaled_grad,
+                linear_prefix_states: &mut self.linear_prefix_states,
+                linear_denominators: &mut self.linear_denominators,
+                linear_grad_state_q15: &mut self.linear_grad_state_q15,
+                linear_grad_q_acc: &mut self.linear_grad_q_acc,
+                linear_grad_k_acc: &mut self.linear_grad_k_acc,
+                linear_grad_v_acc: &mut self.linear_grad_v_acc,
+                grad_attention_q: &mut self.grad_attention_q,
+                grad_attention_k: &mut self.grad_attention_k,
+                grad_attention_v: &mut self.grad_attention_v,
+                grad_attention_norm_input: &mut self.grad_attention_norm_input,
+                grad_embedding_output: &mut self.grad_embedding_output,
+            }
+        }
+    }
+
+    #[test]
+    fn mini_transformer_train_core_linear_nope_step_matches_std_single_window() {
+        let tokens = b"To be";
+        let seq_len = 4;
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len,
+            stride: 1,
+            window_offset: 0,
+            max_windows: Some(1),
+            batch_windows: 1,
+            tokenizer_id: ByteTokenizerId::Identity,
+            attention_kind: MiniTransformerAttentionKind::Linear,
+            position_policy: MiniTransformerPositionPolicy::Nope,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 17,
+            embedding_learning_rate_shift: 13,
+            attention_learning_rate_shift: 22,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 16,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+            adaptive_attention_shifts: false,
+            adaptive_holographic_shifts: false,
+            attention_vo_error_feedback: false,
+            attention_vo_oracle: false,
+            reject_loss_regression: false,
+        };
+        let initial_model = MiniTransformerMlpModel::new_initial_with_seq_len(seq_len);
+        let std_run =
+            run_mini_transformer_mlp_training_from_model(tokens, config, initial_model.clone())
+                .expect("std training");
+        assert_eq!(std_run.trace.updates, 1);
+        assert_eq!(std_run.trace.rollback_count, 0);
+        assert_eq!(std_run.trace.rejected_window_count, 0);
+
+        let mut core_model = initial_model;
+        let core_stats = {
+            let mut model_slices = nsrl_train_core::MiniTransformerModelSlicesMut {
+                embeddings: &mut core_model.embeddings,
+                q_weights: &mut core_model.q_weights,
+                k_weights: &mut core_model.k_weights,
+                v_weights: &mut core_model.v_weights,
+                o_weights: &mut core_model.o_weights,
+                up_weights: &mut core_model.up_weights,
+                gate_weights: &mut core_model.gate_weights,
+                down_weights: &mut core_model.down_weights,
+                output_weights: &mut core_model.output_weights,
+            };
+            let mut buffers = MiniTransformerTrainCoreWorkspaceBuffers::new(seq_len);
+            let mut workspace = buffers.as_workspace();
+            nsrl_train_core::mini_transformer_linear_nope_train_step(
+                &mut model_slices,
+                &tokens[..seq_len],
+                tokens[seq_len],
+                nsrl_train_core::MiniTransformerStepConfig {
+                    seq_len,
+                    learning_rate: config.learning_rate,
+                    output_learning_rate_shift: config.output_learning_rate_shift,
+                    mlp_learning_rate_shift: config.mlp_learning_rate_shift,
+                    embedding_learning_rate_shift: config.embedding_learning_rate_shift,
+                    attention_learning_rate_shift: config.attention_learning_rate_shift,
+                    attention_q_learning_rate_shift: config.attention_q_learning_rate_shift,
+                    attention_qk_learning_rate_shift: config.attention_qk_learning_rate_shift,
+                },
+                &mut workspace,
+            )
+            .expect("train core step")
+        };
+        let std_step = &std_run.trace.steps[0];
+        assert_eq!(core_stats.predicted_before, std_step.predicted_token_before);
+        assert_eq!(core_stats.predicted_after, std_step.predicted_token_after);
+        assert_eq!(
+            core_stats.output_head.gradient_saturation_count,
+            std_step.output_head_saturation_count
+        );
+        assert_eq!(
+            core_stats.output_head.zero_delta_count,
+            std_step.output_head_zero_delta_count
+        );
+        assert_eq!(
+            core_stats.output_head.weight_delta_l1,
+            std_step.output_head_delta_l1
+        );
+        assert_eq!(
+            core_stats.mlp.gradient_saturation_count(),
+            std_step.mlp_saturation_count
+        );
+        assert_eq!(
+            core_stats.mlp.zero_delta_count(),
+            std_step.mlp_zero_delta_count
+        );
+        assert_eq!(core_stats.mlp.weight_delta_l1(), std_step.mlp_delta_l1);
+        assert_eq!(
+            core_stats.embedding.gradient_saturation_count,
+            std_step.embedding_saturation_count
+        );
+        assert_eq!(
+            core_stats.embedding.zero_delta_count,
+            std_step.embedding_zero_delta_count
+        );
+        assert_eq!(
+            core_stats.embedding.weight_delta_l1,
+            std_step.embedding_delta_l1
+        );
+        assert_eq!(
+            core_stats.attention.gradient_saturation_count(),
+            std_step.attention_saturation_count
+        );
+        assert_eq!(
+            core_stats.attention.zero_delta_count(),
+            std_step.attention_zero_delta_count
+        );
+        assert_eq!(
+            core_stats.attention.weight_delta_l1(),
+            std_step.attention_delta_l1
+        );
+        assert_eq!(
+            core_stats.attention.q.weight_delta_l1,
+            std_step.attention_q_delta_l1
+        );
+        assert_eq!(
+            core_stats.attention.k.weight_delta_l1,
+            std_step.attention_k_delta_l1
+        );
+        assert_eq!(
+            core_stats.attention.v.weight_delta_l1,
+            std_step.attention_v_delta_l1
+        );
+        assert_eq!(
+            core_stats.attention.o.weight_delta_l1,
+            std_step.attention_o_delta_l1
+        );
+        assert_eq!(
+            core_stats.residual_saturation_count,
+            std_step.residual_saturation_count
+        );
+        assert_eq!(core_model.embeddings, std_run.model.embeddings);
+        assert_eq!(
+            core_model.position_embeddings,
+            std_run.model.position_embeddings
+        );
+        assert_eq!(core_model.q_weights, std_run.model.q_weights);
+        assert_eq!(core_model.k_weights, std_run.model.k_weights);
+        assert_eq!(core_model.v_weights, std_run.model.v_weights);
+        assert_eq!(core_model.o_weights, std_run.model.o_weights);
+        assert_eq!(core_model.up_weights, std_run.model.up_weights);
+        assert_eq!(core_model.gate_weights, std_run.model.gate_weights);
+        assert_eq!(core_model.down_weights, std_run.model.down_weights);
+        assert_eq!(core_model.output_weights, std_run.model.output_weights);
     }
 
     #[test]

@@ -606,10 +606,10 @@ Safety semantics:
 - Mini Transformer artifacts with magic `NSRLMT3` serialize learned absolute
   i16 position embeddings alongside token embeddings. The model object reports
   this as `"position":"learned_absolute_i16"`.
-- In `mini-transformer-mlp` mode, `--model PATH` loads an existing `NSRLMT3`
-  artifact and continues training from that exact integer state. Without
-  `--model`, the trainer initializes a deterministic scratch model for the
-  requested `seq_len`.
+- In `mini-transformer-mlp` mode, `--model PATH` or `--resume-from PATH` loads
+  an existing `NSRLMT3` artifact and continues training from that exact integer
+  state. Without a model path, the trainer initializes a deterministic scratch
+  model for the requested `seq_len`.
 - `--attention-vo-error-feedback` enables residual/error-feedback buckets for
   attention V/O i8 updates only. The optimizer object records this as
   `attention_vo_error_feedback`.
@@ -651,6 +651,30 @@ cargo run -p nsrl-train -- \
   --model-out data/processed/wiki-bard-mini-transformer-mlp.nsrlmt \
   --trace data/processed/wiki-bard-mini-transformer-mlp.trace.jsonl
 ```
+
+## `nsrl.training_mini_transformer_progress.v1`
+
+Authority: `deterministic_training_replay`
+
+Purpose: provide a compact heartbeat for long-running mini Transformer training
+jobs. This is not a replacement for the final replay trace; it is the live,
+batch-boundary state used by the AWS dashboard.
+
+The progress row records the same `data`, `model`, and `training` identity
+fields as the final trace, then emits running counters in `metrics`:
+
+- accepted/rejected batches, rollbacks, rejected windows,
+- output/MLP/embedding/attention movement,
+- attention Q/K/V/O movement,
+- adaptive rule and holographic shift adjustment counts,
+- current component learning-rate shifts,
+- model, embedding, attention, MLP, and output-head hashes.
+
+The runner writes this through `--progress-out PATH` every
+`--progress-interval-batches N` observed batches and once more after final
+evaluation. Dashboards should prefer the final
+`nsrl.training_mini_transformer_mlp_trace.v1` row when it exists, and fall back
+to this progress schema while the run is still active.
 
 ## `nsrl.mini_transformer_generation_trace.v1`
 

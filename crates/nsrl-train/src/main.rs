@@ -16,7 +16,7 @@ use nsrl_train::{
     LexemeQualityWeightProfile, LexemeSoftmaxModel, LexemeSoftmaxTrainConfig, LexemeTopicPriors,
     LinearBackwardConfig, MiniTransformerAttentionKind, MiniTransformerMlpModel,
     MiniTransformerMlpTrainConfig, MiniTransformerPositionPolicy, SoftmaxTrainConfig, TrainConfig,
-    generate_byte_embed_softmax_with_priors, generate_byte_softmax_with_priors,
+    TrainError, generate_byte_embed_softmax_with_priors, generate_byte_softmax_with_priors,
     generate_lexeme_softmax_with_memory,
     generate_mini_transformer_with_attention_kind_position_policy_priors_and_ttt_shift,
     lexeme_quality_weights_from_vocab, run_byte_embed_softmax_training_with_model,
@@ -24,8 +24,9 @@ use nsrl_train::{
     run_lexeme_embedding_training_with_model_and_quality, run_lexeme_softmax_evaluate,
     run_lexeme_softmax_training_from_softmax_model_and_quality,
     run_lexeme_softmax_training_with_model_and_quality, run_linear_backward_smoke,
-    run_mini_transformer_mlp_training_from_model, run_mini_transformer_mlp_training_with_model,
-    run_softmax_training, run_training_smoke,
+    run_mini_transformer_mlp_training_from_model,
+    run_mini_transformer_mlp_training_from_model_with_progress,
+    run_mini_transformer_mlp_training_with_model, run_softmax_training, run_training_smoke,
 };
 
 fn main() {
@@ -53,6 +54,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut vocab_path = None;
     let mut prompt = Vec::new();
     let mut trace_path = None;
+    let mut progress_path = None;
+    let mut progress_interval_batches = 0_usize;
     let mut text_out_path = None;
     let mut generated_only_text = false;
     let mut mini_transformer_attention_kind = MiniTransformerAttentionKind::Base2Softmax;
@@ -239,9 +242,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     args.next().ok_or("--tokens requires a following path")?,
                 ));
             }
-            "--model" => {
+            "--model" | "--resume-from" => {
                 model_path = Some(PathBuf::from(
-                    args.next().ok_or("--model requires a following path")?,
+                    args.next()
+                        .ok_or("--model/--resume-from requires a following path")?,
                 ));
             }
             "--model-out" => {
@@ -647,6 +651,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     args.next().ok_or("--trace requires a following path")?,
                 ));
             }
+            "--progress-out" => {
+                progress_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--progress-out requires a following path")?,
+                ));
+            }
+            "--progress-interval-batches" => {
+                progress_interval_batches = args
+                    .next()
+                    .ok_or("--progress-interval-batches requires an integer")?
+                    .parse()?;
+            }
             "--text-out" => {
                 text_out_path = Some(PathBuf::from(
                     args.next().ok_or("--text-out requires a following path")?,
@@ -868,7 +884,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             let path = tokens_path.ok_or("--tokens is required for mini-transformer-mlp mode")?;
             let tokens = fs::read(path)?;
-            let run = if let Some(path) = model_path {
+            let run = if let Some(progress_path) = progress_path.as_ref() {
+                let mut write_progress =
+                    |progress: &nsrl_train::MiniTransformerMlpTrainingProgressTrace| {
+                        write_progress_trace(progress_path, &progress.to_json_line())
+                    };
+                if let Some(path) = model_path {
+                    let model_bytes = fs::read(path)?;
+                    let model = MiniTransformerMlpModel::from_bytes(&model_bytes)?;
+                    run_mini_transformer_mlp_training_from_model_with_progress(
+                        &tokens,
+                        mini_transformer_config,
+                        model,
+                        progress_interval_batches.max(1),
+                        &mut write_progress,
+                    )?
+                } else {
+                    let model = MiniTransformerMlpModel::new_initial_with_seq_len(
+                        mini_transformer_config.seq_len,
+                    );
+                    run_mini_transformer_mlp_training_from_model_with_progress(
+                        &tokens,
+                        mini_transformer_config,
+                        model,
+                        progress_interval_batches.max(1),
+                        &mut write_progress,
+                    )?
+                }
+            } else if let Some(path) = model_path {
                 let model_bytes = fs::read(path)?;
                 let model = MiniTransformerMlpModel::from_bytes(&model_bytes)?;
                 run_mini_transformer_mlp_training_from_model(
@@ -924,10 +967,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--model-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
     );
     println!();
     println!("Runs a deterministic integer training trace.");
+}
+
+fn write_progress_trace(path: &PathBuf, line: &str) -> Result<(), TrainError> {
+    let mut tmp = path.clone();
+    let extension = match path.extension().and_then(|value| value.to_str()) {
+        Some(extension) => format!("{extension}.tmp"),
+        None => String::from("tmp"),
+    };
+    tmp.set_extension(extension);
+    fs::write(&tmp, line).map_err(|_| TrainError::CoreRejected("progress_write"))?;
+    fs::rename(&tmp, path).map_err(|_| TrainError::CoreRejected("progress_rename"))?;
+    Ok(())
 }
 
 fn apply_decode_profile(

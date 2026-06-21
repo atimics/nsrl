@@ -1,0 +1,1375 @@
+#![no_std]
+#![deny(unsafe_code)]
+
+#[cfg(test)]
+extern crate std;
+
+use core::cmp::Reverse;
+
+use nsrl_core::{
+    FixedScale, GatedMlpBackwardScales, GatedMlpBackwardWorkspace, GatedMlpI16Params,
+    GatedMlpWeightUpdateParams, GatedMlpWeightUpdateWorkspace, GatedMlpWorkspace,
+    LinearAttentionWorkspace, LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
+    LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
+    LinearWeightUpdateStats, MAX_RIGHT_SHIFT, Q15_SHIFT, SelfAttentionI16Params,
+    base2_softmax_i32_q15, dot_i8_i16_i32_checked, gated_mlp_backward_input_i16_q15_checked,
+    gated_mlp_backward_weight_update_i8_checked, gated_mlp_i16_q15_checked,
+    linear_attention_i16_q15_checked, linear_backward_input_i16_i8_i16_per_channel_checked,
+    linear_backward_weight_update_i8_checked, requantize_i32_to_i16, round_shift_rhu_i64,
+    saturate_i16,
+};
+
+pub const BYTE_VOCAB: usize = 256;
+pub const MINI_TRANSFORMER_D_MODEL: usize = 32;
+pub const MINI_TRANSFORMER_HEADS: usize = 2;
+pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 64;
+pub const MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT: u8 = 1;
+
+pub const MINI_TRANSFORMER_D_MODEL_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] = [FixedScale {
+    multiplier: 1,
+    right_shift: 0,
+};
+    MINI_TRANSFORMER_D_MODEL];
+pub const MINI_TRANSFORMER_HIDDEN_SCALES: [FixedScale; MINI_TRANSFORMER_HIDDEN_DIM] = [FixedScale {
+    multiplier: 1,
+    right_shift: 0,
+};
+    MINI_TRANSFORMER_HIDDEN_DIM];
+pub const MINI_TRANSFORMER_OUTPUT_SCALES: [FixedScale; BYTE_VOCAB] = [FixedScale {
+    multiplier: 1,
+    right_shift: 8,
+}; BYTE_VOCAB];
+pub const MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] =
+    [FixedScale {
+        multiplier: 1,
+        right_shift: 0,
+    }; MINI_TRANSFORMER_D_MODEL];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrainCoreError {
+    InvalidConfig,
+    InvalidShape,
+    CoreRejected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerStepConfig {
+    pub seq_len: usize,
+    pub learning_rate: i32,
+    pub output_learning_rate_shift: u8,
+    pub mlp_learning_rate_shift: u8,
+    pub embedding_learning_rate_shift: u8,
+    pub attention_learning_rate_shift: u8,
+    pub attention_q_learning_rate_shift: u8,
+    pub attention_qk_learning_rate_shift: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoftmaxUpdateStats {
+    pub gradient_saturation_count: usize,
+    pub zero_delta_count: usize,
+    pub weight_delta_l1: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GatedMlpStepStats {
+    pub down: LinearWeightUpdateStats,
+    pub up: LinearWeightUpdateStats,
+    pub gate: LinearWeightUpdateStats,
+    pub backward_input_saturation_count: usize,
+}
+
+impl GatedMlpStepStats {
+    pub fn gradient_saturation_count(self) -> usize {
+        self.backward_input_saturation_count
+            .saturating_add(self.down.gradient_saturation_count)
+            .saturating_add(self.up.gradient_saturation_count)
+            .saturating_add(self.gate.gradient_saturation_count)
+    }
+
+    pub fn zero_delta_count(self) -> usize {
+        self.down
+            .zero_delta_count
+            .saturating_add(self.up.zero_delta_count)
+            .saturating_add(self.gate.zero_delta_count)
+    }
+
+    pub fn weight_delta_l1(self) -> u64 {
+        self.down
+            .weight_delta_l1
+            .saturating_add(self.up.weight_delta_l1)
+            .saturating_add(self.gate.weight_delta_l1)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttentionStepStats {
+    pub q: LinearWeightUpdateStats,
+    pub k: LinearWeightUpdateStats,
+    pub v: LinearWeightUpdateStats,
+    pub o: LinearWeightUpdateStats,
+    pub backward_input_saturation_count: usize,
+}
+
+impl AttentionStepStats {
+    pub fn gradient_saturation_count(self) -> usize {
+        self.backward_input_saturation_count
+            .saturating_add(self.q.gradient_saturation_count)
+            .saturating_add(self.k.gradient_saturation_count)
+            .saturating_add(self.v.gradient_saturation_count)
+            .saturating_add(self.o.gradient_saturation_count)
+    }
+
+    pub fn zero_delta_count(self) -> usize {
+        self.q
+            .zero_delta_count
+            .saturating_add(self.k.zero_delta_count)
+            .saturating_add(self.v.zero_delta_count)
+            .saturating_add(self.o.zero_delta_count)
+    }
+
+    pub fn weight_delta_l1(self) -> u64 {
+        self.q
+            .weight_delta_l1
+            .saturating_add(self.k.weight_delta_l1)
+            .saturating_add(self.v.weight_delta_l1)
+            .saturating_add(self.o.weight_delta_l1)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerStepStats {
+    pub predicted_before: u8,
+    pub predicted_after: u8,
+    pub residual_saturation_count: usize,
+    pub output_head: LinearWeightUpdateStats,
+    pub mlp: GatedMlpStepStats,
+    pub attention: AttentionStepStats,
+    pub embedding: SoftmaxUpdateStats,
+}
+
+pub struct MiniTransformerModelSlicesMut<'a> {
+    pub embeddings: &'a mut [i16],
+    pub q_weights: &'a mut [i8],
+    pub k_weights: &'a mut [i8],
+    pub v_weights: &'a mut [i8],
+    pub o_weights: &'a mut [i8],
+    pub up_weights: &'a mut [i8],
+    pub gate_weights: &'a mut [i8],
+    pub down_weights: &'a mut [i8],
+    pub output_weights: &'a mut [i8],
+}
+
+pub struct MiniTransformerStepWorkspace<'a> {
+    pub embedding_output: &'a mut [i16],
+    pub attention_norm: &'a mut [i16],
+    pub attention_q: &'a mut [i16],
+    pub attention_k: &'a mut [i16],
+    pub attention_v: &'a mut [i16],
+    pub attention_context: &'a mut [i16],
+    pub attention_output: &'a mut [i16],
+    pub attention_residual: &'a mut [i16],
+    pub attention_state_kv: &'a mut [i64],
+    pub attention_key_sums: &'a mut [i64],
+    pub mlp_norm: &'a mut [i16],
+    pub mlp_up: &'a mut [i16],
+    pub mlp_gate: &'a mut [i16],
+    pub mlp_gated: &'a mut [i16],
+    pub mlp_output: &'a mut [i16],
+    pub block_output: &'a mut [i16],
+    pub logits_q8: &'a mut [i32],
+    pub probabilities_q15: &'a mut [i16],
+    pub grad_output_q15: &'a mut [i16],
+    pub output_scaled_grad: &'a mut [i32],
+    pub grad_last_features: &'a mut [i16],
+    pub grad_mlp_output: &'a mut [i16],
+    pub grad_mlp_input: &'a mut [i16],
+    pub mlp_scaled_grad: &'a mut [i32],
+    pub mlp_input_grad_gated: &'a mut [i16],
+    pub mlp_input_grad_up: &'a mut [i16],
+    pub mlp_input_grad_gate: &'a mut [i16],
+    pub mlp_input_grad_up_input: &'a mut [i16],
+    pub mlp_input_grad_gate_input: &'a mut [i16],
+    pub mlp_update_grad_gated: &'a mut [i16],
+    pub mlp_update_grad_up: &'a mut [i16],
+    pub mlp_update_grad_gate: &'a mut [i16],
+    pub grad_attention_output: &'a mut [i16],
+    pub grad_attention_context: &'a mut [i16],
+    pub attention_scaled_grad: &'a mut [i32],
+    pub linear_prefix_states: &'a mut [i64],
+    pub linear_denominators: &'a mut [i64],
+    pub linear_grad_state_q15: &'a mut [i64],
+    pub linear_grad_q_acc: &'a mut [i64],
+    pub linear_grad_k_acc: &'a mut [i64],
+    pub linear_grad_v_acc: &'a mut [i64],
+    pub grad_attention_q: &'a mut [i16],
+    pub grad_attention_k: &'a mut [i16],
+    pub grad_attention_v: &'a mut [i16],
+    pub grad_attention_norm_input: &'a mut [i16],
+    pub grad_embedding_output: &'a mut [i16],
+}
+
+pub fn mini_transformer_linear_nope_train_step(
+    model: &mut MiniTransformerModelSlicesMut<'_>,
+    context: &[u8],
+    target: u8,
+    config: MiniTransformerStepConfig,
+    workspace: &mut MiniTransformerStepWorkspace<'_>,
+) -> Result<MiniTransformerStepStats, TrainCoreError> {
+    validate_config(config)?;
+    validate_model_shapes(model, config.seq_len)?;
+    validate_workspace_shapes(workspace, config.seq_len)?;
+
+    let forward_before_residual_saturation_count =
+        mini_transformer_forward_linear_nope(model, context, config.seq_len, workspace)?;
+    let predicted_before = byte_argmax_i32(workspace.logits_q8)?;
+
+    byte_softmax_gradient_q15(
+        target,
+        workspace.probabilities_q15,
+        workspace.grad_output_q15,
+    )?;
+    linear_backward_input_i16_i8_i16_per_channel_checked(
+        workspace.grad_output_q15,
+        LinearBackwardInputI16I8Params {
+            weights: model.output_weights,
+            forward_scales: &MINI_TRANSFORMER_OUTPUT_SCALES,
+            grad_input_scales: &MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: BYTE_VOCAB,
+        },
+        LinearBackwardInputWorkspace {
+            scaled_grad_output: workspace.output_scaled_grad,
+        },
+        workspace.grad_last_features,
+    )
+    .ok_or(TrainCoreError::CoreRejected)?;
+
+    let last_start = (config.seq_len - 1)
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let last_end = last_start
+        .checked_add(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let output_head = linear_backward_weight_update_i8_checked(
+        &workspace.block_output[last_start..last_end],
+        workspace.grad_output_q15,
+        model.output_weights,
+        LinearBackwardWeightUpdateI8Params {
+            forward_scales: &MINI_TRANSFORMER_OUTPUT_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: BYTE_VOCAB,
+            learning_rate: config.learning_rate,
+            learning_rate_shift: config.output_learning_rate_shift,
+        },
+        LinearBackwardWeightUpdateWorkspace {
+            scaled_grad_output: workspace.output_scaled_grad,
+        },
+    )
+    .ok_or(TrainCoreError::CoreRejected)?;
+
+    workspace.grad_mlp_output.fill(0);
+    workspace.grad_mlp_output[last_start..last_end].copy_from_slice(workspace.grad_last_features);
+    let mlp_backward_input_saturation = gated_mlp_backward_input_i16_q15_checked(
+        workspace.grad_mlp_output,
+        mini_transformer_mlp_params(model, config.seq_len),
+        workspace.mlp_up,
+        workspace.mlp_gate,
+        GatedMlpBackwardScales {
+            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            up_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            gate_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
+        },
+        GatedMlpBackwardWorkspace {
+            scaled_grad_output: workspace.mlp_scaled_grad,
+            grad_gated: workspace.mlp_input_grad_gated,
+            grad_up: workspace.mlp_input_grad_up,
+            grad_gate: workspace.mlp_input_grad_gate,
+            grad_up_input: workspace.mlp_input_grad_up_input,
+            grad_gate_input: workspace.mlp_input_grad_gate_input,
+        },
+        workspace.grad_mlp_input,
+    )
+    .ok_or(TrainCoreError::CoreRejected)?;
+
+    let gradient_residual_saturation = add_i16_residual_rows_checked(
+        workspace.grad_mlp_output,
+        workspace.grad_mlp_input,
+        workspace.grad_attention_output,
+    )?;
+
+    let mlp_update = gated_mlp_backward_weight_update_i8_checked(
+        workspace.mlp_norm,
+        workspace.grad_mlp_output,
+        workspace.mlp_up,
+        workspace.mlp_gate,
+        workspace.mlp_gated,
+        model.up_weights,
+        model.gate_weights,
+        model.down_weights,
+        GatedMlpWeightUpdateParams {
+            up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            seq_len: config.seq_len,
+            d_model: MINI_TRANSFORMER_D_MODEL,
+            hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+            learning_rate: config.learning_rate,
+            learning_rate_shift: config.mlp_learning_rate_shift,
+        },
+        GatedMlpWeightUpdateWorkspace {
+            scaled_grad_output: workspace.mlp_scaled_grad,
+            grad_gated: workspace.mlp_update_grad_gated,
+            grad_up: workspace.mlp_update_grad_up,
+            grad_gate: workspace.mlp_update_grad_gate,
+        },
+    )
+    .ok_or(TrainCoreError::CoreRejected)?;
+
+    let attention = mini_transformer_linear_attention_update_i8_checked(
+        model,
+        workspace,
+        config.seq_len,
+        config.learning_rate,
+        config.attention_q_learning_rate_shift,
+        config.attention_qk_learning_rate_shift,
+        config.attention_learning_rate_shift,
+    )?;
+    let embedding_gradient_saturation = add_i16_residual_rows_checked(
+        workspace.grad_attention_output,
+        workspace.grad_attention_norm_input,
+        workspace.grad_embedding_output,
+    )?;
+    let embedding = apply_mini_transformer_embedding_update_nope(
+        model.embeddings,
+        context,
+        workspace.grad_embedding_output,
+        config.learning_rate,
+        config.embedding_learning_rate_shift,
+    )?;
+
+    let forward_after_residual_saturation_count =
+        mini_transformer_forward_linear_nope(model, context, config.seq_len, workspace)?;
+    let predicted_after = byte_argmax_i32(workspace.logits_q8)?;
+    let residual_saturation_count = gradient_residual_saturation
+        .saturating_add(embedding_gradient_saturation)
+        .saturating_add(forward_before_residual_saturation_count)
+        .saturating_add(forward_after_residual_saturation_count);
+
+    Ok(MiniTransformerStepStats {
+        predicted_before,
+        predicted_after,
+        residual_saturation_count,
+        output_head,
+        mlp: GatedMlpStepStats {
+            down: mlp_update.down,
+            up: mlp_update.up,
+            gate: mlp_update.gate,
+            backward_input_saturation_count: mlp_backward_input_saturation,
+        },
+        attention,
+        embedding,
+    })
+}
+
+fn validate_config(config: MiniTransformerStepConfig) -> Result<(), TrainCoreError> {
+    if config.seq_len == 0
+        || config.learning_rate <= 0
+        || config.output_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.mlp_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.embedding_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_q_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_qk_learning_rate_shift > MAX_RIGHT_SHIFT
+    {
+        return Err(TrainCoreError::InvalidConfig);
+    }
+    mini_transformer_head_dim().ok_or(TrainCoreError::InvalidConfig)?;
+    Ok(())
+}
+
+fn validate_model_shapes(
+    model: &MiniTransformerModelSlicesMut<'_>,
+    seq_len: usize,
+) -> Result<(), TrainCoreError> {
+    let attention_weights = MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL;
+    let up_gate_weights = MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM;
+    if model.embeddings.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
+        || model.q_weights.len() != attention_weights
+        || model.k_weights.len() != attention_weights
+        || model.v_weights.len() != attention_weights
+        || model.o_weights.len() != attention_weights
+        || model.up_weights.len() != up_gate_weights
+        || model.gate_weights.len() != up_gate_weights
+        || model.down_weights.len() != MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL
+        || model.output_weights.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
+        || seq_len == 0
+    {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    Ok(())
+}
+
+fn validate_workspace_shapes(
+    workspace: &MiniTransformerStepWorkspace<'_>,
+    seq_len: usize,
+) -> Result<(), TrainCoreError> {
+    let total = seq_len
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let hidden_total = seq_len
+        .checked_mul(MINI_TRANSFORMER_HIDDEN_DIM)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let head_dim = mini_transformer_head_dim().ok_or(TrainCoreError::InvalidConfig)?;
+    let head_state_len = head_dim
+        .checked_mul(head_dim)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let state_len = MINI_TRANSFORMER_HEADS
+        .checked_mul(head_state_len)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let key_sum_len = MINI_TRANSFORMER_HEADS
+        .checked_mul(head_dim)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let prefix_len = state_len
+        .checked_mul(seq_len)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let denom_len = MINI_TRANSFORMER_HEADS
+        .checked_mul(seq_len)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+
+    if workspace.embedding_output.len() != total
+        || workspace.attention_norm.len() != total
+        || workspace.attention_q.len() != total
+        || workspace.attention_k.len() != total
+        || workspace.attention_v.len() != total
+        || workspace.attention_context.len() != total
+        || workspace.attention_output.len() != total
+        || workspace.attention_residual.len() != total
+        || workspace.attention_state_kv.len() != state_len
+        || workspace.attention_key_sums.len() != key_sum_len
+        || workspace.mlp_norm.len() != total
+        || workspace.mlp_up.len() != hidden_total
+        || workspace.mlp_gate.len() != hidden_total
+        || workspace.mlp_gated.len() != hidden_total
+        || workspace.mlp_output.len() != total
+        || workspace.block_output.len() != total
+        || workspace.logits_q8.len() != BYTE_VOCAB
+        || workspace.probabilities_q15.len() != BYTE_VOCAB
+        || workspace.grad_output_q15.len() != BYTE_VOCAB
+        || workspace.output_scaled_grad.len() != BYTE_VOCAB
+        || workspace.grad_last_features.len() != MINI_TRANSFORMER_D_MODEL
+        || workspace.grad_mlp_output.len() != total
+        || workspace.grad_mlp_input.len() != total
+        || workspace.mlp_scaled_grad.len()
+            < MINI_TRANSFORMER_D_MODEL.max(MINI_TRANSFORMER_HIDDEN_DIM)
+        || workspace.mlp_input_grad_gated.len() != hidden_total
+        || workspace.mlp_input_grad_up.len() != hidden_total
+        || workspace.mlp_input_grad_gate.len() != hidden_total
+        || workspace.mlp_input_grad_up_input.len() != total
+        || workspace.mlp_input_grad_gate_input.len() != total
+        || workspace.mlp_update_grad_gated.len() != hidden_total
+        || workspace.mlp_update_grad_up.len() != hidden_total
+        || workspace.mlp_update_grad_gate.len() != hidden_total
+        || workspace.grad_attention_output.len() != total
+        || workspace.grad_attention_context.len() != total
+        || workspace.attention_scaled_grad.len() < MINI_TRANSFORMER_D_MODEL
+        || workspace.linear_prefix_states.len() != prefix_len
+        || workspace.linear_denominators.len() != denom_len
+        || workspace.linear_grad_state_q15.len() != head_state_len
+        || workspace.linear_grad_q_acc.len() != total
+        || workspace.linear_grad_k_acc.len() != total
+        || workspace.linear_grad_v_acc.len() != total
+        || workspace.grad_attention_q.len() != total
+        || workspace.grad_attention_k.len() != total
+        || workspace.grad_attention_v.len() != total
+        || workspace.grad_attention_norm_input.len() != total
+        || workspace.grad_embedding_output.len() != total
+    {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    Ok(())
+}
+
+fn mini_transformer_forward_linear_nope(
+    model: &MiniTransformerModelSlicesMut<'_>,
+    context: &[u8],
+    seq_len: usize,
+    workspace: &mut MiniTransformerStepWorkspace<'_>,
+) -> Result<usize, TrainCoreError> {
+    if context.len() != seq_len {
+        return Err(TrainCoreError::InvalidConfig);
+    }
+    mini_transformer_embedding_sequence_nope_q15(
+        model.embeddings,
+        context,
+        workspace.embedding_output,
+    )?;
+    workspace
+        .attention_norm
+        .copy_from_slice(workspace.embedding_output);
+
+    let attention_params = mini_transformer_attention_params(model, seq_len);
+    workspace.attention_state_kv.fill(0);
+    workspace.attention_key_sums.fill(0);
+    linear_attention_i16_q15_checked(
+        workspace.attention_norm,
+        attention_params,
+        LinearAttentionWorkspace {
+            q: workspace.attention_q,
+            k: workspace.attention_k,
+            v: workspace.attention_v,
+            context: workspace.attention_context,
+            state_kv: workspace.attention_state_kv,
+            key_sums: workspace.attention_key_sums,
+        },
+        workspace.attention_output,
+    )
+    .ok_or(TrainCoreError::CoreRejected)?;
+
+    let mut residual_saturation_count = add_i16_residual_rows_checked(
+        workspace.embedding_output,
+        workspace.attention_output,
+        workspace.attention_residual,
+    )?;
+    workspace
+        .mlp_norm
+        .copy_from_slice(workspace.attention_residual);
+
+    gated_mlp_i16_q15_checked(
+        workspace.mlp_norm,
+        mini_transformer_mlp_params(model, seq_len),
+        GatedMlpWorkspace {
+            up: workspace.mlp_up,
+            gate: workspace.mlp_gate,
+            gated: workspace.mlp_gated,
+        },
+        workspace.mlp_output,
+    )
+    .ok_or(TrainCoreError::CoreRejected)?;
+    residual_saturation_count =
+        residual_saturation_count.saturating_add(add_i16_residual_rows_checked(
+            workspace.attention_residual,
+            workspace.mlp_output,
+            workspace.block_output,
+        )?);
+    let last_start = (seq_len - 1)
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let last_end = last_start
+        .checked_add(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    mini_transformer_output_row_for(
+        model.output_weights,
+        &workspace.block_output[last_start..last_end],
+        workspace.logits_q8,
+        workspace.probabilities_q15,
+    )?;
+    Ok(residual_saturation_count)
+}
+
+fn mini_transformer_embedding_sequence_nope_q15(
+    embeddings: &[i16],
+    context: &[u8],
+    output: &mut [i16],
+) -> Result<(), TrainCoreError> {
+    let total = context
+        .len()
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    if embeddings.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL || output.len() != total {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    for (position, &token) in context.iter().enumerate() {
+        let row_start = usize::from(token) * MINI_TRANSFORMER_D_MODEL;
+        let out_start = position * MINI_TRANSFORMER_D_MODEL;
+        output[out_start..out_start + MINI_TRANSFORMER_D_MODEL]
+            .copy_from_slice(&embeddings[row_start..row_start + MINI_TRANSFORMER_D_MODEL]);
+    }
+    Ok(())
+}
+
+fn mini_transformer_attention_params<'a>(
+    model: &'a MiniTransformerModelSlicesMut<'_>,
+    seq_len: usize,
+) -> SelfAttentionI16Params<'a> {
+    SelfAttentionI16Params {
+        q: LinearI16I8Params {
+            weights: model.q_weights,
+            bias: None,
+            scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: MINI_TRANSFORMER_D_MODEL,
+        },
+        k: LinearI16I8Params {
+            weights: model.k_weights,
+            bias: None,
+            scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: MINI_TRANSFORMER_D_MODEL,
+        },
+        v: LinearI16I8Params {
+            weights: model.v_weights,
+            bias: None,
+            scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: MINI_TRANSFORMER_D_MODEL,
+        },
+        o: LinearI16I8Params {
+            weights: model.o_weights,
+            bias: None,
+            scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: MINI_TRANSFORMER_D_MODEL,
+        },
+        seq_len,
+        d_model: MINI_TRANSFORMER_D_MODEL,
+        heads: MINI_TRANSFORMER_HEADS,
+        causal: true,
+    }
+}
+
+fn mini_transformer_mlp_params<'a>(
+    model: &'a MiniTransformerModelSlicesMut<'_>,
+    seq_len: usize,
+) -> GatedMlpI16Params<'a> {
+    GatedMlpI16Params {
+        up: LinearI16I8Params {
+            weights: model.up_weights,
+            bias: None,
+            scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+        },
+        gate: LinearI16I8Params {
+            weights: model.gate_weights,
+            bias: None,
+            scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+        },
+        down: LinearI16I8Params {
+            weights: model.down_weights,
+            bias: None,
+            scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            input_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+            output_dim: MINI_TRANSFORMER_D_MODEL,
+        },
+        seq_len,
+        d_model: MINI_TRANSFORMER_D_MODEL,
+        hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+    }
+}
+
+fn mini_transformer_output_row_for(
+    output_weights: &[i8],
+    features: &[i16],
+    logits_q8: &mut [i32],
+    probabilities_q15: &mut [i16],
+) -> Result<(), TrainCoreError> {
+    if output_weights.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
+        || features.len() != MINI_TRANSFORMER_D_MODEL
+        || logits_q8.len() != BYTE_VOCAB
+        || probabilities_q15.len() != BYTE_VOCAB
+    {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    for (class_id, logit) in logits_q8.iter_mut().enumerate() {
+        let row_start = class_id * MINI_TRANSFORMER_D_MODEL;
+        let acc = dot_i8_i16_i32_checked(
+            &output_weights[row_start..row_start + MINI_TRANSFORMER_D_MODEL],
+            features,
+        )
+        .ok_or(TrainCoreError::CoreRejected)?;
+        *logit = i32::from(requantize_i32_to_i16(
+            acc,
+            MINI_TRANSFORMER_OUTPUT_SCALES[class_id],
+        ));
+    }
+    base2_softmax_i32_q15(logits_q8, probabilities_q15)
+        .map(|_| ())
+        .ok_or(TrainCoreError::CoreRejected)
+}
+
+fn byte_softmax_gradient_q15(
+    target: u8,
+    probabilities_q15: &[i16],
+    grad_output_q15: &mut [i16],
+) -> Result<(), TrainCoreError> {
+    if probabilities_q15.len() != BYTE_VOCAB || grad_output_q15.len() != BYTE_VOCAB {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    let target = usize::from(target);
+    for (class_id, out) in grad_output_q15.iter_mut().enumerate() {
+        let mut value = i32::from(probabilities_q15[class_id]);
+        if class_id == target {
+            value -= i32::from(i16::MAX);
+        }
+        *out = saturate_i16(i64::from(value));
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mini_transformer_linear_attention_update_i8_checked(
+    model: &mut MiniTransformerModelSlicesMut<'_>,
+    workspace: &mut MiniTransformerStepWorkspace<'_>,
+    seq_len: usize,
+    learning_rate: i32,
+    attention_q_learning_rate_shift: u8,
+    attention_qk_learning_rate_shift: u8,
+    attention_learning_rate_shift: u8,
+) -> Result<AttentionStepStats, TrainCoreError> {
+    let total = seq_len
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    workspace.grad_attention_context.fill(0);
+    for token in 0..seq_len {
+        let row_start = token * MINI_TRANSFORMER_D_MODEL;
+        let row_end = row_start + MINI_TRANSFORMER_D_MODEL;
+        linear_backward_input_i16_i8_i16_per_channel_checked(
+            &workspace.grad_attention_output[row_start..row_end],
+            LinearBackwardInputI16I8Params {
+                weights: model.o_weights,
+                forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                input_dim: MINI_TRANSFORMER_D_MODEL,
+                output_dim: MINI_TRANSFORMER_D_MODEL,
+            },
+            LinearBackwardInputWorkspace {
+                scaled_grad_output: workspace.attention_scaled_grad,
+            },
+            &mut workspace.grad_attention_context[row_start..row_end],
+        )
+        .ok_or(TrainCoreError::CoreRejected)?;
+    }
+
+    mini_transformer_linear_attention_qkv_gradients_q15(seq_len, workspace)?;
+
+    workspace.grad_attention_norm_input.fill(0);
+    let mut input_gradient_saturation_count = 0_usize;
+    for token in 0..seq_len {
+        let row_start = token * MINI_TRANSFORMER_D_MODEL;
+        let row_end = row_start + MINI_TRANSFORMER_D_MODEL;
+        let mut grad_q_input = [0_i16; MINI_TRANSFORMER_D_MODEL];
+        let mut grad_k_input = [0_i16; MINI_TRANSFORMER_D_MODEL];
+        let mut grad_v_input = [0_i16; MINI_TRANSFORMER_D_MODEL];
+
+        linear_backward_input_i16_i8_i16_per_channel_checked(
+            &workspace.grad_attention_q[row_start..row_end],
+            LinearBackwardInputI16I8Params {
+                weights: model.q_weights,
+                forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                input_dim: MINI_TRANSFORMER_D_MODEL,
+                output_dim: MINI_TRANSFORMER_D_MODEL,
+            },
+            LinearBackwardInputWorkspace {
+                scaled_grad_output: workspace.attention_scaled_grad,
+            },
+            &mut grad_q_input,
+        )
+        .ok_or(TrainCoreError::CoreRejected)?;
+        linear_backward_input_i16_i8_i16_per_channel_checked(
+            &workspace.grad_attention_k[row_start..row_end],
+            LinearBackwardInputI16I8Params {
+                weights: model.k_weights,
+                forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                input_dim: MINI_TRANSFORMER_D_MODEL,
+                output_dim: MINI_TRANSFORMER_D_MODEL,
+            },
+            LinearBackwardInputWorkspace {
+                scaled_grad_output: workspace.attention_scaled_grad,
+            },
+            &mut grad_k_input,
+        )
+        .ok_or(TrainCoreError::CoreRejected)?;
+        linear_backward_input_i16_i8_i16_per_channel_checked(
+            &workspace.grad_attention_v[row_start..row_end],
+            LinearBackwardInputI16I8Params {
+                weights: model.v_weights,
+                forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                input_dim: MINI_TRANSFORMER_D_MODEL,
+                output_dim: MINI_TRANSFORMER_D_MODEL,
+            },
+            LinearBackwardInputWorkspace {
+                scaled_grad_output: workspace.attention_scaled_grad,
+            },
+            &mut grad_v_input,
+        )
+        .ok_or(TrainCoreError::CoreRejected)?;
+
+        for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            let wide = i64::from(grad_q_input[dim])
+                + i64::from(grad_k_input[dim])
+                + i64::from(grad_v_input[dim]);
+            let scaled = round_shift_rhu_i64(wide, MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT);
+            if scaled < i64::from(i16::MIN) || scaled > i64::from(i16::MAX) {
+                input_gradient_saturation_count = input_gradient_saturation_count.saturating_add(1);
+            }
+            workspace.grad_attention_norm_input[row_start + dim] = saturate_i16(scaled);
+        }
+    }
+
+    let mut q = empty_linear_weight_update_stats();
+    let mut k = empty_linear_weight_update_stats();
+    let mut v = empty_linear_weight_update_stats();
+    let mut o = empty_linear_weight_update_stats();
+    for token in 0..seq_len {
+        let row_start = token * MINI_TRANSFORMER_D_MODEL;
+        let row_end = row_start + MINI_TRANSFORMER_D_MODEL;
+        q = add_linear_weight_update_stats(
+            q,
+            linear_backward_weight_update_i8_checked(
+                &workspace.attention_norm[row_start..row_end],
+                &workspace.grad_attention_q[row_start..row_end],
+                model.q_weights,
+                LinearBackwardWeightUpdateI8Params {
+                    forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                    input_dim: MINI_TRANSFORMER_D_MODEL,
+                    output_dim: MINI_TRANSFORMER_D_MODEL,
+                    learning_rate,
+                    learning_rate_shift: attention_q_learning_rate_shift,
+                },
+                LinearBackwardWeightUpdateWorkspace {
+                    scaled_grad_output: workspace.attention_scaled_grad,
+                },
+            )
+            .ok_or(TrainCoreError::CoreRejected)?,
+        );
+        k = add_linear_weight_update_stats(
+            k,
+            linear_backward_weight_update_i8_checked(
+                &workspace.attention_norm[row_start..row_end],
+                &workspace.grad_attention_k[row_start..row_end],
+                model.k_weights,
+                LinearBackwardWeightUpdateI8Params {
+                    forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                    input_dim: MINI_TRANSFORMER_D_MODEL,
+                    output_dim: MINI_TRANSFORMER_D_MODEL,
+                    learning_rate,
+                    learning_rate_shift: attention_qk_learning_rate_shift,
+                },
+                LinearBackwardWeightUpdateWorkspace {
+                    scaled_grad_output: workspace.attention_scaled_grad,
+                },
+            )
+            .ok_or(TrainCoreError::CoreRejected)?,
+        );
+        v = add_linear_weight_update_stats(
+            v,
+            linear_backward_weight_update_i8_checked(
+                &workspace.attention_norm[row_start..row_end],
+                &workspace.grad_attention_v[row_start..row_end],
+                model.v_weights,
+                LinearBackwardWeightUpdateI8Params {
+                    forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                    input_dim: MINI_TRANSFORMER_D_MODEL,
+                    output_dim: MINI_TRANSFORMER_D_MODEL,
+                    learning_rate,
+                    learning_rate_shift: attention_learning_rate_shift,
+                },
+                LinearBackwardWeightUpdateWorkspace {
+                    scaled_grad_output: workspace.attention_scaled_grad,
+                },
+            )
+            .ok_or(TrainCoreError::CoreRejected)?,
+        );
+        o = add_linear_weight_update_stats(
+            o,
+            linear_backward_weight_update_i8_checked(
+                &workspace.attention_context[row_start..row_end],
+                &workspace.grad_attention_output[row_start..row_end],
+                model.o_weights,
+                LinearBackwardWeightUpdateI8Params {
+                    forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                    input_dim: MINI_TRANSFORMER_D_MODEL,
+                    output_dim: MINI_TRANSFORMER_D_MODEL,
+                    learning_rate,
+                    learning_rate_shift: attention_learning_rate_shift,
+                },
+                LinearBackwardWeightUpdateWorkspace {
+                    scaled_grad_output: workspace.attention_scaled_grad,
+                },
+            )
+            .ok_or(TrainCoreError::CoreRejected)?,
+        );
+    }
+
+    debug_assert_eq!(workspace.grad_attention_norm_input.len(), total);
+    Ok(AttentionStepStats {
+        q,
+        k,
+        v,
+        o,
+        backward_input_saturation_count: input_gradient_saturation_count,
+    })
+}
+
+fn mini_transformer_linear_attention_qkv_gradients_q15(
+    seq_len: usize,
+    workspace: &mut MiniTransformerStepWorkspace<'_>,
+) -> Result<(), TrainCoreError> {
+    let head_dim = mini_transformer_head_dim().ok_or(TrainCoreError::InvalidConfig)?;
+    let total = seq_len
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let head_state_len = head_dim
+        .checked_mul(head_dim)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let state_len = MINI_TRANSFORMER_HEADS
+        .checked_mul(head_state_len)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    workspace.linear_grad_q_acc[..total].fill(0);
+    workspace.linear_grad_k_acc[..total].fill(0);
+    workspace.linear_grad_v_acc[..total].fill(0);
+
+    for head in 0..MINI_TRANSFORMER_HEADS {
+        let head_offset = head
+            .checked_mul(head_dim)
+            .ok_or(TrainCoreError::InvalidConfig)?;
+        let prefix_head_start = head
+            .checked_mul(seq_len)
+            .and_then(|value| value.checked_mul(head_state_len))
+            .ok_or(TrainCoreError::InvalidConfig)?;
+        let denom_head_start = head
+            .checked_mul(seq_len)
+            .ok_or(TrainCoreError::InvalidConfig)?;
+        workspace.linear_grad_state_q15[..head_state_len].fill(0);
+        let state_start = head
+            .checked_mul(head_state_len)
+            .ok_or(TrainCoreError::InvalidConfig)?;
+        let state_end = state_start
+            .checked_add(head_state_len)
+            .ok_or(TrainCoreError::InvalidConfig)?;
+        let key_sum_start = head
+            .checked_mul(head_dim)
+            .ok_or(TrainCoreError::InvalidConfig)?;
+        let key_sum_end = key_sum_start
+            .checked_add(head_dim)
+            .ok_or(TrainCoreError::InvalidConfig)?;
+        workspace.attention_state_kv[state_start..state_end].fill(0);
+        workspace.attention_key_sums[key_sum_start..key_sum_end].fill(0);
+
+        for token in 0..seq_len {
+            let row_start = token
+                .checked_mul(MINI_TRANSFORMER_D_MODEL)
+                .and_then(|value| value.checked_add(head_offset))
+                .ok_or(TrainCoreError::InvalidConfig)?;
+            let row_end = row_start
+                .checked_add(head_dim)
+                .ok_or(TrainCoreError::InvalidConfig)?;
+            let key = &workspace.attention_k[row_start..row_end];
+            let value = &workspace.attention_v[row_start..row_end];
+            let state = &mut workspace.attention_state_kv[state_start..state_end];
+            let key_sums = &mut workspace.attention_key_sums[key_sum_start..key_sum_end];
+
+            for (key_index, &key_value) in key.iter().enumerate() {
+                let phi_key = mini_transformer_linear_attention_phi_i64(key_value);
+                key_sums[key_index] = key_sums[key_index]
+                    .checked_add(phi_key)
+                    .ok_or(TrainCoreError::CoreRejected)?;
+                let state_row_start = key_index
+                    .checked_mul(head_dim)
+                    .ok_or(TrainCoreError::InvalidConfig)?;
+                for (value_index, &value_value) in value.iter().enumerate() {
+                    let product = phi_key
+                        .checked_mul(i64::from(value_value))
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                    let state_index = state_row_start
+                        .checked_add(value_index)
+                        .ok_or(TrainCoreError::InvalidConfig)?;
+                    state[state_index] = state[state_index]
+                        .checked_add(product)
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                }
+            }
+
+            let query = &workspace.attention_q[row_start..row_end];
+            let mut denominator = 0_i64;
+            for (&query_value, &key_sum) in query.iter().zip(key_sums.iter()) {
+                let product = mini_transformer_linear_attention_phi_i64(query_value)
+                    .checked_mul(key_sum)
+                    .ok_or(TrainCoreError::CoreRejected)?;
+                denominator = denominator
+                    .checked_add(product)
+                    .ok_or(TrainCoreError::CoreRejected)?;
+            }
+            if denominator <= 0 {
+                return Err(TrainCoreError::CoreRejected);
+            }
+            workspace.linear_denominators[denom_head_start + token] = denominator;
+            let snapshot_start = prefix_head_start
+                .checked_add(
+                    token
+                        .checked_mul(head_state_len)
+                        .ok_or(TrainCoreError::InvalidConfig)?,
+                )
+                .ok_or(TrainCoreError::InvalidConfig)?;
+            let snapshot_end = snapshot_start
+                .checked_add(head_state_len)
+                .ok_or(TrainCoreError::InvalidConfig)?;
+            workspace.linear_prefix_states[snapshot_start..snapshot_end].copy_from_slice(state);
+        }
+
+        for query_index in 0..seq_len {
+            let token = seq_len - 1 - query_index;
+            let row_start = token
+                .checked_mul(MINI_TRANSFORMER_D_MODEL)
+                .and_then(|value| value.checked_add(head_offset))
+                .ok_or(TrainCoreError::InvalidConfig)?;
+            let row_end = row_start
+                .checked_add(head_dim)
+                .ok_or(TrainCoreError::InvalidConfig)?;
+            let query = &workspace.attention_q[row_start..row_end];
+            let key = &workspace.attention_k[row_start..row_end];
+            let value = &workspace.attention_v[row_start..row_end];
+            let grad_row = &workspace.grad_attention_context[row_start..row_end];
+            let denominator = workspace.linear_denominators[denom_head_start + token];
+            let snapshot_start = prefix_head_start
+                .checked_add(
+                    token
+                        .checked_mul(head_state_len)
+                        .ok_or(TrainCoreError::InvalidConfig)?,
+                )
+                .ok_or(TrainCoreError::InvalidConfig)?;
+            let snapshot_end = snapshot_start
+                .checked_add(head_state_len)
+                .ok_or(TrainCoreError::InvalidConfig)?;
+            let prefix_state = &workspace.linear_prefix_states[snapshot_start..snapshot_end];
+
+            for key_dim in 0..head_dim {
+                let state_row_start = key_dim
+                    .checked_mul(head_dim)
+                    .ok_or(TrainCoreError::InvalidConfig)?;
+                let mut grad_q_numerator = 0_i64;
+                for (value_dim, &grad_value) in grad_row.iter().enumerate() {
+                    let state_index = state_row_start
+                        .checked_add(value_dim)
+                        .ok_or(TrainCoreError::InvalidConfig)?;
+                    let product = i64::from(grad_value)
+                        .checked_mul(prefix_state[state_index])
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                    grad_q_numerator = grad_q_numerator
+                        .checked_add(product)
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                }
+                let target = row_start
+                    .checked_add(key_dim)
+                    .ok_or(TrainCoreError::InvalidConfig)?;
+                workspace.linear_grad_q_acc[target] = workspace.linear_grad_q_acc[target]
+                    .checked_add(round_ratio_i64(grad_q_numerator, denominator)?)
+                    .ok_or(TrainCoreError::CoreRejected)?;
+            }
+
+            for (key_dim, &query_value) in query.iter().enumerate() {
+                let phi_query = mini_transformer_linear_attention_phi_i64(query_value);
+                let state_row_start = key_dim
+                    .checked_mul(head_dim)
+                    .ok_or(TrainCoreError::InvalidConfig)?;
+                for (value_dim, &grad_value) in grad_row.iter().enumerate() {
+                    let product = i64::from(grad_value)
+                        .checked_mul(phi_query)
+                        .and_then(|value| value.checked_mul(1_i64 << Q15_SHIFT))
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                    let state_grad = round_ratio_i64(product, denominator)?;
+                    let state_index = state_row_start
+                        .checked_add(value_dim)
+                        .ok_or(TrainCoreError::InvalidConfig)?;
+                    workspace.linear_grad_state_q15[state_index] = workspace.linear_grad_state_q15
+                        [state_index]
+                        .checked_add(state_grad)
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                }
+            }
+
+            for (key_dim, &key_value) in key.iter().enumerate() {
+                let phi_key = mini_transformer_linear_attention_phi_i64(key_value);
+                let state_row_start = key_dim
+                    .checked_mul(head_dim)
+                    .ok_or(TrainCoreError::InvalidConfig)?;
+                let mut grad_key_value = 0_i64;
+                for (value_dim, &value_value) in value.iter().enumerate() {
+                    let state_index = state_row_start
+                        .checked_add(value_dim)
+                        .ok_or(TrainCoreError::InvalidConfig)?;
+                    let state_grad = workspace.linear_grad_state_q15[state_index];
+                    let grad_v_product = state_grad
+                        .checked_mul(phi_key)
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                    let v_target = row_start
+                        .checked_add(value_dim)
+                        .ok_or(TrainCoreError::InvalidConfig)?;
+                    workspace.linear_grad_v_acc[v_target] = workspace.linear_grad_v_acc[v_target]
+                        .checked_add(round_shift_rhu_i64(grad_v_product, Q15_SHIFT))
+                        .ok_or(TrainCoreError::CoreRejected)?;
+
+                    let grad_k_product = state_grad
+                        .checked_mul(i64::from(value_value))
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                    grad_key_value = grad_key_value
+                        .checked_add(round_shift_rhu_i64(grad_k_product, Q15_SHIFT))
+                        .ok_or(TrainCoreError::CoreRejected)?;
+                }
+                let k_target = row_start
+                    .checked_add(key_dim)
+                    .ok_or(TrainCoreError::InvalidConfig)?;
+                workspace.linear_grad_k_acc[k_target] = workspace.linear_grad_k_acc[k_target]
+                    .checked_add(grad_key_value)
+                    .ok_or(TrainCoreError::CoreRejected)?;
+            }
+        }
+
+        debug_assert!(state_len <= workspace.attention_state_kv.len());
+    }
+
+    for index in 0..total {
+        workspace.grad_attention_q[index] = saturate_i16(workspace.linear_grad_q_acc[index]);
+        workspace.grad_attention_k[index] = saturate_i16(workspace.linear_grad_k_acc[index]);
+        workspace.grad_attention_v[index] = saturate_i16(workspace.linear_grad_v_acc[index]);
+    }
+    Ok(())
+}
+
+fn apply_mini_transformer_embedding_update_nope(
+    embeddings: &mut [i16],
+    context: &[u8],
+    grad_embedding_output_q15: &[i16],
+    learning_rate: i32,
+    embedding_learning_rate_shift: u8,
+) -> Result<SoftmaxUpdateStats, TrainCoreError> {
+    let total = context
+        .len()
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    if embeddings.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
+        || grad_embedding_output_q15.len() != total
+        || learning_rate <= 0
+        || embedding_learning_rate_shift > MAX_RIGHT_SHIFT
+    {
+        return Err(TrainCoreError::InvalidConfig);
+    }
+    let mut stats = SoftmaxUpdateStats {
+        gradient_saturation_count: 0,
+        zero_delta_count: 0,
+        weight_delta_l1: 0,
+    };
+    for (position, &token) in context.iter().enumerate() {
+        let embedding_row_start = usize::from(token) * MINI_TRANSFORMER_D_MODEL;
+        let grad_row_start = position * MINI_TRANSFORMER_D_MODEL;
+        for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            let gradient = grad_embedding_output_q15[grad_row_start + dim];
+            if gradient == 0 {
+                continue;
+            }
+            let product = i64::from(gradient).saturating_mul(i64::from(learning_rate));
+            let scaled_update = round_shift_rhu_i64(product, embedding_learning_rate_shift);
+            let delta = -scaled_update;
+            if delta == 0 {
+                stats.zero_delta_count = stats.zero_delta_count.saturating_add(1);
+            }
+            apply_embedding_delta_i16(
+                &mut embeddings[embedding_row_start + dim],
+                delta,
+                &mut stats,
+            );
+        }
+    }
+    Ok(stats)
+}
+
+fn apply_embedding_delta_i16(embedding: &mut i16, delta: i64, stats: &mut SoftmaxUpdateStats) {
+    let previous = *embedding;
+    let unclamped = i64::from(previous).saturating_add(delta);
+    let clamped = saturate_i16(unclamped);
+    if i64::from(clamped) != unclamped {
+        stats.gradient_saturation_count = stats.gradient_saturation_count.saturating_add(1);
+    }
+    let applied_delta = i64::from(clamped) - i64::from(previous);
+    stats.weight_delta_l1 = stats
+        .weight_delta_l1
+        .saturating_add(applied_delta.unsigned_abs());
+    *embedding = clamped;
+}
+
+fn add_i16_residual_rows_checked(
+    left: &[i16],
+    right: &[i16],
+    output: &mut [i16],
+) -> Result<usize, TrainCoreError> {
+    if left.len() != right.len() || left.len() != output.len() {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    let mut saturation_count = 0_usize;
+    for ((&left, &right), out) in left.iter().zip(right.iter()).zip(output.iter_mut()) {
+        let wide = i64::from(left) + i64::from(right);
+        if wide < i64::from(i16::MIN) || wide > i64::from(i16::MAX) {
+            saturation_count = saturation_count.saturating_add(1);
+        }
+        *out = saturate_i16(wide);
+    }
+    Ok(saturation_count)
+}
+
+fn add_linear_weight_update_stats(
+    left: LinearWeightUpdateStats,
+    right: LinearWeightUpdateStats,
+) -> LinearWeightUpdateStats {
+    LinearWeightUpdateStats {
+        gradient_saturation_count: left
+            .gradient_saturation_count
+            .saturating_add(right.gradient_saturation_count),
+        zero_delta_count: left.zero_delta_count.saturating_add(right.zero_delta_count),
+        weight_delta_l1: left.weight_delta_l1.saturating_add(right.weight_delta_l1),
+    }
+}
+
+fn empty_linear_weight_update_stats() -> LinearWeightUpdateStats {
+    LinearWeightUpdateStats {
+        gradient_saturation_count: 0,
+        zero_delta_count: 0,
+        weight_delta_l1: 0,
+    }
+}
+
+fn byte_argmax_i32(logits: &[i32]) -> Result<u8, TrainCoreError> {
+    if logits.len() != BYTE_VOCAB {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    Ok(logits
+        .iter()
+        .enumerate()
+        .max_by_key(|&(index, &logit)| (logit, Reverse(index)))
+        .map(|(index, _)| index as u8)
+        .unwrap_or(0))
+}
+
+fn mini_transformer_head_dim() -> Option<usize> {
+    if MINI_TRANSFORMER_HEADS == 0
+        || MINI_TRANSFORMER_D_MODEL == 0
+        || !MINI_TRANSFORMER_D_MODEL.is_multiple_of(MINI_TRANSFORMER_HEADS)
+    {
+        return None;
+    }
+    Some(MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS)
+}
+
+fn mini_transformer_linear_attention_phi_i64(value: i16) -> i64 {
+    i64::from(value) + 32769
+}
+
+fn round_ratio_i64(numerator: i64, denominator: i64) -> Result<i64, TrainCoreError> {
+    if denominator <= 0 {
+        return Err(TrainCoreError::InvalidConfig);
+    }
+    let half = denominator / 2;
+    if numerator >= 0 {
+        numerator
+            .checked_add(half)
+            .map(|value| value / denominator)
+            .ok_or(TrainCoreError::CoreRejected)
+    } else {
+        numerator
+            .checked_neg()
+            .and_then(|value| value.checked_add(half))
+            .map(|value| -(value / denominator))
+            .ok_or(TrainCoreError::CoreRejected)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::vec;
+
+    #[test]
+    fn rejects_bad_workspace_shape() {
+        let mut embeddings = vec![0_i16; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
+        let mut weights = vec![0_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL];
+        let mut up = vec![0_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM];
+        let mut down = vec![0_i8; MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL];
+        let mut output = vec![0_i8; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
+        let mut model = MiniTransformerModelSlicesMut {
+            embeddings: &mut embeddings,
+            q_weights: &mut weights,
+            k_weights: &mut [],
+            v_weights: &mut [],
+            o_weights: &mut [],
+            up_weights: &mut up,
+            gate_weights: &mut [],
+            down_weights: &mut down,
+            output_weights: &mut output,
+        };
+        let mut empty_i16 = [];
+        let mut empty_i32 = [];
+        let mut empty_i64 = [];
+        let mut workspace = MiniTransformerStepWorkspace {
+            embedding_output: &mut empty_i16,
+            attention_norm: &mut [],
+            attention_q: &mut [],
+            attention_k: &mut [],
+            attention_v: &mut [],
+            attention_context: &mut [],
+            attention_output: &mut [],
+            attention_residual: &mut [],
+            attention_state_kv: &mut empty_i64,
+            attention_key_sums: &mut [],
+            mlp_norm: &mut [],
+            mlp_up: &mut [],
+            mlp_gate: &mut [],
+            mlp_gated: &mut [],
+            mlp_output: &mut [],
+            block_output: &mut [],
+            logits_q8: &mut empty_i32,
+            probabilities_q15: &mut [],
+            grad_output_q15: &mut [],
+            output_scaled_grad: &mut [],
+            grad_last_features: &mut [],
+            grad_mlp_output: &mut [],
+            grad_mlp_input: &mut [],
+            mlp_scaled_grad: &mut [],
+            mlp_input_grad_gated: &mut [],
+            mlp_input_grad_up: &mut [],
+            mlp_input_grad_gate: &mut [],
+            mlp_input_grad_up_input: &mut [],
+            mlp_input_grad_gate_input: &mut [],
+            mlp_update_grad_gated: &mut [],
+            mlp_update_grad_up: &mut [],
+            mlp_update_grad_gate: &mut [],
+            grad_attention_output: &mut [],
+            grad_attention_context: &mut [],
+            attention_scaled_grad: &mut [],
+            linear_prefix_states: &mut [],
+            linear_denominators: &mut [],
+            linear_grad_state_q15: &mut [],
+            linear_grad_q_acc: &mut [],
+            linear_grad_k_acc: &mut [],
+            linear_grad_v_acc: &mut [],
+            grad_attention_q: &mut [],
+            grad_attention_k: &mut [],
+            grad_attention_v: &mut [],
+            grad_attention_norm_input: &mut [],
+            grad_embedding_output: &mut [],
+        };
+        let err = mini_transformer_linear_nope_train_step(
+            &mut model,
+            &[1, 2, 3, 4],
+            5,
+            MiniTransformerStepConfig {
+                seq_len: 4,
+                learning_rate: 1,
+                output_learning_rate_shift: 18,
+                mlp_learning_rate_shift: 17,
+                embedding_learning_rate_shift: 13,
+                attention_learning_rate_shift: 22,
+                attention_q_learning_rate_shift: 18,
+                attention_qk_learning_rate_shift: 16,
+            },
+            &mut workspace,
+        )
+        .unwrap_err();
+        assert_eq!(err, TrainCoreError::InvalidShape);
+    }
+}

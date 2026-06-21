@@ -116,6 +116,14 @@ version = "0.1.0"
 dependencies = [
  "nsrl-core",
  "nsrl-corpus",
+ "nsrl-train-core",
+]
+
+[[package]]
+name = "nsrl-train-core"
+version = "0.1.0"
+dependencies = [
+ "nsrl-core",
 ]
 
 [[package]]
