@@ -183,11 +183,10 @@ pub fn run_benchmark_suite_with_linear_kernel(
     let mean_elapsed_micros =
         sorted_elapsed.iter().sum::<u128>() / u128::from(sorted_elapsed.len() as u64);
     let tokens = (preset.seq_len as u128) * (preset.blocks as u128);
-    let median_tokens_per_second_x100 = if median_elapsed_micros == 0 {
-        0
-    } else {
-        tokens * 100_000_000 / median_elapsed_micros
-    };
+    let median_tokens_per_second_x100 = tokens
+        .saturating_mul(100_000_000)
+        .checked_div(median_elapsed_micros)
+        .unwrap_or(0);
 
     Ok(BenchmarkSuiteTrace {
         preset,
@@ -353,11 +352,10 @@ pub fn run_benchmark_with_linear_kernel(
 
     let elapsed_micros = started.elapsed().as_micros();
     let tokens = (preset.seq_len as u128) * (preset.blocks as u128);
-    let tokens_per_second_x100 = if elapsed_micros == 0 {
-        0
-    } else {
-        tokens * 100_000_000 / elapsed_micros
-    };
+    let tokens_per_second_x100 = tokens
+        .saturating_mul(100_000_000)
+        .checked_div(elapsed_micros)
+        .unwrap_or(0);
     let final_stats = tensor_health(&current);
 
     Ok(BenchmarkTrace {
@@ -697,7 +695,7 @@ fn validate_preset(preset: BenchmarkPreset) -> Result<(), BenchmarkError> {
         || preset.heads == 0
         || preset.hidden_dim == 0
         || preset.blocks == 0
-        || preset.d_model % preset.heads != 0
+        || !preset.d_model.is_multiple_of(preset.heads)
         || sqrt_power_of_four_shift(preset.head_dim()).is_none()
     {
         return Err(BenchmarkError::InvalidPreset);

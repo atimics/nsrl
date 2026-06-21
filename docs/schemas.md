@@ -578,9 +578,10 @@ Required top-level fields:
 | `task` | string | Current mini Transformer MLP-first task name. |
 | `data` | object | Tokenizer ID, token count, token hash, window hash, and window count. |
 | `model` | object | Vocab size, sequence length, model width, heads, hidden width, and trained component. |
-| `optimizer` | object | Base-2 CE/SGD contract, Q format, activation, weight dtype, LR, and LR shifts. |
+| `optimizer` | object | Base-2 CE/SGD contract, Q format, activation, weight dtype, LR, LR shifts, and adaptive shift flags. |
 | `training` | object | Epochs, sequence length, stride, window offset, max windows, batch windows, derived batch average shift, examined windows, updates, and rollback history limit. |
-| `metrics` | object | Classification/probability error, batch counts, output-head, MLP, attention, and embedding accumulator counts, rollback/rejected-window counts, final invalid-forward count, saturation, zero deltas, and L1 movement. |
+| `metrics` | object | Classification/probability error, batch counts, output-head, MLP, attention, and embedding accumulator counts, rollback/rejected-window counts, final invalid-forward count, saturation, zero deltas, L1 movement, adaptive shift counts, and final shifts. |
+| `adaptive_shift_events` | array | Captured rule-controller shift events, capped by `adaptive_rule_trace_event_limit`. Each event records component, reason, previous/next shift, observation batches, rejected batches, saturation count, zero-delta count, and weight-delta L1. |
 | `steps` | array | One object per byte-window update with cache and weight hashes. |
 | `known_non_claims` | array | Claims explicitly outside this row's authority. |
 
@@ -623,6 +624,12 @@ Safety semantics:
   training window set. The optimizer object records this as
   `reject_loss_regression`, and the metrics object records
   `loss_regression_rejected_batch_count`.
+- `--adaptive-rule-shifts` enables a rule-based integer scheduler for
+  component learning-rate shifts. It raises shifts immediately on rollback,
+  raises shifts on saturation only after sustained pressure over
+  `--adaptive-rule-interval-batches`, lowers shifts only after near-total
+  zero-delta pressure over the same window, and records fired decisions in
+  `adaptive_shift_events`.
 
 Mini Transformer MLP-first command:
 

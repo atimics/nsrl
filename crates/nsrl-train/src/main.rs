@@ -208,7 +208,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     mini_transformer_config.attention_q_learning_rate_shift = value;
                 }
             }
+            "--adaptive-rule-shifts" => {
+                mini_transformer_config.adaptive_rule_shifts = true;
+            }
+            "--adaptive-rule-interval-batches" => {
+                mini_transformer_config.adaptive_rule_interval_batches = args
+                    .next()
+                    .ok_or("--adaptive-rule-interval-batches requires an integer")?
+                    .parse()?;
+            }
             "--adaptive-attention-shifts" => {
+                mini_transformer_config.adaptive_rule_shifts = true;
                 mini_transformer_config.adaptive_attention_shifts = true;
                 mini_transformer_config.adaptive_holographic_shifts = true;
             }
@@ -914,7 +924,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
     );
     println!();
     println!("Runs a deterministic integer training trace.");
@@ -1036,8 +1046,8 @@ fn load_lexeme_vocab(path: &PathBuf) -> Result<LexemeVocab, Box<dyn std::error::
     let mut entries = Vec::new();
     let mut lookup = HashMap::new();
     entries.resize(256, String::new());
-    for id in 0..256 {
-        entries[id] = String::from_utf8_lossy(&[id as u8]).to_string();
+    for (id, entry) in entries.iter_mut().enumerate().take(256) {
+        *entry = String::from_utf8_lossy(&[id as u8]).to_string();
     }
 
     for line in text.lines().skip(1) {

@@ -103,7 +103,7 @@ auto-vectorized path — LLVM's scheduler wins on the M4 Max.
 - Mini-transformer attention modes: `base2-softmax`, `linear`, generation-only
   `linear-streaming`, and `linear-streaming-ttt`
 - Prototype adaptive shift controllers for attention/MLP/output/embedding
-  learning-rate shifts with traced holographic controller state
+  learning-rate shifts with traced rule events and holographic controller state
 
 **nsrl-demo**
 - Forward trace (`toy` preset): inspectable JSONL for the full block
@@ -374,11 +374,17 @@ scripts/
 ### Adaptive shift scheduling
 
 The trainer now has prototype adaptive shift controllers behind
-`--adaptive-attention-shifts` and `--adaptive-holographic-shifts`. They observe
-training dynamics such as rollback/rejection behavior and traced update
-statistics, then adjust output, MLP, embedding, and attention learning-rate
-shifts during a run. The controller state is itself integer and is emitted in
-the training trace.
+`--adaptive-rule-shifts`, `--adaptive-attention-shifts`, and
+`--adaptive-holographic-shifts`. They observe training dynamics such as
+rollback/rejection behavior and traced update statistics, then adjust output,
+MLP, embedding, and attention learning-rate shifts during a run. The controller
+state is itself integer and is emitted in the training trace.
+
+The holographic controller uses lagged binding: it stores the current integer
+state vector and binds it to the next batch's teacher signal, so memory learns
+which shift adjustment tends to follow a prior state rather than merely echoing
+the same-step rule. Rule signals still override memory; when the rule is
+silent, recalled memory can make a conservative one-step adjustment.
 
 This moves adaptive scheduling from a pure future idea into an experimental
 lane, but it is not yet a solved policy. The remaining question is how to make
@@ -410,12 +416,12 @@ schedule in real time.
 The learned version is still speculative because the reward signal is the
 load-bearing problem. Rollback reduction rewards excessive conservatism, delta
 L1 rewards movement rather than quality, and held-out BPT is too delayed for
-per-batch control. The next runnable experiment is therefore a rule-based
-adaptive controller: raise shifts on recent rollbacks or saturation, lower them
-on sustained zero-delta counts, and trace whether this reduces sweeps while
-improving BPT or component movement. The holographic controller should wait
-until the rule-based controller proves adaptive scheduling helps and until
-linear-attention-style forgetting is available for stale meta-experience.
+per-batch control. The runnable controller is therefore rule-based: raise shifts
+on recent rollbacks or saturation, lower them on sustained zero-delta counts,
+and trace whether this reduces sweeps while improving BPT or component movement.
+The holographic controller should wait until rule-based scheduling proves useful
+across longer runs and until linear-attention-style forgetting is available for
+stale meta-experience.
 
 See [research/adaptive-shift-control.md](research/adaptive-shift-control.md)
 for the control analysis and success criteria.

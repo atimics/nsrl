@@ -145,16 +145,14 @@ fn run_case(case: Case) -> Option<String> {
     let linear_median_nanos = linear_times[linear_times.len() / 2];
     let incremental_median_nanos = incremental_times[incremental_times.len() / 2];
     let rescan_median_nanos = rescan_times[rescan_times.len() / 2];
-    let speedup_x100 = if linear_median_nanos == 0 {
-        0
-    } else {
-        softmax_median_nanos.saturating_mul(100) / linear_median_nanos
-    };
-    let rescan_to_incremental_speedup_x100 = if incremental_median_nanos == 0 {
-        0
-    } else {
-        rescan_median_nanos.saturating_mul(100) / incremental_median_nanos
-    };
+    let speedup_x100 = softmax_median_nanos
+        .saturating_mul(100)
+        .checked_div(linear_median_nanos)
+        .unwrap_or(0);
+    let rescan_to_incremental_speedup_x100 = rescan_median_nanos
+        .saturating_mul(100)
+        .checked_div(incremental_median_nanos)
+        .unwrap_or(0);
 
     Some(format!(
         "{{\"schema\":\"nsrl.linear_attention_microbench.v2\",\"case\":\"{}\",\"seq_len\":{},\"d_model\":{},\"heads\":{},\"head_dim\":{},\"repeat\":{},\"generation_repeat\":{},\"softmax_median_micros\":{},\"linear_median_micros\":{},\"incremental_linear_median_micros\":{},\"rescan_generation_median_micros\":{},\"softmax_to_linear_speedup_x100\":{},\"rescan_to_incremental_speedup_x100\":{},\"softmax_workspace_bytes\":{},\"linear_workspace_bytes\":{},\"incremental_workspace_bytes\":{},\"linear_state_bytes\":{},\"linear_key_sum_bytes\":{},\"softmax_output_hash\":\"0x{:016x}\",\"linear_output_hash\":\"0x{:016x}\",\"incremental_output_hash\":\"0x{:016x}\",\"rescan_output_hash\":\"0x{:016x}\"}}",
@@ -419,7 +417,7 @@ fn xorshift64(mut value: u64) -> u64 {
 }
 
 fn bytes_i16(values: &[i16]) -> usize {
-    values.len() * core::mem::size_of::<i16>()
+    core::mem::size_of_val(values)
 }
 
 fn hash_i16(values: &[i16]) -> u64 {

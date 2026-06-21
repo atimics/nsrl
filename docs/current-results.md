@@ -62,6 +62,45 @@ V, and O move much more strongly than Q, consistent with the causal
 retrieve-after-store learning order and possibly amplified by the simplified
 denominator backward.
 
+### Adaptive Shift Controller
+
+The rule-based adaptive shift controller has now been tested on a 32768-window
+byte mini-transformer run over `wiki-bard-corpus.tokens.u8`, using
+linear attention, NoPE, `seq_len=4`, and `batch_windows=2`.
+
+Release runtime on the current Apple M4 Max development machine was effectively
+unchanged versus the static baseline:
+
+| Run | Wall Time | Probability Error Delta | Accuracy | Rollbacks | Attention Delta L1 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| static shifts | 8.52 s | -61705691 | 30 per mille | 0 | 64230652 |
+| adaptive rule shifts | 8.45 s | -111329700 | 55 per mille | 0 | 53214974 |
+
+The adaptive run fired 269 shift events and ended at output shift 18, MLP shift
+26, embedding shift 14, shared V/O shift 23, Q shift 28, and K shift 30. The
+controller is therefore not a runtime bottleneck, and on this run it improved
+loss and accuracy while preserving the rollback-free safety contract.
+
+The first corrected holographic controller uses lagged binding and authority
+gates, so memory learns from the prior state and can only make cooldown-limited
+advisory changes when the explicit rule teacher is silent. A 512-window smoke
+improved over rule-only (`191` versus `119` accuracy per mille), but the
+32768-window run did not beat rule-only:
+
+| Run | Wall Time | Probability Error Delta | Accuracy | Rollbacks | Holographic Adjustments |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| rule+holographic advisory | 8.71 s | -104760937 | 41 per mille | 0 | 1013 |
+
+This keeps the holographic controller in the experimental lane. The mechanism
+is no longer decorative, but the best long-run policy observed so far is still
+the simpler rule-based controller.
+
+The main performance scaling issue is trace volume, not arithmetic. Each 32768
+window run emitted 32768 per-window step rows and produced a roughly 40 MB
+trace for a roughly 34 KB model artifact. Larger hero runs should add trace
+thinning or summary-only traces before scaling to hundreds of thousands of
+windows.
+
 ## Lexeme Language Evidence
 
 The strongest current text result is a source-grounded SimpleWiki topic
@@ -108,9 +147,10 @@ source overlap.
 
 ## Near-Term Plan
 
-1. Add a rule-based adaptive shift controller before expanding the holographic
+1. Run longer comparisons with the implemented rule-based adaptive shift
    controller. This directly tests whether adaptive scheduling improves BPT,
-   rollbacks, and dead-component movement.
+   rollbacks, and dead-component movement before expanding the holographic
+   controller.
 2. Implement integer-friendly gated linear attention / retention so linear
    states and future holographic memories can forget stale early-training
    bindings.

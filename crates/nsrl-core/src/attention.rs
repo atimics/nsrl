@@ -236,6 +236,7 @@ pub fn attention_weight_v_i16_q15_checked(
     Some(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn attention_row_i16_q15_checked(
     query: &[i16],
     keys: &[i16],

@@ -143,6 +143,11 @@ const DEFAULT_MINI_TRANSFORMER_MLP_LEARNING_RATE_SHIFT: u8 = 16;
 const DEFAULT_MINI_TRANSFORMER_EMBEDDING_LEARNING_RATE_SHIFT: u8 = 14;
 const DEFAULT_MINI_TRANSFORMER_ATTENTION_LEARNING_RATE_SHIFT: u8 = 24;
 const DEFAULT_MINI_TRANSFORMER_ATTENTION_QK_LEARNING_RATE_SHIFT: u8 = 18;
+const DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES: usize = 128;
+const MINI_TRANSFORMER_ADAPTIVE_RULE_TRACE_EVENT_LIMIT: usize = 256;
+const MINI_TRANSFORMER_RULE_SATURATION_PRESSURE_DIVISOR: usize = 512;
+const MINI_TRANSFORMER_RULE_ZERO_PRESSURE_NUMERATOR: usize = 31;
+const MINI_TRANSFORMER_RULE_ZERO_PRESSURE_DENOMINATOR: usize = 32;
 const DEFAULT_CORPUS_PRIOR_LOGIT_SHIFT: u8 = 8;
 const DEFAULT_CORPUS_PRIOR_ORDER: u8 = 1;
 const MAX_CORPUS_PRIOR_ORDER: u8 = 3;
@@ -703,6 +708,8 @@ pub struct MiniTransformerMlpTrainConfig {
     pub attention_learning_rate_shift: u8,
     pub attention_q_learning_rate_shift: u8,
     pub attention_qk_learning_rate_shift: u8,
+    pub adaptive_rule_shifts: bool,
+    pub adaptive_rule_interval_batches: usize,
     pub adaptive_attention_shifts: bool,
     pub adaptive_holographic_shifts: bool,
     pub attention_vo_error_feedback: bool,
@@ -712,7 +719,17 @@ pub struct MiniTransformerMlpTrainConfig {
 
 impl MiniTransformerMlpTrainConfig {
     fn adaptive_shift_controller_enabled(self) -> bool {
-        self.adaptive_attention_shifts || self.adaptive_holographic_shifts
+        self.adaptive_rule_shifts
+            || self.adaptive_attention_shifts
+            || self.adaptive_holographic_shifts
+    }
+
+    fn adaptive_rule_shift_controller_enabled(self) -> bool {
+        self.adaptive_rule_shifts || self.adaptive_attention_shifts
+    }
+
+    fn adaptive_holographic_shift_controller_enabled(self) -> bool {
+        self.adaptive_holographic_shifts
     }
 }
 
@@ -737,6 +754,8 @@ impl Default for MiniTransformerMlpTrainConfig {
                 DEFAULT_MINI_TRANSFORMER_ATTENTION_QK_LEARNING_RATE_SHIFT,
             attention_qk_learning_rate_shift:
                 DEFAULT_MINI_TRANSFORMER_ATTENTION_QK_LEARNING_RATE_SHIFT,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
             adaptive_attention_shifts: false,
             adaptive_holographic_shifts: false,
             attention_vo_error_feedback: false,
@@ -1062,6 +1081,9 @@ pub struct MiniTransformerMlpTrainingTrace {
     pub attention_k_delta_l1: u64,
     pub attention_v_delta_l1: u64,
     pub attention_o_delta_l1: u64,
+    pub adaptive_rule_shift_adjustment_count: usize,
+    pub adaptive_rule_update_count: usize,
+    pub adaptive_rule_event_count: usize,
     pub adaptive_holographic_shift_adjustment_count: usize,
     pub adaptive_holographic_update_count: usize,
     pub adaptive_holographic_hash: u64,
@@ -1076,6 +1098,7 @@ pub struct MiniTransformerMlpTrainingTrace {
     pub final_attention_qk_learning_rate_shift: u8,
     pub final_accuracy_per_mille: usize,
     pub final_logits_hash: u64,
+    pub adaptive_shift_events: Vec<MiniTransformerAdaptiveShiftEventTrace>,
     pub steps: Vec<MiniTransformerMlpTrainingStepTrace>,
 }
 
@@ -2468,6 +2491,21 @@ pub struct MiniTransformerMlpTrainingStepTrace {
     pub attention_o_delta_l1: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerAdaptiveShiftEventTrace {
+    pub batch_index: usize,
+    pub component: &'static str,
+    pub reason: &'static str,
+    pub previous_shift: u8,
+    pub next_shift: u8,
+    pub delta: i8,
+    pub observation_batches: usize,
+    pub rejected_batches: usize,
+    pub saturation_count: usize,
+    pub zero_delta_count: usize,
+    pub weight_delta_l1: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MiniTransformerMlpForwardCache {
     embedding_output: Vec<i16>,
@@ -2506,6 +2544,8 @@ const MINI_TRANSFORMER_HOLO_META_DIM: usize = 8;
 const MINI_TRANSFORMER_HOLO_ACTION_COUNT: usize = 5;
 const MINI_TRANSFORMER_HOLO_MEMORY_UPDATE_SHIFT: u32 = 8;
 const MINI_TRANSFORMER_HOLO_QUERY_SHIFT: u32 = 15;
+const MINI_TRANSFORMER_HOLO_MEMORY_MIN_UPDATES: usize = 8;
+const MINI_TRANSFORMER_HOLO_ADJUSTMENT_COOLDOWN_BATCHES: usize = 32;
 const MINI_TRANSFORMER_HOLO_ACTION_ATOMS: [[i16; MINI_TRANSFORMER_HOLO_META_DIM];
     MINI_TRANSFORMER_HOLO_ACTION_COUNT] = [
     [16384, -16384, 16384, -16384, 8192, -8192, 4096, -4096],
@@ -2533,9 +2573,9 @@ impl IntegerHolographicShiftMemory {
 
     fn remember(&mut self, state_q15: &[i16; MINI_TRANSFORMER_HOLO_META_DIM], delta: i8) {
         let atom = mini_transformer_holo_action_atom(delta);
-        for row in 0..MINI_TRANSFORMER_HOLO_META_DIM {
-            for col in 0..MINI_TRANSFORMER_HOLO_META_DIM {
-                let wide = i64::from(atom[row]) * i64::from(state_q15[col]);
+        for (row, &atom_value) in atom.iter().enumerate() {
+            for (col, &state_value) in state_q15.iter().enumerate() {
+                let wide = i64::from(atom_value) * i64::from(state_value);
                 self.memory[row][col] = self.memory[row][col]
                     .saturating_add(wide >> MINI_TRANSFORMER_HOLO_MEMORY_UPDATE_SHIFT);
             }
@@ -2603,6 +2643,48 @@ impl IntegerHolographicShiftMemory {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MiniTransformerRuleShiftWindow {
+    observation_batches: usize,
+    rejected_batches: usize,
+    stats: LinearWeightUpdateStats,
+}
+
+impl MiniTransformerRuleShiftWindow {
+    fn new() -> Self {
+        Self {
+            observation_batches: 0,
+            rejected_batches: 0,
+            stats: empty_linear_weight_update_stats(),
+        }
+    }
+
+    fn observe_accepted(&mut self, stats: LinearWeightUpdateStats) {
+        self.observation_batches = self.observation_batches.saturating_add(1);
+        self.stats.gradient_saturation_count = self
+            .stats
+            .gradient_saturation_count
+            .saturating_add(stats.gradient_saturation_count);
+        self.stats.zero_delta_count = self
+            .stats
+            .zero_delta_count
+            .saturating_add(stats.zero_delta_count);
+        self.stats.weight_delta_l1 = self
+            .stats
+            .weight_delta_l1
+            .saturating_add(stats.weight_delta_l1);
+    }
+
+    fn observe_rejected(&mut self) {
+        self.rejected_batches = self.rejected_batches.saturating_add(1);
+        self.observation_batches = self.observation_batches.saturating_add(1);
+    }
+
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MiniTransformerAdaptiveShiftState {
     output_memory: IntegerHolographicShiftMemory,
     mlp_memory: IntegerHolographicShiftMemory,
@@ -2611,6 +2693,26 @@ struct MiniTransformerAdaptiveShiftState {
     k_memory: IntegerHolographicShiftMemory,
     v_memory: IntegerHolographicShiftMemory,
     o_memory: IntegerHolographicShiftMemory,
+    output_previous_state: Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+    mlp_previous_state: Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+    embedding_previous_state: Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+    q_previous_state: Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+    k_previous_state: Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+    v_previous_state: Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+    o_previous_state: Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+    output_holo_last_adjust_batch: Option<usize>,
+    mlp_holo_last_adjust_batch: Option<usize>,
+    embedding_holo_last_adjust_batch: Option<usize>,
+    q_holo_last_adjust_batch: Option<usize>,
+    k_holo_last_adjust_batch: Option<usize>,
+    vo_holo_last_adjust_batch: Option<usize>,
+    output_rule: MiniTransformerRuleShiftWindow,
+    mlp_rule: MiniTransformerRuleShiftWindow,
+    embedding_rule: MiniTransformerRuleShiftWindow,
+    q_rule: MiniTransformerRuleShiftWindow,
+    k_rule: MiniTransformerRuleShiftWindow,
+    v_rule: MiniTransformerRuleShiftWindow,
+    o_rule: MiniTransformerRuleShiftWindow,
     output_learning_rate_shift: u8,
     mlp_learning_rate_shift: u8,
     embedding_learning_rate_shift: u8,
@@ -2618,6 +2720,10 @@ struct MiniTransformerAdaptiveShiftState {
     attention_q_learning_rate_shift: u8,
     attention_qk_learning_rate_shift: u8,
     adjustment_count: usize,
+    rule_adjustment_count: usize,
+    rule_update_count: usize,
+    rule_event_count: usize,
+    holographic_adjustment_count: usize,
 }
 
 impl MiniTransformerAdaptiveShiftState {
@@ -2630,6 +2736,26 @@ impl MiniTransformerAdaptiveShiftState {
             k_memory: IntegerHolographicShiftMemory::new(),
             v_memory: IntegerHolographicShiftMemory::new(),
             o_memory: IntegerHolographicShiftMemory::new(),
+            output_previous_state: None,
+            mlp_previous_state: None,
+            embedding_previous_state: None,
+            q_previous_state: None,
+            k_previous_state: None,
+            v_previous_state: None,
+            o_previous_state: None,
+            output_holo_last_adjust_batch: None,
+            mlp_holo_last_adjust_batch: None,
+            embedding_holo_last_adjust_batch: None,
+            q_holo_last_adjust_batch: None,
+            k_holo_last_adjust_batch: None,
+            vo_holo_last_adjust_batch: None,
+            output_rule: MiniTransformerRuleShiftWindow::new(),
+            mlp_rule: MiniTransformerRuleShiftWindow::new(),
+            embedding_rule: MiniTransformerRuleShiftWindow::new(),
+            q_rule: MiniTransformerRuleShiftWindow::new(),
+            k_rule: MiniTransformerRuleShiftWindow::new(),
+            v_rule: MiniTransformerRuleShiftWindow::new(),
+            o_rule: MiniTransformerRuleShiftWindow::new(),
             output_learning_rate_shift: config.output_learning_rate_shift,
             mlp_learning_rate_shift: config.mlp_learning_rate_shift,
             embedding_learning_rate_shift: config.embedding_learning_rate_shift,
@@ -2637,6 +2763,10 @@ impl MiniTransformerAdaptiveShiftState {
             attention_q_learning_rate_shift: config.attention_q_learning_rate_shift,
             attention_qk_learning_rate_shift: config.attention_qk_learning_rate_shift,
             adjustment_count: 0,
+            rule_adjustment_count: 0,
+            rule_update_count: 0,
+            rule_event_count: 0,
+            holographic_adjustment_count: 0,
         }
     }
 
@@ -2655,6 +2785,7 @@ impl MiniTransformerAdaptiveShiftState {
         config
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn observe_accepted(
         &mut self,
         output: LinearWeightUpdateStats,
@@ -2664,13 +2795,31 @@ impl MiniTransformerAdaptiveShiftState {
         accepted_batches: usize,
         enabled: bool,
         config: MiniTransformerMlpTrainConfig,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
     ) {
-        if !enabled {
+        let rule_enabled = enabled && config.adaptive_rule_shift_controller_enabled();
+        let holographic_enabled = enabled && config.adaptive_holographic_shift_controller_enabled();
+        if !rule_enabled && !holographic_enabled {
             return;
         }
 
         let mlp_stats = mini_transformer_gated_mlp_update_stats_as_linear(mlp);
         let embedding_stats = mini_transformer_softmax_update_stats_as_linear(embedding);
+        if rule_enabled {
+            self.observe_rule_accepted(
+                output,
+                mlp_stats,
+                embedding_stats,
+                attention,
+                accepted_batches,
+                config,
+                adaptive_shift_events,
+            );
+        }
+        if !holographic_enabled {
+            return;
+        }
+
         let output_state = mini_transformer_holo_shift_state(
             &output,
             mini_transformer_peer_delta_l1(&[mlp_stats, embedding_stats, attention.o]),
@@ -2746,76 +2895,430 @@ impl MiniTransformerAdaptiveShiftState {
             mini_transformer_attention_projection_weight_count(),
         );
 
-        self.output_memory.remember(&output_state, output_teacher);
-        self.mlp_memory.remember(&mlp_state, mlp_teacher);
-        self.embedding_memory
-            .remember(&embedding_state, embedding_teacher);
-        self.q_memory.remember(&q_state, q_teacher);
-        self.k_memory.remember(&k_state, k_teacher);
-        self.v_memory.remember(&v_state, v_teacher);
-        self.o_memory.remember(&o_state, o_teacher);
-
-        let output_delta = mini_transformer_holo_safety_delta(
+        mini_transformer_holo_remember_lagged(
+            &mut self.output_memory,
+            &mut self.output_previous_state,
+            output_state,
             output_teacher,
-            self.output_memory
-                .retrieve_delta(&output_state)
-                .unwrap_or(0),
-            mini_transformer_holo_memory_allowed(&output, mini_transformer_output_weight_count()),
         );
-        let mlp_delta = mini_transformer_holo_safety_delta(
+        mini_transformer_holo_remember_lagged(
+            &mut self.mlp_memory,
+            &mut self.mlp_previous_state,
+            mlp_state,
             mlp_teacher,
-            self.mlp_memory.retrieve_delta(&mlp_state).unwrap_or(0),
-            mini_transformer_holo_memory_allowed(&mlp_stats, mini_transformer_mlp_weight_count()),
         );
-        let embedding_delta = mini_transformer_holo_safety_delta(
+        mini_transformer_holo_remember_lagged(
+            &mut self.embedding_memory,
+            &mut self.embedding_previous_state,
+            embedding_state,
             embedding_teacher,
-            self.embedding_memory
-                .retrieve_delta(&embedding_state)
-                .unwrap_or(0),
-            mini_transformer_holo_memory_allowed(
-                &embedding_stats,
-                mini_transformer_embedding_weight_count(config),
-            ),
         );
-        let q_memory_allowed = attention.q.weight_delta_l1 == 0
-            || (attention.k.weight_delta_l1 > 0
-                && attention.q.weight_delta_l1.saturating_mul(4) < attention.k.weight_delta_l1);
-        let q_delta = mini_transformer_holo_safety_delta(
+        mini_transformer_holo_remember_lagged(
+            &mut self.q_memory,
+            &mut self.q_previous_state,
+            q_state,
             q_teacher,
-            self.q_memory.retrieve_delta(&q_state).unwrap_or(0),
-            q_memory_allowed,
         );
-        let k_delta = mini_transformer_holo_safety_delta(
+        mini_transformer_holo_remember_lagged(
+            &mut self.k_memory,
+            &mut self.k_previous_state,
+            k_state,
             k_teacher,
-            self.k_memory.retrieve_delta(&k_state).unwrap_or(0),
-            mini_transformer_holo_memory_allowed(
-                &attention.k,
-                mini_transformer_attention_projection_weight_count(),
+        );
+        mini_transformer_holo_remember_lagged(
+            &mut self.v_memory,
+            &mut self.v_previous_state,
+            v_state,
+            v_teacher,
+        );
+        mini_transformer_holo_remember_lagged(
+            &mut self.o_memory,
+            &mut self.o_previous_state,
+            o_state,
+            o_teacher,
+        );
+
+        let output_delta = mini_transformer_holo_authorized_delta(
+            mini_transformer_holo_safety_delta(
+                output_teacher,
+                self.output_memory
+                    .retrieve_delta(&output_state)
+                    .unwrap_or(0),
+                !rule_enabled,
             ),
+            output_teacher,
+            self.output_memory.update_count,
+            accepted_batches,
+            &mut self.output_holo_last_adjust_batch,
+        );
+        let mlp_delta = mini_transformer_holo_authorized_delta(
+            mini_transformer_holo_safety_delta(
+                mlp_teacher,
+                self.mlp_memory.retrieve_delta(&mlp_state).unwrap_or(0),
+                !rule_enabled,
+            ),
+            mlp_teacher,
+            self.mlp_memory.update_count,
+            accepted_batches,
+            &mut self.mlp_holo_last_adjust_batch,
+        );
+        let embedding_delta = mini_transformer_holo_authorized_delta(
+            mini_transformer_holo_safety_delta(
+                embedding_teacher,
+                self.embedding_memory
+                    .retrieve_delta(&embedding_state)
+                    .unwrap_or(0),
+                !rule_enabled,
+            ),
+            embedding_teacher,
+            self.embedding_memory.update_count,
+            accepted_batches,
+            &mut self.embedding_holo_last_adjust_batch,
+        );
+        let q_delta = mini_transformer_holo_authorized_delta(
+            mini_transformer_holo_safety_delta(
+                q_teacher,
+                self.q_memory.retrieve_delta(&q_state).unwrap_or(0),
+                !rule_enabled,
+            ),
+            q_teacher,
+            self.q_memory.update_count,
+            accepted_batches,
+            &mut self.q_holo_last_adjust_batch,
+        );
+        let k_delta = mini_transformer_holo_authorized_delta(
+            mini_transformer_holo_safety_delta(
+                k_teacher,
+                self.k_memory.retrieve_delta(&k_state).unwrap_or(0),
+                !rule_enabled,
+            ),
+            k_teacher,
+            self.k_memory.update_count,
+            accepted_batches,
+            &mut self.k_holo_last_adjust_batch,
         );
         let v_delta = mini_transformer_holo_safety_delta(
             v_teacher,
             self.v_memory.retrieve_delta(&v_state).unwrap_or(0),
-            mini_transformer_holo_memory_allowed(
-                &attention.v,
-                mini_transformer_attention_projection_weight_count(),
-            ),
+            !rule_enabled,
         );
         let o_delta = mini_transformer_holo_safety_delta(
             o_teacher,
             self.o_memory.retrieve_delta(&o_state).unwrap_or(0),
-            mini_transformer_holo_memory_allowed(
-                &attention.o,
-                mini_transformer_attention_projection_weight_count(),
-            ),
+            !rule_enabled,
+        );
+        let vo_teacher = mini_transformer_join_shift_deltas(v_teacher, o_teacher);
+        let vo_delta = mini_transformer_holo_authorized_delta(
+            mini_transformer_join_shift_deltas(v_delta, o_delta),
+            vo_teacher,
+            self.v_memory.update_count.min(self.o_memory.update_count),
+            accepted_batches,
+            &mut self.vo_holo_last_adjust_batch,
         );
 
+        let adjustment_count_before = self.adjustment_count;
         self.adjust_output(output_delta);
         self.adjust_mlp(mlp_delta);
         self.adjust_embedding(embedding_delta);
         self.adjust_q(q_delta);
         self.adjust_k(k_delta);
-        self.adjust_vo(mini_transformer_join_shift_deltas(v_delta, o_delta));
+        self.adjust_vo(vo_delta);
+        self.holographic_adjustment_count = self.holographic_adjustment_count.saturating_add(
+            self.adjustment_count
+                .saturating_sub(adjustment_count_before),
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn observe_rule_accepted(
+        &mut self,
+        output: LinearWeightUpdateStats,
+        mlp: LinearWeightUpdateStats,
+        embedding: LinearWeightUpdateStats,
+        attention: &MiniTransformerAttentionWeightUpdateStats,
+        accepted_batches: usize,
+        config: MiniTransformerMlpTrainConfig,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        self.output_rule.observe_accepted(output);
+        self.mlp_rule.observe_accepted(mlp);
+        self.embedding_rule.observe_accepted(embedding);
+        self.q_rule.observe_accepted(attention.q);
+        self.k_rule.observe_accepted(attention.k);
+        self.v_rule.observe_accepted(attention.v);
+        self.o_rule.observe_accepted(attention.o);
+        self.apply_rule_controls(accepted_batches, config, adaptive_shift_events);
+    }
+
+    fn observe_rule_rejected(
+        &mut self,
+        rejected_batches: usize,
+        config: MiniTransformerMlpTrainConfig,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        self.output_rule.observe_rejected();
+        self.mlp_rule.observe_rejected();
+        self.embedding_rule.observe_rejected();
+        self.q_rule.observe_rejected();
+        self.k_rule.observe_rejected();
+        self.v_rule.observe_rejected();
+        self.o_rule.observe_rejected();
+        self.apply_rule_controls(rejected_batches, config, adaptive_shift_events);
+    }
+
+    fn apply_rule_controls(
+        &mut self,
+        batch_index: usize,
+        config: MiniTransformerMlpTrainConfig,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        let interval = config.adaptive_rule_interval_batches.max(1);
+        self.rule_update_count = self.rule_update_count.saturating_add(1);
+
+        let output_rule = self.output_rule;
+        self.apply_rule_output(output_rule, batch_index, interval, adaptive_shift_events);
+        if mini_transformer_rule_should_reset(output_rule, interval) {
+            self.output_rule.reset();
+        }
+
+        let mlp_rule = self.mlp_rule;
+        self.apply_rule_mlp(mlp_rule, batch_index, interval, adaptive_shift_events);
+        if mini_transformer_rule_should_reset(mlp_rule, interval) {
+            self.mlp_rule.reset();
+        }
+
+        let embedding_rule = self.embedding_rule;
+        self.apply_rule_embedding(
+            embedding_rule,
+            batch_index,
+            interval,
+            mini_transformer_embedding_weight_count(config),
+            adaptive_shift_events,
+        );
+        if mini_transformer_rule_should_reset(embedding_rule, interval) {
+            self.embedding_rule.reset();
+        }
+
+        let q_rule = self.q_rule;
+        let k_rule = self.k_rule;
+        self.apply_rule_q(q_rule, k_rule, batch_index, interval, adaptive_shift_events);
+        if mini_transformer_rule_should_reset(q_rule, interval) {
+            self.q_rule.reset();
+        }
+
+        self.apply_rule_k(k_rule, q_rule, batch_index, interval, adaptive_shift_events);
+        if mini_transformer_rule_should_reset(k_rule, interval) {
+            self.k_rule.reset();
+        }
+
+        let v_rule = self.v_rule;
+        let o_rule = self.o_rule;
+        self.apply_rule_vo(v_rule, o_rule, batch_index, interval, adaptive_shift_events);
+        if mini_transformer_rule_should_reset(v_rule, interval) {
+            self.v_rule.reset();
+        }
+        if mini_transformer_rule_should_reset(o_rule, interval) {
+            self.o_rule.reset();
+        }
+    }
+
+    fn apply_rule_output(
+        &mut self,
+        window: MiniTransformerRuleShiftWindow,
+        batch_index: usize,
+        interval: usize,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        if let Some((delta, reason)) = mini_transformer_rule_generic_delta(
+            window,
+            mini_transformer_output_weight_count(),
+            interval,
+        ) {
+            let previous = self.output_learning_rate_shift;
+            let next = mini_transformer_adjust_shift(previous, delta);
+            self.record_rule_event(
+                adaptive_shift_events,
+                mini_transformer_rule_event(
+                    batch_index,
+                    "output",
+                    reason,
+                    previous,
+                    next,
+                    delta,
+                    window,
+                ),
+            );
+            self.output_learning_rate_shift = next;
+        }
+    }
+
+    fn apply_rule_mlp(
+        &mut self,
+        window: MiniTransformerRuleShiftWindow,
+        batch_index: usize,
+        interval: usize,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        if let Some((delta, reason)) = mini_transformer_rule_generic_delta(
+            window,
+            mini_transformer_mlp_weight_count(),
+            interval,
+        ) {
+            let previous = self.mlp_learning_rate_shift;
+            let next = mini_transformer_adjust_shift(previous, delta);
+            self.record_rule_event(
+                adaptive_shift_events,
+                mini_transformer_rule_event(
+                    batch_index,
+                    "mlp",
+                    reason,
+                    previous,
+                    next,
+                    delta,
+                    window,
+                ),
+            );
+            self.mlp_learning_rate_shift = next;
+        }
+    }
+
+    fn apply_rule_embedding(
+        &mut self,
+        window: MiniTransformerRuleShiftWindow,
+        batch_index: usize,
+        interval: usize,
+        weight_count: usize,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        if let Some((delta, reason)) =
+            mini_transformer_rule_generic_delta(window, weight_count, interval)
+        {
+            let previous = self.embedding_learning_rate_shift;
+            let next = mini_transformer_adjust_shift(previous, delta);
+            self.record_rule_event(
+                adaptive_shift_events,
+                mini_transformer_rule_event(
+                    batch_index,
+                    "embedding",
+                    reason,
+                    previous,
+                    next,
+                    delta,
+                    window,
+                ),
+            );
+            self.embedding_learning_rate_shift = next;
+        }
+    }
+
+    fn apply_rule_q(
+        &mut self,
+        q_window: MiniTransformerRuleShiftWindow,
+        k_window: MiniTransformerRuleShiftWindow,
+        batch_index: usize,
+        interval: usize,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        if let Some((delta, reason)) = mini_transformer_rule_q_delta(q_window, k_window, interval) {
+            let previous = self.attention_q_learning_rate_shift;
+            let next = mini_transformer_adjust_shift(previous, delta);
+            self.record_rule_event(
+                adaptive_shift_events,
+                mini_transformer_rule_event(
+                    batch_index,
+                    "attention_q",
+                    reason,
+                    previous,
+                    next,
+                    delta,
+                    q_window,
+                ),
+            );
+            self.attention_q_learning_rate_shift = next;
+        }
+    }
+
+    fn apply_rule_k(
+        &mut self,
+        k_window: MiniTransformerRuleShiftWindow,
+        q_window: MiniTransformerRuleShiftWindow,
+        batch_index: usize,
+        interval: usize,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        if let Some((delta, reason)) = mini_transformer_rule_k_delta(k_window, q_window, interval) {
+            let previous = self.attention_qk_learning_rate_shift;
+            let next = mini_transformer_adjust_shift(previous, delta);
+            self.record_rule_event(
+                adaptive_shift_events,
+                mini_transformer_rule_event(
+                    batch_index,
+                    "attention_k",
+                    reason,
+                    previous,
+                    next,
+                    delta,
+                    k_window,
+                ),
+            );
+            self.attention_qk_learning_rate_shift = next;
+        }
+    }
+
+    fn apply_rule_vo(
+        &mut self,
+        v_window: MiniTransformerRuleShiftWindow,
+        o_window: MiniTransformerRuleShiftWindow,
+        batch_index: usize,
+        interval: usize,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+    ) {
+        let v_decision = mini_transformer_rule_generic_delta(
+            v_window,
+            mini_transformer_attention_projection_weight_count(),
+            interval,
+        );
+        let o_decision = mini_transformer_rule_generic_delta(
+            o_window,
+            mini_transformer_attention_projection_weight_count(),
+            interval,
+        );
+        let Some((delta, reason, window)) =
+            mini_transformer_rule_join_vo_decisions(v_decision, o_decision, v_window, o_window)
+        else {
+            return;
+        };
+        let previous = self.attention_learning_rate_shift;
+        let next = mini_transformer_adjust_shift(previous, delta);
+        self.record_rule_event(
+            adaptive_shift_events,
+            mini_transformer_rule_event(
+                batch_index,
+                "attention_vo",
+                reason,
+                previous,
+                next,
+                delta,
+                window,
+            ),
+        );
+        self.attention_learning_rate_shift = next;
+    }
+
+    fn record_rule_event(
+        &mut self,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
+        event: MiniTransformerAdaptiveShiftEventTrace,
+    ) {
+        if event.previous_shift == event.next_shift {
+            return;
+        }
+        self.rule_adjustment_count = self.rule_adjustment_count.saturating_add(1);
+        self.adjustment_count = self.adjustment_count.saturating_add(1);
+        self.rule_event_count = self.rule_event_count.saturating_add(1);
+        if adaptive_shift_events.len() < MINI_TRANSFORMER_ADAPTIVE_RULE_TRACE_EVENT_LIMIT {
+            adaptive_shift_events.push(event);
+        }
     }
 
     fn observe_rejected(
@@ -2823,8 +3326,17 @@ impl MiniTransformerAdaptiveShiftState {
         rejected_batches: usize,
         enabled: bool,
         config: MiniTransformerMlpTrainConfig,
+        adaptive_shift_events: &mut Vec<MiniTransformerAdaptiveShiftEventTrace>,
     ) {
-        if !enabled {
+        let rule_enabled = enabled && config.adaptive_rule_shift_controller_enabled();
+        let holographic_enabled = enabled && config.adaptive_holographic_shift_controller_enabled();
+        if !rule_enabled && !holographic_enabled {
+            return;
+        }
+        if rule_enabled {
+            self.observe_rule_rejected(rejected_batches, config, adaptive_shift_events);
+        }
+        if !holographic_enabled {
             return;
         }
         let output_rejected =
@@ -2865,19 +3377,59 @@ impl MiniTransformerAdaptiveShiftState {
             rejected_batches,
         );
 
-        self.output_memory.remember(&output_state, 1);
-        self.mlp_memory.remember(&mlp_state, 1);
-        self.embedding_memory.remember(&embedding_state, 1);
-        self.q_memory.remember(&attention_state, 1);
-        self.k_memory.remember(&attention_state, 1);
-        self.v_memory.remember(&attention_state, 1);
-        self.o_memory.remember(&attention_state, 1);
+        mini_transformer_holo_remember_lagged(
+            &mut self.output_memory,
+            &mut self.output_previous_state,
+            output_state,
+            1,
+        );
+        mini_transformer_holo_remember_lagged(
+            &mut self.mlp_memory,
+            &mut self.mlp_previous_state,
+            mlp_state,
+            1,
+        );
+        mini_transformer_holo_remember_lagged(
+            &mut self.embedding_memory,
+            &mut self.embedding_previous_state,
+            embedding_state,
+            1,
+        );
+        mini_transformer_holo_remember_lagged(
+            &mut self.q_memory,
+            &mut self.q_previous_state,
+            attention_state,
+            1,
+        );
+        mini_transformer_holo_remember_lagged(
+            &mut self.k_memory,
+            &mut self.k_previous_state,
+            attention_state,
+            1,
+        );
+        mini_transformer_holo_remember_lagged(
+            &mut self.v_memory,
+            &mut self.v_previous_state,
+            attention_state,
+            1,
+        );
+        mini_transformer_holo_remember_lagged(
+            &mut self.o_memory,
+            &mut self.o_previous_state,
+            attention_state,
+            1,
+        );
+        let adjustment_count_before = self.adjustment_count;
         self.adjust_output(1);
         self.adjust_mlp(1);
         self.adjust_embedding(1);
         self.adjust_q(1);
         self.adjust_k(1);
         self.adjust_vo(1);
+        self.holographic_adjustment_count = self.holographic_adjustment_count.saturating_add(
+            self.adjustment_count
+                .saturating_sub(adjustment_count_before),
+        );
     }
 
     fn total_memory_updates(&self) -> usize {
@@ -2914,6 +3466,19 @@ impl MiniTransformerAdaptiveShiftState {
         self.k_memory.hash_into(&mut hasher);
         self.v_memory.hash_into(&mut hasher);
         self.o_memory.hash_into(&mut hasher);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.output_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.mlp_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.embedding_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.q_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.k_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.v_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.o_previous_state);
+        mini_transformer_hash_optional_usize(&mut hasher, self.output_holo_last_adjust_batch);
+        mini_transformer_hash_optional_usize(&mut hasher, self.mlp_holo_last_adjust_batch);
+        mini_transformer_hash_optional_usize(&mut hasher, self.embedding_holo_last_adjust_batch);
+        mini_transformer_hash_optional_usize(&mut hasher, self.q_holo_last_adjust_batch);
+        mini_transformer_hash_optional_usize(&mut hasher, self.k_holo_last_adjust_batch);
+        mini_transformer_hash_optional_usize(&mut hasher, self.vo_holo_last_adjust_batch);
         hasher.finish()
     }
 
@@ -2926,6 +3491,13 @@ impl MiniTransformerAdaptiveShiftState {
         self.k_memory.hash_into(&mut hasher);
         self.v_memory.hash_into(&mut hasher);
         self.o_memory.hash_into(&mut hasher);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.q_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.k_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.v_previous_state);
+        mini_transformer_hash_holo_previous_state(&mut hasher, self.o_previous_state);
+        mini_transformer_hash_optional_usize(&mut hasher, self.q_holo_last_adjust_batch);
+        mini_transformer_hash_optional_usize(&mut hasher, self.k_holo_last_adjust_batch);
+        mini_transformer_hash_optional_usize(&mut hasher, self.vo_holo_last_adjust_batch);
         hasher.finish()
     }
 
@@ -2993,6 +3565,207 @@ fn mini_transformer_adjust_shift(current: u8, delta: i8) -> u8 {
     next.clamp(0, i16::from(MAX_RIGHT_SHIFT)) as u8
 }
 
+fn mini_transformer_rule_generic_delta(
+    window: MiniTransformerRuleShiftWindow,
+    weight_count: usize,
+    interval: usize,
+) -> Option<(i8, &'static str)> {
+    if window.rejected_batches > 0 {
+        return Some((1, "rollback"));
+    }
+    if window.observation_batches < interval.max(1) {
+        return None;
+    }
+    if mini_transformer_rule_saturation_pressure(window, weight_count) {
+        return Some((1, "saturation"));
+    }
+    if mini_transformer_rule_zero_pressure(window, weight_count) {
+        return Some((-1, "zero_delta"));
+    }
+    None
+}
+
+fn mini_transformer_rule_q_delta(
+    q_window: MiniTransformerRuleShiftWindow,
+    k_window: MiniTransformerRuleShiftWindow,
+    interval: usize,
+) -> Option<(i8, &'static str)> {
+    if q_window.rejected_batches > 0 {
+        return Some((1, "rollback"));
+    }
+    if q_window.observation_batches < interval.max(1) {
+        return None;
+    }
+    if mini_transformer_rule_saturation_pressure(
+        q_window,
+        mini_transformer_attention_projection_weight_count(),
+    ) {
+        return Some((1, "saturation"));
+    }
+    if q_window.stats.weight_delta_l1 == 0
+        || mini_transformer_rule_zero_pressure(
+            q_window,
+            mini_transformer_attention_projection_weight_count(),
+        )
+    {
+        return Some((-1, "zero_delta"));
+    }
+    if k_window.stats.weight_delta_l1 > 0
+        && q_window.stats.weight_delta_l1.saturating_mul(8) < k_window.stats.weight_delta_l1
+    {
+        return Some((-1, "lagging_k"));
+    }
+    if k_window.stats.weight_delta_l1 > 0
+        && q_window.stats.weight_delta_l1 > k_window.stats.weight_delta_l1.saturating_mul(4)
+    {
+        return Some((1, "overpowering_k"));
+    }
+    None
+}
+
+fn mini_transformer_rule_k_delta(
+    k_window: MiniTransformerRuleShiftWindow,
+    q_window: MiniTransformerRuleShiftWindow,
+    interval: usize,
+) -> Option<(i8, &'static str)> {
+    if k_window.rejected_batches > 0 {
+        return Some((1, "rollback"));
+    }
+    if k_window.observation_batches < interval.max(1) {
+        return None;
+    }
+    if mini_transformer_rule_saturation_pressure(
+        k_window,
+        mini_transformer_attention_projection_weight_count(),
+    ) {
+        return Some((1, "saturation"));
+    }
+    if mini_transformer_rule_zero_pressure(
+        k_window,
+        mini_transformer_attention_projection_weight_count(),
+    ) {
+        return Some((-1, "zero_delta"));
+    }
+    if q_window.stats.weight_delta_l1 > 0
+        && k_window.stats.weight_delta_l1 > q_window.stats.weight_delta_l1.saturating_mul(64)
+    {
+        return Some((1, "overpowering_q"));
+    }
+    None
+}
+
+fn mini_transformer_rule_saturation_pressure(
+    window: MiniTransformerRuleShiftWindow,
+    weight_count: usize,
+) -> bool {
+    if window.stats.gradient_saturation_count == 0 {
+        return false;
+    }
+    let total_slots = weight_count
+        .max(1)
+        .saturating_mul(window.observation_batches.max(1));
+    let threshold = (total_slots / MINI_TRANSFORMER_RULE_SATURATION_PRESSURE_DIVISOR)
+        .max(window.observation_batches.max(1));
+    window.stats.gradient_saturation_count >= threshold
+}
+
+fn mini_transformer_rule_join_vo_decisions(
+    v_decision: Option<(i8, &'static str)>,
+    o_decision: Option<(i8, &'static str)>,
+    v_window: MiniTransformerRuleShiftWindow,
+    o_window: MiniTransformerRuleShiftWindow,
+) -> Option<(i8, &'static str, MiniTransformerRuleShiftWindow)> {
+    let (delta, reason) = match (v_decision, o_decision) {
+        (Some((v_delta, v_reason)), Some((o_delta, o_reason))) => {
+            let delta = mini_transformer_join_shift_deltas(v_delta, o_delta);
+            let reason = if v_reason == o_reason || delta == v_delta {
+                v_reason
+            } else {
+                o_reason
+            };
+            (delta, reason)
+        }
+        (Some(decision), None) | (None, Some(decision)) => decision,
+        (None, None) => return None,
+    };
+    Some((
+        delta,
+        reason,
+        mini_transformer_rule_join_windows(v_window, o_window),
+    ))
+}
+
+fn mini_transformer_rule_join_windows(
+    left: MiniTransformerRuleShiftWindow,
+    right: MiniTransformerRuleShiftWindow,
+) -> MiniTransformerRuleShiftWindow {
+    MiniTransformerRuleShiftWindow {
+        observation_batches: left.observation_batches.max(right.observation_batches),
+        rejected_batches: left.rejected_batches.saturating_add(right.rejected_batches),
+        stats: LinearWeightUpdateStats {
+            gradient_saturation_count: left
+                .stats
+                .gradient_saturation_count
+                .saturating_add(right.stats.gradient_saturation_count),
+            zero_delta_count: left
+                .stats
+                .zero_delta_count
+                .saturating_add(right.stats.zero_delta_count),
+            weight_delta_l1: left
+                .stats
+                .weight_delta_l1
+                .saturating_add(right.stats.weight_delta_l1),
+        },
+    }
+}
+
+fn mini_transformer_rule_zero_pressure(
+    window: MiniTransformerRuleShiftWindow,
+    weight_count: usize,
+) -> bool {
+    if window.stats.weight_delta_l1 == 0 {
+        return true;
+    }
+    let total_slots = weight_count
+        .max(1)
+        .saturating_mul(window.observation_batches.max(1));
+    let zero_pressure_threshold =
+        ((total_slots as u128) * (MINI_TRANSFORMER_RULE_ZERO_PRESSURE_NUMERATOR as u128)
+            / (MINI_TRANSFORMER_RULE_ZERO_PRESSURE_DENOMINATOR as u128)) as usize;
+    window.stats.zero_delta_count > zero_pressure_threshold
+}
+
+fn mini_transformer_rule_should_reset(
+    window: MiniTransformerRuleShiftWindow,
+    interval: usize,
+) -> bool {
+    window.rejected_batches > 0 || window.observation_batches >= interval.max(1)
+}
+
+fn mini_transformer_rule_event(
+    batch_index: usize,
+    component: &'static str,
+    reason: &'static str,
+    previous_shift: u8,
+    next_shift: u8,
+    delta: i8,
+    window: MiniTransformerRuleShiftWindow,
+) -> MiniTransformerAdaptiveShiftEventTrace {
+    MiniTransformerAdaptiveShiftEventTrace {
+        batch_index,
+        component,
+        reason,
+        previous_shift,
+        next_shift,
+        delta,
+        observation_batches: window.observation_batches,
+        rejected_batches: window.rejected_batches,
+        saturation_count: window.stats.gradient_saturation_count,
+        zero_delta_count: window.stats.zero_delta_count,
+        weight_delta_l1: window.stats.weight_delta_l1,
+    }
+}
+
 fn mini_transformer_output_weight_count() -> usize {
     BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
 }
@@ -3056,11 +3829,41 @@ fn mini_transformer_generic_shift_teacher_delta(
     0
 }
 
-fn mini_transformer_holo_memory_allowed(
-    stats: &LinearWeightUpdateStats,
-    weight_count: usize,
-) -> bool {
-    stats.weight_delta_l1 == 0 || stats.zero_delta_count > weight_count.max(1) / 2
+fn mini_transformer_holo_remember_lagged(
+    memory: &mut IntegerHolographicShiftMemory,
+    previous_state: &mut Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+    current_state: [i16; MINI_TRANSFORMER_HOLO_META_DIM],
+    teacher: i8,
+) {
+    if let Some(state) = previous_state {
+        memory.remember(state, teacher);
+    }
+    *previous_state = Some(current_state);
+}
+
+fn mini_transformer_hash_holo_previous_state(
+    hasher: &mut StableHasher,
+    previous_state: Option<[i16; MINI_TRANSFORMER_HOLO_META_DIM]>,
+) {
+    match previous_state {
+        Some(state) => {
+            hasher.update_usize(1);
+            for value in state {
+                hasher.update_bytes(&value.to_le_bytes());
+            }
+        }
+        None => hasher.update_usize(0),
+    }
+}
+
+fn mini_transformer_hash_optional_usize(hasher: &mut StableHasher, value: Option<usize>) {
+    match value {
+        Some(value) => {
+            hasher.update_usize(1);
+            hasher.update_usize(value);
+        }
+        None => hasher.update_usize(0),
+    }
 }
 
 fn mini_transformer_rejected_shift_stats(weight_count: usize) -> LinearWeightUpdateStats {
@@ -3079,14 +3882,37 @@ fn mini_transformer_join_shift_deltas(left: i8, right: i8) -> i8 {
     }
 }
 
-fn mini_transformer_holo_safety_delta(teacher: i8, recalled: i8, allow_memory: bool) -> i8 {
-    if teacher != 0 {
+fn mini_transformer_holo_safety_delta(teacher: i8, recalled: i8, teacher_can_act: bool) -> i8 {
+    if teacher_can_act && teacher != 0 {
         teacher
-    } else if allow_memory {
-        recalled.clamp(-1, 0)
+    } else if teacher == 0 {
+        recalled.clamp(-1, 1)
     } else {
         0
     }
+}
+
+fn mini_transformer_holo_authorized_delta(
+    candidate: i8,
+    teacher: i8,
+    memory_update_count: usize,
+    batch_index: usize,
+    last_adjust_batch: &mut Option<usize>,
+) -> i8 {
+    if candidate == 0 {
+        return 0;
+    }
+    if teacher == 0 && memory_update_count < MINI_TRANSFORMER_HOLO_MEMORY_MIN_UPDATES {
+        return 0;
+    }
+    if let Some(last_batch) = *last_adjust_batch
+        && batch_index.saturating_sub(last_batch)
+            < MINI_TRANSFORMER_HOLO_ADJUSTMENT_COOLDOWN_BATCHES
+    {
+        return 0;
+    }
+    *last_adjust_batch = Some(batch_index);
+    candidate
 }
 
 fn mini_transformer_holo_shift_state(
@@ -3984,11 +4810,15 @@ pub fn run_lexeme_embedding_training_with_model_and_quality(
             let context_start = center_index - config.context_radius;
             let context_end = center_index + config.context_radius;
 
-            for context_index in context_start..=context_end {
+            for (context_index, &context_token) in tokens
+                .iter()
+                .enumerate()
+                .take(context_end + 1)
+                .skip(context_start)
+            {
                 if context_index == center_index {
                     continue;
                 }
-                let context_token = tokens[context_index];
                 let negative_token =
                     lexeme_negative_token(center_token, context_token, updates, config.vocab_size);
                 let positive_frequency_weight_q15 = lexeme_pair_frequency_weight_q15(
@@ -4346,6 +5176,7 @@ pub fn run_lexeme_softmax_evaluate(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_lexeme_softmax_training_with_initial_weights_and_quality(
     token_bytes: &[u8],
     mut embedding_model: LexemeEmbeddingModel,
@@ -5124,6 +5955,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
     let mut embedding_gradient = MiniTransformerEmbeddingGradientI64::new(config.seq_len)
         .ok_or(TrainError::InvalidConfig)?;
     let mut adaptive_attention_shifts = MiniTransformerAdaptiveShiftState::new(config);
+    let mut adaptive_shift_events = Vec::new();
     let adaptive_shift_controller_enabled = config.adaptive_shift_controller_enabled();
     let use_output_head_accumulator = config.batch_windows > 1;
     let use_mlp_accumulator = config.batch_windows > 1;
@@ -5181,6 +6013,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
                                     rejected_batch_count.saturating_add(rejected_window_count),
                                     adaptive_shift_controller_enabled,
                                     config,
+                                    &mut adaptive_shift_events,
                                 );
                                 continue;
                             }
@@ -5389,6 +6222,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
                             rejected_batch_count.saturating_add(rejected_window_count),
                             adaptive_shift_controller_enabled,
                             config,
+                            &mut adaptive_shift_events,
                         );
                         continue;
                     }
@@ -5414,6 +6248,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
                         rejected_batch_count.saturating_add(rejected_window_count),
                         adaptive_shift_controller_enabled,
                         config,
+                        &mut adaptive_shift_events,
                     );
                     continue;
                 }
@@ -5502,6 +6337,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
                         accepted_batch_count.saturating_add(updates),
                         adaptive_shift_controller_enabled,
                         config,
+                        &mut adaptive_shift_events,
                     );
                 }
 
@@ -5826,6 +6662,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
                                 accepted_batch_count.saturating_add(1),
                                 adaptive_shift_controller_enabled,
                                 config,
+                                &mut adaptive_shift_events,
                             );
                         }
                         accepted_batch_count = accepted_batch_count.saturating_add(1);
@@ -5841,6 +6678,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
                             rejected_batch_count,
                             adaptive_shift_controller_enabled,
                             config,
+                            &mut adaptive_shift_events,
                         );
                         if batch_loss_regressed {
                             loss_regression_rejected_batch_count =
@@ -5896,6 +6734,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
                     rejected_batch_count,
                     adaptive_shift_controller_enabled,
                     config,
+                    &mut adaptive_shift_events,
                 );
             }
             batch_start_index = batch_end_index;
@@ -5980,7 +6819,11 @@ pub fn run_mini_transformer_mlp_training_from_model(
         attention_k_delta_l1,
         attention_v_delta_l1,
         attention_o_delta_l1,
-        adaptive_holographic_shift_adjustment_count: adaptive_attention_shifts.adjustment_count,
+        adaptive_rule_shift_adjustment_count: adaptive_attention_shifts.rule_adjustment_count,
+        adaptive_rule_update_count: adaptive_attention_shifts.rule_update_count,
+        adaptive_rule_event_count: adaptive_attention_shifts.rule_event_count,
+        adaptive_holographic_shift_adjustment_count: adaptive_attention_shifts
+            .holographic_adjustment_count,
         adaptive_holographic_update_count: adaptive_attention_shifts.total_memory_updates(),
         adaptive_holographic_hash: adaptive_attention_shifts.memory_hash(),
         adaptive_attention_shift_adjustment_count: adaptive_attention_shifts.adjustment_count,
@@ -5999,6 +6842,7 @@ pub fn run_mini_transformer_mlp_training_from_model(
             .attention_qk_learning_rate_shift,
         final_accuracy_per_mille,
         final_logits_hash,
+        adaptive_shift_events,
         steps,
     };
 
@@ -7283,6 +8127,18 @@ impl MiniTransformerMlpTrainingTrace {
         comma(&mut out);
         push_bool_field(
             &mut out,
+            "adaptive_rule_shifts",
+            self.config.adaptive_rule_shifts,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "adaptive_rule_interval_batches",
+            self.config.adaptive_rule_interval_batches,
+        );
+        comma(&mut out);
+        push_bool_field(
+            &mut out,
             "adaptive_attention_shifts",
             self.config.adaptive_attention_shifts,
         );
@@ -7513,6 +8369,30 @@ impl MiniTransformerMlpTrainingTrace {
         comma(&mut out);
         push_usize_field(
             &mut out,
+            "adaptive_rule_shift_adjustment_count",
+            self.adaptive_rule_shift_adjustment_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "adaptive_rule_update_count",
+            self.adaptive_rule_update_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "adaptive_rule_event_count",
+            self.adaptive_rule_event_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "adaptive_rule_trace_event_limit",
+            MINI_TRANSFORMER_ADAPTIVE_RULE_TRACE_EVENT_LIMIT,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
             "adaptive_holographic_shift_adjustment_count",
             self.adaptive_holographic_shift_adjustment_count,
         );
@@ -7693,6 +8573,12 @@ impl MiniTransformerMlpTrainingTrace {
         );
         comma(&mut out);
         push_hash_field(&mut out, "final_logits_hash", self.final_logits_hash);
+        comma(&mut out);
+        push_mini_transformer_adaptive_shift_events_field(
+            &mut out,
+            "adaptive_shift_events",
+            &self.adaptive_shift_events,
+        );
         comma(&mut out);
         push_mini_transformer_mlp_steps_field(&mut out, "steps", &self.steps);
         comma(&mut out);
@@ -8060,6 +8946,7 @@ impl LexemeSoftmaxModel {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_context_features_and_hidden(
         seq_len: usize,
         vocab_size: usize,
@@ -8083,6 +8970,7 @@ impl LexemeSoftmaxModel {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new_with_context_features_hidden_and_layout(
         seq_len: usize,
         vocab_size: usize,
@@ -8108,6 +8996,7 @@ impl LexemeSoftmaxModel {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new_with_context_features_hidden_layout_and_adapter_shift(
         seq_len: usize,
         vocab_size: usize,
@@ -8501,6 +9390,7 @@ impl MiniTransformerMlpModel {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         context_seq_len: usize,
         embeddings: Vec<i16>,
@@ -10196,19 +11086,18 @@ fn linear_backward_output_for(
     Ok(output)
 }
 
+type GatedMlpBackwardForwardOutputs = (
+    [i16; GATED_MLP_BACKWARD_HIDDEN_DIM],
+    [i16; GATED_MLP_BACKWARD_HIDDEN_DIM],
+    [i16; GATED_MLP_BACKWARD_HIDDEN_DIM],
+    [i16; GATED_MLP_BACKWARD_D_MODEL],
+);
+
 fn gated_mlp_backward_forward_for(
     up_weights: &[i8],
     gate_weights: &[i8],
     down_weights: &[i8],
-) -> Result<
-    (
-        [i16; GATED_MLP_BACKWARD_HIDDEN_DIM],
-        [i16; GATED_MLP_BACKWARD_HIDDEN_DIM],
-        [i16; GATED_MLP_BACKWARD_HIDDEN_DIM],
-        [i16; GATED_MLP_BACKWARD_D_MODEL],
-    ),
-    TrainError,
-> {
+) -> Result<GatedMlpBackwardForwardOutputs, TrainError> {
     let params = GatedMlpI16Params {
         up: LinearI16I8Params {
             weights: up_weights,
@@ -10505,6 +11394,7 @@ impl GatedMlpWeightGradientI64 {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn accumulate_gated_mlp_weight_gradient_i64(
     input: &[i16],
     grad_output: &[i16],
@@ -11211,6 +12101,7 @@ fn round_div_i64(value: i64, divisor: usize) -> Result<i64, TrainError> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn mini_transformer_validate_guard_windows(
     model: &MiniTransformerMlpModel,
     tokens: &[u8],
@@ -11770,9 +12661,9 @@ fn mini_transformer_attention_probabilities_q15(
             let query_end = query_start
                 .checked_add(head_dim)
                 .ok_or(TrainError::InvalidConfig)?;
-            for key_index in 0..seq_len {
+            for (key_index, logit) in logits.iter_mut().enumerate().take(seq_len) {
                 if key_index > query_index {
-                    logits[key_index] = MASKED_LOGIT;
+                    *logit = MASKED_LOGIT;
                     continue;
                 }
 
@@ -11783,7 +12674,7 @@ fn mini_transformer_attention_probabilities_q15(
                 let key_end = key_start
                     .checked_add(head_dim)
                     .ok_or(TrainError::InvalidConfig)?;
-                logits[key_index] = attention_dot_q_k_i16_i32_checked(
+                *logit = attention_dot_q_k_i16_i32_checked(
                     &q[query_start..query_end],
                     &k[key_start..key_end],
                 )
@@ -12136,13 +13027,15 @@ fn mini_transformer_attention_update_i8_checked(
     })
 }
 
+type MiniTransformerLinearAttentionQkvGradients = (Vec<i16>, Vec<i16>, Vec<i16>);
+
 fn mini_transformer_linear_attention_qkv_gradients_q15(
     seq_len: usize,
     q: &[i16],
     k: &[i16],
     v: &[i16],
     grad_context: &[i16],
-) -> Result<(Vec<i16>, Vec<i16>, Vec<i16>), TrainError> {
+) -> Result<MiniTransformerLinearAttentionQkvGradients, TrainError> {
     let head_dim = mini_transformer_head_dim()?;
     let total = seq_len
         .checked_mul(MINI_TRANSFORMER_D_MODEL)
@@ -12177,7 +13070,7 @@ fn mini_transformer_linear_attention_qkv_gradients_q15(
         let mut state = vec![0_i64; head_state_len];
         let mut key_sums = vec![0_i64; head_dim];
 
-        for token in 0..seq_len {
+        for (token, denominator_slot) in denominators.iter_mut().enumerate().take(seq_len) {
             let row_start = token
                 .checked_mul(MINI_TRANSFORMER_D_MODEL)
                 .and_then(|value| value.checked_add(head_offset))
@@ -12235,7 +13128,7 @@ fn mini_transformer_linear_attention_qkv_gradients_q15(
                 ));
             }
 
-            denominators[token] = denominator;
+            *denominator_slot = denominator;
             let snapshot_start = token
                 .checked_mul(head_state_len)
                 .ok_or(TrainError::InvalidConfig)?;
@@ -13186,6 +14079,7 @@ fn hash_byte_embed_logits(
     Ok(hasher.finish())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_total_error(
     tokens: &[u16],
     starts: &[usize],
@@ -13225,6 +14119,7 @@ fn lexeme_total_error(
     Ok(mistakes)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_total_probability_error_q15(
     tokens: &[u16],
     starts: &[usize],
@@ -13310,6 +14205,7 @@ fn log2_ratio_milli(numerator: u64, denominator: u64) -> u64 {
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_total_bits_per_token_milli(
     tokens: &[u16],
     starts: &[usize],
@@ -13767,6 +14663,7 @@ fn integer_sqrt_u64(value: u64) -> u64 {
     answer
 }
 
+#[allow(clippy::too_many_arguments)]
 fn hash_lexeme_logits(
     tokens: &[u16],
     starts: &[usize],
@@ -13911,7 +14808,7 @@ fn hash_lexeme_softmax_windows(
 }
 
 fn decode_u16_tokens(bytes: &[u8]) -> Result<Vec<u16>, TrainError> {
-    if bytes.is_empty() || bytes.len() % 2 != 0 {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
         return Err(TrainError::InvalidConfig);
     }
     Ok(bytes
@@ -14534,7 +15431,12 @@ fn lexeme_total_positive_dot_i64(
     let mut total = 0_i64;
     for &center in starts {
         let center_token = tokens[center];
-        for context in center - config.context_radius..=center + config.context_radius {
+        for (context, &context_token) in tokens
+            .iter()
+            .enumerate()
+            .take(center + config.context_radius + 1)
+            .skip(center - config.context_radius)
+        {
             if context == center {
                 continue;
             }
@@ -14542,7 +15444,7 @@ fn lexeme_total_positive_dot_i64(
                 embeddings,
                 config.embedding_dim,
                 center_token,
-                tokens[context],
+                context_token,
             ));
         }
     }
@@ -14559,11 +15461,15 @@ fn lexeme_total_negative_dot_i64(
     let mut update_index = 0_usize;
     for &center in starts {
         let center_token = tokens[center];
-        for context in center - config.context_radius..=center + config.context_radius {
+        for (context, &context_token) in tokens
+            .iter()
+            .enumerate()
+            .take(center + config.context_radius + 1)
+            .skip(center - config.context_radius)
+        {
             if context == center {
                 continue;
             }
-            let context_token = tokens[context];
             let negative_token =
                 lexeme_negative_token(center_token, context_token, update_index, config.vocab_size);
             total = total.saturating_add(lexeme_pair_dot_i64(
@@ -14860,6 +15766,7 @@ fn lexeme_softmax_row_for_layout(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_backward_head_features_q15(
     grad_output_q15: &[i16],
     weights: &[i8],
@@ -14905,7 +15812,9 @@ fn lexeme_backward_head_features_q15(
         .checked_add(adapter_logit_shift)
         .ok_or(TrainError::InvalidConfig)?;
 
-    for feature_index in 0..head_dim {
+    for (feature_index, grad_feature) in
+        grad_head_features_q15.iter_mut().enumerate().take(head_dim)
+    {
         let forward_shift = if feature_index < d_model {
             LEXEME_LOGIT_RIGHT_SHIFT
         } else {
@@ -14926,8 +15835,7 @@ fn lexeme_backward_head_features_q15(
                 )
                 .ok_or(TrainError::CoreRejected("lexeme_adapter_backward_acc"))?;
         }
-        grad_head_features_q15[feature_index] =
-            saturate_i16(round_shift_rhu_i64(acc, LEXEME_LOGIT_RIGHT_SHIFT));
+        *grad_feature = saturate_i16(round_shift_rhu_i64(acc, LEXEME_LOGIT_RIGHT_SHIFT));
     }
     scaled_grad_output.fill(0);
 
@@ -15294,12 +16202,12 @@ fn decode_candidate_weight_q15(
     decode_priors: Option<&ByteDecodePriors>,
 ) -> u64 {
     let mut weight = i32::from(probabilities_q15[candidate]).max(0) as u64;
-    if decode.corpus_prior {
-        if let (Some(priors), Some(&previous)) = (decode_priors, context.last()) {
-            let prior_q15 = priors.transition_probability_q15(previous, candidate as u8);
-            let bonus = (weight.saturating_mul(u64::from(prior_q15))) >> Q15_SHIFT;
-            weight = weight.saturating_add(bonus);
-        }
+    if decode.corpus_prior
+        && let (Some(priors), Some(&previous)) = (decode_priors, context.last())
+    {
+        let prior_q15 = priors.transition_probability_q15(previous, candidate as u8);
+        let bonus = (weight.saturating_mul(u64::from(prior_q15))) >> Q15_SHIFT;
+        weight = weight.saturating_add(bonus);
     }
     if decode.repeat_window > 0 && decode.repeat_penalty_shift > 0 {
         let repeat_count = recent_byte_count(candidate as u8, context, decode.repeat_window);
@@ -15345,12 +16253,12 @@ fn decode_effective_logit_q8(
     decode_priors: Option<&ByteDecodePriors>,
 ) -> i32 {
     let mut logit = logits_q8[candidate];
-    if decode.corpus_prior {
-        if let (Some(priors), Some(&previous)) = (decode_priors, context.last()) {
-            let prior_q15 = i32::from(priors.transition_probability_q15(previous, candidate as u8));
-            let shift = decode.corpus_prior_logit_shift.min(30);
-            logit = logit.saturating_add(prior_q15 >> shift);
-        }
+    if decode.corpus_prior
+        && let (Some(priors), Some(&previous)) = (decode_priors, context.last())
+    {
+        let prior_q15 = i32::from(priors.transition_probability_q15(previous, candidate as u8));
+        let shift = decode.corpus_prior_logit_shift.min(30);
+        logit = logit.saturating_add(prior_q15 >> shift);
     }
     logit
 }
@@ -15420,6 +16328,7 @@ fn decode_sample_u64(seed: u64, step_index: usize, context: &[u8]) -> u64 {
     splitmix64(hasher.finish())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn select_lexeme_from_row(
     logits_q8: &[i32],
     probabilities_q15: &[i16],
@@ -15470,6 +16379,7 @@ fn select_lexeme_from_row(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_sample_from_probabilities_q15(
     logits_q8: &[i32],
     probabilities_q15: &[i16],
@@ -15545,6 +16455,7 @@ fn lexeme_sample_from_probabilities_q15(
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_decode_fallback_selection(
     logits_q8: &[i32],
     probabilities_q15: &[i16],
@@ -15624,6 +16535,7 @@ fn lexeme_decode_fallback_selection(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_decode_candidates(
     logits_q8: &[i32],
     decode: DecodeConfig,
@@ -15748,6 +16660,7 @@ fn lexeme_strict_memory_active(
     cycle == 0 || step_index % cycle < decode.strict_memory_on_steps
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compare_lexeme_decode_candidates(
     left: usize,
     right: usize,
@@ -15782,6 +16695,7 @@ fn compare_lexeme_decode_candidates(
     .then_with(|| left.cmp(&right))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_decode_score_trace(
     logits_q8: &[i32],
     probabilities_q15: &[i16],
@@ -15891,6 +16805,7 @@ fn clamp_u64_to_i16_q15(value: u64) -> i16 {
     value.min(i16::MAX as u64) as i16
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_decode_candidate_weight_q15(
     probabilities_q15: &[i16],
     candidate: usize,
@@ -15932,16 +16847,16 @@ fn lexeme_decode_candidate_weight_q15(
         topic_priors,
     );
     weight = weight.saturating_add(u64::from(memory_q15));
-    if decode.corpus_prior {
-        if let Some(priors) = decode_priors {
-            let prior_q15 = priors.context_transition_probability_q15(
-                context,
-                candidate as u16,
-                decode.corpus_prior_order.min(MAX_CORPUS_PRIOR_ORDER),
-            );
-            let bonus = (weight.saturating_mul(u64::from(prior_q15))) >> Q15_SHIFT;
-            weight = weight.saturating_add(bonus);
-        }
+    if decode.corpus_prior
+        && let Some(priors) = decode_priors
+    {
+        let prior_q15 = priors.context_transition_probability_q15(
+            context,
+            candidate as u16,
+            decode.corpus_prior_order.min(MAX_CORPUS_PRIOR_ORDER),
+        );
+        let bonus = (weight.saturating_mul(u64::from(prior_q15))) >> Q15_SHIFT;
+        weight = weight.saturating_add(bonus);
     }
     if decode.repeat_window > 0 && decode.repeat_penalty_shift > 0 {
         let repeat_count = recent_lexeme_count(candidate as u16, context, decode.repeat_window);
@@ -15986,10 +16901,10 @@ fn validate_lexeme_decode_priors(
     {
         return Err(TrainError::InvalidConfig);
     }
-    if let Some(priors) = decode_priors {
-        if priors.vocab_size != vocab_size {
-            return Err(TrainError::InvalidConfig);
-        }
+    if let Some(priors) = decode_priors
+        && priors.vocab_size != vocab_size
+    {
+        return Err(TrainError::InvalidConfig);
     }
     Ok(())
 }
@@ -16311,6 +17226,7 @@ fn lexeme_decode_memory_context_order(
     (order >= decode.memory_min_context_order).then_some(order)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lexeme_decode_effective_logit_q8(
     logits_q8: &[i32],
     candidate: usize,
@@ -16350,16 +17266,16 @@ fn lexeme_decode_effective_logit_q8(
         decode,
         topic_priors,
     ));
-    if decode.corpus_prior {
-        if let Some(priors) = decode_priors {
-            let prior_q15 = i32::from(priors.context_transition_probability_q15(
-                context,
-                candidate as u16,
-                decode.corpus_prior_order.min(MAX_CORPUS_PRIOR_ORDER),
-            ));
-            let shift = decode.corpus_prior_logit_shift.min(30);
-            logit = logit.saturating_add(prior_q15 >> shift);
-        }
+    if decode.corpus_prior
+        && let Some(priors) = decode_priors
+    {
+        let prior_q15 = i32::from(priors.context_transition_probability_q15(
+            context,
+            candidate as u16,
+            decode.corpus_prior_order.min(MAX_CORPUS_PRIOR_ORDER),
+        ));
+        let shift = decode.corpus_prior_logit_shift.min(30);
+        logit = logit.saturating_add(prior_q15 >> shift);
     }
     logit
 }
@@ -16635,6 +17551,7 @@ fn apply_lexeme_softmax_output_head_gradient_i64(
     Ok(stats)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_lexeme_softmax_output_head_update(
     weights: &mut [i8],
     features: &[i16],
@@ -17114,6 +18031,7 @@ fn apply_mini_transformer_embedding_update_with_position_policy(
     Ok(stats)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_lexeme_embedding_pair_update(
     embeddings: &mut [i16],
     embedding_dim: usize,
@@ -17958,6 +18876,44 @@ fn push_mini_transformer_mlp_steps_field(
         push_u64_field(out, "attention_v_delta_l1", step.attention_v_delta_l1);
         comma(out);
         push_u64_field(out, "attention_o_delta_l1", step.attention_o_delta_l1);
+        out.push('}');
+    }
+    out.push(']');
+}
+
+fn push_mini_transformer_adaptive_shift_events_field(
+    out: &mut String,
+    name: &str,
+    events: &[MiniTransformerAdaptiveShiftEventTrace],
+) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, event) in events.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        out.push('{');
+        push_usize_field(out, "batch_index", event.batch_index);
+        comma(out);
+        push_string_field(out, "component", event.component);
+        comma(out);
+        push_string_field(out, "reason", event.reason);
+        comma(out);
+        push_usize_field(out, "previous_shift", usize::from(event.previous_shift));
+        comma(out);
+        push_usize_field(out, "next_shift", usize::from(event.next_shift));
+        comma(out);
+        push_i32_field(out, "delta", i32::from(event.delta));
+        comma(out);
+        push_usize_field(out, "observation_batches", event.observation_batches);
+        comma(out);
+        push_usize_field(out, "rejected_batches", event.rejected_batches);
+        comma(out);
+        push_usize_field(out, "saturation_count", event.saturation_count);
+        comma(out);
+        push_usize_field(out, "zero_delta_count", event.zero_delta_count);
+        comma(out);
+        push_u64_field(out, "weight_delta_l1", event.weight_delta_l1);
         out.push('}');
     }
     out.push(']');
@@ -21251,6 +22207,9 @@ mod tests {
                 attention_learning_rate_shift: 24,
                 attention_q_learning_rate_shift: 18,
                 attention_qk_learning_rate_shift: 18,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
                 adaptive_attention_shifts: false,
                 adaptive_holographic_shifts: false,
                 attention_vo_error_feedback: false,
@@ -21340,6 +22299,9 @@ mod tests {
                 attention_learning_rate_shift: 24,
                 attention_q_learning_rate_shift: 13,
                 attention_qk_learning_rate_shift: 16,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
                 adaptive_attention_shifts: false,
                 adaptive_holographic_shifts: false,
                 attention_vo_error_feedback: false,
@@ -21383,6 +22345,9 @@ mod tests {
                 attention_learning_rate_shift: 24,
                 attention_q_learning_rate_shift: 22,
                 attention_qk_learning_rate_shift: 22,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
                 adaptive_attention_shifts: true,
                 adaptive_holographic_shifts: true,
                 attention_vo_error_feedback: false,
@@ -21437,6 +22402,9 @@ mod tests {
                 attention_learning_rate_shift: 24,
                 attention_q_learning_rate_shift: 22,
                 attention_qk_learning_rate_shift: 22,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
                 adaptive_attention_shifts: false,
                 adaptive_holographic_shifts: true,
                 attention_vo_error_feedback: false,
@@ -21453,6 +22421,171 @@ mod tests {
         assert!(line.contains("\"adaptive_holographic_shifts\":true"));
         assert!(line.contains("\"adaptive_holographic_meta_dim\":8"));
         assert!(line.contains("\"adaptive_holographic_hash\":"));
+    }
+
+    #[test]
+    fn mini_transformer_holographic_memory_binds_previous_state_to_next_teacher() {
+        let mut memory = IntegerHolographicShiftMemory::new();
+        let mut previous_state = None;
+        let state_a = [i16::MAX, 1024, 0, 512, 0, 0, 256, -512];
+        let state_b = [i16::MAX, 2048, 256, 768, 0, 0, 512, 0];
+
+        mini_transformer_holo_remember_lagged(&mut memory, &mut previous_state, state_a, -1);
+        assert_eq!(memory.update_count, 0);
+        assert_eq!(previous_state, Some(state_a));
+
+        mini_transformer_holo_remember_lagged(&mut memory, &mut previous_state, state_b, 1);
+        assert_eq!(memory.update_count, 1);
+        assert_eq!(previous_state, Some(state_b));
+        assert_eq!(memory.retrieve_delta(&state_a), Some(1));
+    }
+
+    #[test]
+    fn mini_transformer_holographic_memory_can_act_when_teacher_is_silent() {
+        assert_eq!(mini_transformer_holo_safety_delta(0, -2, false), -1);
+        assert_eq!(mini_transformer_holo_safety_delta(0, -1, false), -1);
+        assert_eq!(mini_transformer_holo_safety_delta(0, 0, false), 0);
+        assert_eq!(mini_transformer_holo_safety_delta(0, 1, false), 1);
+        assert_eq!(mini_transformer_holo_safety_delta(0, 2, false), 1);
+        assert_eq!(mini_transformer_holo_safety_delta(1, -1, true), 1);
+        assert_eq!(mini_transformer_holo_safety_delta(-1, 1, true), -1);
+        assert_eq!(mini_transformer_holo_safety_delta(1, -1, false), 0);
+        assert_eq!(mini_transformer_holo_safety_delta(-1, 1, false), 0);
+    }
+
+    #[test]
+    fn mini_transformer_holographic_authority_requires_history_and_cooldown() {
+        let mut last_adjust_batch = None;
+        assert_eq!(
+            mini_transformer_holo_authorized_delta(
+                -1,
+                0,
+                MINI_TRANSFORMER_HOLO_MEMORY_MIN_UPDATES - 1,
+                1,
+                &mut last_adjust_batch,
+            ),
+            0
+        );
+        assert_eq!(last_adjust_batch, None);
+        assert_eq!(
+            mini_transformer_holo_authorized_delta(
+                -1,
+                0,
+                MINI_TRANSFORMER_HOLO_MEMORY_MIN_UPDATES,
+                8,
+                &mut last_adjust_batch,
+            ),
+            -1
+        );
+        assert_eq!(last_adjust_batch, Some(8));
+        assert_eq!(
+            mini_transformer_holo_authorized_delta(
+                1,
+                1,
+                0,
+                8 + MINI_TRANSFORMER_HOLO_ADJUSTMENT_COOLDOWN_BATCHES - 1,
+                &mut last_adjust_batch,
+            ),
+            0
+        );
+        assert_eq!(
+            mini_transformer_holo_authorized_delta(
+                1,
+                1,
+                0,
+                8 + MINI_TRANSFORMER_HOLO_ADJUSTMENT_COOLDOWN_BATCHES,
+                &mut last_adjust_batch,
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn mini_transformer_adaptive_rule_shifts_emit_events() {
+        let tokens = b"to be or not to be to be or not to be ";
+        let trace = run_mini_transformer_mlp_training(
+            tokens,
+            MiniTransformerMlpTrainConfig {
+                epochs: 1,
+                seq_len: 4,
+                stride: 1,
+                window_offset: 0,
+                max_windows: Some(8),
+                batch_windows: 2,
+                tokenizer_id: ByteTokenizerId::Identity,
+                attention_kind: MiniTransformerAttentionKind::Linear,
+                position_policy: MiniTransformerPositionPolicy::Nope,
+                learning_rate: 1,
+                output_learning_rate_shift: 18,
+                mlp_learning_rate_shift: 16,
+                embedding_learning_rate_shift: 14,
+                attention_learning_rate_shift: 24,
+                attention_q_learning_rate_shift: 22,
+                attention_qk_learning_rate_shift: 22,
+                adaptive_rule_shifts: true,
+                adaptive_rule_interval_batches: 1,
+                adaptive_attention_shifts: false,
+                adaptive_holographic_shifts: false,
+                attention_vo_error_feedback: false,
+                attention_vo_oracle: false,
+                reject_loss_regression: false,
+            },
+        )
+        .expect("rule adaptive train");
+
+        assert!(trace.adaptive_rule_update_count > 0);
+        assert!(trace.adaptive_rule_shift_adjustment_count > 0);
+        assert_eq!(trace.adaptive_holographic_update_count, 0);
+        assert_eq!(trace.adaptive_holographic_shift_adjustment_count, 0);
+        assert!(!trace.adaptive_shift_events.is_empty());
+        let line = trace.to_json_line();
+        assert!(line.contains("\"adaptive_rule_shifts\":true"));
+        assert!(line.contains("\"adaptive_rule_interval_batches\":1"));
+        assert!(line.contains("\"adaptive_rule_shift_adjustment_count\":"));
+        assert!(line.contains("\"adaptive_shift_events\":["));
+        assert!(line.contains("\"component\":\""));
+        assert!(line.contains("\"reason\":\""));
+    }
+
+    #[test]
+    fn mini_transformer_rule_saturation_is_window_gated() {
+        let interval = 4;
+        let weight_count = 512;
+        let quiet_stats = LinearWeightUpdateStats {
+            gradient_saturation_count: 0,
+            zero_delta_count: 0,
+            weight_delta_l1: 1,
+        };
+        let sparse_saturation = LinearWeightUpdateStats {
+            gradient_saturation_count: 1,
+            zero_delta_count: 0,
+            weight_delta_l1: 1,
+        };
+
+        let mut sparse_window = MiniTransformerRuleShiftWindow::new();
+        sparse_window.observe_accepted(sparse_saturation);
+        assert_eq!(
+            mini_transformer_rule_generic_delta(sparse_window, weight_count, interval),
+            None
+        );
+        assert!(!mini_transformer_rule_should_reset(sparse_window, interval));
+        for _ in 1..interval {
+            sparse_window.observe_accepted(quiet_stats);
+        }
+        assert_eq!(
+            mini_transformer_rule_generic_delta(sparse_window, weight_count, interval),
+            None
+        );
+        assert!(mini_transformer_rule_should_reset(sparse_window, interval));
+
+        let mut pressure_window = MiniTransformerRuleShiftWindow::new();
+        for _ in 0..interval {
+            pressure_window.observe_accepted(sparse_saturation);
+        }
+        assert_eq!(
+            mini_transformer_rule_generic_delta(pressure_window, weight_count, interval),
+            Some((1, "saturation"))
+        );
     }
 
     #[test]
@@ -21475,6 +22608,8 @@ mod tests {
             attention_learning_rate_shift: 24,
             attention_q_learning_rate_shift: 18,
             attention_qk_learning_rate_shift: 18,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
             adaptive_attention_shifts: false,
             adaptive_holographic_shifts: false,
             attention_vo_error_feedback: false,
@@ -21523,6 +22658,9 @@ mod tests {
                 attention_learning_rate_shift: 24,
                 attention_q_learning_rate_shift: 18,
                 attention_qk_learning_rate_shift: 18,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
                 adaptive_attention_shifts: false,
                 adaptive_holographic_shifts: false,
                 attention_vo_error_feedback: false,
@@ -21564,6 +22702,9 @@ mod tests {
                 attention_learning_rate_shift: 24,
                 attention_q_learning_rate_shift: 18,
                 attention_qk_learning_rate_shift: 18,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
                 adaptive_attention_shifts: false,
                 adaptive_holographic_shifts: false,
                 attention_vo_error_feedback: false,
@@ -21805,6 +22946,9 @@ mod tests {
                 attention_learning_rate_shift: 22,
                 attention_q_learning_rate_shift: 22,
                 attention_qk_learning_rate_shift: 22,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
                 adaptive_attention_shifts: false,
                 adaptive_holographic_shifts: false,
                 attention_vo_error_feedback: false,
@@ -21863,6 +23007,8 @@ mod tests {
             attention_learning_rate_shift: 22,
             attention_q_learning_rate_shift: 2,
             attention_qk_learning_rate_shift: 2,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
             adaptive_attention_shifts: false,
             adaptive_holographic_shifts: false,
             attention_vo_error_feedback: false,
@@ -22019,6 +23165,9 @@ mod tests {
                 attention_learning_rate_shift: 24,
                 attention_q_learning_rate_shift: 18,
                 attention_qk_learning_rate_shift: 18,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
                 adaptive_attention_shifts: false,
                 adaptive_holographic_shifts: false,
                 attention_vo_error_feedback: false,

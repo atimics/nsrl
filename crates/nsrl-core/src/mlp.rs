@@ -356,6 +356,7 @@ pub fn gated_mlp_backward_input_i16_q15_checked(
     Some(saturation_count)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn gated_mlp_backward_weight_update_i8_checked(
     input: &[i16],
     grad_output: &[i16],
@@ -653,6 +654,7 @@ fn validate_gated_mlp_backward_shapes(
     Some(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_gated_mlp_weight_update_shapes(
     input: &[i16],
     grad_output: &[i16],
