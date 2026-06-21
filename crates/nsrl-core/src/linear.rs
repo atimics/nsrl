@@ -270,7 +270,10 @@ pub fn linear_i16_i8_i16_per_channel_generic_checked(
                 input,
                 &weights[w_start..w_start + 4 * input_dim],
                 input_dim,
-                b0, b1, b2, b3,
+                b0,
+                b1,
+                b2,
+                b3,
             );
             output[i0] = requantize_i32_to_i16(acc0, scales[i0]);
             output[i1] = requantize_i32_to_i16(acc1, scales[i1]);
@@ -389,7 +392,10 @@ pub fn linear_i16_i8_i16_per_channel_neon_checked(
                 input,
                 &weights[w_start..w_start + 4 * input_dim],
                 input_dim,
-                b0, b1, b2, b3,
+                b0,
+                b1,
+                b2,
+                b3,
             );
             output[i0] = requantize_i32_to_i16(acc0, scales[i0]);
             output[i1] = requantize_i32_to_i16(acc1, scales[i1]);
@@ -443,7 +449,10 @@ mod neon {
         input: &[i16],
         weights: &[i8], // 4 × input_dim, row-major
         input_dim: usize,
-        b0: i32, b1: i32, b2: i32, b3: i32,
+        b0: i32,
+        b1: i32,
+        b2: i32,
+        b3: i32,
     ) -> (i32, i32, i32, i32) {
         // SAFETY: `dot_fits_i32_with_sum` guarantees the true result fits in i32,
         // so wrapping arithmetic produces the correct answer. Slice lengths are
@@ -462,7 +471,10 @@ mod neon {
         input: &[i16],
         weights: &[i8],
         input_dim: usize,
-        b0: i32, b1: i32, b2: i32, b3: i32,
+        b0: i32,
+        b1: i32,
+        b2: i32,
+        b3: i32,
     ) -> (i32, i32, i32, i32) {
         unsafe {
             let acts_ptr = input.as_ptr();
@@ -1062,7 +1074,8 @@ mod tests {
         // Simulate a realistic layer: input_dim=128, random-ish values.
         // Both paths should agree since 128 easily fits.
         let input: [i16; 128] = core::array::from_fn(|i| (i as i16 * 7 - 500).clamp(-32767, 32767));
-        let weights: [i8; 128] = core::array::from_fn(|i| ((i as i8).wrapping_mul(3)).clamp(-127, 127));
+        let weights: [i8; 128] =
+            core::array::from_fn(|i| ((i as i8).wrapping_mul(3)).clamp(-127, 127));
 
         // Construct params for a single-output layer
         let bias = [1000_i32; 1];
@@ -1174,8 +1187,8 @@ mod tests {
     fn neon_kernel_matches_generic_i8_exact_multiple_of_8() {
         // 4 outputs (one tile-4), 16 inputs (exactly 2 NEON vectors)
         let input = [
-            -800_i16, -700, -600, -500, -400, -300, -200, -100,
-               0_i16,  100,  200,  300,  400,  500,  600,  700,
+            -800_i16, -700, -600, -500, -400, -300, -200, -100, 0_i16, 100, 200, 300, 400, 500,
+            600, 700,
         ];
         #[rustfmt::skip]
         let weights = [

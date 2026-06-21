@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use nsrl_core::{
     AttentionResidualWorkspace, FixedScale, GatedMlpI16Params, GatedMlpResidualWorkspace,
     GatedMlpWorkspace, LOGIT_FRAC_BITS, LinearI16I8Params, PreNormAttentionResidualWorkspace,

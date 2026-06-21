@@ -52,13 +52,14 @@ pub fn sqrt_power_of_four_shift(value: usize) -> Option<u8> {
     Some((value.trailing_zeros() / 2) as u8)
 }
 
-/// Returns true if `n` i16×i16 products (worst case 32768²) summed provably fit in i64.
+/// Returns true if `n` i16-by-i16 products summed provably fit in i64.
 ///
-/// Used for both QK dot products and probability×value accumulations.
-/// Threshold: i64::MAX / 32768² ≈ 8.59 billion — no realistic model dimension reaches this.
+/// Used for both QK dot products and probability-by-value accumulations.
+/// The worst case is 32768 * 32768, so the threshold is
+/// i64::MAX / 1_073_741_824 = 8_589_934_591 products.
 #[inline]
 fn fits_n_i16_products_in_i64(n: usize) -> bool {
-    const MAX_PRODUCT: u128 = 32768 * 32768; // worst case: i16::MIN × i16::MIN
+    const MAX_PRODUCT: u128 = 32768 * 32768;
     (n as u128).saturating_mul(MAX_PRODUCT) <= i64::MAX as u128
 }
 
@@ -154,7 +155,6 @@ pub fn base2_softmax_i32_q15(logits_q8: &[i32], output_q15: &mut [i16]) -> Optio
 
     Some(sum)
 }
-
 
 pub fn attention_weight_v_i16_q15_checked(
     probabilities_q15: &[i16],
@@ -338,12 +338,14 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
 
             // Pre-compute index bounds (checked once outside the hot loop).
             let base_v_offset = head_offset;
-            let base_ctx_offset = token
-                .checked_mul(d_model)?
-                .checked_add(head_offset)?;
+            let base_ctx_offset = token.checked_mul(d_model)?.checked_add(head_offset)?;
 
             // base2_softmax_i32_q15 guarantees non-negative outputs; no negative-prob scan needed.
-            debug_assert!(workspace.probabilities_q15[..seq_len].iter().all(|&p| p >= 0));
+            debug_assert!(
+                workspace.probabilities_q15[..seq_len]
+                    .iter()
+                    .all(|&p| p >= 0)
+            );
 
             // Fast path: wrapping arithmetic safe because fits_n_i16_products_in_i64(seq_len).
             // seq_len is bounded by seq_len * d_model having been checked in validate_self_attention_shapes.
@@ -354,9 +356,8 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
                 for key_index in 0..seq_len {
                     let probability = workspace.probabilities_q15[key_index];
                     let value_index = key_index * d_model + base_v_offset + out_index;
-                    acc = acc.wrapping_add(
-                        i64::from(probability) * i64::from(workspace.v[value_index]),
-                    );
+                    acc = acc
+                        .wrapping_add(i64::from(probability) * i64::from(workspace.v[value_index]));
                 }
 
                 workspace.context[base_ctx_offset + out_index] =

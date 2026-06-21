@@ -1,11 +1,19 @@
+#![deny(unsafe_code)]
+
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{self, BufRead, Read, Write};
 
 pub const SCHEMA: &str = "nsrl.corpus_trace.v1";
 pub const TOKEN_SCHEMA: &str = "nsrl.token_trace.v1";
+pub const LEXEME_TOKEN_SCHEMA: &str = "nsrl.lexeme_token_trace.v1";
 pub const AUTHORITY: &str = "deterministic_corpus_preparation";
 pub const TOKEN_AUTHORITY: &str = "deterministic_byte_tokenization";
+pub const LEXEME_TOKEN_AUTHORITY: &str = "deterministic_lexeme_tokenization";
 pub const TOKENIZER_ID: &str = "byte_identity_u8_v1";
+pub const ASCII_LOWER_TOKENIZER_ID: &str = "byte_ascii_lower_text_u8_v1";
+pub const LEXEME_TOKENIZER_ID: &str = "lexeme_ascii_lower_u16_v1";
 pub const SHAKESPEARE_SOURCE_ID: &str = "gutenberg_ebook_100";
 pub const SHAKESPEARE_SOURCE_URL: &str = "https://www.gutenberg.org/cache/epub/100/pg100.txt";
 pub const SIMPLEWIKI_SOURCE_ID: &str = "simplewiki_latest_pages_articles";
@@ -30,6 +38,14 @@ const TOKEN_KNOWN_NON_CLAIMS: [&str; 4] = [
     "does_not_materialize_window_rows",
 ];
 
+const LEXEME_KNOWN_NON_CLAIMS: [&str; 5] = [
+    "not_dynamic_vocabulary",
+    "not_semantic_embeddings_yet",
+    "not_bpe_or_wordpiece",
+    "byte_fallback_reserved_for_unknown_lexemes",
+    "does_not_materialize_window_rows",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CorpusConfig {
     pub max_simplewiki_pages: Option<usize>,
@@ -41,6 +57,7 @@ pub struct TokenizeConfig {
     pub stride: usize,
     pub max_windows: Option<usize>,
     pub preview_tokens: usize,
+    pub text_profile: TokenTextProfile,
 }
 
 impl Default for TokenizeConfig {
@@ -50,8 +67,54 @@ impl Default for TokenizeConfig {
             stride: 1,
             max_windows: None,
             preview_tokens: 16,
+            text_profile: TokenTextProfile::Identity,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenTextProfile {
+    Identity,
+    AsciiLower,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LexemeTokenizeConfig {
+    pub seq_len: usize,
+    pub stride: usize,
+    pub max_windows: Option<usize>,
+    pub preview_tokens: usize,
+    pub max_vocab: usize,
+    pub input_profile: LexemeInputProfile,
+    pub vocab_profile: LexemeVocabProfile,
+    pub vocab_frequency_cap: u32,
+}
+
+impl Default for LexemeTokenizeConfig {
+    fn default() -> Self {
+        Self {
+            seq_len: 32,
+            stride: 1,
+            max_windows: None,
+            preview_tokens: 16,
+            max_vocab: 2048,
+            input_profile: LexemeInputProfile::Plain,
+            vocab_profile: LexemeVocabProfile::Frequency,
+            vocab_frequency_cap: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LexemeInputProfile {
+    Plain,
+    ShakespeareGutenberg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LexemeVocabProfile {
+    Frequency,
+    Balanced,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,12 +142,42 @@ pub struct TokenTrace {
     pub seq_len: usize,
     pub stride: usize,
     pub max_windows: Option<usize>,
+    pub text_profile: TokenTextProfile,
     pub windows: usize,
     pub uncovered_tail_tokens: usize,
     pub token_hash: u64,
     pub window_hash: u64,
     pub first_input_preview: Vec<u8>,
     pub first_target_preview: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LexemeTokenTrace {
+    pub input_bytes: usize,
+    pub normalized_bytes: usize,
+    pub lexeme_count: usize,
+    pub output_bytes: usize,
+    pub token_count: usize,
+    pub vocab_size: usize,
+    pub reserved_byte_tokens: usize,
+    pub vocab_entries: usize,
+    pub fallback_token_count: usize,
+    pub known_lexeme_token_count: usize,
+    pub seq_len: usize,
+    pub stride: usize,
+    pub max_windows: Option<usize>,
+    pub max_vocab: usize,
+    pub input_profile: LexemeInputProfile,
+    pub vocab_profile: LexemeVocabProfile,
+    pub vocab_frequency_cap: u32,
+    pub windows: usize,
+    pub uncovered_tail_tokens: usize,
+    pub token_hash: u64,
+    pub vocab_hash: u64,
+    pub window_hash: u64,
+    pub first_input_preview: Vec<u16>,
+    pub first_target_preview: Vec<u16>,
+    pub first_lexeme_preview: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -167,13 +260,22 @@ pub fn tokenize_corpus<R: Read, W: Write>(
 
     let mut bytes = Vec::new();
     corpus.read_to_end(&mut bytes)?;
-    tokens_out.write_all(&bytes)?;
+    let tokens = tokenize_bytes_for_profile(&bytes, config.text_profile);
+    tokens_out.write_all(tokens.as_ref())?;
 
-    let window_stats = compute_window_stats(&bytes, config);
-    let preview_len = config.preview_tokens.min(config.seq_len).min(bytes.len());
-    let first_input_preview = bytes.iter().copied().take(preview_len).collect::<Vec<_>>();
-    let first_target_preview = if bytes.len() > 1 {
-        bytes
+    let token_slice = tokens.as_ref();
+    let window_stats = compute_window_stats(token_slice, config);
+    let preview_len = config
+        .preview_tokens
+        .min(config.seq_len)
+        .min(token_slice.len());
+    let first_input_preview = token_slice
+        .iter()
+        .copied()
+        .take(preview_len)
+        .collect::<Vec<_>>();
+    let first_target_preview = if token_slice.len() > 1 {
+        tokens
             .iter()
             .copied()
             .skip(1)
@@ -185,22 +287,113 @@ pub fn tokenize_corpus<R: Read, W: Write>(
 
     Ok(TokenTrace {
         input_bytes: bytes.len(),
-        output_bytes: bytes.len(),
-        token_count: bytes.len(),
+        output_bytes: token_slice.len(),
+        token_count: token_slice.len(),
         vocab_size: 256,
         seq_len: config.seq_len,
         stride: config.stride,
         max_windows: config.max_windows,
+        text_profile: config.text_profile,
         windows: window_stats.windows,
         uncovered_tail_tokens: window_stats.uncovered_tail_tokens,
-        token_hash: hash_bytes(&bytes),
+        token_hash: hash_bytes(token_slice),
         window_hash: window_stats.hash,
         first_input_preview,
         first_target_preview,
     })
 }
 
+pub fn tokenize_lexeme_corpus<R: Read, TW: Write, VW: Write>(
+    corpus: &mut R,
+    tokens_out: &mut TW,
+    vocab_out: &mut VW,
+    config: LexemeTokenizeConfig,
+) -> Result<LexemeTokenTrace, CorpusError> {
+    if config.seq_len == 0 || config.stride == 0 {
+        return Err(CorpusError::InvalidInput(
+            "lexeme tokenization requires positive seq_len and stride",
+        ));
+    }
+    if !(257..=65_536).contains(&config.max_vocab) {
+        return Err(CorpusError::InvalidInput(
+            "lexeme tokenization requires max_vocab in 257..=65536",
+        ));
+    }
+
+    let mut bytes = Vec::new();
+    corpus.read_to_end(&mut bytes)?;
+    let semantic_bytes = lexeme_input_bytes_for_profile(&bytes, config.input_profile);
+    let normalized = ascii_lower_lexeme_tokens(&semantic_bytes);
+    let scan = scan_ascii_lower_lexeme_counts(&normalized, config.preview_tokens);
+    let vocab = build_lexeme_vocab(
+        scan.counts,
+        config.max_vocab,
+        config.vocab_profile,
+        config.vocab_frequency_cap,
+    );
+    let vocab_bytes = lexeme_vocab_tsv_bytes(&vocab);
+    let encoded = encode_lexeme_tokens(&normalized, &vocab);
+
+    write_u16_tokens_le(&encoded.tokens, tokens_out)?;
+    vocab_out.write_all(&vocab_bytes)?;
+
+    let window_stats = compute_window_stats_u16(&encoded.tokens, config);
+    let preview_len = config
+        .preview_tokens
+        .min(config.seq_len)
+        .min(encoded.tokens.len());
+    let first_input_preview = encoded
+        .tokens
+        .iter()
+        .copied()
+        .take(preview_len)
+        .collect::<Vec<_>>();
+    let first_target_preview = if encoded.tokens.len() > 1 {
+        encoded
+            .tokens
+            .iter()
+            .copied()
+            .skip(1)
+            .take(preview_len)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    Ok(LexemeTokenTrace {
+        input_bytes: bytes.len(),
+        normalized_bytes: normalized.len(),
+        lexeme_count: scan.lexeme_count,
+        output_bytes: encoded.tokens.len() * 2,
+        token_count: encoded.tokens.len(),
+        vocab_size: 256 + vocab.len(),
+        reserved_byte_tokens: 256,
+        vocab_entries: vocab.len(),
+        fallback_token_count: encoded.fallback_token_count,
+        known_lexeme_token_count: encoded.known_lexeme_token_count,
+        seq_len: config.seq_len,
+        stride: config.stride,
+        max_windows: config.max_windows,
+        max_vocab: config.max_vocab,
+        input_profile: config.input_profile,
+        vocab_profile: config.vocab_profile,
+        vocab_frequency_cap: config.vocab_frequency_cap,
+        windows: window_stats.windows,
+        uncovered_tail_tokens: window_stats.uncovered_tail_tokens,
+        token_hash: hash_u16_tokens(&encoded.tokens),
+        vocab_hash: hash_bytes(&vocab_bytes),
+        window_hash: window_stats.hash,
+        first_input_preview,
+        first_target_preview,
+        first_lexeme_preview: scan.first_lexeme_preview,
+    })
+}
+
 pub fn clean_shakespeare_text(input: &str) -> String {
+    let cleaned = clean_gutenberg_text(input);
+    strip_shakespeare_collection_front_matter(&cleaned).to_string()
+}
+
+pub fn clean_gutenberg_text(input: &str) -> String {
     let body = strip_gutenberg_boilerplate(input);
     normalize_text(body)
 }
@@ -299,7 +492,7 @@ impl TokenTrace {
         comma(&mut out);
         push_string_field(&mut out, "authority", TOKEN_AUTHORITY);
         comma(&mut out);
-        push_string_field(&mut out, "tokenizer", TOKENIZER_ID);
+        push_string_field(&mut out, "tokenizer", self.tokenizer_id());
         comma(&mut out);
         out.push_str("\"config\":{");
         push_usize_field(&mut out, "seq_len", self.seq_len);
@@ -307,6 +500,8 @@ impl TokenTrace {
         push_usize_field(&mut out, "stride", self.stride);
         comma(&mut out);
         push_optional_usize_field(&mut out, "max_windows", self.max_windows);
+        comma(&mut out);
+        push_string_field(&mut out, "text_profile", self.text_profile_name());
         out.push('}');
         comma(&mut out);
         out.push_str("\"input\":{");
@@ -350,6 +545,113 @@ impl TokenTrace {
     }
 }
 
+impl LexemeTokenTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", LEXEME_TOKEN_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", LEXEME_TOKEN_AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "tokenizer", LEXEME_TOKENIZER_ID);
+        comma(&mut out);
+        out.push_str("\"config\":{");
+        push_usize_field(&mut out, "seq_len", self.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "stride", self.stride);
+        comma(&mut out);
+        push_optional_usize_field(&mut out, "max_windows", self.max_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "max_vocab", self.max_vocab);
+        comma(&mut out);
+        push_string_field(&mut out, "input_profile", self.input_profile.profile_name());
+        comma(&mut out);
+        push_string_field(&mut out, "vocab_profile", self.vocab_profile.profile_name());
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "vocab_frequency_cap",
+            self.vocab_frequency_cap as usize,
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "text_profile", "ascii-lower");
+        comma(&mut out);
+        push_string_field(&mut out, "token_width", "u16_le");
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"input\":{");
+        push_usize_field(&mut out, "bytes", self.input_bytes);
+        comma(&mut out);
+        push_usize_field(&mut out, "normalized_bytes", self.normalized_bytes);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"lexemes\":{");
+        push_usize_field(&mut out, "count", self.lexeme_count);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "known_lexeme_tokens",
+            self.known_lexeme_token_count,
+        );
+        comma(&mut out);
+        push_usize_field(&mut out, "fallback_byte_tokens", self.fallback_token_count);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"vocab\":{");
+        push_usize_field(&mut out, "size", self.vocab_size);
+        comma(&mut out);
+        push_usize_field(&mut out, "reserved_byte_tokens", self.reserved_byte_tokens);
+        comma(&mut out);
+        push_usize_field(&mut out, "entries", self.vocab_entries);
+        comma(&mut out);
+        push_hash_field(&mut out, "hash", self.vocab_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"tokens\":{");
+        push_usize_field(&mut out, "count", self.token_count);
+        comma(&mut out);
+        push_usize_field(&mut out, "bytes", self.output_bytes);
+        comma(&mut out);
+        push_hash_field(&mut out, "hash", self.token_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"windows\":{");
+        push_usize_field(&mut out, "count", self.windows);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "uncovered_tail_tokens",
+            self.uncovered_tail_tokens,
+        );
+        comma(&mut out);
+        push_hash_field(&mut out, "hash", self.window_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"preview\":{");
+        push_u16_array_field(&mut out, "first_input_tokens", &self.first_input_preview);
+        comma(&mut out);
+        push_u16_array_field(&mut out, "first_target_tokens", &self.first_target_preview);
+        comma(&mut out);
+        push_string_vec_field(&mut out, "first_lexemes", &self.first_lexeme_preview);
+        out.push('}');
+        comma(&mut out);
+        push_string_array_field(&mut out, "known_non_claims", &LEXEME_KNOWN_NON_CLAIMS);
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+impl TokenTrace {
+    fn tokenizer_id(&self) -> &'static str {
+        tokenizer_id_for_profile(self.text_profile)
+    }
+
+    fn text_profile_name(&self) -> &'static str {
+        text_profile_name(self.text_profile)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct WindowStats {
     windows: usize,
@@ -387,6 +689,467 @@ fn compute_window_stats(tokens: &[u8], config: TokenizeConfig) -> WindowStats {
         windows,
         uncovered_tail_tokens: tokens.len().saturating_sub(last_end),
         hash,
+    }
+}
+
+fn compute_window_stats_u16(tokens: &[u16], config: LexemeTokenizeConfig) -> WindowStats {
+    let mut windows = 0_usize;
+    let mut start = 0_usize;
+    let mut last_end = 0_usize;
+    let mut hash = FNV_OFFSET;
+    hash = fnv_update_usize(hash, tokens.len());
+    hash = fnv_update_usize(hash, config.seq_len);
+    hash = fnv_update_usize(hash, config.stride);
+    hash = fnv_update_usize(hash, config.max_windows.unwrap_or(usize::MAX));
+    hash = fnv_update_usize(hash, config.max_vocab);
+    hash = fnv_update_usize(hash, config.input_profile.profile_id());
+    hash = fnv_update_usize(hash, config.vocab_profile.profile_id());
+    hash = fnv_update_usize(hash, config.vocab_frequency_cap as usize);
+
+    while start
+        .checked_add(config.seq_len)
+        .is_some_and(|target_index| target_index < tokens.len())
+    {
+        if config.max_windows.is_some_and(|limit| windows >= limit) {
+            break;
+        }
+
+        let end = start + config.seq_len + 1;
+        hash = fnv_update_usize(hash, start);
+        hash = fnv_update_u16_tokens(hash, &tokens[start..end]);
+        windows += 1;
+        last_end = end;
+        start = start.saturating_add(config.stride);
+    }
+
+    WindowStats {
+        windows,
+        uncovered_tail_tokens: tokens.len().saturating_sub(last_end),
+        hash,
+    }
+}
+
+fn tokenize_bytes_for_profile(input: &[u8], text_profile: TokenTextProfile) -> Cow<'_, [u8]> {
+    match text_profile {
+        TokenTextProfile::Identity => Cow::Borrowed(input),
+        TokenTextProfile::AsciiLower => Cow::Owned(ascii_lower_text_tokens(input)),
+    }
+}
+
+fn strip_corpus_marker_lines(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    for line in input.split_inclusive(|&byte| byte == b'\n') {
+        let trimmed = trim_ascii_line_start(line);
+        if trimmed.starts_with(b"<|source:") || trimmed.starts_with(b"<|page:") {
+            continue;
+        }
+        out.extend_from_slice(line);
+    }
+    out
+}
+
+fn lexeme_input_bytes_for_profile(input: &[u8], profile: LexemeInputProfile) -> Vec<u8> {
+    match profile {
+        LexemeInputProfile::Plain => strip_corpus_marker_lines(input),
+        LexemeInputProfile::ShakespeareGutenberg => {
+            let text = String::from_utf8_lossy(input);
+            clean_shakespeare_text(&text).into_bytes()
+        }
+    }
+}
+
+fn strip_shakespeare_collection_front_matter(input: &str) -> &str {
+    let marker = "THE SONNETS";
+    let Some(first) = input.find(marker) else {
+        return input;
+    };
+    let after_first = first + marker.len();
+    let Some(second_relative) = input[after_first..].find(marker) else {
+        return input;
+    };
+    &input[after_first + second_relative..]
+}
+
+fn trim_ascii_line_start(mut input: &[u8]) -> &[u8] {
+    while let Some((&byte, rest)) = input.split_first() {
+        if byte == b' ' || byte == b'\t' || byte == b'\r' || byte == b'\n' {
+            input = rest;
+        } else {
+            break;
+        }
+    }
+    input
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LexemeVocabEntry {
+    id: u16,
+    lexeme: Vec<u8>,
+    count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EncodedLexemeTokens {
+    tokens: Vec<u16>,
+    fallback_token_count: usize,
+    known_lexeme_token_count: usize,
+}
+
+struct LexemeScan {
+    counts: HashMap<Vec<u8>, u32>,
+    lexeme_count: usize,
+    first_lexeme_preview: Vec<String>,
+}
+
+fn scan_ascii_lower_lexeme_counts(input: &[u8], preview_tokens: usize) -> LexemeScan {
+    let mut counts = HashMap::<Vec<u8>, u32>::new();
+    let mut lexeme_count = 0_usize;
+    let mut first_lexeme_preview = Vec::new();
+    for_each_ascii_lower_lexeme(input, |lexeme| {
+        lexeme_count = lexeme_count.saturating_add(1);
+        if first_lexeme_preview.len() < preview_tokens {
+            first_lexeme_preview.push(String::from_utf8_lossy(lexeme).to_string());
+        }
+        let entry = counts.entry(lexeme.to_vec()).or_insert(0);
+        *entry = entry.saturating_add(1);
+    });
+
+    LexemeScan {
+        counts,
+        lexeme_count,
+        first_lexeme_preview,
+    }
+}
+
+fn build_lexeme_vocab(
+    counts: HashMap<Vec<u8>, u32>,
+    max_vocab: usize,
+    profile: LexemeVocabProfile,
+    frequency_cap: u32,
+) -> Vec<LexemeVocabEntry> {
+    let mut ranked = counts
+        .into_iter()
+        .map(|(lexeme, count)| RankedLexeme {
+            score: lexeme_vocab_rank_score(count, profile, frequency_cap),
+            lexeme,
+            count,
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| right.count.cmp(&left.count))
+            .then_with(|| left.lexeme.cmp(&right.lexeme))
+    });
+
+    ranked
+        .into_iter()
+        .take(max_vocab.saturating_sub(256))
+        .enumerate()
+        .map(|(index, ranked)| LexemeVocabEntry {
+            id: 256_u16 + index as u16,
+            lexeme: ranked.lexeme,
+            count: ranked.count,
+        })
+        .collect()
+}
+
+struct RankedLexeme {
+    lexeme: Vec<u8>,
+    count: u32,
+    score: u32,
+}
+
+fn lexeme_vocab_rank_score(count: u32, profile: LexemeVocabProfile, frequency_cap: u32) -> u32 {
+    match profile {
+        LexemeVocabProfile::Frequency => count,
+        LexemeVocabProfile::Balanced => capped_sqrt_count_score(count, frequency_cap),
+    }
+}
+
+fn capped_sqrt_count_score(count: u32, frequency_cap: u32) -> u32 {
+    if count == 0 {
+        return 0;
+    }
+    if frequency_cap == 0 {
+        return integer_sqrt_u32(count);
+    }
+    if count <= frequency_cap {
+        return count;
+    }
+    frequency_cap.saturating_add(integer_sqrt_u32(count - frequency_cap))
+}
+
+fn integer_sqrt_u32(value: u32) -> u32 {
+    if value < 2 {
+        return value;
+    }
+    let mut low = 1_u32;
+    let mut high = value.min(65_536);
+    let mut answer = 1_u32;
+    while low <= high {
+        let mid = low + ((high - low) >> 1);
+        let square = u64::from(mid) * u64::from(mid);
+        if square <= u64::from(value) {
+            answer = mid;
+            low = mid.saturating_add(1);
+        } else {
+            high = mid.saturating_sub(1);
+        }
+    }
+    answer
+}
+
+fn encode_lexeme_tokens(input: &[u8], vocab: &[LexemeVocabEntry]) -> EncodedLexemeTokens {
+    let mut lookup = HashMap::<&[u8], u16>::with_capacity(vocab.len());
+    for entry in vocab {
+        lookup.insert(entry.lexeme.as_slice(), entry.id);
+    }
+
+    let mut tokens = Vec::new();
+    let mut fallback_token_count = 0_usize;
+    let mut known_lexeme_token_count = 0_usize;
+    for_each_ascii_lower_lexeme(input, |lexeme| {
+        if let Some(&id) = lookup.get(lexeme) {
+            tokens.push(id);
+            known_lexeme_token_count = known_lexeme_token_count.saturating_add(1);
+        } else {
+            for &byte in lexeme {
+                tokens.push(u16::from(byte));
+                fallback_token_count = fallback_token_count.saturating_add(1);
+            }
+        }
+    });
+
+    EncodedLexemeTokens {
+        tokens,
+        fallback_token_count,
+        known_lexeme_token_count,
+    }
+}
+
+fn for_each_ascii_lower_lexeme<F>(input: &[u8], mut visit: F)
+where
+    F: FnMut(&[u8]),
+{
+    let mut index = 0_usize;
+
+    while index < input.len() {
+        let byte = input[index];
+        if byte == b' ' {
+            index += 1;
+            continue;
+        }
+        if is_lexeme_word_byte(byte) {
+            let start = index;
+            index += 1;
+            while index < input.len() {
+                let current = input[index];
+                let joins_word = (current == b'\'' || current == b'-')
+                    && index + 1 < input.len()
+                    && is_lexeme_word_byte(input[index - 1])
+                    && is_lexeme_word_byte(input[index + 1]);
+                if is_lexeme_word_byte(current) || joins_word {
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            visit(&input[start..index]);
+            continue;
+        }
+        if is_lexeme_punctuation(byte) {
+            visit(&input[index..index + 1]);
+        }
+        index += 1;
+    }
+}
+
+fn lexeme_vocab_tsv_bytes(vocab: &[LexemeVocabEntry]) -> Vec<u8> {
+    let mut out = String::new();
+    out.push_str("token_id\tlexeme\tcount\n");
+    for entry in vocab {
+        let lexeme = String::from_utf8_lossy(&entry.lexeme);
+        let _ = writeln!(&mut out, "{}\t{}\t{}", entry.id, lexeme, entry.count);
+    }
+    out.into_bytes()
+}
+
+fn write_u16_tokens_le<W: Write>(tokens: &[u16], output: &mut W) -> Result<(), CorpusError> {
+    const BUFFER_TOKENS: usize = 8192;
+    let mut buffer = Vec::with_capacity(BUFFER_TOKENS * 2);
+    for chunk in tokens.chunks(BUFFER_TOKENS) {
+        buffer.clear();
+        for &token in chunk {
+            buffer.extend_from_slice(&token.to_le_bytes());
+        }
+        output.write_all(&buffer)?;
+    }
+    Ok(())
+}
+
+fn is_lexeme_word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphabetic()
+}
+
+fn is_lexeme_punctuation(byte: u8) -> bool {
+    matches!(byte, b'.' | b',' | b';' | b':' | b'?' | b'!' | b'\'' | b'-')
+}
+
+fn ascii_lower_text_tokens(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    let mut pending_space = false;
+
+    for &byte in input {
+        match ascii_lower_text_byte(byte) {
+            Some(token) => {
+                if pending_space && !out.is_empty() {
+                    out.push(b' ');
+                }
+                pending_space = false;
+                out.push(token);
+            }
+            None => {
+                pending_space = true;
+            }
+        }
+    }
+
+    out
+}
+
+fn ascii_lower_lexeme_tokens(input: &[u8]) -> Vec<u8> {
+    if input.is_ascii() {
+        return ascii_lower_lexeme_ascii_tokens(input);
+    }
+
+    if let Ok(text) = std::str::from_utf8(input) {
+        return ascii_lower_lexeme_str_tokens(text);
+    }
+
+    let text = String::from_utf8_lossy(input);
+    ascii_lower_lexeme_str_tokens(&text)
+}
+
+fn ascii_lower_lexeme_ascii_tokens(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    let mut pending_space = false;
+
+    for &byte in input {
+        match ascii_lower_lexeme_ascii_byte(byte) {
+            Some(token) => {
+                if pending_space && !out.is_empty() {
+                    out.push(b' ');
+                }
+                pending_space = false;
+                out.push(token);
+            }
+            None => {
+                pending_space = true;
+            }
+        }
+    }
+
+    out
+}
+
+fn ascii_lower_lexeme_str_tokens(input: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    let mut pending_space = false;
+
+    for ch in input.chars() {
+        match ascii_lower_lexeme_char(ch) {
+            Some(token) => {
+                if pending_space && !out.is_empty() {
+                    out.push(b' ');
+                }
+                pending_space = false;
+                out.push(token);
+            }
+            None => {
+                pending_space = true;
+            }
+        }
+    }
+
+    out
+}
+
+fn ascii_lower_lexeme_ascii_byte(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte.to_ascii_lowercase()),
+        b'a'..=b'z' | b'.' | b',' | b';' | b':' | b'?' | b'!' | b'\'' | b'-' => Some(byte),
+        b' ' | b'\n' | b'\r' | b'\t' => None,
+        _ => None,
+    }
+}
+
+fn ascii_lower_lexeme_char(ch: char) -> Option<u8> {
+    match ch {
+        'A'..='Z' => Some(ch.to_ascii_lowercase() as u8),
+        'a'..='z' | '.' | ',' | ';' | ':' | '?' | '!' => Some(ch as u8),
+        '\'' | '\u{2018}' | '\u{2019}' | '\u{02bc}' => Some(b'\''),
+        '-' | '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' => Some(b'-'),
+        _ if ch.is_whitespace() => None,
+        _ => None,
+    }
+}
+
+fn ascii_lower_text_byte(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte.to_ascii_lowercase()),
+        b'a'..=b'z' | b'0'..=b'9' | b'.' | b',' | b';' | b':' | b'?' | b'!' | b'\'' | b'-' => {
+            Some(byte)
+        }
+        b' ' | b'\n' | b'\r' | b'\t' => None,
+        _ => None,
+    }
+}
+
+fn tokenizer_id_for_profile(text_profile: TokenTextProfile) -> &'static str {
+    match text_profile {
+        TokenTextProfile::Identity => TOKENIZER_ID,
+        TokenTextProfile::AsciiLower => ASCII_LOWER_TOKENIZER_ID,
+    }
+}
+
+fn text_profile_name(text_profile: TokenTextProfile) -> &'static str {
+    match text_profile {
+        TokenTextProfile::Identity => "identity",
+        TokenTextProfile::AsciiLower => "ascii-lower",
+    }
+}
+
+impl LexemeInputProfile {
+    fn profile_name(self) -> &'static str {
+        match self {
+            Self::Plain => "plain",
+            Self::ShakespeareGutenberg => "shakespeare-gutenberg",
+        }
+    }
+
+    fn profile_id(self) -> usize {
+        match self {
+            Self::Plain => 0,
+            Self::ShakespeareGutenberg => 1,
+        }
+    }
+}
+
+impl LexemeVocabProfile {
+    fn profile_name(self) -> &'static str {
+        match self {
+            Self::Frequency => "frequency",
+            Self::Balanced => "balanced",
+        }
+    }
+
+    fn profile_id(self) -> usize {
+        match self {
+            Self::Frequency => 0,
+            Self::Balanced => 1,
+        }
     }
 }
 
@@ -436,17 +1199,17 @@ fn extract_simplewiki_text<B: BufRead>(
         }
 
         if !page.in_text {
-            if !page.saw_title {
-                if let Some(title) = extract_tag_text(trimmed, "title") {
-                    page.title = decode_xml_entities(title);
-                    page.saw_title = true;
-                }
+            if !page.saw_title
+                && let Some(title) = extract_tag_text(trimmed, "title")
+            {
+                page.title = decode_xml_entities(title);
+                page.saw_title = true;
             }
-            if !page.saw_namespace {
-                if let Some(namespace) = extract_tag_text(trimmed, "ns") {
-                    page.namespace = namespace.to_string();
-                    page.saw_namespace = true;
-                }
+            if !page.saw_namespace
+                && let Some(namespace) = extract_tag_text(trimmed, "ns")
+            {
+                page.namespace = namespace.to_string();
+                page.saw_namespace = true;
             }
             if trimmed.starts_with("<redirect") {
                 page.redirect = true;
@@ -537,7 +1300,12 @@ fn strip_gutenberg_boilerplate(input: &str) -> &str {
         input
     };
 
-    if let Some(index) = after_start.find("*** END OF") {
+    let end_marker = ["*** END OF", "End of Project Gutenberg"]
+        .iter()
+        .filter_map(|marker| after_start.find(marker))
+        .min();
+
+    if let Some(index) = end_marker {
         &after_start[..index]
     } else {
         after_start
@@ -748,6 +1516,10 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
     fnv_update_bytes(FNV_OFFSET, bytes)
 }
 
+fn hash_u16_tokens(tokens: &[u16]) -> u64 {
+    fnv_update_u16_tokens(FNV_OFFSET, tokens)
+}
+
 fn fnv_update_bytes(mut value: u64, bytes: &[u8]) -> u64 {
     for &byte in bytes {
         value ^= u64::from(byte);
@@ -758,6 +1530,13 @@ fn fnv_update_bytes(mut value: u64, bytes: &[u8]) -> u64 {
 
 fn fnv_update_usize(value: u64, number: usize) -> u64 {
     fnv_update_bytes(value, &(number as u64).to_le_bytes())
+}
+
+fn fnv_update_u16_tokens(mut value: u64, tokens: &[u16]) -> u64 {
+    for &token in tokens {
+        value = fnv_update_bytes(value, &token.to_le_bytes());
+    }
+    value
 }
 
 fn comma(out: &mut String) {
@@ -792,6 +1571,18 @@ fn push_string_array_field(out: &mut String, name: &str, values: &[&str]) {
     out.push(']');
 }
 
+fn push_string_vec_field(out: &mut String, name: &str, values: &[String]) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, value) in values.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        push_quoted(out, value);
+    }
+    out.push(']');
+}
+
 fn push_optional_usize_field(out: &mut String, name: &str, value: Option<usize>) {
     push_quoted(out, name);
     out.push(':');
@@ -809,6 +1600,18 @@ fn push_usize_field(out: &mut String, name: &str, value: usize) {
 }
 
 fn push_u8_array_field(out: &mut String, name: &str, values: &[u8]) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, value) in values.iter().enumerate() {
+        if index != 0 {
+            comma(out);
+        }
+        out.push_str(&value.to_string());
+    }
+    out.push(']');
+}
+
+fn push_u16_array_field(out: &mut String, name: &str, values: &[u16]) {
     push_quoted(out, name);
     out.push_str(":[");
     for (index, value) in values.iter().enumerate() {
@@ -958,6 +1761,7 @@ mod tests {
                 stride: 2,
                 max_windows: None,
                 preview_tokens: 4,
+                text_profile: TokenTextProfile::Identity,
             },
         )
         .expect("tokenize");
@@ -981,6 +1785,7 @@ mod tests {
             stride: 1,
             max_windows: Some(3),
             preview_tokens: 8,
+            text_profile: TokenTextProfile::Identity,
         };
         let mut left_tokens = Vec::new();
         let mut right_tokens = Vec::new();
@@ -995,6 +1800,249 @@ mod tests {
         assert_eq!(left, right);
         assert!(left.contains("\"schema\":\"nsrl.token_trace.v1\""));
         assert!(left.contains("\"tokenizer\":\"byte_identity_u8_v1\""));
+        assert!(left.contains("\"text_profile\":\"identity\""));
         assert!(left.contains("\"count\":3"));
+    }
+
+    #[test]
+    fn ascii_lower_tokenizer_writes_text_curriculum_tokens() {
+        let corpus = b"To  BE!\n<|Page:Apple|>  Caf\xc3\xa9\t& raw";
+        let mut tokens = Vec::new();
+        let trace = tokenize_corpus(
+            &mut &corpus[..],
+            &mut tokens,
+            TokenizeConfig {
+                seq_len: 4,
+                stride: 1,
+                max_windows: None,
+                preview_tokens: 8,
+                text_profile: TokenTextProfile::AsciiLower,
+            },
+        )
+        .expect("tokenize");
+
+        assert_eq!(tokens, b"to be! page:apple caf raw");
+        assert_eq!(trace.input_bytes, corpus.len());
+        assert_eq!(trace.output_bytes, tokens.len());
+        assert_eq!(trace.text_profile, TokenTextProfile::AsciiLower);
+        assert_eq!(trace.first_input_preview, b"to b".to_vec());
+        let json = trace.to_json_line();
+        assert!(json.contains("\"tokenizer\":\"byte_ascii_lower_text_u8_v1\""));
+        assert!(json.contains("\"text_profile\":\"ascii-lower\""));
+    }
+
+    #[test]
+    fn lexeme_tokenizer_promotes_common_chunks_and_falls_back_to_bytes() {
+        let corpus = b"To be, or not to be. Zebra";
+        let mut token_bytes = Vec::new();
+        let mut vocab_bytes = Vec::new();
+        let trace = tokenize_lexeme_corpus(
+            &mut &corpus[..],
+            &mut token_bytes,
+            &mut vocab_bytes,
+            LexemeTokenizeConfig {
+                seq_len: 4,
+                stride: 1,
+                max_windows: None,
+                preview_tokens: 8,
+                max_vocab: 260,
+                input_profile: LexemeInputProfile::Plain,
+                vocab_profile: LexemeVocabProfile::Frequency,
+                vocab_frequency_cap: 0,
+            },
+        )
+        .expect("lexeme tokenize");
+
+        let tokens = decode_u16_le_tokens(&token_bytes);
+        assert_eq!(
+            String::from_utf8(vocab_bytes.clone()).unwrap(),
+            "token_id\tlexeme\tcount\n256\tbe\t2\n257\tto\t2\n258\t,\t1\n259\t.\t1\n"
+        );
+        assert_eq!(
+            tokens,
+            vec![
+                257,
+                256,
+                258,
+                u16::from(b'o'),
+                u16::from(b'r'),
+                u16::from(b'n'),
+                u16::from(b'o'),
+                u16::from(b't'),
+                257,
+                256,
+                259,
+                u16::from(b'z'),
+                u16::from(b'e'),
+                u16::from(b'b'),
+                u16::from(b'r'),
+                u16::from(b'a'),
+            ]
+        );
+        assert_eq!(trace.vocab_size, 260);
+        assert_eq!(trace.vocab_entries, 4);
+        assert_eq!(trace.known_lexeme_token_count, 6);
+        assert_eq!(trace.fallback_token_count, 10);
+        assert_eq!(trace.output_bytes, tokens.len() * 2);
+        assert_eq!(
+            trace.first_input_preview,
+            vec![257, 256, 258, u16::from(b'o')]
+        );
+        let json = trace.to_json_line();
+        assert!(json.contains("\"schema\":\"nsrl.lexeme_token_trace.v1\""));
+        assert!(json.contains("\"tokenizer\":\"lexeme_ascii_lower_u16_v1\""));
+        assert!(json.contains("\"vocab_profile\":\"frequency\""));
+        assert!(json.contains("\"vocab_frequency_cap\":0"));
+        assert!(json.contains("\"token_width\":\"u16_le\""));
+        assert!(json.contains("\"first_lexemes\":[\"to\",\"be\",\",\",\"or\""));
+    }
+
+    #[test]
+    fn lexeme_tokenizer_balanced_vocab_reduces_repetition_power() {
+        let corpus = b"the the the the the the the the the the the the the the the the the the the the king king king queen queen crown";
+        let mut token_bytes = Vec::new();
+        let mut vocab_bytes = Vec::new();
+        let trace = tokenize_lexeme_corpus(
+            &mut &corpus[..],
+            &mut token_bytes,
+            &mut vocab_bytes,
+            LexemeTokenizeConfig {
+                seq_len: 4,
+                stride: 1,
+                max_windows: None,
+                preview_tokens: 8,
+                max_vocab: 259,
+                input_profile: LexemeInputProfile::Plain,
+                vocab_profile: LexemeVocabProfile::Balanced,
+                vocab_frequency_cap: 4,
+            },
+        )
+        .expect("lexeme tokenize");
+
+        let vocab = String::from_utf8(vocab_bytes).unwrap();
+        assert_eq!(
+            vocab,
+            "token_id\tlexeme\tcount\n256\tthe\t20\n257\tking\t3\n258\tqueen\t2\n"
+        );
+        assert_eq!(trace.vocab_entries, 3);
+        let json = trace.to_json_line();
+        assert!(json.contains("\"vocab_profile\":\"balanced\""));
+        assert!(json.contains("\"vocab_frequency_cap\":4"));
+    }
+
+    #[test]
+    fn lexeme_tokenizer_trace_is_stable() {
+        let corpus = b"Summer's day, summer's lease";
+        let config = LexemeTokenizeConfig {
+            seq_len: 3,
+            stride: 2,
+            max_windows: Some(4),
+            preview_tokens: 6,
+            max_vocab: 512,
+            input_profile: LexemeInputProfile::Plain,
+            vocab_profile: LexemeVocabProfile::Frequency,
+            vocab_frequency_cap: 0,
+        };
+        let mut left_tokens = Vec::new();
+        let mut left_vocab = Vec::new();
+        let mut right_tokens = Vec::new();
+        let mut right_vocab = Vec::new();
+        let left =
+            tokenize_lexeme_corpus(&mut &corpus[..], &mut left_tokens, &mut left_vocab, config)
+                .expect("left")
+                .to_json_line();
+        let right = tokenize_lexeme_corpus(
+            &mut &corpus[..],
+            &mut right_tokens,
+            &mut right_vocab,
+            config,
+        )
+        .expect("right")
+        .to_json_line();
+
+        assert_eq!(left_tokens, right_tokens);
+        assert_eq!(left_vocab, right_vocab);
+        assert_eq!(left, right);
+        assert!(left.contains("\"max_vocab\":512"));
+    }
+
+    #[test]
+    fn lexeme_tokenizer_skips_nsrl_corpus_marker_lines() {
+        let corpus = b"<|source:shakespeare|>\nTo be\n  <|page:apple|>\nApple grows";
+        let mut token_bytes = Vec::new();
+        let mut vocab_bytes = Vec::new();
+        let trace = tokenize_lexeme_corpus(
+            &mut &corpus[..],
+            &mut token_bytes,
+            &mut vocab_bytes,
+            LexemeTokenizeConfig {
+                seq_len: 2,
+                stride: 1,
+                max_windows: None,
+                preview_tokens: 6,
+                max_vocab: 512,
+                input_profile: LexemeInputProfile::Plain,
+                vocab_profile: LexemeVocabProfile::Frequency,
+                vocab_frequency_cap: 0,
+            },
+        )
+        .expect("lexeme tokenize");
+
+        assert_eq!(
+            trace.first_lexeme_preview,
+            vec!["to", "be", "apple", "grows"]
+        );
+        let vocab = String::from_utf8(vocab_bytes).unwrap();
+        assert!(!vocab.contains("source"));
+        assert!(!vocab.contains("page"));
+    }
+
+    #[test]
+    fn lexeme_tokenizer_can_clean_raw_gutenberg_shakespeare() {
+        let corpus = "Release date: January 1, 1994\n*** START OF TEST ***\nTitle\nContents\nTHE SONNETS\nALL'S WELL\nTHE SONNETS\nKing\u{2019}s 2042 keeper.\n*** END OF TEST ***\nProject Gutenberg license";
+        let mut input = corpus.as_bytes();
+        let mut token_bytes = Vec::new();
+        let mut vocab_bytes = Vec::new();
+        let trace = tokenize_lexeme_corpus(
+            &mut input,
+            &mut token_bytes,
+            &mut vocab_bytes,
+            LexemeTokenizeConfig {
+                seq_len: 2,
+                stride: 1,
+                max_windows: None,
+                preview_tokens: 4,
+                max_vocab: 512,
+                input_profile: LexemeInputProfile::ShakespeareGutenberg,
+                vocab_profile: LexemeVocabProfile::Frequency,
+                vocab_frequency_cap: 0,
+            },
+        )
+        .expect("lexeme tokenize");
+
+        assert_eq!(
+            trace.first_lexeme_preview,
+            vec!["the", "sonnets", "king's", "keeper"]
+        );
+        assert_eq!(
+            trace.input_profile,
+            LexemeInputProfile::ShakespeareGutenberg
+        );
+        let vocab = String::from_utf8(vocab_bytes).unwrap();
+        assert!(vocab.contains("king's"));
+        assert!(vocab.contains("keeper"));
+        assert!(!vocab.contains("release"));
+        assert!(!vocab.contains("gutenberg"));
+        assert!(!vocab.contains("contents"));
+        assert!(!vocab.contains("2042"));
+        let json = trace.to_json_line();
+        assert!(json.contains("\"input_profile\":\"shakespeare-gutenberg\""));
+    }
+
+    fn decode_u16_le_tokens(bytes: &[u8]) -> Vec<u16> {
+        bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect()
     }
 }
