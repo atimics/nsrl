@@ -8,13 +8,15 @@ bits across depth, avoid undefined arithmetic behavior, and keep the runtime
 numerically auditable.
 
 The first forward-runtime version implements a small fixed-point inference
-engine, native base-2 integer attention, static Q15 residual streams,
-branchless requantization, integer RMSNorm, a gated MLP block, deterministic
-trace output, and a 1,048,576-i8-weight benchmark preset.
+engine, native base-2 integer attention, linear attention, static Q15 residual
+streams, branchless requantization, integer RMSNorm, a gated MLP block,
+deterministic trace output, and a 1,048,576-i8-weight benchmark preset.
 
-The remaining engineering frontier is `nsrl-train`: a bespoke Rust training
-path that updates NSRL-native weights under the same arithmetic contract used by
-the inference runtime.
+The active engineering frontier is now quality and control in `nsrl-train`, not
+whether integer training is possible. The trainer updates NSRL-native weights
+under the same arithmetic contract used by inference, using i64 batch
+accumulators, component-specific integer shifts, rollback safety, and traced
+decode controls.
 
 ## Numeric Contract
 
@@ -499,9 +501,19 @@ seq_len:   128
 vocab:     character or byte-level
 ```
 
-This is the first scale at which attention can show useful sequence behavior
-without making numeric debugging opaque. Full strict integer-only training is a
-later research target.
+This was the first scale at which attention could show useful sequence behavior
+without making numeric debugging opaque. Strict integer-only training is now
+implemented for the small research lanes. The unsolved engineering questions
+are:
+
+- whether the same arithmetic scales cleanly to larger lexeme and transformer
+  models,
+- how to reduce dependence on source-grounded composition without losing
+  coherence,
+- how to tune component learning-rate shifts over time without static sweep
+  magic constants,
+- and whether linear attention plus integer test-time state updates can close
+  enough of the softmax quality gap to justify the O(d^2) streaming interface.
 
 ## Model Serialization
 

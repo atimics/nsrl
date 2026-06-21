@@ -115,6 +115,7 @@ name = "nsrl-train"
 version = "0.1.0"
 dependencies = [
  "nsrl-core",
+ "nsrl-corpus",
 ]
 
 [[package]]

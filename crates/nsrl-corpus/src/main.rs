@@ -8,7 +8,8 @@ use std::path::PathBuf;
 
 use nsrl_corpus::{
     CorpusConfig, LexemeInputProfile, LexemeTokenizeConfig, LexemeVocabProfile, TokenTextProfile,
-    TokenizeConfig, clean_gutenberg_text, prepare_corpus, tokenize_corpus, tokenize_lexeme_corpus,
+    TokenizeConfig, clean_gutenberg_text, extract_simplewiki_corpus, prepare_corpus,
+    tokenize_corpus, tokenize_lexeme_corpus, tokenize_lexeme_corpus_with_fixed_vocab,
 };
 
 fn main() {
@@ -26,6 +27,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut output_path = None;
     let mut tokens_output_path = None;
     let mut vocab_output_path = None;
+    let mut vocab_input_path = None;
     let mut trace_path = None;
     let mut max_simplewiki_pages = None;
     let mut tokenize_config = TokenizeConfig::default();
@@ -37,7 +39,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "prepare" if command.is_none() => command = Some(arg),
             "tokenize" if command.is_none() => command = Some(arg),
             "lexeme-tokenize" if command.is_none() => command = Some(arg),
+            "lexeme-tokenize-fixed-vocab" if command.is_none() => command = Some(arg),
             "clean-gutenberg" if command.is_none() => command = Some(arg),
+            "extract-simplewiki" if command.is_none() => command = Some(arg),
             "--shakespeare" => {
                 shakespeare_path = Some(PathBuf::from(
                     args.next().ok_or("--shakespeare requires a path")?,
@@ -64,6 +68,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 vocab_output_path = Some(PathBuf::from(
                     args.next().ok_or("--vocab-out requires a path")?,
                 ));
+            }
+            "--vocab" => {
+                vocab_input_path =
+                    Some(PathBuf::from(args.next().ok_or("--vocab requires a path")?));
             }
             "--trace" => {
                 trace_path = Some(PathBuf::from(args.next().ok_or("--trace requires a path")?));
@@ -111,17 +119,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .parse()?;
             }
             "--lexeme-input-profile" => {
-                let value = args
-                    .next()
-                    .ok_or("--lexeme-input-profile requires plain or shakespeare-gutenberg")?;
+                let value = args.next().ok_or(
+                    "--lexeme-input-profile requires plain, plain-with-boundaries, or shakespeare-gutenberg",
+                )?;
                 lexeme_config.input_profile = match value.as_str() {
                     "plain" => LexemeInputProfile::Plain,
+                    "plain-with-boundaries" | "plain_boundaries" | "boundaries" => {
+                        LexemeInputProfile::PlainWithBoundaries
+                    }
                     "shakespeare" | "shakespeare-gutenberg" => {
                         LexemeInputProfile::ShakespeareGutenberg
                     }
                     _ => {
                         return Err(
-                            "--lexeme-input-profile requires plain or shakespeare-gutenberg".into(),
+                            "--lexeme-input-profile requires plain, plain-with-boundaries, or shakespeare-gutenberg".into(),
                         );
                     }
                 };
@@ -178,9 +189,59 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             trace_path,
             lexeme_config,
         ),
+        Some("lexeme-tokenize-fixed-vocab") => run_lexeme_tokenize_fixed_vocab(
+            corpus_path,
+            tokens_output_path,
+            vocab_input_path,
+            trace_path,
+            lexeme_config,
+        ),
         Some("clean-gutenberg") => run_clean_gutenberg(corpus_path, output_path),
-        _ => Err("expected command: prepare, tokenize, lexeme-tokenize, or clean-gutenberg".into()),
+        Some("extract-simplewiki") => {
+            run_extract_simplewiki(simplewiki_xml_path, output_path, trace_path, max_simplewiki_pages)
+        }
+        _ => Err(
+            "expected command: prepare, tokenize, lexeme-tokenize, extract-simplewiki, or clean-gutenberg"
+                .into(),
+        ),
     }
+}
+
+fn run_extract_simplewiki(
+    simplewiki_xml_path: Option<String>,
+    output_path: Option<PathBuf>,
+    trace_path: Option<PathBuf>,
+    max_simplewiki_pages: Option<usize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let simplewiki_xml_path = simplewiki_xml_path.ok_or("--simplewiki-xml is required")?;
+    let output_path = output_path.ok_or("--out is required")?;
+    let trace_path = trace_path.ok_or("--trace is required")?;
+    let mut output = BufWriter::new(File::create(output_path)?);
+
+    let trace = if simplewiki_xml_path == "-" {
+        let stdin = io::stdin();
+        let reader = stdin.lock();
+        extract_simplewiki_corpus(
+            reader,
+            &mut output,
+            CorpusConfig {
+                max_simplewiki_pages,
+            },
+        )?
+    } else {
+        let simplewiki = File::open(simplewiki_xml_path)?;
+        let reader = BufReader::new(simplewiki);
+        extract_simplewiki_corpus(
+            reader,
+            &mut output,
+            CorpusConfig {
+                max_simplewiki_pages,
+            },
+        )?
+    };
+
+    std::fs::write(trace_path, trace.to_json_line())?;
+    Ok(())
 }
 
 fn run_prepare(
@@ -262,6 +323,27 @@ fn run_lexeme_tokenize(
     Ok(())
 }
 
+fn run_lexeme_tokenize_fixed_vocab(
+    corpus_path: Option<PathBuf>,
+    tokens_output_path: Option<PathBuf>,
+    vocab_input_path: Option<PathBuf>,
+    trace_path: Option<PathBuf>,
+    config: LexemeTokenizeConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let corpus_path = corpus_path.ok_or("--corpus is required")?;
+    let tokens_output_path = tokens_output_path.ok_or("--tokens-out is required")?;
+    let vocab_input_path = vocab_input_path.ok_or("--vocab is required")?;
+    let trace_path = trace_path.ok_or("--trace is required")?;
+
+    let mut corpus = File::open(corpus_path)?;
+    let vocab_tsv = fs::read(vocab_input_path)?;
+    let mut tokens_out = BufWriter::new(File::create(tokens_output_path)?);
+    let trace =
+        tokenize_lexeme_corpus_with_fixed_vocab(&mut corpus, &mut tokens_out, &vocab_tsv, config)?;
+    std::fs::write(trace_path, trace.to_json_line())?;
+    Ok(())
+}
+
 fn run_clean_gutenberg(
     corpus_path: Option<PathBuf>,
     output_path: Option<PathBuf>,
@@ -279,10 +361,16 @@ fn print_help() {
         "  nsrl-corpus prepare --shakespeare PATH --simplewiki-xml PATH|- --out PATH --trace PATH [--max-simplewiki-pages N]"
     );
     println!(
+        "  nsrl-corpus extract-simplewiki --simplewiki-xml PATH|- --out PATH --trace PATH [--max-simplewiki-pages N]"
+    );
+    println!(
         "  nsrl-corpus tokenize --corpus PATH --tokens-out PATH --trace PATH [--seq-len N] [--stride N] [--max-windows N] [--preview-tokens N] [--text-profile identity|ascii-lower]"
     );
     println!(
-        "  nsrl-corpus lexeme-tokenize --corpus PATH --tokens-out PATH --vocab-out PATH --trace PATH [--seq-len N] [--stride N] [--max-windows N] [--preview-tokens N] [--max-vocab N] [--lexeme-input-profile plain|shakespeare-gutenberg] [--lexeme-vocab-profile frequency|balanced] [--lexeme-frequency-cap N]"
+        "  nsrl-corpus lexeme-tokenize --corpus PATH --tokens-out PATH --vocab-out PATH --trace PATH [--seq-len N] [--stride N] [--max-windows N] [--preview-tokens N] [--max-vocab N] [--lexeme-input-profile plain|plain-with-boundaries|shakespeare-gutenberg] [--lexeme-vocab-profile frequency|balanced] [--lexeme-frequency-cap N]"
+    );
+    println!(
+        "  nsrl-corpus lexeme-tokenize-fixed-vocab --corpus PATH --vocab PATH --tokens-out PATH --trace PATH [--seq-len N] [--stride N] [--max-windows N] [--preview-tokens N] [--lexeme-input-profile plain|plain-with-boundaries|shakespeare-gutenberg]"
     );
     println!("  nsrl-corpus clean-gutenberg --corpus PATH --out PATH");
     println!();

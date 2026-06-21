@@ -6,17 +6,23 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
+use nsrl_corpus::LEXEME_PAGE_BOUNDARY;
+use nsrl_corpus::encode_lexeme_prompt_tokens;
 use nsrl_train::{
     ByteDecodePriors, ByteEmbedSoftmaxModel, ByteEmbedSoftmaxTrainConfig, ByteGenerationConfig,
-    ByteSoftmaxModel, ByteSoftmaxTrainConfig, ByteTokenizerId, DecodeStrategy, LexemeDecodePriors,
-    LexemeEmbeddingModel, LexemeEmbeddingTrainConfig, LexemeGenerationConfig,
-    LexemeQualityWeightProfile, LexemeSoftmaxModel, LexemeSoftmaxTrainConfig, LinearBackwardConfig,
-    MiniTransformerMlpModel, MiniTransformerMlpTrainConfig, SoftmaxTrainConfig, TrainConfig,
+    ByteSoftmaxModel, ByteSoftmaxTrainConfig, ByteTokenizerId, DecodeStrategy,
+    LEXEME_SENTENCE_STOP_TOKEN_CAP, LexemeContextFeatures, LexemeDecodePriors,
+    LexemeEmbeddingModel, LexemeEmbeddingTrainConfig, LexemeGenerationConfig, LexemeMemoryPriors,
+    LexemeQualityWeightProfile, LexemeSoftmaxModel, LexemeSoftmaxTrainConfig, LexemeTopicPriors,
+    LinearBackwardConfig, MiniTransformerAttentionKind, MiniTransformerMlpModel,
+    MiniTransformerMlpTrainConfig, MiniTransformerPositionPolicy, SoftmaxTrainConfig, TrainConfig,
     generate_byte_embed_softmax_with_priors, generate_byte_softmax_with_priors,
-    generate_lexeme_softmax_with_priors, generate_mini_transformer_with_priors,
+    generate_lexeme_softmax_with_memory,
+    generate_mini_transformer_with_attention_kind_position_policy_priors_and_ttt_shift,
     lexeme_quality_weights_from_vocab, run_byte_embed_softmax_training_with_model,
     run_byte_softmax_training_with_model, run_gated_mlp_backward_smoke,
-    run_lexeme_embedding_training_with_model_and_quality,
+    run_lexeme_embedding_training_with_model_and_quality, run_lexeme_softmax_evaluate,
+    run_lexeme_softmax_training_from_softmax_model_and_quality,
     run_lexeme_softmax_training_with_model_and_quality, run_linear_backward_smoke,
     run_mini_transformer_mlp_training_from_model, run_mini_transformer_mlp_training_with_model,
     run_softmax_training, run_training_smoke,
@@ -48,6 +54,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut prompt = Vec::new();
     let mut trace_path = None;
     let mut text_out_path = None;
+    let mut generated_only_text = false;
+    let mut mini_transformer_attention_kind = MiniTransformerAttentionKind::Base2Softmax;
+    let mut mini_transformer_position_policy = MiniTransformerPositionPolicy::LearnedAbsolute;
+    let mut mini_transformer_ttt_learning_rate_shift =
+        nsrl_train::DEFAULT_MINI_TRANSFORMER_STREAMING_TTT_LEARNING_RATE_SHIFT;
+    let mut mini_transformer_q_shift_explicit = false;
 
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -142,7 +154,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("--embed-lr-shift requires an integer")?
                     .parse()?;
                 byte_embed_softmax_config.embedding_learning_rate_shift = value;
+                lexeme_softmax_config.embedding_learning_rate_shift = value;
                 mini_transformer_config.embedding_learning_rate_shift = value;
+            }
+            "--train-lexeme-embeddings" => {
+                lexeme_softmax_config.train_embeddings = true;
+            }
+            "--lexeme-hidden-dim" => {
+                lexeme_softmax_config.hidden_dim = args
+                    .next()
+                    .ok_or("--lexeme-hidden-dim requires an integer")?
+                    .parse()?;
+            }
+            "--lexeme-hidden-lr-shift" => {
+                lexeme_softmax_config.hidden_learning_rate_shift = args
+                    .next()
+                    .ok_or("--lexeme-hidden-lr-shift requires an integer")?
+                    .parse()?;
+            }
+            "--lexeme-adapter-logit-shift" => {
+                lexeme_softmax_config.adapter_logit_shift = args
+                    .next()
+                    .ok_or("--lexeme-adapter-logit-shift requires an integer")?
+                    .parse()?;
             }
             "--mlp-lr-shift" => {
                 let value = args
@@ -157,11 +191,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("--attention-lr-shift requires an integer")?
                     .parse()?;
             }
+            "--attention-q-lr-shift" => {
+                mini_transformer_config.attention_q_learning_rate_shift = args
+                    .next()
+                    .ok_or("--attention-q-lr-shift requires an integer")?
+                    .parse()?;
+                mini_transformer_q_shift_explicit = true;
+            }
             "--attention-qk-lr-shift" => {
-                mini_transformer_config.attention_qk_learning_rate_shift = args
+                let value = args
                     .next()
                     .ok_or("--attention-qk-lr-shift requires an integer")?
                     .parse()?;
+                mini_transformer_config.attention_qk_learning_rate_shift = value;
+                if !mini_transformer_q_shift_explicit {
+                    mini_transformer_config.attention_q_learning_rate_shift = value;
+                }
+            }
+            "--adaptive-attention-shifts" => {
+                mini_transformer_config.adaptive_attention_shifts = true;
+                mini_transformer_config.adaptive_holographic_shifts = true;
+            }
+            "--adaptive-holographic-shifts" => {
+                mini_transformer_config.adaptive_holographic_shifts = true;
             }
             "--attention-vo-error-feedback" => {
                 mini_transformer_config.attention_vo_error_feedback = true;
@@ -216,6 +268,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 byte_generation_config.decode.strategy = strategy;
                 lexeme_generation_config.decode.strategy = strategy;
             }
+            "--decode-profile" => {
+                let value = args
+                    .next()
+                    .ok_or("--decode-profile requires coherent-prose")?;
+                apply_decode_profile(&value, &mut lexeme_generation_config)?;
+            }
             "--sample-seed" => {
                 let value = args
                     .next()
@@ -244,6 +302,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 byte_embed_softmax_config.tokenizer_id = tokenizer_id;
                 mini_transformer_config.tokenizer_id = tokenizer_id;
                 byte_generation_config.tokenizer_id = tokenizer_id;
+            }
+            "--mini-transformer-attention" => {
+                let value = args
+                    .next()
+                    .ok_or(
+                        "--mini-transformer-attention requires base2-softmax, linear, linear-streaming, or linear-streaming-ttt",
+                    )?;
+                mini_transformer_attention_kind = parse_mini_transformer_attention_kind(&value)?;
+                mini_transformer_config.attention_kind = mini_transformer_attention_kind;
+            }
+            "--mini-transformer-position" => {
+                let value = args
+                    .next()
+                    .ok_or("--mini-transformer-position requires learned-absolute or nope")?;
+                mini_transformer_position_policy = parse_mini_transformer_position_policy(&value)?;
+                mini_transformer_config.position_policy = mini_transformer_position_policy;
+            }
+            "--mini-transformer-ttt-lr-shift" => {
+                mini_transformer_ttt_learning_rate_shift = args
+                    .next()
+                    .ok_or("--mini-transformer-ttt-lr-shift requires an integer")?
+                    .parse()?;
             }
             "--printable-only" => {
                 byte_generation_config.decode.printable_only = true;
@@ -275,10 +355,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 byte_generation_config.decode.max_repeat_run = value;
                 lexeme_generation_config.decode.max_repeat_run = value;
             }
+            "--no-repeat-ngram" => {
+                let value = args
+                    .next()
+                    .ok_or("--no-repeat-ngram requires an integer")?
+                    .parse()?;
+                byte_generation_config.decode.no_repeat_ngram_order = value;
+                lexeme_generation_config.decode.no_repeat_ngram_order = value;
+            }
             "--max-weight-delta" => {
                 lexeme_softmax_config.max_weight_delta = args
                     .next()
                     .ok_or("--max-weight-delta requires an integer")?
+                    .parse()?;
+            }
+            "--max-embedding-delta" => {
+                lexeme_softmax_config.max_embedding_delta = args
+                    .next()
+                    .ok_or("--max-embedding-delta requires an integer")?
+                    .parse()?;
+            }
+            "--max-hidden-weight-delta" => {
+                lexeme_softmax_config.max_hidden_weight_delta = args
+                    .next()
+                    .ok_or("--max-hidden-weight-delta requires an integer")?
                     .parse()?;
             }
             "--concept-frequency-cap" => {
@@ -304,14 +404,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "--quality-weight-profile" => {
                 let value = args
                     .next()
-                    .ok_or("--quality-weight-profile requires off or cruft-aware")?;
+                    .ok_or("--quality-weight-profile requires off, cruft-aware, or prose-aware")?;
                 let profile = match value.as_str() {
                     "off" => LexemeQualityWeightProfile::Off,
                     "cruft-aware" | "cruft" => LexemeQualityWeightProfile::CruftAware,
-                    _ => return Err("--quality-weight-profile requires off or cruft-aware".into()),
+                    "prose-aware" | "prose" => LexemeQualityWeightProfile::ProseAware,
+                    _ => {
+                        return Err(
+                            "--quality-weight-profile requires off, cruft-aware, or prose-aware"
+                                .into(),
+                        );
+                    }
                 };
                 lexeme_embedding_config.quality_weight_profile = profile;
                 lexeme_softmax_config.quality_weight_profile = profile;
+                lexeme_generation_config.quality_weight_profile = profile;
+            }
+            "--lexeme-context-features" => {
+                let value = args
+                    .next()
+                    .ok_or("--lexeme-context-features requires mean or ordered")?;
+                lexeme_softmax_config.context_features = parse_lexeme_context_features(&value)?;
             }
             "--corpus-prior" => {
                 byte_generation_config.decode.corpus_prior = true;
@@ -324,6 +437,150 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .parse()?;
                 byte_generation_config.decode.corpus_prior_logit_shift = value;
                 lexeme_generation_config.decode.corpus_prior_logit_shift = value;
+            }
+            "--corpus-prior-order" => {
+                lexeme_generation_config.decode.corpus_prior_order = args
+                    .next()
+                    .ok_or("--corpus-prior-order requires 1, 2, or 3")?
+                    .parse()?;
+            }
+            "--decode-frequency-cap" => {
+                lexeme_generation_config.decode.frequency_penalty_cap = args
+                    .next()
+                    .ok_or("--decode-frequency-cap requires an integer")?
+                    .parse()?;
+            }
+            "--decode-frequency-min-q15" => {
+                lexeme_generation_config
+                    .decode
+                    .frequency_penalty_min_weight_q15 = args
+                    .next()
+                    .ok_or("--decode-frequency-min-q15 requires an integer")?
+                    .parse()?;
+            }
+            "--decode-frequency-logit-shift" => {
+                lexeme_generation_config
+                    .decode
+                    .frequency_penalty_logit_shift = args
+                    .next()
+                    .ok_or("--decode-frequency-logit-shift requires an integer")?
+                    .parse()?;
+            }
+            "--decode-local-frequency-cap" => {
+                lexeme_generation_config.decode.local_frequency_penalty_cap = args
+                    .next()
+                    .ok_or("--decode-local-frequency-cap requires an integer")?
+                    .parse()?;
+            }
+            "--decode-local-frequency-min-q15" => {
+                lexeme_generation_config
+                    .decode
+                    .local_frequency_penalty_min_weight_q15 = args
+                    .next()
+                    .ok_or("--decode-local-frequency-min-q15 requires an integer")?
+                    .parse()?;
+            }
+            "--decode-local-frequency-logit-shift" => {
+                lexeme_generation_config
+                    .decode
+                    .local_frequency_penalty_logit_shift = args
+                    .next()
+                    .ok_or("--decode-local-frequency-logit-shift requires an integer")?
+                    .parse()?;
+            }
+            "--decode-local-frequency-hard-cap" => {
+                lexeme_generation_config.decode.local_frequency_hard_cap = args
+                    .next()
+                    .ok_or("--decode-local-frequency-hard-cap requires an integer")?
+                    .parse()?;
+            }
+            "--decode-island-count-cap" => {
+                lexeme_generation_config.decode.island_penalty_count_cap = args
+                    .next()
+                    .ok_or("--decode-island-count-cap requires an integer")?
+                    .parse()?;
+            }
+            "--decode-island-min-degree" => {
+                lexeme_generation_config.decode.island_penalty_min_degree = args
+                    .next()
+                    .ok_or("--decode-island-min-degree requires an integer")?
+                    .parse()?;
+            }
+            "--decode-island-min-q15" => {
+                lexeme_generation_config
+                    .decode
+                    .island_penalty_min_weight_q15 = args
+                    .next()
+                    .ok_or("--decode-island-min-q15 requires an integer")?
+                    .parse()?;
+            }
+            "--decode-island-logit-shift" => {
+                lexeme_generation_config.decode.island_penalty_logit_shift = args
+                    .next()
+                    .ok_or("--decode-island-logit-shift requires an integer")?
+                    .parse()?;
+            }
+            "--prompt-topic-radius" => {
+                lexeme_generation_config.decode.prompt_topic_radius = args
+                    .next()
+                    .ok_or("--prompt-topic-radius requires an integer")?
+                    .parse()?;
+            }
+            "--prompt-topic-min-q15" => {
+                lexeme_generation_config.decode.prompt_topic_min_weight_q15 = args
+                    .next()
+                    .ok_or("--prompt-topic-min-q15 requires an integer")?
+                    .parse()?;
+            }
+            "--prompt-topic-strict-min-q15" => {
+                lexeme_generation_config
+                    .decode
+                    .prompt_topic_strict_min_weight_q15 = args
+                    .next()
+                    .ok_or("--prompt-topic-strict-min-q15 requires an integer")?
+                    .parse()?;
+            }
+            "--prompt-topic-logit-shift" => {
+                lexeme_generation_config.decode.prompt_topic_logit_shift = args
+                    .next()
+                    .ok_or("--prompt-topic-logit-shift requires an integer")?
+                    .parse()?;
+            }
+            "--decode-memory-order" => {
+                lexeme_generation_config.decode.memory_context_order = args
+                    .next()
+                    .ok_or("--decode-memory-order requires an integer")?
+                    .parse()?;
+            }
+            "--decode-memory-min-order" => {
+                lexeme_generation_config.decode.memory_min_context_order = args
+                    .next()
+                    .ok_or("--decode-memory-min-order requires an integer")?
+                    .parse()?;
+            }
+            "--decode-memory-logit-shift" => {
+                lexeme_generation_config.decode.memory_logit_shift = args
+                    .next()
+                    .ok_or("--decode-memory-logit-shift requires an integer")?
+                    .parse()?;
+            }
+            "--strict-memory-on-steps" => {
+                lexeme_generation_config.decode.strict_memory_on_steps = args
+                    .next()
+                    .ok_or("--strict-memory-on-steps requires an integer")?
+                    .parse()?;
+            }
+            "--strict-memory-off-steps" => {
+                lexeme_generation_config.decode.strict_memory_off_steps = args
+                    .next()
+                    .ok_or("--strict-memory-off-steps requires an integer")?
+                    .parse()?;
+            }
+            "--strict-memory" => {
+                lexeme_generation_config.decode.strict_memory = true;
+            }
+            "--strict-topic" => {
+                lexeme_generation_config.decode.strict_topic = true;
             }
             "--strict-adjacency" => {
                 byte_generation_config.decode.strict_adjacency = true;
@@ -357,10 +614,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 mini_transformer_config.window_offset = byte_softmax_config.window_offset;
             }
             "--batch-windows" => {
-                mini_transformer_config.batch_windows = args
+                let value = args
                     .next()
                     .ok_or("--batch-windows requires an integer")?
                     .parse()?;
+                lexeme_softmax_config.batch_windows = value;
+                mini_transformer_config.batch_windows = value;
             }
             "--max-windows" => {
                 byte_softmax_config.max_windows = Some(
@@ -382,6 +641,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 text_out_path = Some(PathBuf::from(
                     args.next().ok_or("--text-out requires a following path")?,
                 ));
+            }
+            "--generated-only" => {
+                generated_only_text = true;
+            }
+            "--stop-on-sentence-terminal" => {
+                lexeme_generation_config.stop_on_sentence_terminal = true;
             }
             "--help" | "-h" => {
                 print_help();
@@ -405,7 +670,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let tokens = fs::read(path)?;
             let run = run_byte_softmax_training_with_model(&tokens, byte_softmax_config)?;
             if let Some(path) = model_out_path {
-                fs::write(path, run.model.to_bytes())?;
+                fs::write(path, run.model.try_to_bytes()?)?;
             }
             run.trace.to_json_line()
         }
@@ -427,6 +692,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &text_out_path,
                 &generation.prompt_bytes,
                 &generation.generated_bytes,
+                generated_only_text,
             )?;
             generation.to_json_line()
         }
@@ -436,7 +702,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let run =
                 run_byte_embed_softmax_training_with_model(&tokens, byte_embed_softmax_config)?;
             if let Some(path) = model_out_path {
-                fs::write(path, run.model.to_bytes())?;
+                fs::write(path, run.model.try_to_bytes()?)?;
             }
             run.trace.to_json_line()
         }
@@ -458,6 +724,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &text_out_path,
                 &generation.prompt_bytes,
                 &generation.generated_bytes,
+                generated_only_text,
             )?;
             generation.to_json_line()
         }
@@ -475,7 +742,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 quality_weights.as_deref(),
             )?;
             if let Some(path) = model_out_path {
-                fs::write(path, run.model.to_bytes())?;
+                fs::write(path, run.model.try_to_bytes()?)?;
             }
             run.trace.to_json_line()
         }
@@ -483,22 +750,53 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let token_path = tokens_path.ok_or("--tokens is required for lexeme-softmax mode")?;
             let model_path = model_path.ok_or("--model is required for lexeme-softmax mode")?;
             let tokens = fs::read(token_path)?;
-            let embedding_model = LexemeEmbeddingModel::from_bytes(&fs::read(model_path)?)?;
+            let model_bytes = fs::read(model_path)?;
+            let vocab_size = LexemeEmbeddingModel::from_bytes(&model_bytes)
+                .map(|model| model.vocab_size)
+                .or_else(|_| {
+                    LexemeSoftmaxModel::from_bytes(&model_bytes).map(|model| model.vocab_size)
+                })?;
             let quality_weights = load_lexeme_quality_weights(
                 &vocab_path,
-                embedding_model.vocab_size,
+                vocab_size,
                 lexeme_softmax_config.quality_weight_profile,
             )?;
-            let run = run_lexeme_softmax_training_with_model_and_quality(
-                &tokens,
-                embedding_model,
-                lexeme_softmax_config,
-                quality_weights.as_deref(),
-            )?;
+            let run = if let Ok(embedding_model) = LexemeEmbeddingModel::from_bytes(&model_bytes) {
+                run_lexeme_softmax_training_with_model_and_quality(
+                    &tokens,
+                    embedding_model,
+                    lexeme_softmax_config,
+                    quality_weights.as_deref(),
+                )?
+            } else {
+                let softmax_model = LexemeSoftmaxModel::from_bytes(&model_bytes)?;
+                run_lexeme_softmax_training_from_softmax_model_and_quality(
+                    &tokens,
+                    softmax_model,
+                    lexeme_softmax_config,
+                    quality_weights.as_deref(),
+                )?
+            };
             if let Some(path) = model_out_path {
-                fs::write(path, run.model.to_bytes())?;
+                fs::write(path, run.model.try_to_bytes()?)?;
             }
             run.trace.to_json_line()
+        }
+        "lexeme-evaluate" | "lexeme_evaluate" => {
+            let token_path = tokens_path.ok_or("--tokens is required for lexeme-evaluate mode")?;
+            let model_path = model_path.ok_or("--model is required for lexeme-evaluate mode")?;
+            let tokens = fs::read(token_path)?;
+            let model = LexemeSoftmaxModel::from_bytes(&fs::read(model_path)?)?;
+            let seq_len = lexeme_softmax_config.seq_len;
+            let stride = lexeme_softmax_config.stride;
+            let result = run_lexeme_softmax_evaluate(
+                &tokens,
+                model,
+                seq_len,
+                stride,
+                lexeme_softmax_config.max_windows,
+            )?;
+            result.to_json_line()
         }
         "lexeme-generate" | "lexeme_generate" => {
             let model_path = model_path.ok_or("--model is required for lexeme-generate mode")?;
@@ -507,28 +805,57 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("--prompt is required for lexeme-generate mode".into());
             }
             let vocab = load_lexeme_vocab(&vocab_path)?;
+            let mut generation_config = lexeme_generation_config;
+            configure_lexeme_sentence_stop_tokens(&mut generation_config, &vocab.entries);
             let model = LexemeSoftmaxModel::from_bytes(&fs::read(model_path)?)?;
-            let prompt_tokens = lexeme_prompt_tokens(&prompt, &vocab.lookup);
-            let decode_priors = load_lexeme_decode_priors(
+            let prompt_tokens = encode_lexeme_prompt_tokens(&prompt, &vocab.lookup);
+            let decode_priors =
+                load_lexeme_decode_priors(&tokens_path, model.vocab_size, generation_config)?;
+            let topic_priors = load_lexeme_topic_priors(
                 &tokens_path,
                 model.vocab_size,
-                lexeme_generation_config,
+                &prompt_tokens,
+                generation_config,
             )?;
-            let generation = generate_lexeme_softmax_with_priors(
+            let memory_priors = load_lexeme_memory_priors(
+                &tokens_path,
+                model.vocab_size,
+                generation_config,
+                &vocab.entries,
+            )?;
+            let quality_weights = load_lexeme_quality_weights(
+                &Some(vocab_path),
+                model.vocab_size,
+                generation_config.quality_weight_profile,
+            )?;
+            let generation = generate_lexeme_softmax_with_memory(
                 &model,
                 &prompt_tokens,
-                lexeme_generation_config,
+                generation_config,
                 decode_priors.as_ref(),
+                quality_weights.as_deref(),
+                topic_priors.as_ref(),
+                memory_priors.as_ref(),
             )?;
             write_lexeme_text_generation(
                 &text_out_path,
                 &generation.prompt_tokens,
                 &generation.generated_tokens,
                 &vocab.entries,
+                generated_only_text,
             )?;
             generation.to_json_line()
         }
         "mini-transformer-mlp" | "mini_transformer_mlp" => {
+            if mini_transformer_attention_kind == MiniTransformerAttentionKind::LinearStreamingNope
+                || mini_transformer_attention_kind
+                    == MiniTransformerAttentionKind::LinearStreamingTttNope
+            {
+                return Err(
+                    "--mini-transformer-attention linear-streaming modes are generation-only; train with linear for the rescanned linear-attention backward"
+                        .into(),
+                );
+            }
             let path = tokens_path.ok_or("--tokens is required for mini-transformer-mlp mode")?;
             let tokens = fs::read(path)?;
             let run = if let Some(path) = model_path {
@@ -543,7 +870,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 run_mini_transformer_mlp_training_with_model(&tokens, mini_transformer_config)?
             };
             if let Some(path) = model_out_path {
-                fs::write(path, run.model.to_bytes())?;
+                fs::write(path, run.model.try_to_bytes()?)?;
             }
             run.trace.to_json_line()
         }
@@ -556,16 +883,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let model_bytes = fs::read(path)?;
             let model = MiniTransformerMlpModel::from_bytes(&model_bytes)?;
             let decode_priors = load_decode_priors(&tokens_path, byte_generation_config)?;
-            let generation = generate_mini_transformer_with_priors(
-                &model,
-                &prompt,
-                byte_generation_config,
-                decode_priors.as_ref(),
-            )?;
+            let generation =
+                generate_mini_transformer_with_attention_kind_position_policy_priors_and_ttt_shift(
+                    &model,
+                    &prompt,
+                    byte_generation_config,
+                    mini_transformer_attention_kind,
+                    mini_transformer_position_policy,
+                    decode_priors.as_ref(),
+                    mini_transformer_ttt_learning_rate_shift,
+                )?;
             write_text_generation(
                 &text_out_path,
                 &generation.prompt_bytes,
                 &generation.generated_bytes,
+                generated_only_text,
             )?;
             generation.to_json_line()
         }
@@ -582,10 +914,116 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--corpus-prior] [--corpus-prior-logit-shift N] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-qk-lr-shift N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--text-out PATH]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-generate|mini-transformer-mlp|mini-transformer-generate] [--tokens PATH] [--model PATH] [--model-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
     );
     println!();
     println!("Runs a deterministic integer training trace.");
+}
+
+fn apply_decode_profile(
+    value: &str,
+    config: &mut LexemeGenerationConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match value {
+        "coherent-prose" | "coherent_prose" | "prose" => {
+            config.decode.strategy = DecodeStrategy::Sample;
+            config.decode.top_k = 8;
+            config.decode.repeat_window = 96;
+            config.decode.repeat_penalty_shift = 3;
+            config.decode.max_repeat_run = 2;
+            config.decode.no_repeat_ngram_order = 3;
+            config.decode.corpus_prior = true;
+            config.decode.corpus_prior_order = 3;
+            config.decode.corpus_prior_logit_shift = 7;
+            config.decode.frequency_penalty_cap = 600;
+            config.decode.frequency_penalty_min_weight_q15 = 6144;
+            config.decode.frequency_penalty_logit_shift = 5;
+            config.decode.local_frequency_penalty_cap = 2;
+            config.decode.local_frequency_penalty_min_weight_q15 = 8192;
+            config.decode.local_frequency_penalty_logit_shift = 4;
+            config.decode.memory_context_order = 4;
+            config.decode.memory_min_context_order = 2;
+            config.decode.memory_logit_shift = 5;
+            config.decode.strict_adjacency = true;
+            config.quality_weight_profile = LexemeQualityWeightProfile::ProseAware;
+            Ok(())
+        }
+        "grounded-prose" | "grounded_prose" | "grounded" => {
+            config.decode.strategy = DecodeStrategy::Sample;
+            config.decode.top_k = 8;
+            config.decode.repeat_window = 96;
+            config.decode.repeat_penalty_shift = 3;
+            config.decode.max_repeat_run = 2;
+            config.decode.no_repeat_ngram_order = 4;
+            config.decode.corpus_prior = true;
+            config.decode.corpus_prior_order = 3;
+            config.decode.corpus_prior_logit_shift = 7;
+            config.decode.frequency_penalty_cap = 600;
+            config.decode.frequency_penalty_min_weight_q15 = 6144;
+            config.decode.frequency_penalty_logit_shift = 5;
+            config.decode.local_frequency_penalty_cap = 2;
+            config.decode.local_frequency_penalty_min_weight_q15 = 8192;
+            config.decode.local_frequency_penalty_logit_shift = 4;
+            config.decode.memory_context_order = 4;
+            config.decode.memory_min_context_order = 2;
+            config.decode.memory_logit_shift = 4;
+            config.decode.strict_memory_on_steps = 6;
+            config.decode.strict_memory_off_steps = 3;
+            config.decode.strict_memory = true;
+            config.decode.strict_adjacency = true;
+            config.quality_weight_profile = LexemeQualityWeightProfile::ProseAware;
+            Ok(())
+        }
+        _ => Err("--decode-profile requires coherent-prose or grounded-prose".into()),
+    }
+}
+
+fn parse_mini_transformer_attention_kind(
+    value: &str,
+) -> Result<MiniTransformerAttentionKind, Box<dyn std::error::Error>> {
+    match value {
+        "base2-softmax" | "base2_softmax" | "softmax" => {
+            Ok(MiniTransformerAttentionKind::Base2Softmax)
+        }
+        "linear" | "linear-attention" | "linear_attention" => {
+            Ok(MiniTransformerAttentionKind::Linear)
+        }
+        "linear-streaming"
+        | "linear_streaming"
+        | "linear-incremental"
+        | "linear_incremental"
+        | "linear-streaming-nope"
+        | "linear_streaming_nope" => Ok(MiniTransformerAttentionKind::LinearStreamingNope),
+        "linear-streaming-ttt"
+        | "linear_streaming_ttt"
+        | "linear-streaming-ttt-nope"
+        | "linear_streaming_ttt_nope" => Ok(MiniTransformerAttentionKind::LinearStreamingTttNope),
+        _ => Err(
+            "--mini-transformer-attention requires base2-softmax, linear, linear-streaming, or linear-streaming-ttt"
+                .into(),
+        ),
+    }
+}
+
+fn parse_mini_transformer_position_policy(
+    value: &str,
+) -> Result<MiniTransformerPositionPolicy, Box<dyn std::error::Error>> {
+    match value {
+        "learned-absolute" | "learned_absolute" | "absolute" | "position-embedding"
+        | "position_embedding" => Ok(MiniTransformerPositionPolicy::LearnedAbsolute),
+        "nope" | "no-position" | "no_position" | "none" => Ok(MiniTransformerPositionPolicy::Nope),
+        _ => Err("--mini-transformer-position requires learned-absolute or nope".into()),
+    }
+}
+
+fn parse_lexeme_context_features(
+    value: &str,
+) -> Result<LexemeContextFeatures, Box<dyn std::error::Error>> {
+    match value {
+        "mean" | "mean-context" | "mean_context" => Ok(LexemeContextFeatures::Mean),
+        "ordered" | "ordered-context" | "ordered_context" => Ok(LexemeContextFeatures::Ordered),
+        _ => Err("--lexeme-context-features requires mean or ordered".into()),
+    }
 }
 
 struct LexemeVocab {
@@ -630,7 +1068,7 @@ fn load_lexeme_quality_weights(
     }
     let path = vocab_path
         .as_ref()
-        .ok_or("--vocab is required with --quality-weight-profile cruft-aware")?;
+        .ok_or("--vocab is required with --quality-weight-profile cruft-aware or prose-aware")?;
     let vocab = load_lexeme_vocab(path)?;
     Ok(Some(lexeme_quality_weights_from_vocab(
         &vocab.entries,
@@ -639,86 +1077,23 @@ fn load_lexeme_quality_weights(
     )?))
 }
 
-fn lexeme_prompt_tokens(input: &[u8], lookup: &HashMap<String, u16>) -> Vec<u16> {
-    let normalized = input
-        .iter()
-        .map(|&byte| {
-            if byte.is_ascii_uppercase() {
-                byte.to_ascii_lowercase()
-            } else {
-                byte
-            }
-        })
-        .collect::<Vec<_>>();
-    let mut tokens = Vec::new();
-    for_each_prompt_lexeme(&normalized, |lexeme| {
-        let text = String::from_utf8_lossy(lexeme).to_string();
-        if let Some(&id) = lookup.get(&text) {
-            tokens.push(id);
-        } else {
-            tokens.extend(lexeme.iter().map(|&byte| u16::from(byte)));
-        }
-    });
-    if tokens.is_empty() {
-        tokens.push(u16::from(b' '));
-    }
-    tokens
-}
-
-fn for_each_prompt_lexeme<F>(input: &[u8], mut visit: F)
-where
-    F: FnMut(&[u8]),
-{
-    let mut index = 0_usize;
-    while index < input.len() {
-        let byte = input[index];
-        if byte.is_ascii_whitespace() {
-            index += 1;
-            continue;
-        }
-        if is_prompt_word_byte(byte) {
-            let start = index;
-            index += 1;
-            while index < input.len() {
-                let current = input[index];
-                if is_prompt_word_byte(current)
-                    || ((current == b'\'' || current == b'-')
-                        && index + 1 < input.len()
-                        && is_prompt_word_byte(input[index - 1])
-                        && is_prompt_word_byte(input[index + 1]))
-                {
-                    index += 1;
-                } else {
-                    break;
-                }
-            }
-            visit(&input[start..index]);
-            continue;
-        }
-        if is_prompt_punctuation(byte) {
-            visit(&input[index..index + 1]);
-        }
-        index += 1;
-    }
-}
-
-fn is_prompt_word_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric()
-}
-
-fn is_prompt_punctuation(byte: u8) -> bool {
-    matches!(byte, b'.' | b',' | b';' | b':' | b'?' | b'!' | b'\'' | b'-')
-}
-
 fn write_lexeme_text_generation(
     path: &Option<PathBuf>,
     prompt_tokens: &[u16],
     generated_tokens: &[u16],
     vocab: &[String],
+    generated_only: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = path {
-        let mut all_tokens = Vec::with_capacity(prompt_tokens.len() + generated_tokens.len());
-        all_tokens.extend_from_slice(prompt_tokens);
+        let capacity = if generated_only {
+            generated_tokens.len()
+        } else {
+            prompt_tokens.len() + generated_tokens.len()
+        };
+        let mut all_tokens = Vec::with_capacity(capacity);
+        if !generated_only {
+            all_tokens.extend_from_slice(prompt_tokens);
+        }
         all_tokens.extend_from_slice(generated_tokens);
         fs::write(path, render_lexeme_tokens(&all_tokens, vocab))?;
     }
@@ -727,21 +1102,51 @@ fn write_lexeme_text_generation(
 
 fn render_lexeme_tokens(tokens: &[u16], vocab: &[String]) -> String {
     let mut out = String::new();
+    let mut previous_was_byte_word = false;
     for &token in tokens {
+        if token <= u16::from(u8::MAX) {
+            append_rendered_byte_token(&mut out, token as u8, previous_was_byte_word);
+            previous_was_byte_word = is_render_byte_word(token as u8);
+            continue;
+        }
+
+        previous_was_byte_word = false;
         let text = vocab
             .get(usize::from(token))
             .filter(|value| !value.is_empty())
             .cloned()
-            .unwrap_or_else(|| {
-                if token <= u16::from(u8::MAX) {
-                    String::from_utf8_lossy(&[token as u8]).to_string()
-                } else {
-                    String::from("?")
-                }
-            });
+            .unwrap_or_else(|| String::from("?"));
+        if text == LEXEME_PAGE_BOUNDARY {
+            if !out.is_empty() && !out.ends_with('\n') {
+                out.push('\n');
+            }
+            continue;
+        }
         append_rendered_lexeme(&mut out, &text);
     }
     out
+}
+
+fn append_rendered_byte_token(out: &mut String, byte: u8, previous_was_byte_word: bool) {
+    if is_render_byte_word(byte) {
+        if !previous_was_byte_word
+            && !out.is_empty()
+            && !out.ends_with(' ')
+            && !out.ends_with('\'')
+            && !out.ends_with('-')
+        {
+            out.push(' ');
+        }
+        out.push(char::from(byte));
+        return;
+    }
+
+    let text = String::from_utf8_lossy(&[byte]).to_string();
+    append_rendered_lexeme(out, &text);
+}
+
+fn is_render_byte_word(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
 }
 
 fn append_rendered_lexeme(out: &mut String, text: &str) {
@@ -790,31 +1195,132 @@ fn load_lexeme_decode_priors(
     vocab_size: usize,
     config: LexemeGenerationConfig,
 ) -> Result<Option<LexemeDecodePriors>, Box<dyn std::error::Error>> {
-    if !config.decode.corpus_prior && !config.decode.strict_adjacency {
+    if !config.decode.corpus_prior
+        && !config.decode.strict_adjacency
+        && config.decode.frequency_penalty_cap == 0
+        && config.decode.island_penalty_count_cap == 0
+    {
         return Ok(None);
     }
     let path = tokens_path
         .as_ref()
-        .ok_or("--tokens is required with --corpus-prior or --strict-adjacency")?;
+        .ok_or("--tokens is required with lexeme decode priors")?;
+    let tokens = read_lexeme_token_file(path)?;
+    Ok(Some(LexemeDecodePriors::from_tokens(&tokens, vocab_size)?))
+}
+
+fn load_lexeme_topic_priors(
+    tokens_path: &Option<PathBuf>,
+    vocab_size: usize,
+    prompt_tokens: &[u16],
+    config: LexemeGenerationConfig,
+) -> Result<Option<LexemeTopicPriors>, Box<dyn std::error::Error>> {
+    if config.decode.prompt_topic_radius == 0 {
+        return Ok(None);
+    }
+    let path = tokens_path
+        .as_ref()
+        .ok_or("--tokens is required with --prompt-topic-radius")?;
+    let tokens = read_lexeme_token_file(path)?;
+    Ok(Some(LexemeTopicPriors::from_tokens(
+        &tokens,
+        vocab_size,
+        prompt_tokens,
+        config.decode.prompt_topic_radius,
+        config.decode.prompt_topic_min_weight_q15,
+    )?))
+}
+
+fn load_lexeme_memory_priors(
+    tokens_path: &Option<PathBuf>,
+    vocab_size: usize,
+    config: LexemeGenerationConfig,
+    vocab: &[String],
+) -> Result<Option<LexemeMemoryPriors>, Box<dyn std::error::Error>> {
+    if config.decode.memory_context_order == 0 {
+        return Ok(None);
+    }
+    let path = tokens_path
+        .as_ref()
+        .ok_or("--tokens is required with --decode-memory-order")?;
+    let tokens = read_lexeme_token_file(path)?;
+    let terminal_tokens = lexeme_terminal_tokens(vocab);
+    Ok(Some(LexemeMemoryPriors::from_tokens_with_terminal_tokens(
+        &tokens,
+        vocab_size,
+        config.decode.memory_context_order,
+        &terminal_tokens,
+    )?))
+}
+
+fn lexeme_terminal_tokens(vocab: &[String]) -> Vec<u16> {
+    vocab
+        .iter()
+        .enumerate()
+        .filter_map(|(index, text)| {
+            if text == LEXEME_PAGE_BOUNDARY || is_sentence_terminal_lexeme(text) {
+                u16::try_from(index).ok()
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn configure_lexeme_sentence_stop_tokens(config: &mut LexemeGenerationConfig, vocab: &[String]) {
+    if !config.stop_on_sentence_terminal {
+        return;
+    }
+    let mut tokens = [0_u16; LEXEME_SENTENCE_STOP_TOKEN_CAP];
+    let mut count = 0_usize;
+    for (index, text) in vocab.iter().enumerate() {
+        if !is_sentence_terminal_lexeme(text) {
+            continue;
+        }
+        let Ok(token) = u16::try_from(index) else {
+            continue;
+        };
+        if count == LEXEME_SENTENCE_STOP_TOKEN_CAP {
+            break;
+        }
+        tokens[count] = token;
+        count += 1;
+    }
+    config.sentence_terminal_tokens = tokens;
+    config.sentence_terminal_token_count = count;
+}
+
+fn is_sentence_terminal_lexeme(text: &str) -> bool {
+    text.ends_with('.') || text.ends_with('!') || text.ends_with('?')
+}
+
+fn read_lexeme_token_file(path: &PathBuf) -> Result<Vec<u16>, Box<dyn std::error::Error>> {
     let bytes = fs::read(path)?;
     if bytes.len() % 2 != 0 {
         return Err("lexeme token stream must contain little-endian u16 tokens".into());
     }
-    let tokens = bytes
+    Ok(bytes
         .chunks_exact(2)
         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect::<Vec<_>>();
-    Ok(Some(LexemeDecodePriors::from_tokens(&tokens, vocab_size)?))
+        .collect::<Vec<_>>())
 }
 
 fn write_text_generation(
     path: &Option<PathBuf>,
     prompt: &[u8],
     generated: &[u8],
+    generated_only: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = path {
-        let mut text = Vec::with_capacity(prompt.len() + generated.len());
-        text.extend_from_slice(prompt);
+        let capacity = if generated_only {
+            generated.len()
+        } else {
+            prompt.len() + generated.len()
+        };
+        let mut text = Vec::with_capacity(capacity);
+        if !generated_only {
+            text.extend_from_slice(prompt);
+        }
         text.extend_from_slice(generated);
         fs::write(path, text)?;
     }

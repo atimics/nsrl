@@ -7,3 +7,4 @@ repository.workspace = true
 
 [dependencies]
 nsrl-core = { path = "../nsrl-core" }
+nsrl-corpus = { path = "../nsrl-corpus" }

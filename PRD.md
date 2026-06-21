@@ -22,8 +22,10 @@ fixed-point behavior.
 
 ## Current Status
 
-The forward runtime target is implemented. `nsrl-core` now provides the
-integer-native causal Transformer block primitives:
+The forward runtime target is implemented, and the project has moved into
+integer-native training, lexeme-level language modeling, and traceable
+generation experiments. `nsrl-core` now provides the integer-native causal
+Transformer block primitives:
 
 - fixed-scale integer tensor metadata,
 - branchless round-half-up requantization,
@@ -32,6 +34,7 @@ integer-native causal Transformer block primitives:
   exponentiation, and reciprocal normalization,
 - integer RMSNorm with leading-zero block-floating normalization,
 - native base-2 causal attention with power-of-four head scaling,
+- full, incremental, and training-oriented linear attention paths,
 - power-of-two Hard SiLU gated MLP,
 - deterministic full-block forward traces.
 
@@ -48,9 +51,21 @@ The latest captured `bench-1m` release row uses 1,048,576 i8 weights, reports
 machine, and records zero attention, MLP, residual, and final tensor
 saturation events.
 
-The remaining major product frontier is `nsrl-train`: learning NSRL-native
-weights under the same base-2 attention, Q15 residual, integer RMSNorm, and
-Hard SiLU arithmetic contracts used by inference.
+`nsrl-train` is now active infrastructure rather than a future phase. It can
+train byte, lexeme, output-head, MLP, attention, and embedding paths with i64
+batch gradient accumulation, checked rollbacks, deterministic trace rows, and
+integer learning-rate shifts. The strongest current language evidence is a
+lexeme SimpleWiki lane that uses source-grounded best-of sentence composition
+to produce a coherent, exactly traceable paragraph:
+
+```text
+the earth is an ancient planet which has been changing the whole time since its formation. different parts of earth get different amounts of sunlight. the air and water then move these pieces to lower places.
+```
+
+This is deliberately claimed as a full-system result, not a claim that the core
+model alone has solved long-context semantic planning. The next product
+frontier is reducing dependence on exact source-span grounding by adding an
+integer topic/memory state that can carry intent across sentence boundaries.
 
 ## Problem
 
@@ -272,7 +287,12 @@ Milestone 2: Native Training is successful when:
 - Saturation and underflow rates are tracked per layer.
 - The implementation remains simple enough to audit.
 
-Status: not started. The forward runtime now gives `nsrl-train` a stable target.
+Status: implemented as a research lane. `nsrl-train` now supports deterministic
+integer updates with i64 batch accumulators, rollback safety, lexeme embedding
+pretraining, lexeme softmax training, mini-transformer training, MLP backward,
+softmax and linear attention backward paths, and traced generation. The
+remaining work is quality, scale, and simplification, not proof that integer
+updates can move weights.
 
 Milestone 3: Transformer Block is complete when:
 

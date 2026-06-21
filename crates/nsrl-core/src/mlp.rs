@@ -6,7 +6,9 @@ use crate::linear::{
     linear_backward_prescale_grad_output_i16_i32_checked, linear_backward_weight_update_i8_checked,
     linear_i16_i8_i16_per_channel_with_kernel_checked,
 };
-use crate::numeric::{FixedScale, round_shift_rhu_i64, saturate_i16, saturating_add_i16};
+use crate::numeric::{
+    FixedScale, residual_add_i16_q15_checked, round_shift_rhu_i64, saturate_i16, saturating_add_i16,
+};
 use crate::rms_norm::rms_norm_i16_q15_checked;
 
 pub const HARD_SILU_GATE_SHIFT: u8 = 2;
@@ -717,24 +719,6 @@ fn add_grad_rows_i16_checked(left: &[i16], right: &[i16], output: &mut [i16]) ->
             saturation_count = saturation_count.checked_add(1)?;
         }
         *out = saturating_add_i16(left, right);
-    }
-
-    Some(saturation_count)
-}
-
-fn residual_add_i16_q15_checked(skip: &[i16], block: &[i16], output: &mut [i16]) -> Option<usize> {
-    if skip.len() != block.len() || skip.len() != output.len() {
-        return None;
-    }
-
-    let mut saturation_count = 0_usize;
-    for ((&skip, &block), out) in skip.iter().zip(block.iter()).zip(output.iter_mut()) {
-        let wide = i32::from(skip) + i32::from(block);
-        if wide < i32::from(i16::MIN) || wide > i32::from(i16::MAX) {
-            saturation_count = saturation_count.checked_add(1)?;
-        }
-
-        *out = saturating_add_i16(skip, block);
     }
 
     Some(saturation_count)

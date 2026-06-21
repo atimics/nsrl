@@ -2,7 +2,9 @@ use crate::linear::{
     LinearI16I8Params, LinearKernel, linear_i16_i8_i16_per_channel_with_kernel_checked,
 };
 use crate::lut::{EXP2_NEG_FRAC_LUT_8BIT, normalize_u64_to_lut_index, recip_lut_8bit_q31};
-use crate::numeric::{round_shift_rhu_i64, saturate_i16, saturating_add_i16};
+use crate::numeric::{
+    MAX_RIGHT_SHIFT, residual_add_i16_q15_checked, round_shift_rhu_i64, saturate_i16,
+};
 use crate::rms_norm::rms_norm_i16_q15_checked;
 
 pub const LOGIT_FRAC_BITS: u8 = 8;
@@ -30,6 +32,35 @@ pub struct SelfAttentionWorkspace<'a> {
     pub probabilities_q15: &'a mut [i16],
 }
 
+pub struct LinearAttentionWorkspace<'a> {
+    pub q: &'a mut [i16],
+    pub k: &'a mut [i16],
+    pub v: &'a mut [i16],
+    pub context: &'a mut [i16],
+    pub state_kv: &'a mut [i64],
+    pub key_sums: &'a mut [i64],
+}
+
+pub struct LinearAttentionStepWorkspace<'a> {
+    pub q: &'a mut [i16],
+    pub k: &'a mut [i16],
+    pub v: &'a mut [i16],
+    pub context: &'a mut [i16],
+}
+
+pub struct LinearAttentionTttStepWorkspace<'a> {
+    pub q: &'a mut [i16],
+    pub k: &'a mut [i16],
+    pub v: &'a mut [i16],
+    pub context: &'a mut [i16],
+    pub prediction: &'a mut [i16],
+}
+
+pub struct LinearAttentionState<'a> {
+    pub state_kv: &'a mut [i64],
+    pub key_sums: &'a mut [i64],
+}
+
 pub struct AttentionResidualWorkspace<'a> {
     pub attention: SelfAttentionWorkspace<'a>,
     pub attention_output: &'a mut [i16],
@@ -41,7 +72,7 @@ pub struct PreNormAttentionResidualWorkspace<'a> {
 }
 
 pub fn is_power_of_four(value: usize) -> bool {
-    value != 0 && value.is_power_of_two() && value.trailing_zeros() % 2 == 0
+    value != 0 && value.is_power_of_two() && value.trailing_zeros().is_multiple_of(2)
 }
 
 pub fn sqrt_power_of_four_shift(value: usize) -> Option<u8> {
@@ -219,8 +250,8 @@ pub fn attention_row_i16_q15_checked(
     if key_dim == 0
         || value_dim == 0
         || query.len() != key_dim
-        || keys.len() % key_dim != 0
-        || values.len() % value_dim != 0
+        || !keys.len().is_multiple_of(key_dim)
+        || !values.len().is_multiple_of(value_dim)
         || output.len() != value_dim
     {
         return None;
@@ -381,6 +412,509 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
     Some(())
 }
 
+pub fn linear_attention_i16_q15_checked(
+    input: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: LinearAttentionWorkspace<'_>,
+    output: &mut [i16],
+) -> Option<()> {
+    linear_attention_i16_q15_with_linear_kernel_checked(
+        input,
+        params,
+        workspace,
+        output,
+        LinearKernel::GenericI8,
+    )
+}
+
+pub fn linear_attention_i16_q15_with_linear_kernel_checked(
+    input: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: LinearAttentionWorkspace<'_>,
+    output: &mut [i16],
+    linear_kernel: LinearKernel,
+) -> Option<()> {
+    validate_linear_attention_shapes(input, params, &workspace, output)?;
+
+    let seq_len = params.seq_len;
+    let d_model = params.d_model;
+    let head_dim = d_model / params.heads;
+    let state_len = params.heads.checked_mul(head_dim.checked_mul(head_dim)?)?;
+    let key_sum_len = params.heads.checked_mul(head_dim)?;
+
+    workspace.state_kv[..state_len].fill(0);
+    workspace.key_sums[..key_sum_len].fill(0);
+
+    for token in 0..seq_len {
+        let row_start = token.checked_mul(d_model)?;
+        let row_end = row_start.checked_add(d_model)?;
+        let input_row = &input[row_start..row_end];
+
+        linear_i16_i8_i16_per_channel_with_kernel_checked(
+            input_row,
+            params.q,
+            &mut workspace.q[row_start..row_end],
+            linear_kernel,
+        )?;
+        linear_i16_i8_i16_per_channel_with_kernel_checked(
+            input_row,
+            params.k,
+            &mut workspace.k[row_start..row_end],
+            linear_kernel,
+        )?;
+        linear_i16_i8_i16_per_channel_with_kernel_checked(
+            input_row,
+            params.v,
+            &mut workspace.v[row_start..row_end],
+            linear_kernel,
+        )?;
+    }
+
+    if params.causal {
+        for token in 0..seq_len {
+            for head in 0..params.heads {
+                let head_offset = head.checked_mul(head_dim)?;
+                let row_base = token.checked_mul(d_model)?.checked_add(head_offset)?;
+                let head_state_start = head.checked_mul(head_dim.checked_mul(head_dim)?)?;
+                let head_state_end =
+                    head_state_start.checked_add(head_dim.checked_mul(head_dim)?)?;
+                let head_sum_start = head.checked_mul(head_dim)?;
+                let head_sum_end = head_sum_start.checked_add(head_dim)?;
+
+                accumulate_linear_attention_state_i16_checked(
+                    &workspace.k[row_base..row_base + head_dim],
+                    &workspace.v[row_base..row_base + head_dim],
+                    &mut workspace.state_kv[head_state_start..head_state_end],
+                    &mut workspace.key_sums[head_sum_start..head_sum_end],
+                    head_dim,
+                )?;
+                project_linear_attention_state_i16_checked(
+                    &workspace.q[row_base..row_base + head_dim],
+                    &workspace.state_kv[head_state_start..head_state_end],
+                    &workspace.key_sums[head_sum_start..head_sum_end],
+                    head_dim,
+                    &mut workspace.context[row_base..row_base + head_dim],
+                )?;
+            }
+        }
+    } else {
+        for token in 0..seq_len {
+            for head in 0..params.heads {
+                let head_offset = head.checked_mul(head_dim)?;
+                let row_base = token.checked_mul(d_model)?.checked_add(head_offset)?;
+                let head_state_start = head.checked_mul(head_dim.checked_mul(head_dim)?)?;
+                let head_state_end =
+                    head_state_start.checked_add(head_dim.checked_mul(head_dim)?)?;
+                let head_sum_start = head.checked_mul(head_dim)?;
+                let head_sum_end = head_sum_start.checked_add(head_dim)?;
+
+                accumulate_linear_attention_state_i16_checked(
+                    &workspace.k[row_base..row_base + head_dim],
+                    &workspace.v[row_base..row_base + head_dim],
+                    &mut workspace.state_kv[head_state_start..head_state_end],
+                    &mut workspace.key_sums[head_sum_start..head_sum_end],
+                    head_dim,
+                )?;
+            }
+        }
+
+        for token in 0..seq_len {
+            for head in 0..params.heads {
+                let head_offset = head.checked_mul(head_dim)?;
+                let row_base = token.checked_mul(d_model)?.checked_add(head_offset)?;
+                let head_state_start = head.checked_mul(head_dim.checked_mul(head_dim)?)?;
+                let head_state_end =
+                    head_state_start.checked_add(head_dim.checked_mul(head_dim)?)?;
+                let head_sum_start = head.checked_mul(head_dim)?;
+                let head_sum_end = head_sum_start.checked_add(head_dim)?;
+
+                project_linear_attention_state_i16_checked(
+                    &workspace.q[row_base..row_base + head_dim],
+                    &workspace.state_kv[head_state_start..head_state_end],
+                    &workspace.key_sums[head_sum_start..head_sum_end],
+                    head_dim,
+                    &mut workspace.context[row_base..row_base + head_dim],
+                )?;
+            }
+        }
+    }
+
+    for token in 0..seq_len {
+        let row_start = token.checked_mul(d_model)?;
+        let row_end = row_start.checked_add(d_model)?;
+        linear_i16_i8_i16_per_channel_with_kernel_checked(
+            &workspace.context[row_start..row_end],
+            params.o,
+            &mut output[row_start..row_end],
+            linear_kernel,
+        )?;
+    }
+
+    Some(())
+}
+
+pub fn linear_attention_state_lengths(d_model: usize, heads: usize) -> Option<(usize, usize)> {
+    if d_model == 0 || heads == 0 || !d_model.is_multiple_of(heads) {
+        return None;
+    }
+
+    let head_dim = d_model / heads;
+    let state_len = heads.checked_mul(head_dim.checked_mul(head_dim)?)?;
+    let key_sum_len = heads.checked_mul(head_dim)?;
+    Some((state_len, key_sum_len))
+}
+
+pub fn clear_linear_attention_state_checked(
+    d_model: usize,
+    heads: usize,
+    state: LinearAttentionState<'_>,
+) -> Option<()> {
+    let (state_len, key_sum_len) = linear_attention_state_lengths(d_model, heads)?;
+    if state.state_kv.len() < state_len || state.key_sums.len() < key_sum_len {
+        return None;
+    }
+
+    state.state_kv[..state_len].fill(0);
+    state.key_sums[..key_sum_len].fill(0);
+    Some(())
+}
+
+pub fn linear_attention_step_i16_q15_checked(
+    input_row: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: LinearAttentionStepWorkspace<'_>,
+    state: LinearAttentionState<'_>,
+    output_row: &mut [i16],
+) -> Option<()> {
+    linear_attention_step_i16_q15_with_linear_kernel_checked(
+        input_row,
+        params,
+        workspace,
+        state,
+        output_row,
+        LinearKernel::GenericI8,
+    )
+}
+
+pub fn linear_attention_step_i16_q15_with_linear_kernel_checked(
+    input_row: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: LinearAttentionStepWorkspace<'_>,
+    state: LinearAttentionState<'_>,
+    output_row: &mut [i16],
+    linear_kernel: LinearKernel,
+) -> Option<()> {
+    validate_linear_attention_step_shapes(input_row, params, &workspace, &state, output_row)?;
+
+    let d_model = params.d_model;
+    let head_dim = d_model / params.heads;
+
+    linear_i16_i8_i16_per_channel_with_kernel_checked(
+        input_row,
+        params.q,
+        workspace.q,
+        linear_kernel,
+    )?;
+    linear_i16_i8_i16_per_channel_with_kernel_checked(
+        input_row,
+        params.k,
+        workspace.k,
+        linear_kernel,
+    )?;
+    linear_i16_i8_i16_per_channel_with_kernel_checked(
+        input_row,
+        params.v,
+        workspace.v,
+        linear_kernel,
+    )?;
+
+    for head in 0..params.heads {
+        let head_offset = head.checked_mul(head_dim)?;
+        let head_end = head_offset.checked_add(head_dim)?;
+        let head_state_start = head.checked_mul(head_dim.checked_mul(head_dim)?)?;
+        let head_state_end = head_state_start.checked_add(head_dim.checked_mul(head_dim)?)?;
+        let head_sum_start = head.checked_mul(head_dim)?;
+        let head_sum_end = head_sum_start.checked_add(head_dim)?;
+
+        accumulate_linear_attention_state_i16_checked(
+            &workspace.k[head_offset..head_end],
+            &workspace.v[head_offset..head_end],
+            &mut state.state_kv[head_state_start..head_state_end],
+            &mut state.key_sums[head_sum_start..head_sum_end],
+            head_dim,
+        )?;
+        project_linear_attention_state_i16_checked(
+            &workspace.q[head_offset..head_end],
+            &state.state_kv[head_state_start..head_state_end],
+            &state.key_sums[head_sum_start..head_sum_end],
+            head_dim,
+            &mut workspace.context[head_offset..head_end],
+        )?;
+    }
+
+    linear_i16_i8_i16_per_channel_with_kernel_checked(
+        workspace.context,
+        params.o,
+        output_row,
+        linear_kernel,
+    )?;
+
+    Some(())
+}
+
+pub fn linear_attention_ttt_step_i16_q15_checked(
+    input_row: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: LinearAttentionTttStepWorkspace<'_>,
+    state: LinearAttentionState<'_>,
+    output_row: &mut [i16],
+    learning_rate_shift: u8,
+) -> Option<u64> {
+    linear_attention_ttt_step_i16_q15_with_linear_kernel_checked(
+        input_row,
+        params,
+        workspace,
+        state,
+        output_row,
+        learning_rate_shift,
+        LinearKernel::GenericI8,
+    )
+}
+
+pub fn linear_attention_ttt_step_i16_q15_with_linear_kernel_checked(
+    input_row: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: LinearAttentionTttStepWorkspace<'_>,
+    state: LinearAttentionState<'_>,
+    output_row: &mut [i16],
+    learning_rate_shift: u8,
+    linear_kernel: LinearKernel,
+) -> Option<u64> {
+    validate_linear_attention_ttt_step_shapes(
+        input_row,
+        params,
+        &workspace,
+        &state,
+        output_row,
+        learning_rate_shift,
+    )?;
+
+    let d_model = params.d_model;
+    let head_dim = d_model / params.heads;
+
+    linear_i16_i8_i16_per_channel_with_kernel_checked(
+        input_row,
+        params.q,
+        workspace.q,
+        linear_kernel,
+    )?;
+    linear_i16_i8_i16_per_channel_with_kernel_checked(
+        input_row,
+        params.k,
+        workspace.k,
+        linear_kernel,
+    )?;
+    linear_i16_i8_i16_per_channel_with_kernel_checked(
+        input_row,
+        params.v,
+        workspace.v,
+        linear_kernel,
+    )?;
+
+    let mut delta_l1 = 0_u64;
+    for head in 0..params.heads {
+        let head_offset = head.checked_mul(head_dim)?;
+        let head_end = head_offset.checked_add(head_dim)?;
+        let head_state_start = head.checked_mul(head_dim.checked_mul(head_dim)?)?;
+        let head_state_end = head_state_start.checked_add(head_dim.checked_mul(head_dim)?)?;
+        let head_sum_start = head.checked_mul(head_dim)?;
+        let head_sum_end = head_sum_start.checked_add(head_dim)?;
+
+        accumulate_linear_attention_state_i16_checked(
+            &workspace.k[head_offset..head_end],
+            &workspace.v[head_offset..head_end],
+            &mut state.state_kv[head_state_start..head_state_end],
+            &mut state.key_sums[head_sum_start..head_sum_end],
+            head_dim,
+        )?;
+        let head_delta = linear_attention_ttt_delta_state_i16_q15_checked(
+            &workspace.k[head_offset..head_end],
+            &workspace.v[head_offset..head_end],
+            LinearAttentionState {
+                state_kv: &mut state.state_kv[head_state_start..head_state_end],
+                key_sums: &mut state.key_sums[head_sum_start..head_sum_end],
+            },
+            head_dim,
+            learning_rate_shift,
+            &mut workspace.prediction[head_offset..head_end],
+        )?;
+        delta_l1 = delta_l1.checked_add(head_delta)?;
+        project_linear_attention_state_i16_checked(
+            &workspace.q[head_offset..head_end],
+            &state.state_kv[head_state_start..head_state_end],
+            &state.key_sums[head_sum_start..head_sum_end],
+            head_dim,
+            &mut workspace.context[head_offset..head_end],
+        )?;
+    }
+
+    linear_i16_i8_i16_per_channel_with_kernel_checked(
+        workspace.context,
+        params.o,
+        output_row,
+        linear_kernel,
+    )?;
+
+    Some(delta_l1)
+}
+
+/// Apply a denominator-constant test-time-training correction to a linear-attention state.
+///
+/// The state layout is `[key_dim][value_dim]`, matching the normal linear attention
+/// accumulator. `prediction` receives the value predicted by the current state before the
+/// update. If the state has no positive normalization denominator yet, the pre-update
+/// prediction is treated as zero and the correction still applies.
+pub fn linear_attention_ttt_delta_state_i16_q15_checked(
+    key: &[i16],
+    value: &[i16],
+    state: LinearAttentionState<'_>,
+    head_dim: usize,
+    learning_rate_shift: u8,
+    prediction: &mut [i16],
+) -> Option<u64> {
+    if head_dim == 0
+        || learning_rate_shift > MAX_RIGHT_SHIFT
+        || key.len() != head_dim
+        || value.len() != head_dim
+        || prediction.len() != head_dim
+        || state.key_sums.len() != head_dim
+        || state.state_kv.len() != head_dim.checked_mul(head_dim)?
+    {
+        return None;
+    }
+
+    let mut denominator = 0_i64;
+    for (&key_value, &key_sum) in key.iter().zip(state.key_sums.iter()) {
+        let product = i64::from(linear_attention_phi_i16_u32(key_value)).checked_mul(key_sum)?;
+        denominator = denominator.checked_add(product)?;
+    }
+
+    if denominator > 0 {
+        for (value_index, out) in prediction.iter_mut().enumerate() {
+            let mut numerator = 0_i64;
+            for (key_index, &key_value) in key.iter().enumerate() {
+                let phi_key = i64::from(linear_attention_phi_i16_u32(key_value));
+                let state_index = key_index.checked_mul(head_dim)?.checked_add(value_index)?;
+                let product = phi_key.checked_mul(state.state_kv[state_index])?;
+                numerator = numerator.checked_add(product)?;
+            }
+            *out = saturate_i16(round_div_i64(numerator, denominator));
+        }
+    } else {
+        prediction.fill(0);
+    }
+
+    let mut delta_l1 = 0_u64;
+    for (key_index, &key_value) in key.iter().enumerate() {
+        let phi_key = i64::from(linear_attention_phi_i16_u32(key_value));
+        let state_row_start = key_index.checked_mul(head_dim)?;
+        for (value_index, (&target_value, &predicted_value)) in
+            value.iter().zip(prediction.iter()).enumerate()
+        {
+            let error = i64::from(target_value) - i64::from(predicted_value);
+            let product = phi_key.checked_mul(error)?;
+            let update = round_shift_rhu_i64(product, learning_rate_shift);
+            let state_index = state_row_start.checked_add(value_index)?;
+            state.state_kv[state_index] = state.state_kv[state_index].checked_add(update)?;
+            delta_l1 = delta_l1.checked_add(update.unsigned_abs())?;
+        }
+    }
+
+    Some(delta_l1)
+}
+
+#[inline]
+fn linear_attention_phi_i16_u32(value: i16) -> u32 {
+    (i32::from(value) + 32769) as u32
+}
+
+fn accumulate_linear_attention_state_i16_checked(
+    key: &[i16],
+    value: &[i16],
+    state_kv: &mut [i64],
+    key_sums: &mut [i64],
+    head_dim: usize,
+) -> Option<()> {
+    if key.len() != head_dim
+        || value.len() != head_dim
+        || key_sums.len() != head_dim
+        || state_kv.len() != head_dim.checked_mul(head_dim)?
+    {
+        return None;
+    }
+
+    for key_index in 0..head_dim {
+        let phi_key = i64::from(linear_attention_phi_i16_u32(key[key_index]));
+        key_sums[key_index] = key_sums[key_index].checked_add(phi_key)?;
+        let state_row_start = key_index.checked_mul(head_dim)?;
+        for (value_index, &value) in value.iter().enumerate() {
+            let product = phi_key.checked_mul(i64::from(value))?;
+            let state_index = state_row_start.checked_add(value_index)?;
+            state_kv[state_index] = state_kv[state_index].checked_add(product)?;
+        }
+    }
+
+    Some(())
+}
+
+fn project_linear_attention_state_i16_checked(
+    query: &[i16],
+    state_kv: &[i64],
+    key_sums: &[i64],
+    head_dim: usize,
+    output: &mut [i16],
+) -> Option<()> {
+    if query.len() != head_dim
+        || output.len() != head_dim
+        || key_sums.len() != head_dim
+        || state_kv.len() != head_dim.checked_mul(head_dim)?
+    {
+        return None;
+    }
+
+    let mut denominator = 0_i64;
+    for (&query, &key_sum) in query.iter().zip(key_sums.iter()) {
+        let product = i64::from(linear_attention_phi_i16_u32(query)).checked_mul(key_sum)?;
+        denominator = denominator.checked_add(product)?;
+    }
+    if denominator <= 0 {
+        return None;
+    }
+
+    for (value_index, out) in output.iter_mut().enumerate() {
+        let mut numerator = 0_i64;
+        for (key_index, &query) in query.iter().enumerate() {
+            let phi_query = i64::from(linear_attention_phi_i16_u32(query));
+            let state_index = key_index.checked_mul(head_dim)?.checked_add(value_index)?;
+            let product = phi_query.checked_mul(state_kv[state_index])?;
+            numerator = numerator.checked_add(product)?;
+        }
+        *out = saturate_i16(round_div_i64(numerator, denominator));
+    }
+
+    Some(())
+}
+
+fn round_div_i64(numerator: i64, denominator: i64) -> i64 {
+    debug_assert!(denominator > 0);
+    let half = denominator >> 1;
+    if numerator >= 0 {
+        numerator.saturating_add(half) / denominator
+    } else {
+        numerator.saturating_sub(half) / denominator
+    }
+}
+
 pub fn attention_residual_block_i16_q15_checked(
     input: &[i16],
     params: SelfAttentionI16Params<'_>,
@@ -486,24 +1020,6 @@ pub fn prenorm_attention_residual_block_i16_q15_with_linear_kernel_checked(
     residual_add_i16_q15_checked(input, attention_output, output)
 }
 
-fn residual_add_i16_q15_checked(skip: &[i16], block: &[i16], output: &mut [i16]) -> Option<usize> {
-    if skip.len() != block.len() || skip.len() != output.len() {
-        return None;
-    }
-
-    let mut saturation_count = 0_usize;
-    for ((&skip, &block), out) in skip.iter().zip(block.iter()).zip(output.iter_mut()) {
-        let wide = i32::from(skip) + i32::from(block);
-        if wide < i32::from(i16::MIN) || wide > i32::from(i16::MAX) {
-            saturation_count = saturation_count.checked_add(1)?;
-        }
-
-        *out = saturating_add_i16(skip, block);
-    }
-
-    Some(saturation_count)
-}
-
 fn validate_self_attention_shapes(
     input: &[i16],
     params: SelfAttentionI16Params<'_>,
@@ -514,7 +1030,7 @@ fn validate_self_attention_shapes(
         return None;
     }
 
-    if params.d_model % params.heads != 0 {
+    if !params.d_model.is_multiple_of(params.heads) {
         return None;
     }
 
@@ -555,13 +1071,176 @@ fn validate_self_attention_shapes(
     Some(())
 }
 
+fn validate_linear_attention_shapes(
+    input: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: &LinearAttentionWorkspace<'_>,
+    output: &[i16],
+) -> Option<()> {
+    if params.seq_len == 0 || params.d_model == 0 || params.heads == 0 {
+        return None;
+    }
+
+    if !params.d_model.is_multiple_of(params.heads) {
+        return None;
+    }
+
+    if params.q.input_dim != params.d_model
+        || params.k.input_dim != params.d_model
+        || params.v.input_dim != params.d_model
+        || params.o.input_dim != params.d_model
+        || params.q.output_dim != params.d_model
+        || params.k.output_dim != params.d_model
+        || params.v.output_dim != params.d_model
+        || params.o.output_dim != params.d_model
+        || !params.q.is_valid()
+        || !params.k.is_valid()
+        || !params.v.is_valid()
+        || !params.o.is_valid()
+    {
+        return None;
+    }
+
+    let total = params.seq_len.checked_mul(params.d_model)?;
+    let head_dim = params.d_model / params.heads;
+    let state_len = params.heads.checked_mul(head_dim.checked_mul(head_dim)?)?;
+    let key_sum_len = params.heads.checked_mul(head_dim)?;
+
+    if input.len() != total
+        || output.len() != total
+        || workspace.q.len() != total
+        || workspace.k.len() != total
+        || workspace.v.len() != total
+        || workspace.context.len() != total
+        || workspace.state_kv.len() < state_len
+        || workspace.key_sums.len() < key_sum_len
+    {
+        return None;
+    }
+
+    Some(())
+}
+
+fn validate_linear_attention_step_shapes(
+    input_row: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: &LinearAttentionStepWorkspace<'_>,
+    state: &LinearAttentionState<'_>,
+    output_row: &[i16],
+) -> Option<()> {
+    if !params.causal || params.d_model == 0 || params.heads == 0 {
+        return None;
+    }
+
+    if !params.d_model.is_multiple_of(params.heads) {
+        return None;
+    }
+
+    if params.q.input_dim != params.d_model
+        || params.k.input_dim != params.d_model
+        || params.v.input_dim != params.d_model
+        || params.o.input_dim != params.d_model
+        || params.q.output_dim != params.d_model
+        || params.k.output_dim != params.d_model
+        || params.v.output_dim != params.d_model
+        || params.o.output_dim != params.d_model
+        || !params.q.is_valid()
+        || !params.k.is_valid()
+        || !params.v.is_valid()
+        || !params.o.is_valid()
+    {
+        return None;
+    }
+
+    let (state_len, key_sum_len) = linear_attention_state_lengths(params.d_model, params.heads)?;
+    if input_row.len() != params.d_model
+        || output_row.len() != params.d_model
+        || workspace.q.len() != params.d_model
+        || workspace.k.len() != params.d_model
+        || workspace.v.len() != params.d_model
+        || workspace.context.len() != params.d_model
+        || state.state_kv.len() < state_len
+        || state.key_sums.len() < key_sum_len
+    {
+        return None;
+    }
+
+    Some(())
+}
+
+fn validate_linear_attention_ttt_step_shapes(
+    input_row: &[i16],
+    params: SelfAttentionI16Params<'_>,
+    workspace: &LinearAttentionTttStepWorkspace<'_>,
+    state: &LinearAttentionState<'_>,
+    output_row: &[i16],
+    learning_rate_shift: u8,
+) -> Option<()> {
+    if !params.causal
+        || params.d_model == 0
+        || params.heads == 0
+        || learning_rate_shift > MAX_RIGHT_SHIFT
+    {
+        return None;
+    }
+
+    if !params.d_model.is_multiple_of(params.heads) {
+        return None;
+    }
+
+    if params.q.input_dim != params.d_model
+        || params.k.input_dim != params.d_model
+        || params.v.input_dim != params.d_model
+        || params.o.input_dim != params.d_model
+        || params.q.output_dim != params.d_model
+        || params.k.output_dim != params.d_model
+        || params.v.output_dim != params.d_model
+        || params.o.output_dim != params.d_model
+        || !params.q.is_valid()
+        || !params.k.is_valid()
+        || !params.v.is_valid()
+        || !params.o.is_valid()
+    {
+        return None;
+    }
+
+    let (state_len, key_sum_len) = linear_attention_state_lengths(params.d_model, params.heads)?;
+    if input_row.len() != params.d_model
+        || output_row.len() != params.d_model
+        || workspace.q.len() != params.d_model
+        || workspace.k.len() != params.d_model
+        || workspace.v.len() != params.d_model
+        || workspace.context.len() != params.d_model
+        || workspace.prediction.len() != params.d_model
+        || state.state_kv.len() < state_len
+        || state.key_sums.len() < key_sum_len
+    {
+        return None;
+    }
+
+    Some(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{LinearI16I8Params, RESIDUAL_Q15_SCALE};
     use proptest::prelude::*;
 
+    const IDENTITY_2: [i8; 4] = [1, 0, 0, 1];
     const IDENTITY_4: [i8; 16] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+    fn identity_params_2() -> LinearI16I8Params<'static> {
+        static SCALES: [crate::FixedScale; 2] = [RESIDUAL_Q15_SCALE; 2];
+
+        LinearI16I8Params {
+            weights: &IDENTITY_2,
+            bias: None,
+            scales: &SCALES,
+            input_dim: 2,
+            output_dim: 2,
+        }
+    }
 
     fn identity_params_4() -> LinearI16I8Params<'static> {
         static SCALES: [crate::FixedScale; 4] = [RESIDUAL_Q15_SCALE; 4];
@@ -754,6 +1433,365 @@ mod tests {
 
         assert!(self_attention_i16_q15_checked(&input, params, workspace, &mut output).is_some());
         assert_eq!(output, input);
+    }
+
+    #[test]
+    fn linear_attention_identity_single_token_round_trips_through_projections() {
+        let input = [100_i16, -200, 300, -400];
+        let params = SelfAttentionI16Params {
+            q: identity_params_4(),
+            k: identity_params_4(),
+            v: identity_params_4(),
+            o: identity_params_4(),
+            seq_len: 1,
+            d_model: 4,
+            heads: 1,
+            causal: true,
+        };
+        let mut q = [0_i16; 4];
+        let mut k = [0_i16; 4];
+        let mut v = [0_i16; 4];
+        let mut context = [0_i16; 4];
+        let mut state = [0_i64; 16];
+        let mut key_sums = [0_i64; 4];
+        let workspace = LinearAttentionWorkspace {
+            q: &mut q,
+            k: &mut k,
+            v: &mut v,
+            context: &mut context,
+            state_kv: &mut state,
+            key_sums: &mut key_sums,
+        };
+        let mut output = [0_i16; 4];
+
+        assert!(linear_attention_i16_q15_checked(&input, params, workspace, &mut output).is_some());
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn linear_attention_causal_prefix_blocks_future_value() {
+        let input = [100_i16, 0, 0, 0, 0, 1000, 0, 0];
+        let params = SelfAttentionI16Params {
+            q: identity_params_4(),
+            k: identity_params_4(),
+            v: identity_params_4(),
+            o: identity_params_4(),
+            seq_len: 2,
+            d_model: 4,
+            heads: 1,
+            causal: true,
+        };
+        let mut q = [0_i16; 8];
+        let mut k = [0_i16; 8];
+        let mut v = [0_i16; 8];
+        let mut context = [0_i16; 8];
+        let mut state = [0_i64; 16];
+        let mut key_sums = [0_i64; 4];
+        let workspace = LinearAttentionWorkspace {
+            q: &mut q,
+            k: &mut k,
+            v: &mut v,
+            context: &mut context,
+            state_kv: &mut state,
+            key_sums: &mut key_sums,
+        };
+        let mut output = [0_i16; 8];
+
+        assert!(linear_attention_i16_q15_checked(&input, params, workspace, &mut output).is_some());
+        assert_eq!(&output[..4], &input[..4]);
+        assert_ne!(&output[4..], &input[..4]);
+    }
+
+    #[test]
+    fn incremental_linear_attention_matches_full_causal_linear_attention() {
+        let input = [
+            100_i16, -200, 300, -400, //
+            250, 100, -50, 75, //
+            -125, 225, 325, -425,
+        ];
+        let params = SelfAttentionI16Params {
+            q: identity_params_4(),
+            k: identity_params_4(),
+            v: identity_params_4(),
+            o: identity_params_4(),
+            seq_len: 3,
+            d_model: 4,
+            heads: 1,
+            causal: true,
+        };
+
+        let mut full_q = [0_i16; 12];
+        let mut full_k = [0_i16; 12];
+        let mut full_v = [0_i16; 12];
+        let mut full_context = [0_i16; 12];
+        let mut full_state = [0_i64; 16];
+        let mut full_key_sums = [0_i64; 4];
+        let full_workspace = LinearAttentionWorkspace {
+            q: &mut full_q,
+            k: &mut full_k,
+            v: &mut full_v,
+            context: &mut full_context,
+            state_kv: &mut full_state,
+            key_sums: &mut full_key_sums,
+        };
+        let mut full_output = [0_i16; 12];
+        assert!(
+            linear_attention_i16_q15_checked(&input, params, full_workspace, &mut full_output)
+                .is_some()
+        );
+
+        let mut stream_q = [0_i16; 4];
+        let mut stream_k = [0_i16; 4];
+        let mut stream_v = [0_i16; 4];
+        let mut stream_context = [0_i16; 4];
+        let mut stream_state = [0_i64; 16];
+        let mut stream_key_sums = [0_i64; 4];
+        clear_linear_attention_state_checked(
+            4,
+            1,
+            LinearAttentionState {
+                state_kv: &mut stream_state,
+                key_sums: &mut stream_key_sums,
+            },
+        )
+        .expect("clear state");
+        let mut stream_output = [0_i16; 12];
+        for token in 0..3 {
+            let row_start = token * 4;
+            let row_end = row_start + 4;
+            linear_attention_step_i16_q15_checked(
+                &input[row_start..row_end],
+                params,
+                LinearAttentionStepWorkspace {
+                    q: &mut stream_q,
+                    k: &mut stream_k,
+                    v: &mut stream_v,
+                    context: &mut stream_context,
+                },
+                LinearAttentionState {
+                    state_kv: &mut stream_state,
+                    key_sums: &mut stream_key_sums,
+                },
+                &mut stream_output[row_start..row_end],
+            )
+            .expect("streaming step");
+        }
+
+        assert_eq!(stream_output, full_output);
+    }
+
+    #[test]
+    fn linear_attention_ttt_delta_update_teaches_state_current_value() {
+        let key = [100_i16, -50];
+        let value = [4000_i16, -2000];
+        let mut state = [0_i64; 4];
+        let mut key_sums = [
+            i64::from(linear_attention_phi_i16_u32(key[0])),
+            i64::from(linear_attention_phi_i16_u32(key[1])),
+        ];
+        let mut prediction = [999_i16; 2];
+
+        let delta_l1 = linear_attention_ttt_delta_state_i16_q15_checked(
+            &key,
+            &value,
+            LinearAttentionState {
+                state_kv: &mut state,
+                key_sums: &mut key_sums,
+            },
+            2,
+            0,
+            &mut prediction,
+        )
+        .expect("ttt update");
+
+        assert_eq!(prediction, [0, 0]);
+        assert!(delta_l1 > 0);
+
+        let mut updated_prediction = [0_i16; 2];
+        project_linear_attention_state_i16_checked(
+            &key,
+            &state,
+            &key_sums,
+            2,
+            &mut updated_prediction,
+        )
+        .expect("updated projection");
+        assert_eq!(updated_prediction, value);
+    }
+
+    #[test]
+    fn linear_attention_ttt_delta_rejects_invalid_shapes() {
+        let key = [1_i16, 2];
+        let value = [3_i16, 4];
+        let mut state = [0_i64; 3];
+        let mut key_sums = [1_i64, 1];
+        let mut prediction = [0_i16; 2];
+
+        assert_eq!(
+            linear_attention_ttt_delta_state_i16_q15_checked(
+                &key,
+                &value,
+                LinearAttentionState {
+                    state_kv: &mut state,
+                    key_sums: &mut key_sums,
+                },
+                2,
+                0,
+                &mut prediction,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn linear_attention_ttt_step_mutates_state_before_projection() {
+        let input = [
+            100_i16, 0, 0, 0, //
+            0, 1000, 0, 0,
+        ];
+        let params = SelfAttentionI16Params {
+            q: identity_params_4(),
+            k: identity_params_4(),
+            v: identity_params_4(),
+            o: identity_params_4(),
+            seq_len: 1,
+            d_model: 4,
+            heads: 1,
+            causal: true,
+        };
+
+        let mut normal_q = [0_i16; 4];
+        let mut normal_k = [0_i16; 4];
+        let mut normal_v = [0_i16; 4];
+        let mut normal_context = [0_i16; 4];
+        let mut normal_state = [0_i64; 16];
+        let mut normal_key_sums = [0_i64; 4];
+        let mut normal_output = [0_i16; 8];
+        for token in 0..2 {
+            let row_start = token * 4;
+            let row_end = row_start + 4;
+            linear_attention_step_i16_q15_checked(
+                &input[row_start..row_end],
+                params,
+                LinearAttentionStepWorkspace {
+                    q: &mut normal_q,
+                    k: &mut normal_k,
+                    v: &mut normal_v,
+                    context: &mut normal_context,
+                },
+                LinearAttentionState {
+                    state_kv: &mut normal_state,
+                    key_sums: &mut normal_key_sums,
+                },
+                &mut normal_output[row_start..row_end],
+            )
+            .expect("normal stream");
+        }
+
+        let mut ttt_q = [0_i16; 4];
+        let mut ttt_k = [0_i16; 4];
+        let mut ttt_v = [0_i16; 4];
+        let mut ttt_context = [0_i16; 4];
+        let mut ttt_prediction = [0_i16; 4];
+        let mut ttt_state = [0_i64; 16];
+        let mut ttt_key_sums = [0_i64; 4];
+        let mut ttt_output = [0_i16; 8];
+        let mut total_delta_l1 = 0_u64;
+        for token in 0..2 {
+            let row_start = token * 4;
+            let row_end = row_start + 4;
+            let delta_l1 = linear_attention_ttt_step_i16_q15_checked(
+                &input[row_start..row_end],
+                params,
+                LinearAttentionTttStepWorkspace {
+                    q: &mut ttt_q,
+                    k: &mut ttt_k,
+                    v: &mut ttt_v,
+                    context: &mut ttt_context,
+                    prediction: &mut ttt_prediction,
+                },
+                LinearAttentionState {
+                    state_kv: &mut ttt_state,
+                    key_sums: &mut ttt_key_sums,
+                },
+                &mut ttt_output[row_start..row_end],
+                0,
+            )
+            .expect("ttt stream");
+            total_delta_l1 = total_delta_l1.checked_add(delta_l1).expect("delta sum");
+        }
+
+        assert!(total_delta_l1 > 0);
+        assert_ne!(&ttt_state, &normal_state);
+        assert_ne!(&ttt_output[4..], &normal_output[4..]);
+    }
+
+    #[test]
+    fn linear_attention_allows_non_power_of_four_head_dim() {
+        let input = [321_i16, -123];
+        let params = SelfAttentionI16Params {
+            q: identity_params_2(),
+            k: identity_params_2(),
+            v: identity_params_2(),
+            o: identity_params_2(),
+            seq_len: 1,
+            d_model: 2,
+            heads: 1,
+            causal: true,
+        };
+        let mut q = [0_i16; 2];
+        let mut k = [0_i16; 2];
+        let mut v = [0_i16; 2];
+        let mut context = [0_i16; 2];
+        let mut state = [0_i64; 4];
+        let mut key_sums = [0_i64; 2];
+        let workspace = LinearAttentionWorkspace {
+            q: &mut q,
+            k: &mut k,
+            v: &mut v,
+            context: &mut context,
+            state_kv: &mut state,
+            key_sums: &mut key_sums,
+        };
+        let mut output = [0_i16; 2];
+
+        assert!(linear_attention_i16_q15_checked(&input, params, workspace, &mut output).is_some());
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn linear_attention_rejects_too_small_state_workspace() {
+        let input = [100_i16, -200, 300, -400];
+        let params = SelfAttentionI16Params {
+            q: identity_params_4(),
+            k: identity_params_4(),
+            v: identity_params_4(),
+            o: identity_params_4(),
+            seq_len: 1,
+            d_model: 4,
+            heads: 1,
+            causal: true,
+        };
+        let mut q = [0_i16; 4];
+        let mut k = [0_i16; 4];
+        let mut v = [0_i16; 4];
+        let mut context = [0_i16; 4];
+        let mut state = [0_i64; 15];
+        let mut key_sums = [0_i64; 4];
+        let workspace = LinearAttentionWorkspace {
+            q: &mut q,
+            k: &mut k,
+            v: &mut v,
+            context: &mut context,
+            state_kv: &mut state,
+            key_sums: &mut key_sums,
+        };
+        let mut output = [0_i16; 4];
+
+        assert_eq!(
+            linear_attention_i16_q15_checked(&input, params, workspace, &mut output),
+            None
+        );
     }
 
     #[test]

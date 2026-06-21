@@ -22,6 +22,28 @@ pub fn saturating_add_i16(left: i16, right: i16) -> i16 {
     left.saturating_add(right)
 }
 
+pub fn residual_add_i16_q15_checked(
+    skip: &[i16],
+    block: &[i16],
+    output: &mut [i16],
+) -> Option<usize> {
+    if skip.len() != block.len() || skip.len() != output.len() {
+        return None;
+    }
+
+    let mut saturation_count = 0_usize;
+    for ((&skip, &block), out) in skip.iter().zip(block.iter()).zip(output.iter_mut()) {
+        let wide = i32::from(skip) + i32::from(block);
+        if wide < i32::from(i16::MIN) || wide > i32::from(i16::MAX) {
+            saturation_count = saturation_count.checked_add(1)?;
+        }
+
+        *out = saturating_add_i16(skip, block);
+    }
+
+    Some(saturation_count)
+}
+
 pub fn round_shift_rhu_i64(value: i64, right_shift: u8) -> i64 {
     if right_shift == 0 {
         return value;
@@ -86,6 +108,23 @@ mod tests {
 
         assert_eq!(requantize_i32_to_i16(100, scale), i16::MAX);
         assert_eq!(requantize_i32_to_i16(-100, scale), i16::MIN);
+    }
+
+    #[test]
+    fn residual_add_counts_saturations_and_rejects_shape_mismatch() {
+        let skip = [32_000_i16, -32_000, 100];
+        let block = [1_000_i16, -1_000, -25];
+        let mut output = [0_i16; 3];
+
+        assert_eq!(
+            residual_add_i16_q15_checked(&skip, &block, &mut output),
+            Some(2)
+        );
+        assert_eq!(output, [i16::MAX, i16::MIN, 75]);
+        assert_eq!(
+            residual_add_i16_q15_checked(&skip[..2], &block, &mut output),
+            None
+        );
     }
 
     #[test]

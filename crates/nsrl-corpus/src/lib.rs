@@ -6,6 +6,7 @@ use std::fmt::Write as _;
 use std::io::{self, BufRead, Read, Write};
 
 pub const SCHEMA: &str = "nsrl.corpus_trace.v1";
+pub const SIMPLEWIKI_EXTRACT_SCHEMA: &str = "nsrl.simplewiki_extract_trace.v1";
 pub const TOKEN_SCHEMA: &str = "nsrl.token_trace.v1";
 pub const LEXEME_TOKEN_SCHEMA: &str = "nsrl.lexeme_token_trace.v1";
 pub const AUTHORITY: &str = "deterministic_corpus_preparation";
@@ -14,6 +15,7 @@ pub const LEXEME_TOKEN_AUTHORITY: &str = "deterministic_lexeme_tokenization";
 pub const TOKENIZER_ID: &str = "byte_identity_u8_v1";
 pub const ASCII_LOWER_TOKENIZER_ID: &str = "byte_ascii_lower_text_u8_v1";
 pub const LEXEME_TOKENIZER_ID: &str = "lexeme_ascii_lower_u16_v1";
+pub const LEXEME_PAGE_BOUNDARY: &str = "nsrlpageboundary";
 pub const SHAKESPEARE_SOURCE_ID: &str = "gutenberg_ebook_100";
 pub const SHAKESPEARE_SOURCE_URL: &str = "https://www.gutenberg.org/cache/epub/100/pg100.txt";
 pub const SIMPLEWIKI_SOURCE_ID: &str = "simplewiki_latest_pages_articles";
@@ -108,6 +110,7 @@ impl Default for LexemeTokenizeConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexemeInputProfile {
     Plain,
+    PlainWithBoundaries,
     ShakespeareGutenberg,
 }
 
@@ -115,12 +118,27 @@ pub enum LexemeInputProfile {
 pub enum LexemeVocabProfile {
     Frequency,
     Balanced,
+    Fixed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CorpusTrace {
     pub shakespeare_input_bytes: usize,
     pub shakespeare_output_bytes: usize,
+    pub simplewiki_input_bytes: usize,
+    pub simplewiki_pages_seen: usize,
+    pub simplewiki_pages_accepted: usize,
+    pub simplewiki_pages_skipped_redirect: usize,
+    pub simplewiki_pages_skipped_namespace: usize,
+    pub simplewiki_pages_skipped_empty: usize,
+    pub output_bytes: usize,
+    pub output_lines: usize,
+    pub output_hash: u64,
+    pub max_simplewiki_pages: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimpleWikiExtractTrace {
     pub simplewiki_input_bytes: usize,
     pub simplewiki_pages_seen: usize,
     pub simplewiki_pages_accepted: usize,
@@ -234,6 +252,35 @@ pub fn prepare_corpus<R: Read, B: BufRead, W: Write>(
     Ok(CorpusTrace {
         shakespeare_input_bytes,
         shakespeare_output_bytes,
+        simplewiki_input_bytes: wiki.input_bytes,
+        simplewiki_pages_seen: wiki.pages_seen,
+        simplewiki_pages_accepted: wiki.pages_accepted,
+        simplewiki_pages_skipped_redirect: wiki.pages_skipped_redirect,
+        simplewiki_pages_skipped_namespace: wiki.pages_skipped_namespace,
+        simplewiki_pages_skipped_empty: wiki.pages_skipped_empty,
+        output_bytes: corpus.len(),
+        output_lines: corpus.lines().count(),
+        output_hash: hash_bytes(corpus.as_bytes()),
+        max_simplewiki_pages: config.max_simplewiki_pages,
+    })
+}
+
+pub fn extract_simplewiki_corpus<B: BufRead, W: Write>(
+    simplewiki_xml: B,
+    output: &mut W,
+    config: CorpusConfig,
+) -> Result<SimpleWikiExtractTrace, CorpusError> {
+    let wiki = extract_simplewiki_text(simplewiki_xml, config.max_simplewiki_pages)?;
+    let mut corpus = String::new();
+    corpus.push_str("<|source:simplewiki|>\n");
+    corpus.push_str(&wiki.text);
+    if !corpus.ends_with('\n') {
+        corpus.push('\n');
+    }
+
+    output.write_all(corpus.as_bytes())?;
+
+    Ok(SimpleWikiExtractTrace {
         simplewiki_input_bytes: wiki.input_bytes,
         simplewiki_pages_seen: wiki.pages_seen,
         simplewiki_pages_accepted: wiki.pages_accepted,
@@ -388,6 +435,105 @@ pub fn tokenize_lexeme_corpus<R: Read, TW: Write, VW: Write>(
     })
 }
 
+pub fn tokenize_lexeme_corpus_with_fixed_vocab<R: Read, TW: Write>(
+    corpus: &mut R,
+    tokens_out: &mut TW,
+    vocab_tsv: &[u8],
+    mut config: LexemeTokenizeConfig,
+) -> Result<LexemeTokenTrace, CorpusError> {
+    if config.seq_len == 0 || config.stride == 0 {
+        return Err(CorpusError::InvalidInput(
+            "lexeme tokenization requires positive seq_len and stride",
+        ));
+    }
+
+    let vocab = parse_lexeme_vocab_tsv(vocab_tsv)?;
+    config.max_vocab = 256 + vocab.len();
+    config.vocab_profile = LexemeVocabProfile::Fixed;
+    config.vocab_frequency_cap = 0;
+
+    let mut bytes = Vec::new();
+    corpus.read_to_end(&mut bytes)?;
+    let semantic_bytes = lexeme_input_bytes_for_profile(&bytes, config.input_profile);
+    let normalized = ascii_lower_lexeme_tokens(&semantic_bytes);
+    let scan = scan_ascii_lower_lexeme_counts(&normalized, config.preview_tokens);
+    let vocab_bytes = lexeme_vocab_tsv_bytes(&vocab);
+    let encoded = encode_lexeme_tokens(&normalized, &vocab);
+
+    write_u16_tokens_le(&encoded.tokens, tokens_out)?;
+
+    let window_stats = compute_window_stats_u16(&encoded.tokens, config);
+    let preview_len = config
+        .preview_tokens
+        .min(config.seq_len)
+        .min(encoded.tokens.len());
+    let first_input_preview = encoded
+        .tokens
+        .iter()
+        .copied()
+        .take(preview_len)
+        .collect::<Vec<_>>();
+    let first_target_preview = if encoded.tokens.len() > 1 {
+        encoded
+            .tokens
+            .iter()
+            .copied()
+            .skip(1)
+            .take(preview_len)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    Ok(LexemeTokenTrace {
+        input_bytes: bytes.len(),
+        normalized_bytes: normalized.len(),
+        lexeme_count: scan.lexeme_count,
+        output_bytes: encoded.tokens.len() * 2,
+        token_count: encoded.tokens.len(),
+        vocab_size: 256 + vocab.len(),
+        reserved_byte_tokens: 256,
+        vocab_entries: vocab.len(),
+        fallback_token_count: encoded.fallback_token_count,
+        known_lexeme_token_count: encoded.known_lexeme_token_count,
+        seq_len: config.seq_len,
+        stride: config.stride,
+        max_windows: config.max_windows,
+        max_vocab: config.max_vocab,
+        input_profile: config.input_profile,
+        vocab_profile: config.vocab_profile,
+        vocab_frequency_cap: config.vocab_frequency_cap,
+        windows: window_stats.windows,
+        uncovered_tail_tokens: window_stats.uncovered_tail_tokens,
+        token_hash: hash_u16_tokens(&encoded.tokens),
+        vocab_hash: hash_bytes(&vocab_bytes),
+        window_hash: window_stats.hash,
+        first_input_preview,
+        first_target_preview,
+        first_lexeme_preview: scan.first_lexeme_preview,
+    })
+}
+
+pub fn encode_lexeme_prompt_tokens(input: &[u8], lookup: &HashMap<String, u16>) -> Vec<u16> {
+    let normalized = ascii_lower_lexeme_tokens(input);
+    let mut tokens = Vec::new();
+    for_each_ascii_lower_lexeme(&normalized, |lexeme| {
+        if let Ok(text) = std::str::from_utf8(lexeme)
+            && let Some(&id) = lookup.get(text)
+        {
+            tokens.push(id);
+            return;
+        }
+
+        tokens.extend(lexeme.iter().map(|&byte| u16::from(byte)));
+    });
+
+    if tokens.is_empty() {
+        tokens.push(u16::from(b' '));
+    }
+
+    tokens
+}
+
 pub fn clean_shakespeare_text(input: &str) -> String {
     let cleaned = clean_gutenberg_text(input);
     strip_shakespeare_collection_front_matter(&cleaned).to_string()
@@ -403,9 +549,15 @@ pub fn clean_wiki_text(input: &str) -> String {
     let without_refs = strip_tag_blocks(&decoded, "ref");
     let without_tables = strip_balanced(&without_refs, "{|", "|}");
     let without_templates = strip_balanced(&without_tables, "{{", "}}");
-    let links = rewrite_wiki_links(&without_templates);
+    let without_media = drop_wiki_media_lines(&without_templates);
+    let links = rewrite_wiki_links(&without_media);
     let tags = strip_angle_tags(&links);
-    let headings = tags.replace('=', " ");
+    let markup = tags
+        .replace("'''", "")
+        .replace("''", "")
+        .replace("[[", "")
+        .replace("]]", "");
+    let headings = markup.replace('=', " ");
     normalize_text(&headings)
 }
 
@@ -441,6 +593,68 @@ impl CorpusTrace {
         push_usize_field(&mut out, "input_bytes", self.shakespeare_input_bytes);
         comma(&mut out);
         push_usize_field(&mut out, "output_bytes", self.shakespeare_output_bytes);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"simplewiki\":{");
+        push_usize_field(&mut out, "input_bytes", self.simplewiki_input_bytes);
+        comma(&mut out);
+        push_usize_field(&mut out, "pages_seen", self.simplewiki_pages_seen);
+        comma(&mut out);
+        push_usize_field(&mut out, "pages_accepted", self.simplewiki_pages_accepted);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "pages_skipped_redirect",
+            self.simplewiki_pages_skipped_redirect,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "pages_skipped_namespace",
+            self.simplewiki_pages_skipped_namespace,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "pages_skipped_empty",
+            self.simplewiki_pages_skipped_empty,
+        );
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"output\":{");
+        push_usize_field(&mut out, "bytes", self.output_bytes);
+        comma(&mut out);
+        push_usize_field(&mut out, "lines", self.output_lines);
+        comma(&mut out);
+        push_hash_field(&mut out, "hash", self.output_hash);
+        out.push('}');
+        comma(&mut out);
+        push_string_array_field(&mut out, "known_non_claims", &KNOWN_NON_CLAIMS);
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+impl SimpleWikiExtractTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", SIMPLEWIKI_EXTRACT_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", AUTHORITY);
+        comma(&mut out);
+        out.push_str("\"sources\":[");
+        push_source_object(
+            &mut out,
+            SIMPLEWIKI_SOURCE_ID,
+            SIMPLEWIKI_SOURCE_URL,
+            "decompressed_mediawiki_xml",
+        );
+        out.push(']');
+        comma(&mut out);
+        out.push_str("\"config\":{");
+        push_optional_usize_field(&mut out, "max_simplewiki_pages", self.max_simplewiki_pages);
         out.push('}');
         comma(&mut out);
         out.push_str("\"simplewiki\":{");
@@ -740,7 +954,7 @@ fn strip_corpus_marker_lines(input: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(input.len());
     for line in input.split_inclusive(|&byte| byte == b'\n') {
         let trimmed = trim_ascii_line_start(line);
-        if trimmed.starts_with(b"<|source:") || trimmed.starts_with(b"<|page:") {
+        if is_corpus_marker_line(trimmed) {
             continue;
         }
         out.extend_from_slice(line);
@@ -748,14 +962,43 @@ fn strip_corpus_marker_lines(input: &[u8]) -> Vec<u8> {
     out
 }
 
+fn is_corpus_marker_line(trimmed_line: &[u8]) -> bool {
+    if !trimmed_line.starts_with(b"<|") {
+        return false;
+    }
+    let body = trimmed_line
+        .split(|&byte| byte == b'\n' || byte == b'\r')
+        .next()
+        .unwrap_or(trimmed_line);
+    body.ends_with(b"|>")
+}
+
 fn lexeme_input_bytes_for_profile(input: &[u8], profile: LexemeInputProfile) -> Vec<u8> {
     match profile {
         LexemeInputProfile::Plain => strip_corpus_marker_lines(input),
+        LexemeInputProfile::PlainWithBoundaries => replace_corpus_marker_lines_with_boundary(input),
         LexemeInputProfile::ShakespeareGutenberg => {
             let text = String::from_utf8_lossy(input);
             clean_shakespeare_text(&text).into_bytes()
         }
     }
+}
+
+fn replace_corpus_marker_lines_with_boundary(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len());
+    for line in input.split_inclusive(|&byte| byte == b'\n') {
+        let trimmed = trim_ascii_line_start(line);
+        if is_corpus_marker_line(trimmed) {
+            if !out.is_empty() && !out.ends_with(b"\n") {
+                out.push(b'\n');
+            }
+            out.extend_from_slice(LEXEME_PAGE_BOUNDARY.as_bytes());
+            out.push(b'\n');
+            continue;
+        }
+        out.extend_from_slice(line);
+    }
+    out
 }
 
 fn strip_shakespeare_collection_front_matter(input: &str) -> &str {
@@ -865,6 +1108,7 @@ fn lexeme_vocab_rank_score(count: u32, profile: LexemeVocabProfile, frequency_ca
     match profile {
         LexemeVocabProfile::Frequency => count,
         LexemeVocabProfile::Balanced => capped_sqrt_count_score(count, frequency_cap),
+        LexemeVocabProfile::Fixed => count,
     }
 }
 
@@ -927,6 +1171,63 @@ fn encode_lexeme_tokens(input: &[u8], vocab: &[LexemeVocabEntry]) -> EncodedLexe
         fallback_token_count,
         known_lexeme_token_count,
     }
+}
+
+fn parse_lexeme_vocab_tsv(input: &[u8]) -> Result<Vec<LexemeVocabEntry>, CorpusError> {
+    let text = std::str::from_utf8(input)
+        .map_err(|_| CorpusError::InvalidInput("lexeme vocab must be valid UTF-8"))?;
+    let mut lines = text.lines();
+    match lines.next() {
+        Some("token_id\tlexeme\tcount") => {}
+        _ => {
+            return Err(CorpusError::InvalidInput(
+                "lexeme vocab must start with token_id<TAB>lexeme<TAB>count",
+            ));
+        }
+    }
+
+    let mut vocab = Vec::new();
+    for (index, line) in lines.enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut parts = line.splitn(3, '\t');
+        let id_text = parts.next().ok_or(CorpusError::InvalidInput(
+            "lexeme vocab row is missing token_id",
+        ))?;
+        let lexeme_text = parts.next().ok_or(CorpusError::InvalidInput(
+            "lexeme vocab row is missing lexeme",
+        ))?;
+        let count_text = parts.next().ok_or(CorpusError::InvalidInput(
+            "lexeme vocab row is missing count",
+        ))?;
+        let id = id_text
+            .parse::<u16>()
+            .map_err(|_| CorpusError::InvalidInput("lexeme vocab token_id must be u16"))?;
+        let expected_id = 256_usize + vocab.len();
+        if usize::from(id) != expected_id {
+            return Err(CorpusError::InvalidInput(
+                "lexeme vocab token_id values must be contiguous from 256",
+            ));
+        }
+        let count = count_text
+            .parse::<u32>()
+            .map_err(|_| CorpusError::InvalidInput("lexeme vocab count must be u32"))?;
+        if lexeme_text.is_empty() {
+            return Err(CorpusError::InvalidInput(
+                "lexeme vocab lexeme cannot be empty",
+            ));
+        }
+        if index >= usize::from(u16::MAX) - 256 {
+            return Err(CorpusError::InvalidInput("lexeme vocab is too large"));
+        }
+        vocab.push(LexemeVocabEntry {
+            id,
+            lexeme: lexeme_text.as_bytes().to_vec(),
+            count,
+        });
+    }
+    Ok(vocab)
 }
 
 fn for_each_ascii_lower_lexeme<F>(input: &[u8], mut visit: F)
@@ -1089,6 +1390,32 @@ fn ascii_lower_lexeme_char(ch: char) -> Option<u8> {
     match ch {
         'A'..='Z' => Some(ch.to_ascii_lowercase() as u8),
         'a'..='z' | '.' | ',' | ';' | ':' | '?' | '!' => Some(ch as u8),
+        'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'Ā' | 'ā' | 'Ă'
+        | 'ă' | 'Ą' | 'ą' => Some(b'a'),
+        'Æ' | 'æ' => Some(b'a'),
+        'Ç' | 'ç' | 'Ć' | 'ć' | 'Ĉ' | 'ĉ' | 'Ċ' | 'ċ' | 'Č' | 'č' => Some(b'c'),
+        'Ð' | 'ð' | 'Ď' | 'ď' | 'Đ' | 'đ' => Some(b'd'),
+        'È' | 'É' | 'Ê' | 'Ë' | 'è' | 'é' | 'ê' | 'ë' | 'Ē' | 'ē' | 'Ĕ' | 'ĕ' | 'Ė' | 'ė' | 'Ę'
+        | 'ę' | 'Ě' | 'ě' => Some(b'e'),
+        'Ĝ' | 'ĝ' | 'Ğ' | 'ğ' | 'Ġ' | 'ġ' | 'Ģ' | 'ģ' => Some(b'g'),
+        'Ĥ' | 'ĥ' | 'Ħ' | 'ħ' => Some(b'h'),
+        'Ì' | 'Í' | 'Î' | 'Ï' | 'ì' | 'í' | 'î' | 'ï' | 'Ĩ' | 'ĩ' | 'Ī' | 'ī' | 'Ĭ' | 'ĭ' | 'Į'
+        | 'į' | 'İ' => Some(b'i'),
+        'Ĵ' | 'ĵ' => Some(b'j'),
+        'Ķ' | 'ķ' => Some(b'k'),
+        'Ĺ' | 'ĺ' | 'Ļ' | 'ļ' | 'Ľ' | 'ľ' | 'Ŀ' | 'ŀ' | 'Ł' | 'ł' => Some(b'l'),
+        'Ñ' | 'ñ' | 'Ń' | 'ń' | 'Ņ' | 'ņ' | 'Ň' | 'ň' => Some(b'n'),
+        'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' | 'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'Ō' | 'ō' | 'Ŏ'
+        | 'ŏ' | 'Ő' | 'ő' => Some(b'o'),
+        'Œ' | 'œ' => Some(b'o'),
+        'Ŕ' | 'ŕ' | 'Ŗ' | 'ŗ' | 'Ř' | 'ř' => Some(b'r'),
+        'Ś' | 'ś' | 'Ŝ' | 'ŝ' | 'Ş' | 'ş' | 'Š' | 'š' | 'ſ' | 'ß' => Some(b's'),
+        'Ţ' | 'ţ' | 'Ť' | 'ť' | 'Ŧ' | 'ŧ' => Some(b't'),
+        'Ù' | 'Ú' | 'Û' | 'Ü' | 'ù' | 'ú' | 'û' | 'ü' | 'Ũ' | 'ũ' | 'Ū' | 'ū' | 'Ŭ' | 'ŭ' | 'Ů'
+        | 'ů' | 'Ű' | 'ű' | 'Ų' | 'ų' => Some(b'u'),
+        'Ŵ' | 'ŵ' => Some(b'w'),
+        'Ý' | 'ý' | 'ÿ' | 'Ŷ' | 'ŷ' | 'Ÿ' => Some(b'y'),
+        'Ź' | 'ź' | 'Ż' | 'ż' | 'Ž' | 'ž' => Some(b'z'),
         '\'' | '\u{2018}' | '\u{2019}' | '\u{02bc}' => Some(b'\''),
         '-' | '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' => Some(b'-'),
         _ if ch.is_whitespace() => None,
@@ -1125,6 +1452,7 @@ impl LexemeInputProfile {
     fn profile_name(self) -> &'static str {
         match self {
             Self::Plain => "plain",
+            Self::PlainWithBoundaries => "plain-with-boundaries",
             Self::ShakespeareGutenberg => "shakespeare-gutenberg",
         }
     }
@@ -1132,7 +1460,8 @@ impl LexemeInputProfile {
     fn profile_id(self) -> usize {
         match self {
             Self::Plain => 0,
-            Self::ShakespeareGutenberg => 1,
+            Self::PlainWithBoundaries => 1,
+            Self::ShakespeareGutenberg => 2,
         }
     }
 }
@@ -1142,6 +1471,7 @@ impl LexemeVocabProfile {
         match self {
             Self::Frequency => "frequency",
             Self::Balanced => "balanced",
+            Self::Fixed => "fixed",
         }
     }
 
@@ -1149,6 +1479,7 @@ impl LexemeVocabProfile {
         match self {
             Self::Frequency => 0,
             Self::Balanced => 1,
+            Self::Fixed => 2,
         }
     }
 }
@@ -1424,9 +1755,10 @@ fn rewrite_wiki_links(input: &str) -> String {
         };
         let end = content_start + relative_end;
         let content = &input[content_start..end];
-        if !content.starts_with("File:")
-            && !content.starts_with("Image:")
-            && !content.starts_with("Category:")
+        let lower_content = content.to_ascii_lowercase();
+        if !lower_content.starts_with("file:")
+            && !lower_content.starts_with("image:")
+            && !lower_content.starts_with("category:")
         {
             let display = content.rsplit_once('|').map_or(content, |(_, text)| text);
             out.push_str(display);
@@ -1434,6 +1766,19 @@ fn rewrite_wiki_links(input: &str) -> String {
         index = end + 2;
     }
     out.push_str(&input[index..]);
+    out
+}
+
+fn drop_wiki_media_lines(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for line in input.lines() {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("[[file:") || lower.contains("[[image:") {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
     out
 }
 
@@ -1658,7 +2003,7 @@ mod tests {
 
     #[test]
     fn wiki_markup_is_cleaned_deterministically() {
-        let input = "== Lead ==\n[[Earth|The Earth]] is {{age|old}} &amp; round.<ref>note</ref>\n[[Category:Planets]]";
+        let input = "== '''Lead''' ==\n[[Earth|The Earth]] is {{age|old}} &amp; round.<ref>note</ref>\n[[File:Earth.jpg|thumb|The planet [[Earth]]]]\n[[Category:Planets]]";
 
         assert_eq!(clean_wiki_text(input), "Lead\nThe Earth is & round.");
     }
@@ -1699,6 +2044,40 @@ mod tests {
         assert_eq!(wiki.pages_skipped_redirect, 1);
         assert_eq!(wiki.pages_skipped_empty, 1);
         assert_eq!(wiki.text, "<|page:apple|>\nApple is a fruit.\n\n");
+    }
+
+    #[test]
+    fn simplewiki_corpus_extraction_writes_source_trace() {
+        let xml = br#"
+<mediawiki>
+<page>
+<title>Bee</title>
+<ns>0</ns>
+<revision><text xml:space="preserve">A [[bee]] flies.</text></revision>
+</page>
+</mediawiki>
+"#;
+        let mut output = Vec::new();
+        let trace = extract_simplewiki_corpus(
+            &xml[..],
+            &mut output,
+            CorpusConfig {
+                max_simplewiki_pages: None,
+            },
+        )
+        .expect("extract simplewiki corpus");
+
+        assert_eq!(
+            String::from_utf8(output).expect("utf8"),
+            "<|source:simplewiki|>\n<|page:bee|>\nA bee flies.\n\n"
+        );
+        assert_eq!(trace.simplewiki_pages_accepted, 1);
+        assert_eq!(trace.output_lines, 4);
+        assert!(
+            trace
+                .to_json_line()
+                .contains("\"schema\":\"nsrl.simplewiki_extract_trace.v1\"")
+        );
     }
 
     #[test]
@@ -1898,6 +2277,102 @@ mod tests {
     }
 
     #[test]
+    fn lexeme_prompt_encoding_uses_corpus_normalization() {
+        let mut lookup = HashMap::new();
+        lookup.insert(String::from("king"), 256);
+        lookup.insert(String::from("henry"), 257);
+        lookup.insert(String::from("don't"), 258);
+        lookup.insert(String::from("?"), 259);
+        lookup.insert(String::from("-"), 260);
+
+        let tokens = encode_lexeme_prompt_tokens("King Henry 8 — DON’T?".as_bytes(), &lookup);
+
+        assert_eq!(tokens, vec![256, 257, 260, 258, 259]);
+    }
+
+    #[test]
+    fn lexeme_prompt_encoding_folds_latin_diacritics() {
+        let mut lookup = HashMap::new();
+        lookup.insert(String::from("tannhauser"), 256);
+        lookup.insert(String::from("naive"), 257);
+        lookup.insert(String::from("facade"), 258);
+
+        let tokens = encode_lexeme_prompt_tokens("Tannhäuser naïve façade".as_bytes(), &lookup);
+
+        assert_eq!(tokens, vec![256, 257, 258]);
+    }
+
+    #[test]
+    fn lexeme_tokenizer_fixed_vocab_reuses_existing_token_ids() {
+        let corpus = b"<|source_run:self-synth|>\nQueen crown king.\n<|quality_score:99|>\n";
+        let vocab = b"token_id\tlexeme\tcount\n256\tking\t7\n257\tqueen\t5\n";
+        let mut token_bytes = Vec::new();
+        let trace = tokenize_lexeme_corpus_with_fixed_vocab(
+            &mut &corpus[..],
+            &mut token_bytes,
+            vocab,
+            LexemeTokenizeConfig {
+                seq_len: 4,
+                stride: 1,
+                max_windows: None,
+                preview_tokens: 8,
+                max_vocab: 999,
+                input_profile: LexemeInputProfile::Plain,
+                vocab_profile: LexemeVocabProfile::Balanced,
+                vocab_frequency_cap: 4,
+            },
+        )
+        .expect("fixed vocab tokenize");
+
+        let tokens = decode_u16_le_tokens(&token_bytes);
+        assert_eq!(
+            tokens,
+            vec![
+                257,
+                u16::from(b'c'),
+                u16::from(b'r'),
+                u16::from(b'o'),
+                u16::from(b'w'),
+                u16::from(b'n'),
+                256,
+                u16::from(b'.'),
+            ]
+        );
+        assert_eq!(trace.vocab_size, 258);
+        assert_eq!(trace.max_vocab, 258);
+        assert_eq!(trace.known_lexeme_token_count, 2);
+        assert_eq!(trace.fallback_token_count, 6);
+        assert_eq!(trace.vocab_profile, LexemeVocabProfile::Fixed);
+        assert_eq!(
+            trace.first_lexeme_preview,
+            vec![
+                "queen".to_string(),
+                "crown".to_string(),
+                "king".to_string(),
+                ".".to_string()
+            ]
+        );
+        let json = trace.to_json_line();
+        assert!(json.contains("\"vocab_profile\":\"fixed\""));
+        assert!(json.contains("\"vocab_frequency_cap\":0"));
+    }
+
+    #[test]
+    fn lexeme_tokenizer_fixed_vocab_rejects_non_contiguous_ids() {
+        let vocab = b"token_id\tlexeme\tcount\n257\tqueen\t5\n";
+        let mut token_bytes = Vec::new();
+        let error = tokenize_lexeme_corpus_with_fixed_vocab(
+            &mut &b"queen"[..],
+            &mut token_bytes,
+            vocab,
+            LexemeTokenizeConfig::default(),
+        )
+        .expect_err("non-contiguous vocab id should fail");
+
+        assert!(matches!(error, CorpusError::InvalidInput(_)));
+    }
+
+    #[test]
     fn lexeme_tokenizer_balanced_vocab_reduces_repetition_power() {
         let corpus = b"the the the the the the the the the the the the the the the the the the the the king king king queen queen crown";
         let mut token_bytes = Vec::new();
@@ -1995,6 +2470,49 @@ mod tests {
         let vocab = String::from_utf8(vocab_bytes).unwrap();
         assert!(!vocab.contains("source"));
         assert!(!vocab.contains("page"));
+    }
+
+    #[test]
+    fn lexeme_tokenizer_can_preserve_page_boundaries() {
+        let corpus = b"<|source:simplewiki|>\nEarth orbits\n<|page:boot|>\nBoot device";
+        let mut token_bytes = Vec::new();
+        let mut vocab_bytes = Vec::new();
+        let trace = tokenize_lexeme_corpus(
+            &mut &corpus[..],
+            &mut token_bytes,
+            &mut vocab_bytes,
+            LexemeTokenizeConfig {
+                seq_len: 2,
+                stride: 1,
+                max_windows: None,
+                preview_tokens: 8,
+                max_vocab: 512,
+                input_profile: LexemeInputProfile::PlainWithBoundaries,
+                vocab_profile: LexemeVocabProfile::Frequency,
+                vocab_frequency_cap: 0,
+            },
+        )
+        .expect("lexeme tokenize");
+
+        assert_eq!(trace.input_profile, LexemeInputProfile::PlainWithBoundaries);
+        assert_eq!(
+            trace.first_lexeme_preview,
+            vec![
+                LEXEME_PAGE_BOUNDARY.to_string(),
+                "earth".to_string(),
+                "orbits".to_string(),
+                LEXEME_PAGE_BOUNDARY.to_string(),
+                "boot".to_string(),
+                "device".to_string()
+            ]
+        );
+        let vocab = String::from_utf8(vocab_bytes).unwrap();
+        assert!(vocab.contains(LEXEME_PAGE_BOUNDARY));
+        assert!(!vocab.contains("source"));
+        assert!(!vocab.contains("\tpage\t"));
+        let tokens = decode_u16_le_tokens(&token_bytes);
+        assert_eq!(tokens[0], tokens[3]);
+        assert_ne!(tokens[2], tokens[4]);
     }
 
     #[test]

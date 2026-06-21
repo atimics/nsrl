@@ -1,8 +1,9 @@
 # NSRL Schemas
 
-This file defines the machine-readable trace contracts used by NSRL demos and
-future training runs. Schema rows are JSON Lines: one complete JSON object per
-line, with deterministic field order for byte-for-byte replay checks.
+This file defines the machine-readable trace contracts used by NSRL corpus,
+demo, training, and generation runs. Schema rows are JSON Lines: one complete
+JSON object per line, with deterministic field order for byte-for-byte replay
+checks.
 
 ## `nsrl.corpus_trace.v1`
 
