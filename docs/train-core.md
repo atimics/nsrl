@@ -39,6 +39,26 @@ larger host experiment system. The host crate keeps batch accumulators,
 rollback policy, adaptive shifts, corpus loading, checkpointing, progress JSON,
 and S3 orchestration.
 
+## Batch Primitive
+
+The first batch-training primitive is also extracted:
+
+```rust
+LinearWeightGradientI64Workspace {
+    input_dim,
+    output_dim,
+    sample_count,
+    accumulators,
+    residuals,
+}
+```
+
+The caller owns the i64 accumulator and residual buffers. The no-std functions
+accumulate prescaled outer products and apply averaged i8 updates with the same
+residual-carry behavior used by the Linux trainer. `nsrl-train` still owns the
+`Vec` wrapper for now, but delegates the linear batch-gradient math to
+`nsrl-train-core`.
+
 ## Parity Contract
 
 `nsrl-train` contains a byte-for-byte fixture:

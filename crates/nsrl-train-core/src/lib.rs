@@ -16,7 +16,7 @@ use nsrl_core::{
     gated_mlp_backward_weight_update_i8_checked, gated_mlp_i16_q15_checked,
     linear_attention_i16_q15_checked, linear_backward_input_i16_i8_i16_per_channel_checked,
     linear_backward_weight_update_i8_checked, requantize_i32_to_i16, round_shift_rhu_i64,
-    saturate_i16,
+    saturate_i8, saturate_i16,
 };
 
 pub const BYTE_VOCAB: usize = 256;
@@ -207,6 +207,153 @@ pub struct MiniTransformerStepWorkspace<'a> {
     pub grad_attention_v: &'a mut [i16],
     pub grad_attention_norm_input: &'a mut [i16],
     pub grad_embedding_output: &'a mut [i16],
+}
+
+pub struct LinearWeightGradientI64Workspace<'a> {
+    pub input_dim: usize,
+    pub output_dim: usize,
+    pub sample_count: usize,
+    pub accumulators: &'a mut [i64],
+    pub residuals: &'a mut [i64],
+}
+
+impl LinearWeightGradientI64Workspace<'_> {
+    pub fn is_valid(&self) -> bool {
+        self.input_dim != 0
+            && self.output_dim != 0
+            && self
+                .input_dim
+                .checked_mul(self.output_dim)
+                .is_some_and(|len| self.accumulators.len() == len && self.residuals.len() == len)
+    }
+
+    pub fn clear(&mut self) {
+        self.sample_count = 0;
+        self.accumulators.fill(0);
+    }
+}
+
+pub fn accumulate_linear_weight_gradient_i64_prescaled(
+    input: &[i16],
+    scaled_grad_output: &[i32],
+    gradient: &mut LinearWeightGradientI64Workspace<'_>,
+) -> Result<(), TrainCoreError> {
+    if !gradient.is_valid()
+        || input.len() != gradient.input_dim
+        || scaled_grad_output.len() != gradient.output_dim
+    {
+        return Err(TrainCoreError::InvalidShape);
+    }
+
+    for (out_index, &scaled_grad) in scaled_grad_output.iter().enumerate() {
+        if scaled_grad == 0 {
+            continue;
+        }
+        let row_start = out_index
+            .checked_mul(gradient.input_dim)
+            .ok_or(TrainCoreError::CoreRejected)?;
+        for (in_index, &activation) in input.iter().enumerate() {
+            if activation == 0 {
+                continue;
+            }
+            let product = i64::from(scaled_grad)
+                .checked_mul(i64::from(activation))
+                .ok_or(TrainCoreError::CoreRejected)?;
+            let index = row_start
+                .checked_add(in_index)
+                .ok_or(TrainCoreError::CoreRejected)?;
+            gradient.accumulators[index] = gradient.accumulators[index]
+                .checked_add(product)
+                .ok_or(TrainCoreError::CoreRejected)?;
+        }
+    }
+
+    gradient.sample_count = gradient
+        .sample_count
+        .checked_add(1)
+        .ok_or(TrainCoreError::CoreRejected)?;
+    Ok(())
+}
+
+pub fn apply_linear_weight_gradient_i64_to_i8(
+    gradient: &mut LinearWeightGradientI64Workspace<'_>,
+    weights: &mut [i8],
+    learning_rate: i32,
+    learning_rate_shift: u8,
+    carry_residual: bool,
+) -> Result<LinearWeightUpdateStats, TrainCoreError> {
+    if !gradient.is_valid()
+        || weights.len() != gradient.accumulators.len()
+        || learning_rate <= 0
+        || learning_rate_shift > MAX_RIGHT_SHIFT
+    {
+        return Err(TrainCoreError::InvalidConfig);
+    }
+
+    let mut stats = empty_linear_weight_update_stats();
+    if gradient.sample_count == 0 {
+        return Ok(stats);
+    }
+
+    for ((raw_sum, residual), weight) in gradient
+        .accumulators
+        .iter()
+        .zip(gradient.residuals.iter_mut())
+        .zip(weights.iter_mut())
+    {
+        if *raw_sum == 0 {
+            continue;
+        }
+
+        let averaged = round_div_i64(*raw_sum, gradient.sample_count)?;
+        let product = averaged
+            .checked_mul(i64::from(learning_rate))
+            .ok_or(TrainCoreError::CoreRejected)?;
+        let product = if carry_residual {
+            product
+                .checked_add(*residual)
+                .ok_or(TrainCoreError::CoreRejected)?
+        } else {
+            product
+        };
+        let scaled_update = round_shift_rhu_i64(product, learning_rate_shift);
+        let next_residual = if carry_residual {
+            rounded_shift_residual_i64(product, scaled_update, learning_rate_shift)?
+        } else {
+            0
+        };
+        let delta = -scaled_update;
+        if delta == 0 {
+            stats.zero_delta_count = stats
+                .zero_delta_count
+                .checked_add(1)
+                .ok_or(TrainCoreError::CoreRejected)?;
+        }
+
+        let previous = *weight;
+        let unclamped = i64::from(previous)
+            .checked_add(delta)
+            .ok_or(TrainCoreError::CoreRejected)?;
+        let clamped = saturate_i8(unclamped);
+        if i64::from(clamped) != unclamped {
+            stats.gradient_saturation_count = stats
+                .gradient_saturation_count
+                .checked_add(1)
+                .ok_or(TrainCoreError::CoreRejected)?;
+            *residual = 0;
+        } else {
+            *residual = next_residual;
+        }
+        let applied_delta = i64::from(clamped) - i64::from(previous);
+        stats.weight_delta_l1 = stats
+            .weight_delta_l1
+            .checked_add(applied_delta.unsigned_abs())
+            .ok_or(TrainCoreError::CoreRejected)?;
+        *weight = clamped;
+    }
+
+    gradient.clear();
+    Ok(stats)
 }
 
 pub fn mini_transformer_linear_nope_train_step(
@@ -1279,6 +1426,32 @@ fn round_ratio_i64(numerator: i64, denominator: i64) -> Result<i64, TrainCoreErr
     }
 }
 
+fn round_div_i64(numerator: i64, denominator: usize) -> Result<i64, TrainCoreError> {
+    if denominator == 0 {
+        return Err(TrainCoreError::InvalidConfig);
+    }
+    let denominator = i64::try_from(denominator).map_err(|_| TrainCoreError::InvalidConfig)?;
+    round_ratio_i64(numerator, denominator)
+}
+
+fn rounded_shift_residual_i64(
+    value: i64,
+    shifted: i64,
+    right_shift: u8,
+) -> Result<i64, TrainCoreError> {
+    if right_shift == 0 {
+        return Ok(0);
+    }
+
+    let applied = i128::from(shifted)
+        .checked_shl(u32::from(right_shift))
+        .ok_or(TrainCoreError::CoreRejected)?;
+    let residual = i128::from(value)
+        .checked_sub(applied)
+        .ok_or(TrainCoreError::CoreRejected)?;
+    i64::try_from(residual).map_err(|_| TrainCoreError::CoreRejected)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1371,5 +1544,74 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, TrainCoreError::InvalidShape);
+    }
+
+    #[test]
+    fn linear_weight_gradient_i64_averages_then_updates_i8() {
+        let mut accumulators = vec![0_i64; 4];
+        let mut residuals = vec![0_i64; 4];
+        let mut gradient = LinearWeightGradientI64Workspace {
+            input_dim: 2,
+            output_dim: 2,
+            sample_count: 0,
+            accumulators: &mut accumulators,
+            residuals: &mut residuals,
+        };
+        let input = [4096_i16, 8192_i16];
+        let scaled_grad_output = [1024_i32, 2048_i32];
+
+        accumulate_linear_weight_gradient_i64_prescaled(&input, &scaled_grad_output, &mut gradient)
+            .expect("first sample");
+        accumulate_linear_weight_gradient_i64_prescaled(&input, &scaled_grad_output, &mut gradient)
+            .expect("second sample");
+
+        let mut weights = [10_i8, 10_i8, 10_i8, 10_i8];
+        let stats =
+            apply_linear_weight_gradient_i64_to_i8(&mut gradient, &mut weights, 1, 22, false)
+                .expect("apply");
+
+        assert_eq!(weights, [9, 8, 8, 6]);
+        assert_eq!(stats.gradient_saturation_count, 0);
+        assert_eq!(stats.zero_delta_count, 0);
+        assert_eq!(stats.weight_delta_l1, 9);
+        assert_eq!(gradient.sample_count, 0);
+        assert!(gradient.accumulators.iter().all(|&value| value == 0));
+    }
+
+    #[test]
+    fn linear_weight_gradient_i64_carries_subthreshold_residuals() {
+        let mut accumulators = vec![0_i64; 1];
+        let mut residuals = vec![0_i64; 1];
+        let mut gradient = LinearWeightGradientI64Workspace {
+            input_dim: 1,
+            output_dim: 1,
+            sample_count: 0,
+            accumulators: &mut accumulators,
+            residuals: &mut residuals,
+        };
+        let input = [1_i16];
+        let scaled_grad_output = [1_i32];
+        let mut weights = [10_i8];
+
+        accumulate_linear_weight_gradient_i64_prescaled(&input, &scaled_grad_output, &mut gradient)
+            .expect("first sample");
+        let first = apply_linear_weight_gradient_i64_to_i8(&mut gradient, &mut weights, 1, 2, true)
+            .expect("first apply");
+
+        assert_eq!(weights, [10]);
+        assert_eq!(first.zero_delta_count, 1);
+        assert_eq!(first.weight_delta_l1, 0);
+        assert_eq!(gradient.residuals, [1]);
+
+        accumulate_linear_weight_gradient_i64_prescaled(&input, &scaled_grad_output, &mut gradient)
+            .expect("second sample");
+        let second =
+            apply_linear_weight_gradient_i64_to_i8(&mut gradient, &mut weights, 1, 2, true)
+                .expect("second apply");
+
+        assert_eq!(weights, [9]);
+        assert_eq!(second.zero_delta_count, 0);
+        assert_eq!(second.weight_delta_l1, 1);
+        assert_eq!(gradient.residuals, [-2]);
     }
 }
