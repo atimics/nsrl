@@ -22,9 +22,12 @@ Common knobs:
   NSRL_BATCH_WINDOWS=2
   NSRL_ATTENTION=linear
   NSRL_POSITION=nope
+  NSRL_TRACE_FORMAT=json
+  NSRL_TRACE_DETAIL=summary
   NSRL_ADAPTIVE_RULE_SHIFTS=1
   NSRL_ADAPTIVE_HOLOGRAPHIC_SHIFTS=0
   NSRL_SYNC_SECONDS=60
+  NSRL_TERMINATE_ON_EXIT=0
 
 Artifacts:
   Local: data/aws-runs/<run-name>/
@@ -77,6 +80,61 @@ log_out="${run_dir}/train.log"
 command_out="${run_dir}/command.txt"
 repo_rev="$(git rev-parse HEAD 2>/dev/null || true)"
 sync_seconds="${NSRL_SYNC_SECONDS:-60}"
+run_stage="preparing"
+aws_instance_id="${NSRL_AWS_INSTANCE_ID:-}"
+aws_instance_type="${NSRL_AWS_INSTANCE_TYPE:-}"
+aws_instance_region="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+aws_instance_az="${NSRL_AWS_AVAILABILITY_ZONE:-}"
+aws_instance_launch_time="${NSRL_AWS_INSTANCE_LAUNCH_TIME:-}"
+cost_hourly_usd="${NSRL_INSTANCE_HOURLY_USD:-}"
+cost_currency="${NSRL_COST_CURRENCY:-USD}"
+
+load_ec2_metadata() {
+  if ! command -v curl >/dev/null 2>&1; then
+    return 0
+  fi
+  local token identity_doc
+  token="$(
+    curl -fsS --connect-timeout 2 --max-time 5 \
+      -X PUT \
+      -H "X-aws-ec2-metadata-token-ttl-seconds: 60" \
+      http://169.254.169.254/latest/api/token 2>/dev/null
+  )" || return 0
+  aws_instance_id="${aws_instance_id:-$(
+    curl -fsS --connect-timeout 2 --max-time 5 \
+      -H "X-aws-ec2-metadata-token: ${token}" \
+      http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true
+  )}"
+  aws_instance_type="${aws_instance_type:-$(
+    curl -fsS --connect-timeout 2 --max-time 5 \
+      -H "X-aws-ec2-metadata-token: ${token}" \
+      http://169.254.169.254/latest/meta-data/instance-type 2>/dev/null || true
+  )}"
+  aws_instance_az="${aws_instance_az:-$(
+    curl -fsS --connect-timeout 2 --max-time 5 \
+      -H "X-aws-ec2-metadata-token: ${token}" \
+      http://169.254.169.254/latest/meta-data/placement/availability-zone 2>/dev/null || true
+  )}"
+  identity_doc="$(
+    curl -fsS --connect-timeout 2 --max-time 5 \
+      -H "X-aws-ec2-metadata-token: ${token}" \
+      http://169.254.169.254/latest/dynamic/instance-identity/document 2>/dev/null || true
+  )"
+  if [[ -n "$identity_doc" ]]; then
+    read -r parsed_region parsed_launch_time < <(
+      IDENTITY_DOC="$identity_doc" python3 - <<'PY'
+import json
+import os
+doc = json.loads(os.environ["IDENTITY_DOC"])
+print(doc.get("region", ""), doc.get("pendingTime", ""))
+PY
+    )
+    aws_instance_region="${aws_instance_region:-$parsed_region}"
+    aws_instance_launch_time="${aws_instance_launch_time:-$parsed_launch_time}"
+  fi
+}
+
+load_ec2_metadata
 
 if [[ ! -f "$tokens" ]]; then
   if [[ -n "${NSRL_TOKENS_S3_URI:-}" ]]; then
@@ -102,8 +160,6 @@ fi
 
 aws s3 cp "${s3_uri}/dashboard/runs.json" "${dashboard_dir}/runs.json" >/dev/null 2>&1 || true
 
-cargo build --release -p nsrl-train
-
 cmd=(
   cargo run --release -p nsrl-train --
   --mode mini-transformer-mlp
@@ -122,6 +178,8 @@ cmd=(
   --attention-qk-lr-shift "${NSRL_ATTENTION_QK_SHIFT:-16}"
   --mini-transformer-attention "${NSRL_ATTENTION:-linear}"
   --mini-transformer-position "${NSRL_POSITION:-nope}"
+  --trace-format "${NSRL_TRACE_FORMAT:-json}"
+  --mini-transformer-trace-detail "${NSRL_TRACE_DETAIL:-summary}"
   --model-out "$model_out"
   --trace "$trace_out"
   --progress-out "$progress_out"
@@ -160,10 +218,18 @@ render_dashboard() {
     --run-name "$run_name"
     --s3-uri "$s3_uri"
     --status "$status"
+    --stage "$run_stage"
     --started-at "$started_at"
     --updated-at "$updated_at"
     --repo-rev "$repo_rev"
     --tokens "$tokens"
+    --instance-id "$aws_instance_id"
+    --instance-type "$aws_instance_type"
+    --instance-region "$aws_instance_region"
+    --instance-availability-zone "$aws_instance_az"
+    --instance-launch-time "$aws_instance_launch_time"
+    --cost-hourly-usd "$cost_hourly_usd"
+    --cost-currency "$cost_currency"
     --command-file "$command_out"
     --log-file "$log_out"
     --progress-file "$progress_out"
@@ -181,6 +247,64 @@ sync_dashboard() {
   aws s3 sync "$dashboard_dir" "${s3_uri}/dashboard" --only-show-errors
 }
 
+terminate_instance_if_requested() {
+  if [[ "${NSRL_TERMINATE_ON_EXIT:-0}" == "0" ]]; then
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "NSRL_TERMINATE_ON_EXIT requested, but curl is unavailable" >&2
+    return 0
+  fi
+
+  local token instance_id region identity_doc
+  token="$(
+    curl -fsS --connect-timeout 2 --max-time 5 \
+      -X PUT \
+      -H "X-aws-ec2-metadata-token-ttl-seconds: 60" \
+      http://169.254.169.254/latest/api/token 2>/dev/null
+  )" || {
+    echo "NSRL_TERMINATE_ON_EXIT requested, but EC2 metadata is unavailable" >&2
+    return 0
+  }
+  instance_id="$(
+    curl -fsS --connect-timeout 2 --max-time 5 \
+      -H "X-aws-ec2-metadata-token: ${token}" \
+      http://169.254.169.254/latest/meta-data/instance-id
+  )" || return 0
+  region="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+  if [[ -z "$region" ]]; then
+    identity_doc="$(
+      curl -fsS --connect-timeout 2 --max-time 5 \
+        -H "X-aws-ec2-metadata-token: ${token}" \
+        http://169.254.169.254/latest/dynamic/instance-identity/document
+    )" || return 0
+    region="$(
+      IDENTITY_DOC="$identity_doc" python3 - <<'PY'
+import json
+import os
+print(json.loads(os.environ["IDENTITY_DOC"])["region"])
+PY
+    )" || return 0
+  fi
+
+  echo "NSRL_TERMINATE_ON_EXIT terminating ${instance_id} in ${region}" >&2
+  aws ec2 terminate-instances \
+    --region "$region" \
+    --instance-ids "$instance_id" \
+    --query 'TerminatingInstances[0].{InstanceId:InstanceId,Current:CurrentState.Name}' \
+    --output json >&2 || true
+}
+
+render_dashboard running
+sync_dashboard
+
+run_stage="building"
+render_dashboard running
+sync_dashboard
+
+cargo build --release -p nsrl-train
+
+run_stage="training"
 render_dashboard running
 sync_dashboard
 
@@ -200,6 +324,7 @@ exit_code=$?
 set -e
 
 if [[ "$exit_code" -eq 0 ]]; then
+  run_stage="completed"
   render_dashboard succeeded "$exit_code"
   if [[ -n "${NSRL_PUBLISH_CHECKPOINT:-}" ]]; then
     checkpoint_name="$NSRL_PUBLISH_CHECKPOINT"
@@ -238,8 +363,11 @@ PY
     aws s3 cp "$checkpoint_json" "${checkpoint_uri}/latest.checkpoint.json" --only-show-errors
   fi
 else
+  run_stage="failed"
   render_dashboard failed "$exit_code"
 fi
 sync_dashboard
+
+terminate_instance_if_requested
 
 exit "$exit_code"

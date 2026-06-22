@@ -30,7 +30,19 @@ pub const LEXEME_EMBEDDING_SCHEMA: &str = "nsrl.training_lexeme_embedding_trace.
 pub const LEXEME_SOFTMAX_SCHEMA: &str = "nsrl.training_lexeme_softmax_trace.v1";
 pub const LEXEME_GENERATION_SCHEMA: &str = "nsrl.lexeme_generation_trace.v1";
 pub const MINI_TRANSFORMER_MLP_SCHEMA: &str = "nsrl.training_mini_transformer_mlp_trace.v1";
+pub const MINI_TRANSFORMER_SWARM_SCHEMA: &str = "nsrl.training_mini_transformer_swarm_trace.v1";
+pub const MINI_TRANSFORMER_SWARM_SCALING_SCHEMA: &str =
+    "nsrl.training_mini_transformer_swarm_scaling_trace.v1";
+pub const MINI_TRANSFORMER_SWARM_EXPERT_MANIFEST_SCHEMA: &str =
+    "nsrl.mini_transformer_swarm_expert_manifest.v1";
+pub const MINI_TRANSFORMER_SWARM_ROUTE_SCHEMA: &str = "nsrl.mini_transformer_swarm_route_trace.v1";
+pub const MINI_TRANSFORMER_SWARM_ROUTED_GENERATION_SCHEMA: &str =
+    "nsrl.mini_transformer_swarm_routed_generation_trace.v1";
 pub const MINI_TRANSFORMER_GENERATION_SCHEMA: &str = "nsrl.mini_transformer_generation_trace.v1";
+pub const MINI_TRANSFORMER_SWARM_GENERATION_SCHEMA: &str =
+    "nsrl.mini_transformer_swarm_generation_trace.v1";
+pub const MINI_TRANSFORMER_BINARY_TRACE_SCHEMA: &str =
+    "nsrl.training_mini_transformer_mlp_binary_trace.v1";
 pub const DEFAULT_MINI_TRANSFORMER_STREAMING_TTT_LEARNING_RATE_SHIFT: u8 = 8;
 pub const LEXEME_SENTENCE_STOP_TOKEN_CAP: usize = 16;
 pub const AUTHORITY: &str = "deterministic_training_replay";
@@ -61,6 +73,18 @@ pub const LEXEME_SOFTMAX_MODEL_MAGIC_V5: &[u8; 8] = b"NSRLLM5\n";
 pub const LEXEME_SOFTMAX_MODEL_MAGIC: &[u8; 8] = b"NSRLLM6\n";
 pub const MINI_TRANSFORMER_MODEL_ID: &str = "mini_transformer_byte_qkvo_mlp_v1";
 pub const MINI_TRANSFORMER_MODEL_MAGIC: &[u8; 8] = b"NSRLMT4\n";
+pub const MINI_TRANSFORMER_SWARM_MODEL_ID: &str = "mini_transformer_swarm_qkvo_mlp_v1";
+pub const MINI_TRANSFORMER_SWARM_MODEL_MAGIC: &[u8; 8] = b"NSRLSW1\n";
+pub const MINI_TRANSFORMER_BINARY_TRACE_MAGIC: &[u8; 4] = b"NSRL";
+pub const MINI_TRANSFORMER_BINARY_TRACE_VERSION: u8 = 1;
+pub const MINI_TRANSFORMER_BINARY_TRACE_SCHEMA_ID: u8 = 1;
+pub const MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN: usize = 16;
+pub const MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN: usize = 32;
+pub const MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN: usize = 22;
+pub const MINI_TRANSFORMER_BINARY_FINAL_SUMMARY_RECORD_LEN: usize = 561;
+pub const MINI_TRANSFORMER_BINARY_TAG_STEP_SAMPLE: u8 = 0x01;
+pub const MINI_TRANSFORMER_BINARY_TAG_ADAPTIVE_SHIFT: u8 = 0x02;
+pub const MINI_TRANSFORMER_BINARY_TAG_FINAL_SUMMARY: u8 = 0x7f;
 pub const VOCAB: usize = 4;
 pub const D_MODEL: usize = 8;
 pub const BYTE_VOCAB: usize = 256;
@@ -359,6 +383,13 @@ const MINI_TRANSFORMER_MLP_KNOWN_NON_CLAIMS: [&str; 5] = [
     "fixed_two_head_attention_only",
     "does_not_backpropagate_through_rmsnorm_yet",
     "does_not_claim_language_model_quality",
+];
+const MINI_TRANSFORMER_SWARM_SCALING_KNOWN_NON_CLAIMS: [&str; 5] = [
+    "host_timing_observation_not_universal_benchmark",
+    "worker_shards_train_independent_models",
+    "does_not_measure_power_or_cache_counters_yet",
+    "does_not_claim_language_model_quality",
+    "single_process_native_threads_only",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1019,6 +1050,7 @@ impl LexemeSoftmaxEvalResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MiniTransformerMlpTrainingTrace {
+    pub trace_detail: MiniTransformerTraceDetail,
     pub config: MiniTransformerMlpTrainConfig,
     pub token_count: usize,
     pub token_hash: u64,
@@ -1144,6 +1176,221 @@ pub struct MiniTransformerMlpTrainingRun {
     pub model: MiniTransformerMlpModel,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerMlpSwarmTrainConfig {
+    pub workers: usize,
+    pub trace_detail: MiniTransformerTraceDetail,
+}
+
+impl Default for MiniTransformerMlpSwarmTrainConfig {
+    fn default() -> Self {
+        Self {
+            workers: 1,
+            trace_detail: MiniTransformerTraceDetail::None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpSwarmTrainingRun {
+    pub trace: MiniTransformerMlpSwarmTrainingTrace,
+    pub model: MiniTransformerMlpModel,
+    pub swarm_model: MiniTransformerMlpSwarmModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpSwarmTrainingTrace {
+    pub config: MiniTransformerMlpTrainConfig,
+    pub swarm_config: MiniTransformerMlpSwarmTrainConfig,
+    pub token_count: usize,
+    pub token_hash: u64,
+    pub worker_count: usize,
+    pub base_window_offset: usize,
+    pub base_stride: usize,
+    pub best_worker_index: usize,
+    pub final_model_hash: u64,
+    pub workers: Vec<MiniTransformerMlpSwarmWorkerTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpSwarmWorkerTrace {
+    pub worker_index: usize,
+    pub window_offset: usize,
+    pub stride: usize,
+    pub max_windows: Option<usize>,
+    pub token_hash: u64,
+    pub window_hash: u64,
+    pub windows: usize,
+    pub examined_windows: usize,
+    pub updates: usize,
+    pub accepted_batch_count: usize,
+    pub rejected_batch_count: usize,
+    pub rollback_count: usize,
+    pub rejected_window_count: usize,
+    pub final_invalid_forward_count: usize,
+    pub initial_total_error: usize,
+    pub final_total_error: usize,
+    pub initial_probability_error_q15: usize,
+    pub final_probability_error_q15: usize,
+    pub final_accuracy_per_mille: usize,
+    pub final_model_hash: u64,
+    pub final_logits_hash: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpSwarmScalingTrace {
+    pub config: MiniTransformerMlpTrainConfig,
+    pub token_count: usize,
+    pub token_hash: u64,
+    pub available_parallelism: usize,
+    pub requested_max_workers: usize,
+    pub worker_counts: Vec<usize>,
+    pub runs: Vec<MiniTransformerMlpSwarmScalingRunTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpSwarmScalingRunTrace {
+    pub requested_worker_count: usize,
+    pub effective_worker_count: usize,
+    pub elapsed_ns: u64,
+    pub speedup_per_mille: u64,
+    pub parallel_efficiency_per_mille: u64,
+    pub windows_per_second_milli: u64,
+    pub updates_per_second_milli: u64,
+    pub examined_windows: usize,
+    pub updates: usize,
+    pub accepted_batch_count: usize,
+    pub rejected_batch_count: usize,
+    pub rollback_count: usize,
+    pub best_worker_index: usize,
+    pub best_final_total_error: usize,
+    pub best_final_probability_error_q15: usize,
+    pub best_final_accuracy_per_mille: usize,
+    pub final_model_hash: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpSwarmModel {
+    pub context_seq_len: usize,
+    pub best_worker_index: usize,
+    pub workers: Vec<MiniTransformerMlpModel>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpSwarmExpertManifest {
+    pub artifact_format: &'static str,
+    pub artifact_magic: &'static str,
+    pub artifact_byte_count: usize,
+    pub model_id: &'static str,
+    pub tokenizer: &'static str,
+    pub context_seq_len: usize,
+    pub worker_count: usize,
+    pub best_worker_index: usize,
+    pub parameter_bytes: usize,
+    pub model_hash: u64,
+    pub embedding_hash: u64,
+    pub attention_hash: u64,
+    pub mlp_hash: u64,
+    pub output_head_hash: u64,
+    pub worker_model_hashes: Vec<u64>,
+    pub worker_parameter_bytes: Vec<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerSwarmRouteConfig {
+    pub required_capability: Option<String>,
+    pub max_artifact_bytes: Option<usize>,
+    pub max_parameter_bytes: Option<usize>,
+    pub active_expert_limit: usize,
+    pub prompt_affinity: bool,
+    pub prompt_affinity_max_windows: usize,
+}
+
+impl Default for MiniTransformerSwarmRouteConfig {
+    fn default() -> Self {
+        Self {
+            required_capability: None,
+            max_artifact_bytes: None,
+            max_parameter_bytes: None,
+            active_expert_limit: 1,
+            prompt_affinity: false,
+            prompt_affinity_max_windows: 32,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerSwarmRouteCandidate {
+    pub expert_id: String,
+    pub manifest: MiniTransformerMlpSwarmExpertManifest,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerSwarmRoutedGenerationExpert {
+    pub expert_id: String,
+    pub model: MiniTransformerMlpSwarmModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerSwarmRouteDecisionTrace {
+    pub config: MiniTransformerSwarmRouteConfig,
+    pub prompt_bytes: Vec<u8>,
+    pub selected_expert_indices: Vec<usize>,
+    pub candidates: Vec<MiniTransformerSwarmRouteCandidateTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerSwarmRouteCandidateTrace {
+    pub expert_index: usize,
+    pub expert_id: String,
+    pub accepted: bool,
+    pub reject_reason: &'static str,
+    pub score: i64,
+    pub manifest_score: i64,
+    pub prompt_affinity_score: i64,
+    pub prompt_eval_windows: usize,
+    pub prompt_probability_error_q15: Option<usize>,
+    pub capability_match: bool,
+    pub model_hash: u64,
+    pub artifact_bytes: usize,
+    pub parameter_bytes: usize,
+    pub worker_count: usize,
+    pub context_seq_len: usize,
+    pub default_composition: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MiniTransformerSwarmPromptAffinityTrace {
+    eval_windows: usize,
+    probability_error_q15: usize,
+    score: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerSwarmRoutedGenerationTrace {
+    pub route: MiniTransformerSwarmRouteDecisionTrace,
+    pub selected_expert_ids: Vec<String>,
+    pub active_worker_count: usize,
+    pub generation: MiniTransformerSwarmGenerationTrace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiniTransformerSwarmComposition {
+    AverageLogits,
+    ConfidenceWeighted,
+    ConfidenceRouter,
+}
+
+impl MiniTransformerSwarmComposition {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::AverageLogits => "average_logits",
+            Self::ConfidenceWeighted => "confidence_weighted",
+            Self::ConfidenceRouter => "confidence_router",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ByteSoftmaxModel {
     pub weights: Vec<i8>,
@@ -1215,6 +1462,23 @@ impl MiniTransformerAttentionKind {
             self,
             Self::LinearStreamingNope | Self::LinearStreamingTttNope
         )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiniTransformerTraceDetail {
+    Full,
+    Summary,
+    None,
+}
+
+impl MiniTransformerTraceDetail {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Summary => "summary",
+            Self::None => "none",
+        }
     }
 }
 
@@ -2243,6 +2507,26 @@ pub struct MiniTransformerGenerationTrace {
     pub context_seq_len: usize,
     pub decode_priors: Option<ByteDecodePriorTrace>,
     pub ttt_stats: Option<MiniTransformerStreamingTttStats>,
+    pub steps: Vec<ByteGenerationStepTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerSwarmGenerationTrace {
+    pub config: ByteGenerationConfig,
+    pub attention_kind: MiniTransformerAttentionKind,
+    pub position_policy: MiniTransformerPositionPolicy,
+    pub composition: MiniTransformerSwarmComposition,
+    pub prompt_bytes: Vec<u8>,
+    pub generated_bytes: Vec<u8>,
+    pub swarm_model_hash: u64,
+    pub worker_count: usize,
+    pub best_worker_index: usize,
+    pub embedding_hash: u64,
+    pub attention_hash: u64,
+    pub mlp_hash: u64,
+    pub output_head_hash: u64,
+    pub context_seq_len: usize,
+    pub decode_priors: Option<ByteDecodePriorTrace>,
     pub steps: Vec<ByteGenerationStepTrace>,
 }
 
@@ -3632,12 +3916,6 @@ fn mini_transformer_rule_q_delta(
     if q_window.observation_batches < interval.max(1) {
         return None;
     }
-    if mini_transformer_rule_saturation_pressure(
-        q_window,
-        mini_transformer_attention_projection_weight_count(),
-    ) {
-        return Some((1, "saturation"));
-    }
     if q_window.stats.weight_delta_l1 == 0
         || mini_transformer_rule_zero_pressure(
             q_window,
@@ -3650,6 +3928,12 @@ fn mini_transformer_rule_q_delta(
         && q_window.stats.weight_delta_l1.saturating_mul(8) < k_window.stats.weight_delta_l1
     {
         return Some((-1, "lagging_k"));
+    }
+    if mini_transformer_rule_saturation_pressure(
+        q_window,
+        mini_transformer_attention_projection_weight_count(),
+    ) {
+        return Some((1, "saturation"));
     }
     if k_window.stats.weight_delta_l1 > 0
         && q_window.stats.weight_delta_l1 > k_window.stats.weight_delta_l1.saturating_mul(4)
@@ -3670,17 +3954,17 @@ fn mini_transformer_rule_k_delta(
     if k_window.observation_batches < interval.max(1) {
         return None;
     }
-    if mini_transformer_rule_saturation_pressure(
-        k_window,
-        mini_transformer_attention_projection_weight_count(),
-    ) {
-        return Some((1, "saturation"));
-    }
     if mini_transformer_rule_zero_pressure(
         k_window,
         mini_transformer_attention_projection_weight_count(),
     ) {
         return Some((-1, "zero_delta"));
+    }
+    if mini_transformer_rule_saturation_pressure(
+        k_window,
+        mini_transformer_attention_projection_weight_count(),
+    ) {
+        return Some((1, "saturation"));
     }
     if q_window.stats.weight_delta_l1 > 0
         && k_window.stats.weight_delta_l1 > q_window.stats.weight_delta_l1.saturating_mul(64)
@@ -4002,6 +4286,50 @@ fn mini_transformer_ratio_q15(numerator: usize, denominator: usize) -> i16 {
     wide.min(i16::MAX as u128) as i16
 }
 
+const MINI_TRANSFORMER_TRACE_SUMMARY_INITIAL_STEPS: usize = 16;
+const MINI_TRANSFORMER_TRACE_SUMMARY_DEFAULT_INTERVAL_STEPS: usize = 1024;
+
+fn mini_transformer_trace_sample_interval(
+    progress_interval_batches: usize,
+    batch_windows: usize,
+) -> usize {
+    let progress_windows = progress_interval_batches.saturating_mul(batch_windows);
+    if progress_windows == 0 {
+        MINI_TRANSFORMER_TRACE_SUMMARY_DEFAULT_INTERVAL_STEPS
+    } else {
+        progress_windows
+    }
+}
+
+fn mini_transformer_should_record_step(
+    trace_detail: MiniTransformerTraceDetail,
+    update_index: usize,
+    sample_interval: usize,
+) -> bool {
+    match trace_detail {
+        MiniTransformerTraceDetail::Full => true,
+        MiniTransformerTraceDetail::Summary => {
+            update_index <= MINI_TRANSFORMER_TRACE_SUMMARY_INITIAL_STEPS
+                || update_index.is_multiple_of(sample_interval.max(1))
+        }
+        MiniTransformerTraceDetail::None => false,
+    }
+}
+
+fn emit_mini_transformer_committed_binary_steps<G>(
+    steps: &[MiniTransformerMlpTrainingStepTrace],
+    start_index: usize,
+    binary_trace: &mut G,
+) -> Result<(), TrainError>
+where
+    G: FnMut(MiniTransformerBinaryTraceRecord<'_>) -> Result<(), TrainError>,
+{
+    for step in &steps[start_index.min(steps.len())..] {
+        binary_trace(MiniTransformerBinaryTraceRecord::StepSample(step))?;
+    }
+    Ok(())
+}
+
 fn mini_transformer_attention_q_teacher_delta(
     stats: &MiniTransformerAttentionWeightUpdateStats,
 ) -> i8 {
@@ -4296,6 +4624,7 @@ pub enum TrainError {
     InvalidConfig,
     InvalidModel(&'static str),
     CoreRejected(&'static str),
+    TraceWrite,
 }
 
 impl core::fmt::Display for TrainError {
@@ -4304,6 +4633,7 @@ impl core::fmt::Display for TrainError {
             Self::InvalidConfig => write!(f, "invalid training config"),
             Self::InvalidModel(message) => write!(f, "invalid model artifact: {message}"),
             Self::CoreRejected(stage) => write!(f, "nsrl-core rejected training stage: {stage}"),
+            Self::TraceWrite => write!(f, "failed to write training trace"),
         }
     }
 }
@@ -6123,6 +6453,399 @@ fn run_lexeme_softmax_training_with_initial_weights_and_quality(
     Ok(LexemeSoftmaxTrainingRun { trace, model })
 }
 
+pub fn run_mini_transformer_mlp_swarm_training(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    swarm_config: MiniTransformerMlpSwarmTrainConfig,
+) -> Result<MiniTransformerMlpSwarmTrainingRun, TrainError> {
+    let model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+    run_mini_transformer_mlp_swarm_training_from_model(tokens, config, swarm_config, model)
+}
+
+pub fn run_mini_transformer_mlp_swarm_training_from_model(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    swarm_config: MiniTransformerMlpSwarmTrainConfig,
+    base_model: MiniTransformerMlpModel,
+) -> Result<MiniTransformerMlpSwarmTrainingRun, TrainError> {
+    if swarm_config.workers == 0 || config.stride == 0 || config.window_offset >= tokens.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    if base_model.context_seq_len != config.seq_len {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let available_windows = mini_transformer_window_starts(
+        tokens.len(),
+        config.seq_len,
+        config.stride,
+        config.window_offset,
+        config.max_windows,
+    )
+    .len();
+    if available_windows == 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+    let worker_count = mini_transformer_swarm_effective_worker_count(
+        config,
+        swarm_config.workers,
+        available_windows,
+    );
+    let mut worker_runs = mini_transformer_train_swarm_workers(
+        tokens,
+        config,
+        swarm_config,
+        &base_model,
+        worker_count,
+    )?;
+    if worker_runs.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    worker_runs.sort_by_key(|run| run.worker_index);
+
+    let best_position = worker_runs
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, run)| {
+            (
+                run.run.trace.final_total_error,
+                run.run.trace.final_probability_error_q15,
+                run.run.trace.final_invalid_forward_count,
+                run.worker_index,
+            )
+        })
+        .map(|(position, _)| position)
+        .ok_or(TrainError::InvalidConfig)?;
+    let best_worker_index = worker_runs[best_position].worker_index;
+    let model = worker_runs[best_position].run.model.clone();
+    let swarm_model = MiniTransformerMlpSwarmModel::new(
+        best_worker_index,
+        worker_runs
+            .iter()
+            .map(|run| run.run.model.clone())
+            .collect::<Vec<_>>(),
+    )?;
+    let final_model_hash = model.model_hash();
+    let workers = worker_runs
+        .iter()
+        .map(|run| mini_transformer_swarm_worker_trace(run.worker_index, &run.run.trace))
+        .collect::<Vec<_>>();
+
+    let trace = MiniTransformerMlpSwarmTrainingTrace {
+        config,
+        swarm_config: MiniTransformerMlpSwarmTrainConfig {
+            workers: worker_count,
+            trace_detail: swarm_config.trace_detail,
+        },
+        token_count: tokens.len(),
+        token_hash: hash_u8_slice(tokens),
+        worker_count,
+        base_window_offset: config.window_offset,
+        base_stride: config.stride,
+        best_worker_index,
+        final_model_hash,
+        workers,
+    };
+
+    Ok(MiniTransformerMlpSwarmTrainingRun {
+        trace,
+        model,
+        swarm_model,
+    })
+}
+
+pub fn run_mini_transformer_mlp_swarm_scaling_benchmark(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    max_workers: usize,
+    trace_detail: MiniTransformerTraceDetail,
+) -> Result<MiniTransformerMlpSwarmScalingTrace, TrainError> {
+    let model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+    run_mini_transformer_mlp_swarm_scaling_benchmark_from_model(
+        tokens,
+        config,
+        max_workers,
+        trace_detail,
+        model,
+    )
+}
+
+pub fn run_mini_transformer_mlp_swarm_scaling_benchmark_from_model(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    max_workers: usize,
+    trace_detail: MiniTransformerTraceDetail,
+    base_model: MiniTransformerMlpModel,
+) -> Result<MiniTransformerMlpSwarmScalingTrace, TrainError> {
+    if max_workers == 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+    if base_model.context_seq_len != config.seq_len {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let worker_counts = mini_transformer_swarm_scaling_worker_counts(max_workers);
+    let available_parallelism = std::thread::available_parallelism()
+        .map(|value| value.get())
+        .unwrap_or(1);
+    let mut runs = Vec::with_capacity(worker_counts.len());
+    let mut baseline_elapsed_ns = 0_u64;
+
+    for &requested_worker_count in &worker_counts {
+        let start = std::time::Instant::now();
+        let run = run_mini_transformer_mlp_swarm_training_from_model(
+            tokens,
+            config,
+            MiniTransformerMlpSwarmTrainConfig {
+                workers: requested_worker_count,
+                trace_detail,
+            },
+            base_model.clone(),
+        )?;
+        let elapsed_ns = mini_transformer_elapsed_ns_u64(start.elapsed());
+        if baseline_elapsed_ns == 0 {
+            baseline_elapsed_ns = elapsed_ns.max(1);
+        }
+
+        let examined_windows = run
+            .trace
+            .workers
+            .iter()
+            .map(|worker| worker.examined_windows)
+            .sum::<usize>();
+        let updates = run
+            .trace
+            .workers
+            .iter()
+            .map(|worker| worker.updates)
+            .sum::<usize>();
+        let accepted_batch_count = run
+            .trace
+            .workers
+            .iter()
+            .map(|worker| worker.accepted_batch_count)
+            .sum::<usize>();
+        let rejected_batch_count = run
+            .trace
+            .workers
+            .iter()
+            .map(|worker| worker.rejected_batch_count)
+            .sum::<usize>();
+        let rollback_count = run
+            .trace
+            .workers
+            .iter()
+            .map(|worker| worker.rollback_count)
+            .sum::<usize>();
+        let best_worker = run
+            .trace
+            .workers
+            .iter()
+            .find(|worker| worker.worker_index == run.trace.best_worker_index)
+            .ok_or(TrainError::InvalidConfig)?;
+        let speedup_per_mille =
+            mini_transformer_ratio_per_mille_u64(baseline_elapsed_ns, elapsed_ns.max(1));
+        let parallel_efficiency_per_mille =
+            speedup_per_mille / u64::try_from(run.trace.worker_count.max(1)).unwrap_or(u64::MAX);
+
+        runs.push(MiniTransformerMlpSwarmScalingRunTrace {
+            requested_worker_count,
+            effective_worker_count: run.trace.worker_count,
+            elapsed_ns,
+            speedup_per_mille,
+            parallel_efficiency_per_mille,
+            windows_per_second_milli: mini_transformer_rate_per_second_milli(
+                examined_windows,
+                elapsed_ns,
+            ),
+            updates_per_second_milli: mini_transformer_rate_per_second_milli(updates, elapsed_ns),
+            examined_windows,
+            updates,
+            accepted_batch_count,
+            rejected_batch_count,
+            rollback_count,
+            best_worker_index: run.trace.best_worker_index,
+            best_final_total_error: best_worker.final_total_error,
+            best_final_probability_error_q15: best_worker.final_probability_error_q15,
+            best_final_accuracy_per_mille: best_worker.final_accuracy_per_mille,
+            final_model_hash: run.trace.final_model_hash,
+        });
+    }
+
+    Ok(MiniTransformerMlpSwarmScalingTrace {
+        config,
+        token_count: tokens.len(),
+        token_hash: hash_u8_slice(tokens),
+        available_parallelism,
+        requested_max_workers: max_workers,
+        worker_counts,
+        runs,
+    })
+}
+
+fn mini_transformer_swarm_scaling_worker_counts(max_workers: usize) -> Vec<usize> {
+    let max_workers = max_workers.max(1);
+    let mut counts = Vec::new();
+    let mut worker_count = 1_usize;
+    while worker_count < max_workers {
+        counts.push(worker_count);
+        worker_count = worker_count.saturating_mul(2);
+        if worker_count == 0 {
+            break;
+        }
+    }
+    if counts.last().copied() != Some(max_workers) {
+        counts.push(max_workers);
+    }
+    counts
+}
+
+fn mini_transformer_elapsed_ns_u64(elapsed: std::time::Duration) -> u64 {
+    elapsed.as_nanos().min(u128::from(u64::MAX)) as u64
+}
+
+fn mini_transformer_rate_per_second_milli(events: usize, elapsed_ns: u64) -> u64 {
+    if elapsed_ns == 0 {
+        return 0;
+    }
+    ((events as u128).saturating_mul(1_000_000_000_000_u128) / u128::from(elapsed_ns))
+        .min(u128::from(u64::MAX)) as u64
+}
+
+fn mini_transformer_ratio_per_mille_u64(numerator: u64, denominator: u64) -> u64 {
+    if denominator == 0 {
+        return 0;
+    }
+    (u128::from(numerator).saturating_mul(1000) / u128::from(denominator)).min(u128::from(u64::MAX))
+        as u64
+}
+
+struct MiniTransformerMlpSwarmWorkerRun {
+    worker_index: usize,
+    run: MiniTransformerMlpTrainingRun,
+}
+
+fn mini_transformer_train_swarm_workers(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    swarm_config: MiniTransformerMlpSwarmTrainConfig,
+    base_model: &MiniTransformerMlpModel,
+    worker_count: usize,
+) -> Result<Vec<MiniTransformerMlpSwarmWorkerRun>, TrainError> {
+    if worker_count <= 1 {
+        let worker_config = mini_transformer_swarm_worker_config(config, 0, 1);
+        let run = run_mini_transformer_mlp_training_from_model_with_progress_and_trace_detail(
+            tokens,
+            worker_config,
+            base_model.clone(),
+            0,
+            swarm_config.trace_detail,
+            |_| Ok(()),
+        )?;
+        return Ok(vec![MiniTransformerMlpSwarmWorkerRun {
+            worker_index: 0,
+            run,
+        }]);
+    }
+
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(worker_count);
+        for worker_index in 0..worker_count {
+            let worker_config =
+                mini_transformer_swarm_worker_config(config, worker_index, worker_count);
+            let worker_model = base_model.clone();
+            handles.push(scope.spawn(move || {
+                let run =
+                    run_mini_transformer_mlp_training_from_model_with_progress_and_trace_detail(
+                        tokens,
+                        worker_config,
+                        worker_model,
+                        0,
+                        swarm_config.trace_detail,
+                        |_| Ok(()),
+                    )?;
+                Ok(MiniTransformerMlpSwarmWorkerRun { worker_index, run })
+            }));
+        }
+
+        let mut runs = Vec::with_capacity(worker_count);
+        for handle in handles {
+            match handle.join() {
+                Ok(result) => runs.push(result?),
+                Err(payload) => std::panic::resume_unwind(payload),
+            }
+        }
+        Ok(runs)
+    })
+}
+
+fn mini_transformer_swarm_effective_worker_count(
+    config: MiniTransformerMlpTrainConfig,
+    requested_workers: usize,
+    available_windows: usize,
+) -> usize {
+    let by_requested = match config.max_windows {
+        Some(max_windows) => requested_workers.min(max_windows.max(1)).max(1),
+        None => requested_workers.max(1),
+    };
+    by_requested.min(available_windows.max(1)).max(1)
+}
+
+fn mini_transformer_swarm_worker_config(
+    mut config: MiniTransformerMlpTrainConfig,
+    worker_index: usize,
+    worker_count: usize,
+) -> MiniTransformerMlpTrainConfig {
+    let base_stride = config.stride.max(1);
+    config.window_offset = config
+        .window_offset
+        .saturating_add(worker_index.saturating_mul(base_stride));
+    config.stride = base_stride.saturating_mul(worker_count.max(1));
+    config.max_windows = config.max_windows.map(|max_windows| {
+        mini_transformer_swarm_worker_window_limit(max_windows, worker_index, worker_count)
+    });
+    config
+}
+
+fn mini_transformer_swarm_worker_window_limit(
+    max_windows: usize,
+    worker_index: usize,
+    worker_count: usize,
+) -> usize {
+    let base = max_windows / worker_count.max(1);
+    let remainder = max_windows % worker_count.max(1);
+    base + usize::from(worker_index < remainder)
+}
+
+fn mini_transformer_swarm_worker_trace(
+    worker_index: usize,
+    trace: &MiniTransformerMlpTrainingTrace,
+) -> MiniTransformerMlpSwarmWorkerTrace {
+    MiniTransformerMlpSwarmWorkerTrace {
+        worker_index,
+        window_offset: trace.config.window_offset,
+        stride: trace.config.stride,
+        max_windows: trace.config.max_windows,
+        token_hash: trace.token_hash,
+        window_hash: trace.window_hash,
+        windows: trace.windows,
+        examined_windows: trace.examined_windows,
+        updates: trace.updates,
+        accepted_batch_count: trace.accepted_batch_count,
+        rejected_batch_count: trace.rejected_batch_count,
+        rollback_count: trace.rollback_count,
+        rejected_window_count: trace.rejected_window_count,
+        final_invalid_forward_count: trace.final_invalid_forward_count,
+        initial_total_error: trace.initial_total_error,
+        final_total_error: trace.final_total_error,
+        initial_probability_error_q15: trace.initial_probability_error_q15,
+        final_probability_error_q15: trace.final_probability_error_q15,
+        final_accuracy_per_mille: trace.final_accuracy_per_mille,
+        final_model_hash: trace.final_model_hash,
+        final_logits_hash: trace.final_logits_hash,
+    }
+}
+
 pub fn run_mini_transformer_mlp_training(
     tokens: &[u8],
     config: MiniTransformerMlpTrainConfig,
@@ -6149,12 +6872,60 @@ pub fn run_mini_transformer_mlp_training_from_model(
 pub fn run_mini_transformer_mlp_training_from_model_with_progress<F>(
     tokens: &[u8],
     config: MiniTransformerMlpTrainConfig,
-    mut model: MiniTransformerMlpModel,
+    model: MiniTransformerMlpModel,
     progress_interval_batches: usize,
-    mut progress: F,
+    progress: F,
 ) -> Result<MiniTransformerMlpTrainingRun, TrainError>
 where
     F: FnMut(&MiniTransformerMlpTrainingProgressTrace) -> Result<(), TrainError>,
+{
+    run_mini_transformer_mlp_training_from_model_with_progress_and_trace_detail(
+        tokens,
+        config,
+        model,
+        progress_interval_batches,
+        MiniTransformerTraceDetail::Full,
+        progress,
+    )
+}
+
+pub fn run_mini_transformer_mlp_training_from_model_with_progress_and_trace_detail<F>(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    model: MiniTransformerMlpModel,
+    progress_interval_batches: usize,
+    trace_detail: MiniTransformerTraceDetail,
+    progress: F,
+) -> Result<MiniTransformerMlpTrainingRun, TrainError>
+where
+    F: FnMut(&MiniTransformerMlpTrainingProgressTrace) -> Result<(), TrainError>,
+{
+    run_mini_transformer_mlp_training_from_model_with_progress_trace_detail_and_binary_trace(
+        tokens,
+        config,
+        model,
+        progress_interval_batches,
+        trace_detail,
+        progress,
+        |_| Ok(()),
+    )
+}
+
+pub fn run_mini_transformer_mlp_training_from_model_with_progress_trace_detail_and_binary_trace<
+    F,
+    G,
+>(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    mut model: MiniTransformerMlpModel,
+    progress_interval_batches: usize,
+    trace_detail: MiniTransformerTraceDetail,
+    mut progress: F,
+    mut binary_trace: G,
+) -> Result<MiniTransformerMlpTrainingRun, TrainError>
+where
+    F: FnMut(&MiniTransformerMlpTrainingProgressTrace) -> Result<(), TrainError>,
+    G: FnMut(MiniTransformerBinaryTraceRecord<'_>) -> Result<(), TrainError>,
 {
     if config.epochs == 0
         || config.seq_len == 0
@@ -6179,7 +6950,7 @@ where
         return Err(TrainError::InvalidConfig);
     }
 
-    let starts = byte_window_starts(
+    let starts = mini_transformer_window_starts(
         tokens.len(),
         config.seq_len,
         config.stride,
@@ -6219,6 +6990,7 @@ where
             config.position_policy,
         )?;
     let initial_mistakes = initial_total_error;
+    binary_trace(MiniTransformerBinaryTraceRecord::Header { initial_model_hash })?;
     let mut updates = 0_usize;
     let mut examined_windows = 0_usize;
     let mut accepted_batch_count = 0_usize;
@@ -6252,6 +7024,8 @@ where
     let mut attention_v_delta_l1 = 0_u64;
     let mut attention_o_delta_l1 = 0_u64;
     let mut steps = Vec::new();
+    let trace_sample_interval =
+        mini_transformer_trace_sample_interval(progress_interval_batches, config.batch_windows);
     let mut rollback_history = vec![model.clone()];
     let mut output_head_gradient =
         LinearWeightGradientI64::new(MINI_TRANSFORMER_D_MODEL, BYTE_VOCAB)
@@ -6313,6 +7087,7 @@ where
                 .min(starts.len());
             let batch_model_checkpoint = model.clone();
             let updates_before_batch = updates;
+            let steps_before_batch = steps.len();
             let rollbacks_before_batch = rollback_count;
 
             for (relative_window_index, &window_start) in starts[batch_start_index..batch_end_index]
@@ -6509,55 +7284,63 @@ where
                     residual_saturation_count = residual_saturation_count
                         .saturating_add(core_stats.residual_saturation_count);
 
-                    steps.push(MiniTransformerMlpTrainingStepTrace {
-                        update_index: updates,
-                        epoch,
-                        window_index,
-                        window_start,
-                        first_token: tokens[window_start],
-                        last_token: tokens[window_start + config.seq_len - 1],
-                        target_token,
-                        predicted_token_before,
-                        predicted_token_after,
-                        target_probability_before_q15: cache_before.probabilities_q15
-                            [usize::from(target_token)],
-                        target_probability_after_q15: cache_after.probabilities_q15
-                            [usize::from(target_token)],
-                        embedding_cache_hash: hash_i16_slice(&cache_before.embedding_output),
-                        attention_cache_hash: hash_i16_slice(&cache_before.attention_output),
-                        mlp_cache_hash: hash_i16_slice(&cache_before.mlp_gated),
-                        block_output_hash_before: hash_i16_slice(&cache_before.block_output),
-                        block_output_hash_after: hash_i16_slice(&cache_after.block_output),
-                        output_head_hash_before,
-                        output_head_hash_after,
-                        mlp_hash_before,
-                        mlp_hash_after,
-                        attention_hash_before,
-                        attention_hash_after,
-                        embedding_hash_before,
-                        embedding_hash_after,
-                        output_head_saturation_count: core_stats
-                            .output_head
-                            .gradient_saturation_count,
-                        mlp_saturation_count: core_stats.mlp.gradient_saturation_count(),
-                        embedding_saturation_count: core_stats.embedding.gradient_saturation_count,
-                        attention_saturation_count: core_stats
-                            .attention
-                            .gradient_saturation_count(),
-                        residual_saturation_count: core_stats.residual_saturation_count,
-                        output_head_zero_delta_count: core_stats.output_head.zero_delta_count,
-                        mlp_zero_delta_count: core_stats.mlp.zero_delta_count(),
-                        embedding_zero_delta_count: core_stats.embedding.zero_delta_count,
-                        attention_zero_delta_count: core_stats.attention.zero_delta_count(),
-                        output_head_delta_l1: core_stats.output_head.weight_delta_l1,
-                        mlp_delta_l1: core_stats.mlp.weight_delta_l1(),
-                        embedding_delta_l1: core_stats.embedding.weight_delta_l1,
-                        attention_delta_l1: core_stats.attention.weight_delta_l1(),
-                        attention_q_delta_l1: core_stats.attention.q.weight_delta_l1,
-                        attention_k_delta_l1: core_stats.attention.k.weight_delta_l1,
-                        attention_v_delta_l1: core_stats.attention.v.weight_delta_l1,
-                        attention_o_delta_l1: core_stats.attention.o.weight_delta_l1,
-                    });
+                    if mini_transformer_should_record_step(
+                        trace_detail,
+                        updates,
+                        trace_sample_interval,
+                    ) {
+                        steps.push(MiniTransformerMlpTrainingStepTrace {
+                            update_index: updates,
+                            epoch,
+                            window_index,
+                            window_start,
+                            first_token: tokens[window_start],
+                            last_token: tokens[window_start + config.seq_len - 1],
+                            target_token,
+                            predicted_token_before,
+                            predicted_token_after,
+                            target_probability_before_q15: cache_before.probabilities_q15
+                                [usize::from(target_token)],
+                            target_probability_after_q15: cache_after.probabilities_q15
+                                [usize::from(target_token)],
+                            embedding_cache_hash: hash_i16_slice(&cache_before.embedding_output),
+                            attention_cache_hash: hash_i16_slice(&cache_before.attention_output),
+                            mlp_cache_hash: hash_i16_slice(&cache_before.mlp_gated),
+                            block_output_hash_before: hash_i16_slice(&cache_before.block_output),
+                            block_output_hash_after: hash_i16_slice(&cache_after.block_output),
+                            output_head_hash_before,
+                            output_head_hash_after,
+                            mlp_hash_before,
+                            mlp_hash_after,
+                            attention_hash_before,
+                            attention_hash_after,
+                            embedding_hash_before,
+                            embedding_hash_after,
+                            output_head_saturation_count: core_stats
+                                .output_head
+                                .gradient_saturation_count,
+                            mlp_saturation_count: core_stats.mlp.gradient_saturation_count(),
+                            embedding_saturation_count: core_stats
+                                .embedding
+                                .gradient_saturation_count,
+                            attention_saturation_count: core_stats
+                                .attention
+                                .gradient_saturation_count(),
+                            residual_saturation_count: core_stats.residual_saturation_count,
+                            output_head_zero_delta_count: core_stats.output_head.zero_delta_count,
+                            mlp_zero_delta_count: core_stats.mlp.zero_delta_count(),
+                            embedding_zero_delta_count: core_stats.embedding.zero_delta_count,
+                            attention_zero_delta_count: core_stats.attention.zero_delta_count(),
+                            output_head_delta_l1: core_stats.output_head.weight_delta_l1,
+                            mlp_delta_l1: core_stats.mlp.weight_delta_l1(),
+                            embedding_delta_l1: core_stats.embedding.weight_delta_l1,
+                            attention_delta_l1: core_stats.attention.weight_delta_l1(),
+                            attention_q_delta_l1: core_stats.attention.q.weight_delta_l1,
+                            attention_k_delta_l1: core_stats.attention.k.weight_delta_l1,
+                            attention_v_delta_l1: core_stats.attention.v.weight_delta_l1,
+                            attention_o_delta_l1: core_stats.attention.o.weight_delta_l1,
+                        });
+                    }
                     continue;
                 }
 
@@ -6868,57 +7651,60 @@ where
                     );
                 }
 
-                steps.push(MiniTransformerMlpTrainingStepTrace {
-                    update_index: updates,
-                    epoch,
-                    window_index,
-                    window_start,
-                    first_token: tokens[window_start],
-                    last_token: tokens[window_start + config.seq_len - 1],
-                    target_token,
-                    predicted_token_before,
-                    predicted_token_after,
-                    target_probability_before_q15: cache_before.probabilities_q15
-                        [usize::from(target_token)],
-                    target_probability_after_q15: cache_after.probabilities_q15
-                        [usize::from(target_token)],
-                    embedding_cache_hash: hash_i16_slice(&cache_before.embedding_output),
-                    attention_cache_hash: hash_i16_slice(&cache_before.attention_output),
-                    mlp_cache_hash: hash_i16_slice(&cache_before.mlp_gated),
-                    block_output_hash_before: hash_i16_slice(&cache_before.block_output),
-                    block_output_hash_after: hash_i16_slice(&cache_after.block_output),
-                    output_head_hash_before,
-                    output_head_hash_after,
-                    mlp_hash_before,
-                    mlp_hash_after,
-                    attention_hash_before,
-                    attention_hash_after,
-                    embedding_hash_before,
-                    embedding_hash_after,
-                    output_head_saturation_count: output_update.gradient_saturation_count,
-                    mlp_saturation_count: mlp_input_saturation_count
-                        + mlp_rms_backward_saturation_count
-                        + mlp_update.gradient_saturation_count().unwrap_or(usize::MAX),
-                    embedding_saturation_count: embedding_update.gradient_saturation_count,
-                    attention_saturation_count: attention_update.gradient_saturation_count
-                        + attention_rms_backward_saturation_count,
-                    residual_saturation_count: cache_before.residual_saturation_count
-                        + cache_after.residual_saturation_count
-                        + gradient_residual_saturation_count
-                        + embedding_gradient_saturation_count,
-                    output_head_zero_delta_count: output_update.zero_delta_count,
-                    mlp_zero_delta_count: mlp_update.zero_delta_count().unwrap_or(usize::MAX),
-                    embedding_zero_delta_count: embedding_update.zero_delta_count,
-                    attention_zero_delta_count: attention_update.zero_delta_count,
-                    output_head_delta_l1: output_update.weight_delta_l1,
-                    mlp_delta_l1: mlp_update.weight_delta_l1().unwrap_or(0),
-                    embedding_delta_l1: embedding_update.weight_delta_l1,
-                    attention_delta_l1: attention_update.weight_delta_l1,
-                    attention_q_delta_l1: attention_update.q.weight_delta_l1,
-                    attention_k_delta_l1: attention_update.k.weight_delta_l1,
-                    attention_v_delta_l1: attention_update.v.weight_delta_l1,
-                    attention_o_delta_l1: attention_update.o.weight_delta_l1,
-                });
+                if mini_transformer_should_record_step(trace_detail, updates, trace_sample_interval)
+                {
+                    steps.push(MiniTransformerMlpTrainingStepTrace {
+                        update_index: updates,
+                        epoch,
+                        window_index,
+                        window_start,
+                        first_token: tokens[window_start],
+                        last_token: tokens[window_start + config.seq_len - 1],
+                        target_token,
+                        predicted_token_before,
+                        predicted_token_after,
+                        target_probability_before_q15: cache_before.probabilities_q15
+                            [usize::from(target_token)],
+                        target_probability_after_q15: cache_after.probabilities_q15
+                            [usize::from(target_token)],
+                        embedding_cache_hash: hash_i16_slice(&cache_before.embedding_output),
+                        attention_cache_hash: hash_i16_slice(&cache_before.attention_output),
+                        mlp_cache_hash: hash_i16_slice(&cache_before.mlp_gated),
+                        block_output_hash_before: hash_i16_slice(&cache_before.block_output),
+                        block_output_hash_after: hash_i16_slice(&cache_after.block_output),
+                        output_head_hash_before,
+                        output_head_hash_after,
+                        mlp_hash_before,
+                        mlp_hash_after,
+                        attention_hash_before,
+                        attention_hash_after,
+                        embedding_hash_before,
+                        embedding_hash_after,
+                        output_head_saturation_count: output_update.gradient_saturation_count,
+                        mlp_saturation_count: mlp_input_saturation_count
+                            + mlp_rms_backward_saturation_count
+                            + mlp_update.gradient_saturation_count().unwrap_or(usize::MAX),
+                        embedding_saturation_count: embedding_update.gradient_saturation_count,
+                        attention_saturation_count: attention_update.gradient_saturation_count
+                            + attention_rms_backward_saturation_count,
+                        residual_saturation_count: cache_before.residual_saturation_count
+                            + cache_after.residual_saturation_count
+                            + gradient_residual_saturation_count
+                            + embedding_gradient_saturation_count,
+                        output_head_zero_delta_count: output_update.zero_delta_count,
+                        mlp_zero_delta_count: mlp_update.zero_delta_count().unwrap_or(usize::MAX),
+                        embedding_zero_delta_count: embedding_update.zero_delta_count,
+                        attention_zero_delta_count: attention_update.zero_delta_count,
+                        output_head_delta_l1: output_update.weight_delta_l1,
+                        mlp_delta_l1: mlp_update.weight_delta_l1().unwrap_or(0),
+                        embedding_delta_l1: embedding_update.weight_delta_l1,
+                        attention_delta_l1: attention_update.weight_delta_l1,
+                        attention_q_delta_l1: attention_update.q.weight_delta_l1,
+                        attention_k_delta_l1: attention_update.k.weight_delta_l1,
+                        attention_v_delta_l1: attention_update.v.weight_delta_l1,
+                        attention_o_delta_l1: attention_update.o.weight_delta_l1,
+                    });
+                }
             }
 
             let accepted_windows_in_batch = updates.saturating_sub(updates_before_batch);
@@ -7094,10 +7880,15 @@ where
                     .is_ok();
                     let mut batch_loss_regressed = false;
                     if batch_valid && config.reject_loss_regression {
+                        let loss_guard_starts = mini_transformer_loss_guard_starts(
+                            &starts,
+                            batch_start_index,
+                            batch_end_index,
+                        );
                         let before_loss =
                             mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
                                 tokens,
-                                &starts,
+                                &loss_guard_starts,
                                 &batch_model_checkpoint,
                                 config.seq_len,
                                 config.attention_kind,
@@ -7106,13 +7897,17 @@ where
                         let after_loss =
                             mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
                                 tokens,
-                                &starts,
+                                &loss_guard_starts,
                                 &candidate_model,
                                 config.seq_len,
                                 config.attention_kind,
                                 config.position_policy,
                             )?;
-                        batch_loss_regressed = after_loss > before_loss;
+                        batch_loss_regressed = mini_transformer_loss_guard_regressed(
+                            before_loss,
+                            after_loss,
+                            loss_guard_starts.len(),
+                        );
                     }
 
                     if batch_valid && !batch_loss_regressed {
@@ -7193,23 +7988,29 @@ where
                             );
                         }
                         accepted_batch_count = accepted_batch_count.saturating_add(1);
+                        emit_mini_transformer_committed_binary_steps(
+                            &steps,
+                            steps_before_batch,
+                            &mut binary_trace,
+                        )?;
                     } else {
                         model = batch_model_checkpoint;
                         updates = updates_before_batch;
-                        steps.truncate(updates_before_batch);
+                        steps.truncate(steps_before_batch);
                         rollback_count = rollback_count.saturating_add(1);
                         rejected_window_count =
                             rejected_window_count.saturating_add(accepted_windows_in_batch);
                         rejected_batch_count = rejected_batch_count.saturating_add(1);
-                        adaptive_attention_shifts.observe_rejected(
-                            rejected_batch_count,
-                            adaptive_shift_controller_enabled,
-                            config,
-                            &mut adaptive_shift_events,
-                        );
                         if batch_loss_regressed {
                             loss_regression_rejected_batch_count =
                                 loss_regression_rejected_batch_count.saturating_add(1);
+                        } else {
+                            adaptive_attention_shifts.observe_rejected(
+                                rejected_batch_count,
+                                adaptive_shift_controller_enabled,
+                                config,
+                                &mut adaptive_shift_events,
+                            );
                         }
                         if use_output_head_accumulator {
                             output_head_gradient = output_head_gradient_checkpoint;
@@ -7242,6 +8043,11 @@ where
                         embedding_gradient.clear();
                     }
                     accepted_batch_count = accepted_batch_count.saturating_add(1);
+                    emit_mini_transformer_committed_binary_steps(
+                        &steps,
+                        steps_before_batch,
+                        &mut binary_trace,
+                    )?;
                 }
             } else {
                 if use_output_head_accumulator {
@@ -7338,6 +8144,7 @@ where
     }
 
     let trace = MiniTransformerMlpTrainingTrace {
+        trace_detail,
         config,
         token_count: tokens.len(),
         token_hash,
@@ -7426,6 +8233,11 @@ where
         adaptive_shift_events,
         steps,
     };
+
+    for event in &trace.adaptive_shift_events {
+        binary_trace(MiniTransformerBinaryTraceRecord::AdaptiveShift(event))?;
+    }
+    binary_trace(MiniTransformerBinaryTraceRecord::FinalSummary(&trace))?;
 
     Ok(MiniTransformerMlpTrainingRun { trace, model })
 }
@@ -8599,6 +9411,601 @@ impl LexemeSoftmaxTrainingTrace {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiniTransformerBinaryTraceRecord<'a> {
+    Header { initial_model_hash: u64 },
+    StepSample(&'a MiniTransformerMlpTrainingStepTrace),
+    AdaptiveShift(&'a MiniTransformerAdaptiveShiftEventTrace),
+    FinalSummary(&'a MiniTransformerMlpTrainingTrace),
+}
+
+pub struct MiniTransformerBinaryTraceWriter<W: std::io::Write> {
+    writer: W,
+}
+
+impl<W: std::io::Write> MiniTransformerBinaryTraceWriter<W> {
+    pub fn new(writer: W) -> Self {
+        Self { writer }
+    }
+
+    pub fn write_record(
+        &mut self,
+        record: MiniTransformerBinaryTraceRecord<'_>,
+    ) -> std::io::Result<()> {
+        match record {
+            MiniTransformerBinaryTraceRecord::Header { initial_model_hash } => self
+                .writer
+                .write_all(&mini_transformer_binary_trace_header_v1(initial_model_hash)),
+            MiniTransformerBinaryTraceRecord::StepSample(step) => self
+                .writer
+                .write_all(&mini_transformer_binary_step_sample_record_v1(step)),
+            MiniTransformerBinaryTraceRecord::AdaptiveShift(event) => self
+                .writer
+                .write_all(&mini_transformer_binary_adaptive_shift_record_v1(event)),
+            MiniTransformerBinaryTraceRecord::FinalSummary(trace) => self
+                .writer
+                .write_all(&mini_transformer_binary_final_summary_record_v1(trace)),
+        }
+    }
+
+    pub fn write_trace_tail(
+        &mut self,
+        trace: &MiniTransformerMlpTrainingTrace,
+    ) -> std::io::Result<()> {
+        for event in &trace.adaptive_shift_events {
+            self.write_record(MiniTransformerBinaryTraceRecord::AdaptiveShift(event))?;
+        }
+        self.write_record(MiniTransformerBinaryTraceRecord::FinalSummary(trace))?;
+        self.writer.flush()
+    }
+
+    pub fn into_inner(self) -> W {
+        self.writer
+    }
+}
+
+pub fn mini_transformer_binary_trace_header_v1(initial_model_hash: u64) -> [u8; 16] {
+    let mut out = Vec::with_capacity(MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN);
+    out.extend_from_slice(MINI_TRANSFORMER_BINARY_TRACE_MAGIC);
+    out.push(MINI_TRANSFORMER_BINARY_TRACE_VERSION);
+    out.push(MINI_TRANSFORMER_BINARY_TRACE_SCHEMA_ID);
+    push_binary_u16(&mut out, 0);
+    push_binary_u64(&mut out, initial_model_hash);
+    debug_assert_eq!(out.len(), MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN);
+    let mut record = [0_u8; MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN];
+    record.copy_from_slice(&out);
+    record
+}
+
+pub fn mini_transformer_binary_step_sample_record_v1(
+    step: &MiniTransformerMlpTrainingStepTrace,
+) -> [u8; 32] {
+    let mut out = Vec::with_capacity(MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN);
+    push_mini_transformer_binary_step_sample(&mut out, step);
+    debug_assert_eq!(out.len(), MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN);
+    let mut record = [0_u8; MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN];
+    record.copy_from_slice(&out);
+    record
+}
+
+pub fn mini_transformer_binary_adaptive_shift_record_v1(
+    event: &MiniTransformerAdaptiveShiftEventTrace,
+) -> [u8; 22] {
+    let mut out = Vec::with_capacity(MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN);
+    push_mini_transformer_binary_adaptive_shift(&mut out, event);
+    debug_assert_eq!(out.len(), MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN);
+    let mut record = [0_u8; MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN];
+    record.copy_from_slice(&out);
+    record
+}
+
+pub fn mini_transformer_binary_final_summary_record_v1(
+    trace: &MiniTransformerMlpTrainingTrace,
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(MINI_TRANSFORMER_BINARY_FINAL_SUMMARY_RECORD_LEN);
+    push_mini_transformer_binary_final_summary(&mut out, trace);
+    debug_assert_eq!(out.len(), MINI_TRANSFORMER_BINARY_FINAL_SUMMARY_RECORD_LEN);
+    out
+}
+
+impl MiniTransformerMlpSwarmTrainingTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", MINI_TRANSFORMER_SWARM_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "task", "wiki_bard_mini_transformer_mlp_swarm");
+        comma(&mut out);
+        out.push_str("\"data\":{");
+        push_string_field(&mut out, "tokenizer", self.config.tokenizer_id.as_str());
+        comma(&mut out);
+        push_usize_field(&mut out, "token_count", self.token_count);
+        comma(&mut out);
+        push_hash_field(&mut out, "token_hash", self.token_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"swarm\":{");
+        push_usize_field(&mut out, "worker_count", self.worker_count);
+        comma(&mut out);
+        push_usize_field(&mut out, "best_worker_index", self.best_worker_index);
+        comma(&mut out);
+        push_usize_field(&mut out, "base_window_offset", self.base_window_offset);
+        comma(&mut out);
+        push_usize_field(&mut out, "base_stride", self.base_stride);
+        comma(&mut out);
+        push_string_field(
+            &mut out,
+            "trace_detail",
+            self.swarm_config.trace_detail.as_str(),
+        );
+        comma(&mut out);
+        push_hash_field(&mut out, "final_model_hash", self.final_model_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"model\":{");
+        push_usize_field(&mut out, "vocab", BYTE_VOCAB);
+        comma(&mut out);
+        push_usize_field(&mut out, "seq_len", self.config.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "d_model", MINI_TRANSFORMER_D_MODEL);
+        comma(&mut out);
+        push_usize_field(&mut out, "heads", MINI_TRANSFORMER_HEADS);
+        comma(&mut out);
+        push_usize_field(&mut out, "hidden_dim", MINI_TRANSFORMER_HIDDEN_DIM);
+        comma(&mut out);
+        push_string_field(
+            &mut out,
+            "attention_kind",
+            self.config.attention_kind.as_str(),
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "position", self.config.position_policy.as_str());
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"training\":{");
+        push_usize_field(&mut out, "epochs", self.config.epochs);
+        comma(&mut out);
+        push_usize_field(&mut out, "seq_len", self.config.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "stride", self.config.stride);
+        comma(&mut out);
+        push_usize_field(&mut out, "window_offset", self.config.window_offset);
+        comma(&mut out);
+        push_optional_usize_field(&mut out, "max_windows", self.config.max_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "batch_windows", self.config.batch_windows);
+        comma(&mut out);
+        push_i32_field(&mut out, "learning_rate", self.config.learning_rate);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "output_learning_rate_shift",
+            usize::from(self.config.output_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "mlp_learning_rate_shift",
+            usize::from(self.config.mlp_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "embedding_learning_rate_shift",
+            usize::from(self.config.embedding_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "attention_learning_rate_shift",
+            usize::from(self.config.attention_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "attention_q_learning_rate_shift",
+            usize::from(self.config.attention_q_learning_rate_shift),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "attention_qk_learning_rate_shift",
+            usize::from(self.config.attention_qk_learning_rate_shift),
+        );
+        out.push('}');
+        comma(&mut out);
+        push_mini_transformer_swarm_workers_field(&mut out, "workers", &self.workers);
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "known_non_claims",
+            &MINI_TRANSFORMER_MLP_KNOWN_NON_CLAIMS,
+        );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+impl MiniTransformerMlpSwarmScalingTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", MINI_TRANSFORMER_SWARM_SCALING_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", AUTHORITY);
+        comma(&mut out);
+        push_string_field(
+            &mut out,
+            "task",
+            "wiki_bard_mini_transformer_mlp_swarm_scaling",
+        );
+        comma(&mut out);
+        out.push_str("\"data\":{");
+        push_string_field(&mut out, "tokenizer", self.config.tokenizer_id.as_str());
+        comma(&mut out);
+        push_usize_field(&mut out, "token_count", self.token_count);
+        comma(&mut out);
+        push_hash_field(&mut out, "token_hash", self.token_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"host\":{");
+        push_usize_field(
+            &mut out,
+            "available_parallelism",
+            self.available_parallelism,
+        );
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"benchmark\":{");
+        push_usize_field(
+            &mut out,
+            "requested_max_workers",
+            self.requested_max_workers,
+        );
+        comma(&mut out);
+        push_usize_field(&mut out, "run_count", self.runs.len());
+        comma(&mut out);
+        push_usize_array_field(&mut out, "worker_counts", &self.worker_counts);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"model\":{");
+        push_usize_field(&mut out, "vocab", BYTE_VOCAB);
+        comma(&mut out);
+        push_usize_field(&mut out, "seq_len", self.config.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "d_model", MINI_TRANSFORMER_D_MODEL);
+        comma(&mut out);
+        push_usize_field(&mut out, "heads", MINI_TRANSFORMER_HEADS);
+        comma(&mut out);
+        push_usize_field(&mut out, "hidden_dim", MINI_TRANSFORMER_HIDDEN_DIM);
+        comma(&mut out);
+        push_string_field(
+            &mut out,
+            "attention_kind",
+            self.config.attention_kind.as_str(),
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "position", self.config.position_policy.as_str());
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"training\":{");
+        push_usize_field(&mut out, "epochs", self.config.epochs);
+        comma(&mut out);
+        push_usize_field(&mut out, "seq_len", self.config.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "stride", self.config.stride);
+        comma(&mut out);
+        push_usize_field(&mut out, "window_offset", self.config.window_offset);
+        comma(&mut out);
+        push_optional_usize_field(&mut out, "max_windows", self.config.max_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "batch_windows", self.config.batch_windows);
+        out.push('}');
+        comma(&mut out);
+        push_mini_transformer_swarm_scaling_runs_field(&mut out, "runs", &self.runs);
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "known_non_claims",
+            &MINI_TRANSFORMER_SWARM_SCALING_KNOWN_NON_CLAIMS,
+        );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+fn push_usize_array_field(out: &mut String, field: &str, values: &[usize]) {
+    out.push('"');
+    out.push_str(field);
+    out.push_str("\":");
+    out.push('[');
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            comma(out);
+        }
+        out.push_str(&value.to_string());
+    }
+    out.push(']');
+}
+
+fn push_mini_transformer_swarm_scaling_runs_field(
+    out: &mut String,
+    field: &str,
+    runs: &[MiniTransformerMlpSwarmScalingRunTrace],
+) {
+    out.push('"');
+    out.push_str(field);
+    out.push_str("\":");
+    out.push('[');
+    for (index, run) in runs.iter().enumerate() {
+        if index > 0 {
+            comma(out);
+        }
+        push_mini_transformer_swarm_scaling_run(out, run);
+    }
+    out.push(']');
+}
+
+fn push_mini_transformer_swarm_scaling_run(
+    out: &mut String,
+    run: &MiniTransformerMlpSwarmScalingRunTrace,
+) {
+    out.push('{');
+    push_usize_field(out, "requested_worker_count", run.requested_worker_count);
+    comma(out);
+    push_usize_field(out, "effective_worker_count", run.effective_worker_count);
+    comma(out);
+    push_u64_field(out, "elapsed_ns", run.elapsed_ns);
+    comma(out);
+    push_milli_decimal_field(out, "elapsed_ms", run.elapsed_ns / 1_000);
+    comma(out);
+    push_u64_field(out, "speedup_per_mille", run.speedup_per_mille);
+    comma(out);
+    push_milli_decimal_field(out, "speedup", run.speedup_per_mille);
+    comma(out);
+    push_u64_field(
+        out,
+        "parallel_efficiency_per_mille",
+        run.parallel_efficiency_per_mille,
+    );
+    comma(out);
+    push_milli_decimal_field(
+        out,
+        "parallel_efficiency",
+        run.parallel_efficiency_per_mille,
+    );
+    comma(out);
+    push_u64_field(
+        out,
+        "windows_per_second_milli",
+        run.windows_per_second_milli,
+    );
+    comma(out);
+    push_milli_decimal_field(out, "windows_per_second", run.windows_per_second_milli);
+    comma(out);
+    push_u64_field(
+        out,
+        "updates_per_second_milli",
+        run.updates_per_second_milli,
+    );
+    comma(out);
+    push_milli_decimal_field(out, "updates_per_second", run.updates_per_second_milli);
+    comma(out);
+    push_usize_field(out, "examined_windows", run.examined_windows);
+    comma(out);
+    push_usize_field(out, "updates", run.updates);
+    comma(out);
+    push_usize_field(out, "accepted_batch_count", run.accepted_batch_count);
+    comma(out);
+    push_usize_field(out, "rejected_batch_count", run.rejected_batch_count);
+    comma(out);
+    push_usize_field(out, "rollback_count", run.rollback_count);
+    comma(out);
+    push_usize_field(out, "best_worker_index", run.best_worker_index);
+    comma(out);
+    push_usize_field(out, "best_final_total_error", run.best_final_total_error);
+    comma(out);
+    push_usize_field(
+        out,
+        "best_final_probability_error_q15",
+        run.best_final_probability_error_q15,
+    );
+    comma(out);
+    push_usize_field(
+        out,
+        "best_final_accuracy_per_mille",
+        run.best_final_accuracy_per_mille,
+    );
+    comma(out);
+    push_hash_field(out, "final_model_hash", run.final_model_hash);
+    out.push('}');
+}
+
+fn push_mini_transformer_swarm_route_config_field(
+    out: &mut String,
+    field: &str,
+    config: &MiniTransformerSwarmRouteConfig,
+) {
+    out.push('"');
+    out.push_str(field);
+    out.push_str("\":");
+    out.push('{');
+    match config.required_capability.as_deref() {
+        Some(capability) => push_string_field(out, "required_capability", capability),
+        None => {
+            push_quoted(out, "required_capability");
+            out.push_str(":null");
+        }
+    }
+    comma(out);
+    push_optional_usize_field(out, "max_artifact_bytes", config.max_artifact_bytes);
+    comma(out);
+    push_optional_usize_field(out, "max_parameter_bytes", config.max_parameter_bytes);
+    comma(out);
+    push_usize_field(out, "active_expert_limit", config.active_expert_limit);
+    comma(out);
+    push_bool_field(out, "prompt_affinity", config.prompt_affinity);
+    comma(out);
+    push_usize_field(
+        out,
+        "prompt_affinity_max_windows",
+        config.prompt_affinity_max_windows,
+    );
+    out.push('}');
+}
+
+fn push_mini_transformer_swarm_route_candidates_field(
+    out: &mut String,
+    field: &str,
+    candidates: &[MiniTransformerSwarmRouteCandidateTrace],
+) {
+    out.push('"');
+    out.push_str(field);
+    out.push_str("\":");
+    out.push('[');
+    for (index, candidate) in candidates.iter().enumerate() {
+        if index > 0 {
+            comma(out);
+        }
+        push_mini_transformer_swarm_route_candidate(out, candidate);
+    }
+    out.push(']');
+}
+
+fn push_mini_transformer_swarm_route_candidate(
+    out: &mut String,
+    candidate: &MiniTransformerSwarmRouteCandidateTrace,
+) {
+    out.push('{');
+    push_usize_field(out, "expert_index", candidate.expert_index);
+    comma(out);
+    push_string_field(out, "expert_id", &candidate.expert_id);
+    comma(out);
+    push_bool_field(out, "accepted", candidate.accepted);
+    comma(out);
+    push_string_field(out, "reject_reason", candidate.reject_reason);
+    comma(out);
+    push_i64_field(out, "score", candidate.score);
+    comma(out);
+    push_i64_field(out, "manifest_score", candidate.manifest_score);
+    comma(out);
+    push_i64_field(
+        out,
+        "prompt_affinity_score",
+        candidate.prompt_affinity_score,
+    );
+    comma(out);
+    push_usize_field(out, "prompt_eval_windows", candidate.prompt_eval_windows);
+    comma(out);
+    push_optional_usize_field(
+        out,
+        "prompt_probability_error_q15",
+        candidate.prompt_probability_error_q15,
+    );
+    comma(out);
+    push_bool_field(out, "capability_match", candidate.capability_match);
+    comma(out);
+    push_hash_field(out, "model_hash", candidate.model_hash);
+    comma(out);
+    push_usize_field(out, "artifact_bytes", candidate.artifact_bytes);
+    comma(out);
+    push_usize_field(out, "parameter_bytes", candidate.parameter_bytes);
+    comma(out);
+    push_usize_field(out, "worker_count", candidate.worker_count);
+    comma(out);
+    push_usize_field(out, "context_seq_len", candidate.context_seq_len);
+    comma(out);
+    push_string_field(out, "default_composition", candidate.default_composition);
+    out.push('}');
+}
+
+fn push_mini_transformer_swarm_workers_field(
+    out: &mut String,
+    field: &str,
+    workers: &[MiniTransformerMlpSwarmWorkerTrace],
+) {
+    out.push('"');
+    out.push_str(field);
+    out.push_str("\":");
+    out.push('[');
+    for (index, worker) in workers.iter().enumerate() {
+        if index > 0 {
+            comma(out);
+        }
+        push_mini_transformer_swarm_worker(out, worker);
+    }
+    out.push(']');
+}
+
+fn push_mini_transformer_swarm_worker(
+    out: &mut String,
+    worker: &MiniTransformerMlpSwarmWorkerTrace,
+) {
+    out.push('{');
+    push_usize_field(out, "worker_index", worker.worker_index);
+    comma(out);
+    push_usize_field(out, "window_offset", worker.window_offset);
+    comma(out);
+    push_usize_field(out, "stride", worker.stride);
+    comma(out);
+    push_optional_usize_field(out, "max_windows", worker.max_windows);
+    comma(out);
+    push_hash_field(out, "token_hash", worker.token_hash);
+    comma(out);
+    push_hash_field(out, "window_hash", worker.window_hash);
+    comma(out);
+    push_usize_field(out, "windows", worker.windows);
+    comma(out);
+    push_usize_field(out, "examined_windows", worker.examined_windows);
+    comma(out);
+    push_usize_field(out, "updates", worker.updates);
+    comma(out);
+    push_usize_field(out, "accepted_batch_count", worker.accepted_batch_count);
+    comma(out);
+    push_usize_field(out, "rejected_batch_count", worker.rejected_batch_count);
+    comma(out);
+    push_usize_field(out, "rollback_count", worker.rollback_count);
+    comma(out);
+    push_usize_field(out, "rejected_window_count", worker.rejected_window_count);
+    comma(out);
+    push_usize_field(
+        out,
+        "final_invalid_forward_count",
+        worker.final_invalid_forward_count,
+    );
+    comma(out);
+    push_usize_field(out, "initial_total_error", worker.initial_total_error);
+    comma(out);
+    push_usize_field(out, "final_total_error", worker.final_total_error);
+    comma(out);
+    push_usize_field(
+        out,
+        "initial_probability_error_q15",
+        worker.initial_probability_error_q15,
+    );
+    comma(out);
+    push_usize_field(
+        out,
+        "final_probability_error_q15",
+        worker.final_probability_error_q15,
+    );
+    comma(out);
+    push_usize_field(
+        out,
+        "final_accuracy_per_mille",
+        worker.final_accuracy_per_mille,
+    );
+    comma(out);
+    push_hash_field(out, "final_model_hash", worker.final_model_hash);
+    comma(out);
+    push_hash_field(out, "final_logits_hash", worker.final_logits_hash);
+    out.push('}');
+}
+
 impl MiniTransformerMlpTrainingTrace {
     pub fn to_json_line(&self) -> String {
         let mut out = String::new();
@@ -8747,6 +10154,8 @@ impl MiniTransformerMlpTrainingTrace {
             "reject_loss_regression",
             self.config.reject_loss_regression,
         );
+        comma(&mut out);
+        push_string_field(&mut out, "trace_detail", self.trace_detail.as_str());
         out.push('}');
         comma(&mut out);
         out.push_str("\"training\":{");
@@ -8773,6 +10182,8 @@ impl MiniTransformerMlpTrainingTrace {
         push_usize_field(&mut out, "examined_windows", self.examined_windows);
         comma(&mut out);
         push_usize_field(&mut out, "updates", self.updates);
+        comma(&mut out);
+        push_string_field(&mut out, "trace_detail", self.trace_detail.as_str());
         comma(&mut out);
         push_usize_field(
             &mut out,
@@ -9172,6 +10583,330 @@ impl MiniTransformerMlpTrainingTrace {
         out.push('\n');
         out
     }
+
+    pub fn to_binary_trace_v1(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(
+            MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN
+                + self
+                    .steps
+                    .len()
+                    .saturating_mul(MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN)
+                + self
+                    .adaptive_shift_events
+                    .len()
+                    .saturating_mul(MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN)
+                + MINI_TRANSFORMER_BINARY_FINAL_SUMMARY_RECORD_LEN,
+        );
+        out.extend_from_slice(&mini_transformer_binary_trace_header_v1(
+            self.initial_model_hash,
+        ));
+
+        for step in &self.steps {
+            out.extend_from_slice(&mini_transformer_binary_step_sample_record_v1(step));
+        }
+        for event in &self.adaptive_shift_events {
+            out.extend_from_slice(&mini_transformer_binary_adaptive_shift_record_v1(event));
+        }
+        out.extend_from_slice(&mini_transformer_binary_final_summary_record_v1(self));
+        out
+    }
+}
+
+fn push_mini_transformer_binary_step_sample(
+    out: &mut Vec<u8>,
+    step: &MiniTransformerMlpTrainingStepTrace,
+) {
+    let start = out.len();
+    out.push(MINI_TRANSFORMER_BINARY_TAG_STEP_SAMPLE);
+    push_binary_u32_clamped(out, step.update_index);
+    push_binary_u32_clamped(out, step.window_start);
+    out.push(step.first_token);
+    out.push(step.last_token);
+    out.push(step.target_token);
+    out.push(step.predicted_token_before);
+    out.push(step.predicted_token_after);
+    push_binary_i16(out, step.target_probability_before_q15);
+    push_binary_i16(out, step.target_probability_after_q15);
+    push_binary_u16_clamped(out, step.residual_saturation_count);
+    push_binary_u16_clamped(
+        out,
+        step.output_head_saturation_count
+            .saturating_add(step.mlp_saturation_count)
+            .saturating_add(step.embedding_saturation_count)
+            .saturating_add(step.attention_saturation_count),
+    );
+    push_binary_u16_clamped(
+        out,
+        step.output_head_zero_delta_count
+            .saturating_add(step.mlp_zero_delta_count)
+            .saturating_add(step.embedding_zero_delta_count)
+            .saturating_add(step.attention_zero_delta_count),
+    );
+    push_binary_u32_saturating(out, step.attention_delta_l1);
+    push_binary_u32_saturating(
+        out,
+        step.output_head_delta_l1
+            .saturating_add(step.mlp_delta_l1)
+            .saturating_add(step.embedding_delta_l1)
+            .saturating_add(step.attention_delta_l1),
+    );
+    debug_assert_eq!(out.len() - start, 32);
+}
+
+fn push_mini_transformer_binary_adaptive_shift(
+    out: &mut Vec<u8>,
+    event: &MiniTransformerAdaptiveShiftEventTrace,
+) {
+    out.push(MINI_TRANSFORMER_BINARY_TAG_ADAPTIVE_SHIFT);
+    push_binary_u32_clamped(out, event.batch_index);
+    out.push(mini_transformer_binary_component_code(event.component));
+    out.push(mini_transformer_binary_reason_code(event.reason));
+    out.push(event.previous_shift);
+    out.push(event.next_shift);
+    out.push(event.delta as u8);
+    push_binary_u16_clamped(out, event.observation_batches);
+    push_binary_u16_clamped(out, event.rejected_batches);
+    push_binary_u16_clamped(out, event.saturation_count);
+    push_binary_u16_clamped(out, event.zero_delta_count);
+    push_binary_u32_saturating(out, event.weight_delta_l1);
+}
+
+fn push_mini_transformer_binary_final_summary(
+    out: &mut Vec<u8>,
+    trace: &MiniTransformerMlpTrainingTrace,
+) {
+    out.push(MINI_TRANSFORMER_BINARY_TAG_FINAL_SUMMARY);
+    out.push(mini_transformer_binary_trace_detail_code(
+        trace.trace_detail,
+    ));
+    out.push(mini_transformer_binary_tokenizer_code(
+        trace.config.tokenizer_id,
+    ));
+    out.push(mini_transformer_binary_attention_code(
+        trace.config.attention_kind,
+    ));
+    out.push(mini_transformer_binary_position_code(
+        trace.config.position_policy,
+    ));
+    push_binary_u16(out, mini_transformer_binary_config_flags(trace.config));
+    push_binary_u32_clamped(out, trace.config.epochs);
+    push_binary_u32_clamped(out, trace.config.seq_len);
+    push_binary_u32_clamped(out, trace.config.stride);
+    push_binary_u32_clamped(out, trace.config.window_offset);
+    push_binary_optional_u32(out, trace.config.max_windows);
+    push_binary_u32_clamped(out, trace.config.batch_windows);
+    push_binary_i32(out, trace.config.learning_rate);
+    out.push(trace.config.output_learning_rate_shift);
+    out.push(trace.config.mlp_learning_rate_shift);
+    out.push(trace.config.embedding_learning_rate_shift);
+    out.push(trace.config.attention_learning_rate_shift);
+    out.push(trace.config.attention_q_learning_rate_shift);
+    out.push(trace.config.attention_qk_learning_rate_shift);
+
+    push_binary_u64(out, trace.token_count as u64);
+    push_binary_u64(out, trace.token_hash);
+    push_binary_u64(out, trace.window_hash);
+    push_binary_u64(out, trace.windows as u64);
+    push_binary_u64(out, trace.examined_windows as u64);
+    push_binary_u64(out, trace.updates as u64);
+    push_binary_u64(out, trace.accepted_batch_count as u64);
+    push_binary_u64(out, trace.rejected_batch_count as u64);
+    push_binary_u64(out, trace.rollback_count as u64);
+    push_binary_u64(out, trace.rejected_window_count as u64);
+    push_binary_u64(out, trace.loss_regression_rejected_batch_count as u64);
+    push_binary_u64(out, trace.final_invalid_forward_count as u64);
+
+    push_binary_u64(out, trace.initial_total_error as u64);
+    push_binary_u64(out, trace.final_total_error as u64);
+    push_binary_u64(out, trace.initial_probability_error_q15 as u64);
+    push_binary_u64(out, trace.final_probability_error_q15 as u64);
+    push_binary_i64(
+        out,
+        trace.final_probability_error_q15 as i64 - trace.initial_probability_error_q15 as i64,
+    );
+    push_binary_u64(out, trace.initial_mistakes as u64);
+    push_binary_u64(out, trace.final_mistakes as u64);
+    push_binary_u16_clamped(out, trace.final_accuracy_per_mille);
+
+    push_binary_u64(out, trace.output_head_saturation_count as u64);
+    push_binary_u64(out, trace.mlp_saturation_count as u64);
+    push_binary_u64(out, trace.embedding_saturation_count as u64);
+    push_binary_u64(out, trace.attention_saturation_count as u64);
+    push_binary_u64(out, trace.residual_saturation_count as u64);
+    push_binary_u64(out, trace.output_head_zero_delta_count as u64);
+    push_binary_u64(out, trace.mlp_zero_delta_count as u64);
+    push_binary_u64(out, trace.embedding_zero_delta_count as u64);
+    push_binary_u64(out, trace.attention_zero_delta_count as u64);
+    push_binary_u64(out, trace.output_head_delta_l1);
+    push_binary_u64(out, trace.mlp_delta_l1);
+    push_binary_u64(out, trace.embedding_delta_l1);
+    push_binary_u64(out, trace.attention_delta_l1);
+    push_binary_u64(out, trace.attention_q_delta_l1);
+    push_binary_u64(out, trace.attention_k_delta_l1);
+    push_binary_u64(out, trace.attention_v_delta_l1);
+    push_binary_u64(out, trace.attention_o_delta_l1);
+
+    push_binary_u64(out, trace.adaptive_rule_shift_adjustment_count as u64);
+    push_binary_u64(out, trace.adaptive_rule_update_count as u64);
+    push_binary_u64(out, trace.adaptive_rule_event_count as u64);
+    push_binary_u64(
+        out,
+        trace.adaptive_holographic_shift_adjustment_count as u64,
+    );
+    push_binary_u64(out, trace.adaptive_holographic_update_count as u64);
+    push_binary_u64(out, trace.adaptive_holographic_hash);
+    push_binary_u64(out, trace.adaptive_attention_shift_adjustment_count as u64);
+    push_binary_u64(
+        out,
+        trace.adaptive_attention_holographic_update_count as u64,
+    );
+    push_binary_u64(out, trace.adaptive_attention_holographic_hash);
+    out.push(trace.final_output_learning_rate_shift);
+    out.push(trace.final_mlp_learning_rate_shift);
+    out.push(trace.final_embedding_learning_rate_shift);
+    out.push(trace.final_attention_learning_rate_shift);
+    out.push(trace.final_attention_q_learning_rate_shift);
+    out.push(trace.final_attention_qk_learning_rate_shift);
+
+    push_binary_u64(out, trace.initial_model_hash);
+    push_binary_u64(out, trace.final_model_hash);
+    push_binary_u64(out, trace.initial_embedding_hash);
+    push_binary_u64(out, trace.final_embedding_hash);
+    push_binary_u64(out, trace.initial_output_head_hash);
+    push_binary_u64(out, trace.final_output_head_hash);
+    push_binary_u64(out, trace.initial_mlp_hash);
+    push_binary_u64(out, trace.final_mlp_hash);
+    push_binary_u64(out, trace.initial_attention_hash);
+    push_binary_u64(out, trace.final_attention_hash);
+    push_binary_u64(out, trace.initial_attention_q_hash);
+    push_binary_u64(out, trace.final_attention_q_hash);
+    push_binary_u64(out, trace.initial_attention_k_hash);
+    push_binary_u64(out, trace.final_attention_k_hash);
+    push_binary_u64(out, trace.initial_attention_v_hash);
+    push_binary_u64(out, trace.final_attention_v_hash);
+    push_binary_u64(out, trace.initial_attention_o_hash);
+    push_binary_u64(out, trace.final_attention_o_hash);
+    push_binary_u64(out, trace.final_logits_hash);
+}
+
+fn mini_transformer_binary_trace_detail_code(trace_detail: MiniTransformerTraceDetail) -> u8 {
+    match trace_detail {
+        MiniTransformerTraceDetail::Full => 0,
+        MiniTransformerTraceDetail::Summary => 1,
+        MiniTransformerTraceDetail::None => 2,
+    }
+}
+
+fn mini_transformer_binary_tokenizer_code(tokenizer: ByteTokenizerId) -> u8 {
+    match tokenizer {
+        ByteTokenizerId::Identity => 0,
+        ByteTokenizerId::AsciiLowerText => 1,
+    }
+}
+
+fn mini_transformer_binary_attention_code(attention: MiniTransformerAttentionKind) -> u8 {
+    match attention {
+        MiniTransformerAttentionKind::Base2Softmax => 0,
+        MiniTransformerAttentionKind::Linear => 1,
+        MiniTransformerAttentionKind::LinearStreamingNope => 2,
+        MiniTransformerAttentionKind::LinearStreamingTttNope => 3,
+    }
+}
+
+fn mini_transformer_binary_position_code(position: MiniTransformerPositionPolicy) -> u8 {
+    match position {
+        MiniTransformerPositionPolicy::LearnedAbsolute => 0,
+        MiniTransformerPositionPolicy::Nope => 1,
+    }
+}
+
+fn mini_transformer_binary_config_flags(config: MiniTransformerMlpTrainConfig) -> u16 {
+    let mut flags = 0_u16;
+    if config.adaptive_rule_shifts {
+        flags |= 1 << 0;
+    }
+    if config.adaptive_attention_shifts {
+        flags |= 1 << 1;
+    }
+    if config.adaptive_holographic_shifts {
+        flags |= 1 << 2;
+    }
+    if config.attention_vo_error_feedback {
+        flags |= 1 << 3;
+    }
+    if config.attention_vo_oracle {
+        flags |= 1 << 4;
+    }
+    if config.reject_loss_regression {
+        flags |= 1 << 5;
+    }
+    flags
+}
+
+fn mini_transformer_binary_component_code(component: &str) -> u8 {
+    match component {
+        "output" | "output_head" => 0,
+        "mlp" => 1,
+        "embedding" => 2,
+        "attention" => 3,
+        "attention_q" => 4,
+        "attention_qk" | "attention_k" => 5,
+        _ => u8::MAX,
+    }
+}
+
+fn mini_transformer_binary_reason_code(reason: &str) -> u8 {
+    match reason {
+        "rollback" | "rejected" => 0,
+        "saturation" => 1,
+        "zero_delta" | "dead_component" => 2,
+        "movement" | "active_delta" => 3,
+        "holographic" | "holographic_advisory" => 4,
+        _ => u8::MAX,
+    }
+}
+
+fn push_binary_optional_u32(out: &mut Vec<u8>, value: Option<usize>) {
+    match value {
+        Some(value) => push_binary_u32_clamped(out, value),
+        None => push_binary_u32(out, u32::MAX),
+    }
+}
+
+fn push_binary_u16_clamped(out: &mut Vec<u8>, value: usize) {
+    push_binary_u16(out, value.min(usize::from(u16::MAX)) as u16);
+}
+
+fn push_binary_u32_clamped(out: &mut Vec<u8>, value: usize) {
+    push_binary_u32(out, value.min(u32::MAX as usize) as u32);
+}
+
+fn push_binary_u32_saturating(out: &mut Vec<u8>, value: u64) {
+    push_binary_u32(out, value.min(u64::from(u32::MAX)) as u32);
+}
+
+fn push_binary_u16(out: &mut Vec<u8>, value: u16) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_binary_u32(out: &mut Vec<u8>, value: u32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_binary_u64(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_binary_i16(out: &mut Vec<u8>, value: i16) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_binary_i32(out: &mut Vec<u8>, value: i32) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_binary_i64(out: &mut Vec<u8>, value: i64) {
+    out.extend_from_slice(&value.to_le_bytes());
 }
 
 impl MiniTransformerMlpTrainingProgressTrace {
@@ -10553,6 +12288,740 @@ impl MiniTransformerMlpModel {
     }
 }
 
+impl MiniTransformerMlpSwarmModel {
+    pub fn new(
+        best_worker_index: usize,
+        workers: Vec<MiniTransformerMlpModel>,
+    ) -> Result<Self, TrainError> {
+        let first = workers
+            .first()
+            .ok_or(TrainError::InvalidModel("empty mini transformer swarm"))?;
+        if best_worker_index >= workers.len() {
+            return Err(TrainError::InvalidModel("swarm best worker out of range"));
+        }
+        let context_seq_len = first.context_seq_len;
+        if context_seq_len == 0
+            || workers
+                .iter()
+                .any(|worker| worker.context_seq_len != context_seq_len)
+        {
+            return Err(TrainError::InvalidModel(
+                "swarm worker context length mismatch",
+            ));
+        }
+        Ok(Self {
+            context_seq_len,
+            best_worker_index,
+            workers,
+        })
+    }
+
+    pub fn worker_count(&self) -> usize {
+        self.workers.len()
+    }
+
+    pub fn model_hash(&self) -> u64 {
+        let mut hasher = StableHasher::new();
+        hasher.update_usize(self.context_seq_len);
+        hasher.update_usize(self.best_worker_index);
+        hasher.update_usize(self.workers.len());
+        for worker in &self.workers {
+            hasher.update_bytes(&worker.model_hash().to_le_bytes());
+        }
+        hasher.finish()
+    }
+
+    pub fn embedding_hash(&self) -> u64 {
+        let mut hasher = StableHasher::new();
+        hasher.update_usize(self.workers.len());
+        for worker in &self.workers {
+            hasher.update_bytes(&worker.embedding_hash().to_le_bytes());
+        }
+        hasher.finish()
+    }
+
+    pub fn attention_hash(&self) -> u64 {
+        let mut hasher = StableHasher::new();
+        hasher.update_usize(self.workers.len());
+        for worker in &self.workers {
+            hasher.update_bytes(&worker.attention_hash().to_le_bytes());
+        }
+        hasher.finish()
+    }
+
+    pub fn mlp_hash(&self) -> u64 {
+        let mut hasher = StableHasher::new();
+        hasher.update_usize(self.workers.len());
+        for worker in &self.workers {
+            hasher.update_bytes(&worker.mlp_hash().to_le_bytes());
+        }
+        hasher.finish()
+    }
+
+    pub fn output_head_hash(&self) -> u64 {
+        let mut hasher = StableHasher::new();
+        hasher.update_usize(self.workers.len());
+        for worker in &self.workers {
+            hasher.update_bytes(&worker.output_head_hash().to_le_bytes());
+        }
+        hasher.finish()
+    }
+
+    pub fn try_to_bytes(&self) -> Result<Vec<u8>, TrainError> {
+        let worker_blobs = self
+            .workers
+            .iter()
+            .map(MiniTransformerMlpModel::try_to_bytes)
+            .collect::<Result<Vec<_>, _>>()?;
+        let payload_bytes = worker_blobs.iter().try_fold(0_usize, |total, blob| {
+            total
+                .checked_add(8)
+                .and_then(|value| value.checked_add(blob.len()))
+                .ok_or(TrainError::InvalidModel("swarm artifact length overflow"))
+        })?;
+        let mut out = Vec::with_capacity(checked_model_capacity(32, &[payload_bytes])?);
+        out.extend_from_slice(MINI_TRANSFORMER_SWARM_MODEL_MAGIC);
+        out.extend_from_slice(
+            &checked_u32(
+                self.context_seq_len,
+                "mini transformer swarm context_seq_len exceeds u32",
+            )?
+            .to_le_bytes(),
+        );
+        out.extend_from_slice(
+            &checked_u32(
+                self.workers.len(),
+                "mini transformer swarm worker count exceeds u32",
+            )?
+            .to_le_bytes(),
+        );
+        out.extend_from_slice(
+            &checked_u32(
+                self.best_worker_index,
+                "mini transformer swarm best worker exceeds u32",
+            )?
+            .to_le_bytes(),
+        );
+        out.extend_from_slice(&0_u32.to_le_bytes());
+        out.extend_from_slice(&self.model_hash().to_le_bytes());
+        for blob in worker_blobs {
+            out.extend_from_slice(
+                &checked_u64(blob.len(), "mini transformer worker blob exceeds u64")?.to_le_bytes(),
+            );
+            out.extend_from_slice(&blob);
+        }
+        Ok(out)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.try_to_bytes()
+            .expect("mini transformer swarm model should fit on-disk format")
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
+        let header_len = MINI_TRANSFORMER_SWARM_MODEL_MAGIC.len() + 4 + 4 + 4 + 4 + 8;
+        if bytes.len() < header_len {
+            return Err(TrainError::InvalidModel("swarm artifact too short"));
+        }
+        if &bytes[..MINI_TRANSFORMER_SWARM_MODEL_MAGIC.len()] != MINI_TRANSFORMER_SWARM_MODEL_MAGIC
+        {
+            return Err(TrainError::InvalidModel("bad swarm magic"));
+        }
+        let mut offset = MINI_TRANSFORMER_SWARM_MODEL_MAGIC.len();
+        let context_seq_len = read_u32_le(bytes, &mut offset)? as usize;
+        let worker_count = read_u32_le(bytes, &mut offset)? as usize;
+        let best_worker_index = read_u32_le(bytes, &mut offset)? as usize;
+        let reserved = read_u32_le(bytes, &mut offset)?;
+        let expected_model_hash = read_u64_le(bytes, &mut offset)?;
+        if worker_count == 0 || best_worker_index >= worker_count || reserved != 0 {
+            return Err(TrainError::InvalidModel("bad swarm header"));
+        }
+
+        let mut workers = Vec::with_capacity(worker_count);
+        for _ in 0..worker_count {
+            let blob_len = read_u64_le(bytes, &mut offset)? as usize;
+            let blob_end = offset
+                .checked_add(blob_len)
+                .ok_or(TrainError::InvalidModel("swarm worker offset overflow"))?;
+            let blob = bytes
+                .get(offset..blob_end)
+                .ok_or(TrainError::InvalidModel("swarm worker blob truncated"))?;
+            workers.push(MiniTransformerMlpModel::from_bytes(blob)?);
+            offset = blob_end;
+        }
+        if offset != bytes.len() {
+            return Err(TrainError::InvalidModel("swarm artifact length mismatch"));
+        }
+
+        let model = Self::new(best_worker_index, workers)?;
+        if model.context_seq_len != context_seq_len {
+            return Err(TrainError::InvalidModel("swarm context hash mismatch"));
+        }
+        if model.model_hash() != expected_model_hash {
+            return Err(TrainError::InvalidModel("swarm model hash mismatch"));
+        }
+        Ok(model)
+    }
+
+    pub fn to_expert_manifest(&self) -> Result<MiniTransformerMlpSwarmExpertManifest, TrainError> {
+        Ok(MiniTransformerMlpSwarmExpertManifest {
+            artifact_format: "nsrlswarm",
+            artifact_magic: "NSRLSW1",
+            artifact_byte_count: self.try_to_bytes()?.len(),
+            model_id: MINI_TRANSFORMER_SWARM_MODEL_ID,
+            tokenizer: BYTE_TOKENIZER_ID,
+            context_seq_len: self.context_seq_len,
+            worker_count: self.worker_count(),
+            best_worker_index: self.best_worker_index,
+            parameter_bytes: self.parameter_bytes(),
+            model_hash: self.model_hash(),
+            embedding_hash: self.embedding_hash(),
+            attention_hash: self.attention_hash(),
+            mlp_hash: self.mlp_hash(),
+            output_head_hash: self.output_head_hash(),
+            worker_model_hashes: self
+                .workers
+                .iter()
+                .map(MiniTransformerMlpModel::model_hash)
+                .collect(),
+            worker_parameter_bytes: self
+                .workers
+                .iter()
+                .map(mini_transformer_mlp_parameter_bytes)
+                .collect(),
+        })
+    }
+
+    pub fn parameter_bytes(&self) -> usize {
+        self.workers
+            .iter()
+            .map(mini_transformer_mlp_parameter_bytes)
+            .fold(0_usize, usize::saturating_add)
+    }
+}
+
+fn mini_transformer_mlp_parameter_bytes(model: &MiniTransformerMlpModel) -> usize {
+    model
+        .embeddings
+        .len()
+        .saturating_add(model.position_embeddings.len())
+        .saturating_mul(core::mem::size_of::<i16>())
+        .saturating_add(model.q_weights.len())
+        .saturating_add(model.k_weights.len())
+        .saturating_add(model.v_weights.len())
+        .saturating_add(model.o_weights.len())
+        .saturating_add(model.up_weights.len())
+        .saturating_add(model.gate_weights.len())
+        .saturating_add(model.down_weights.len())
+        .saturating_add(model.output_weights.len())
+}
+
+impl MiniTransformerMlpSwarmExpertManifest {
+    pub fn supports_capability(&self, capability: &str) -> bool {
+        matches!(
+            capability,
+            "byte_generation"
+                | "mini_transformer_mlp"
+                | "integer_q15"
+                | "swarm_ensemble"
+                | "deterministic_router_candidate"
+        )
+    }
+
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(
+            &mut out,
+            "schema",
+            MINI_TRANSFORMER_SWARM_EXPERT_MANIFEST_SCHEMA,
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "authority", AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "model", self.model_id);
+        comma(&mut out);
+        out.push_str("\"artifact\":{");
+        push_string_field(&mut out, "format", self.artifact_format);
+        comma(&mut out);
+        push_string_field(&mut out, "magic", self.artifact_magic);
+        comma(&mut out);
+        push_usize_field(&mut out, "bytes", self.artifact_byte_count);
+        comma(&mut out);
+        push_hash_field(&mut out, "model_hash", self.model_hash);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"tokenizer\":{");
+        push_string_field(&mut out, "id", self.tokenizer);
+        comma(&mut out);
+        push_string_field(&mut out, "contract", "identity_u8_bytes");
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"interfaces\":{");
+        push_string_field(&mut out, "input_schema", "nsrl.byte_prompt.v1");
+        comma(&mut out);
+        push_string_field(&mut out, "output_schema", "nsrl.byte_generation.v1");
+        comma(&mut out);
+        push_string_field(
+            &mut out,
+            "generation_trace_schema",
+            MINI_TRANSFORMER_SWARM_GENERATION_SCHEMA,
+        );
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"numeric_contract\":{");
+        push_string_field(&mut out, "residual_scale", "q15_i16");
+        comma(&mut out);
+        push_string_field(&mut out, "weight_dtype", "qint8");
+        comma(&mut out);
+        push_string_field(&mut out, "activation_dtype", "qint16");
+        comma(&mut out);
+        push_string_field(&mut out, "accumulator_dtype", "qint64");
+        comma(&mut out);
+        push_string_field(&mut out, "softmax", "base2_q15");
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"model_shape\":{");
+        push_usize_field(&mut out, "context_seq_len", self.context_seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "worker_count", self.worker_count);
+        comma(&mut out);
+        push_usize_field(&mut out, "best_worker_index", self.best_worker_index);
+        comma(&mut out);
+        push_usize_field(&mut out, "vocab", BYTE_VOCAB);
+        comma(&mut out);
+        push_usize_field(&mut out, "d_model", MINI_TRANSFORMER_D_MODEL);
+        comma(&mut out);
+        push_usize_field(&mut out, "heads", MINI_TRANSFORMER_HEADS);
+        comma(&mut out);
+        push_usize_field(&mut out, "hidden_dim", MINI_TRANSFORMER_HIDDEN_DIM);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"hashes\":{");
+        push_hash_field(&mut out, "model_hash", self.model_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "embedding_hash", self.embedding_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "attention_hash", self.attention_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "mlp_hash", self.mlp_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "output_head_hash", self.output_head_hash);
+        comma(&mut out);
+        push_hash_array_field(&mut out, "worker_model_hashes", &self.worker_model_hashes);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"capabilities\":{");
+        push_string_array_field(
+            &mut out,
+            "tags",
+            &[
+                "byte_generation",
+                "mini_transformer_mlp",
+                "integer_q15",
+                "swarm_ensemble",
+                "deterministic_router_candidate",
+            ],
+        );
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"routing_hints\":{");
+        push_string_field(&mut out, "router", "deterministic_symbolic");
+        comma(&mut out);
+        push_string_field(&mut out, "default_composition", "average_logits");
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "supported_compositions",
+            &["average_logits", "confidence_weighted", "confidence_router"],
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "confidence_signal", "top_logit_margin_q8");
+        comma(&mut out);
+        push_string_field(&mut out, "tie_breaker", "lowest_worker_index");
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"budgets\":{");
+        push_usize_field(&mut out, "artifact_bytes", self.artifact_byte_count);
+        comma(&mut out);
+        push_usize_field(&mut out, "parameter_bytes", self.parameter_bytes);
+        comma(&mut out);
+        push_usize_array_field(
+            &mut out,
+            "worker_parameter_bytes",
+            &self.worker_parameter_bytes,
+        );
+        comma(&mut out);
+        push_bool_field(&mut out, "wasm_bundle_budget_known", false);
+        out.push('}');
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "known_non_claims",
+            &[
+                "not_a_general_purpose_language_model",
+                "byte_level_contract_only",
+                "single_block_mini_transformer_workers",
+                "router_hints_are_symbolic_not_learned",
+                "wasm_bundle_budget_not_measured_yet",
+            ],
+        );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+pub fn route_mini_transformer_swarm_experts(
+    candidates: &[MiniTransformerSwarmRouteCandidate],
+    config: MiniTransformerSwarmRouteConfig,
+    prompt: &[u8],
+) -> Result<MiniTransformerSwarmRouteDecisionTrace, TrainError> {
+    if candidates.is_empty() || config.active_expert_limit == 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut candidate_traces = Vec::with_capacity(candidates.len());
+    for (expert_index, candidate) in candidates.iter().enumerate() {
+        candidate_traces.push(mini_transformer_swarm_route_candidate_trace(
+            expert_index,
+            candidate,
+            &config,
+            None,
+        ));
+    }
+
+    let mut selected = candidate_traces
+        .iter()
+        .filter(|candidate| candidate.accepted)
+        .collect::<Vec<_>>();
+    selected.sort_by_key(|candidate| {
+        (
+            core::cmp::Reverse(candidate.score),
+            candidate.parameter_bytes,
+            candidate.artifact_bytes,
+            candidate.expert_index,
+        )
+    });
+    let selected_expert_indices = selected
+        .into_iter()
+        .take(config.active_expert_limit)
+        .map(|candidate| candidate.expert_index)
+        .collect::<Vec<_>>();
+    if selected_expert_indices.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    Ok(MiniTransformerSwarmRouteDecisionTrace {
+        config,
+        prompt_bytes: prompt.to_vec(),
+        selected_expert_indices,
+        candidates: candidate_traces,
+    })
+}
+
+pub fn generate_routed_mini_transformer_swarm_experts(
+    experts: &[MiniTransformerSwarmRoutedGenerationExpert],
+    route_config: MiniTransformerSwarmRouteConfig,
+    prompt: &[u8],
+    config: ByteGenerationConfig,
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+    composition: MiniTransformerSwarmComposition,
+    decode_priors: Option<&ByteDecodePriors>,
+) -> Result<MiniTransformerSwarmRoutedGenerationTrace, TrainError> {
+    let candidates = experts
+        .iter()
+        .map(|expert| {
+            Ok(MiniTransformerSwarmRouteCandidate {
+                expert_id: expert.expert_id.clone(),
+                manifest: expert.model.to_expert_manifest()?,
+            })
+        })
+        .collect::<Result<Vec<_>, TrainError>>()?;
+    let prompt_affinities = if route_config.prompt_affinity {
+        Some(
+            experts
+                .iter()
+                .map(|expert| {
+                    mini_transformer_swarm_prompt_affinity(
+                        &expert.model,
+                        prompt,
+                        attention_kind,
+                        position_policy,
+                        composition,
+                        route_config.prompt_affinity_max_windows,
+                    )
+                })
+                .collect::<Result<Vec<_>, TrainError>>()?,
+        )
+    } else {
+        None
+    };
+    let route = route_mini_transformer_swarm_experts_with_prompt_affinity(
+        &candidates,
+        route_config,
+        prompt,
+        prompt_affinities.as_deref(),
+    )?;
+    let mut selected_expert_ids = Vec::with_capacity(route.selected_expert_indices.len());
+    let mut active_workers = Vec::new();
+    let mut best_worker_index = None;
+
+    for &expert_index in &route.selected_expert_indices {
+        let expert = experts.get(expert_index).ok_or(TrainError::InvalidConfig)?;
+        selected_expert_ids.push(expert.expert_id.clone());
+        let worker_offset = active_workers.len();
+        if best_worker_index.is_none() {
+            best_worker_index = Some(worker_offset.saturating_add(expert.model.best_worker_index));
+        }
+        active_workers.extend(expert.model.workers.iter().cloned());
+    }
+
+    let active_model =
+        MiniTransformerMlpSwarmModel::new(best_worker_index.unwrap_or(0), active_workers)?;
+    let generation =
+        generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors(
+            &active_model,
+            prompt,
+            config,
+            attention_kind,
+            position_policy,
+            composition,
+            decode_priors,
+        )?;
+
+    Ok(MiniTransformerSwarmRoutedGenerationTrace {
+        route,
+        selected_expert_ids,
+        active_worker_count: active_model.worker_count(),
+        generation,
+    })
+}
+
+fn route_mini_transformer_swarm_experts_with_prompt_affinity(
+    candidates: &[MiniTransformerSwarmRouteCandidate],
+    config: MiniTransformerSwarmRouteConfig,
+    prompt: &[u8],
+    prompt_affinities: Option<&[MiniTransformerSwarmPromptAffinityTrace]>,
+) -> Result<MiniTransformerSwarmRouteDecisionTrace, TrainError> {
+    if candidates.is_empty() || config.active_expert_limit == 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+    if let Some(affinities) = prompt_affinities
+        && affinities.len() != candidates.len()
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut candidate_traces = Vec::with_capacity(candidates.len());
+    for (expert_index, candidate) in candidates.iter().enumerate() {
+        candidate_traces.push(mini_transformer_swarm_route_candidate_trace(
+            expert_index,
+            candidate,
+            &config,
+            prompt_affinities.and_then(|affinities| affinities.get(expert_index)),
+        ));
+    }
+
+    let mut selected = candidate_traces
+        .iter()
+        .filter(|candidate| candidate.accepted)
+        .collect::<Vec<_>>();
+    selected.sort_by_key(|candidate| {
+        (
+            core::cmp::Reverse(candidate.score),
+            candidate.parameter_bytes,
+            candidate.artifact_bytes,
+            candidate.expert_index,
+        )
+    });
+    let selected_expert_indices = selected
+        .into_iter()
+        .take(config.active_expert_limit)
+        .map(|candidate| candidate.expert_index)
+        .collect::<Vec<_>>();
+    if selected_expert_indices.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    Ok(MiniTransformerSwarmRouteDecisionTrace {
+        config,
+        prompt_bytes: prompt.to_vec(),
+        selected_expert_indices,
+        candidates: candidate_traces,
+    })
+}
+
+fn mini_transformer_swarm_route_candidate_trace(
+    expert_index: usize,
+    candidate: &MiniTransformerSwarmRouteCandidate,
+    config: &MiniTransformerSwarmRouteConfig,
+    prompt_affinity: Option<&MiniTransformerSwarmPromptAffinityTrace>,
+) -> MiniTransformerSwarmRouteCandidateTrace {
+    let capability_match = config
+        .required_capability
+        .as_deref()
+        .map(|capability| candidate.manifest.supports_capability(capability))
+        .unwrap_or(true);
+    let reject_reason = if !capability_match {
+        "capability_mismatch"
+    } else if config
+        .max_artifact_bytes
+        .is_some_and(|max| candidate.manifest.artifact_byte_count > max)
+    {
+        "artifact_budget_exceeded"
+    } else if config
+        .max_parameter_bytes
+        .is_some_and(|max| candidate.manifest.parameter_bytes > max)
+    {
+        "parameter_budget_exceeded"
+    } else {
+        ""
+    };
+    let accepted = reject_reason.is_empty();
+    let manifest_score = if accepted {
+        mini_transformer_swarm_route_score(&candidate.manifest, capability_match)
+    } else {
+        0
+    };
+    let prompt_affinity_score = if accepted {
+        prompt_affinity.map(|affinity| affinity.score).unwrap_or(0)
+    } else {
+        0
+    };
+    let score = manifest_score.saturating_add(prompt_affinity_score);
+
+    MiniTransformerSwarmRouteCandidateTrace {
+        expert_index,
+        expert_id: candidate.expert_id.clone(),
+        accepted,
+        reject_reason,
+        score,
+        manifest_score,
+        prompt_affinity_score,
+        prompt_eval_windows: prompt_affinity
+            .map(|affinity| affinity.eval_windows)
+            .unwrap_or(0),
+        prompt_probability_error_q15: prompt_affinity
+            .map(|affinity| affinity.probability_error_q15),
+        capability_match,
+        model_hash: candidate.manifest.model_hash,
+        artifact_bytes: candidate.manifest.artifact_byte_count,
+        parameter_bytes: candidate.manifest.parameter_bytes,
+        worker_count: candidate.manifest.worker_count,
+        context_seq_len: candidate.manifest.context_seq_len,
+        default_composition: "average_logits",
+    }
+}
+
+fn mini_transformer_swarm_route_score(
+    manifest: &MiniTransformerMlpSwarmExpertManifest,
+    capability_match: bool,
+) -> i64 {
+    let capability_score = if capability_match { 1_000_000_i64 } else { 0 };
+    let worker_score = i64::try_from(manifest.worker_count.min(4096)).unwrap_or(i64::MAX) * 1_000;
+    let context_score = i64::try_from(manifest.context_seq_len.min(4096)).unwrap_or(i64::MAX);
+    let budget_penalty =
+        i64::try_from((manifest.parameter_bytes / 4096).min(i64::MAX as usize)).unwrap_or(i64::MAX);
+    capability_score
+        .saturating_add(worker_score)
+        .saturating_add(context_score)
+        .saturating_sub(budget_penalty)
+}
+
+impl MiniTransformerSwarmRouteDecisionTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", MINI_TRANSFORMER_SWARM_ROUTE_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "router", "deterministic_symbolic");
+        comma(&mut out);
+        push_mini_transformer_swarm_route_config_field(&mut out, "config", &self.config);
+        comma(&mut out);
+        out.push_str("\"prompt\":{");
+        push_usize_field(&mut out, "bytes", self.prompt_bytes.len());
+        comma(&mut out);
+        push_hash_field(&mut out, "hash", hash_u8_slice(&self.prompt_bytes));
+        out.push('}');
+        comma(&mut out);
+        push_usize_array_field(
+            &mut out,
+            "selected_expert_indices",
+            &self.selected_expert_indices,
+        );
+        comma(&mut out);
+        push_mini_transformer_swarm_route_candidates_field(
+            &mut out,
+            "candidates",
+            &self.candidates,
+        );
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "known_non_claims",
+            &[
+                "symbolic_manifest_router_only",
+                "does_not_run_expert_inference",
+                "does_not_measure_request_latency_yet",
+                "does_not_rank_semantic_quality",
+            ],
+        );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+impl MiniTransformerSwarmRoutedGenerationTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(
+            &mut out,
+            "schema",
+            MINI_TRANSFORMER_SWARM_ROUTED_GENERATION_SCHEMA,
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "authority", GENERATION_AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "router", "deterministic_symbolic");
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "selected_expert_ids",
+            &self
+                .selected_expert_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
+        comma(&mut out);
+        push_usize_field(&mut out, "active_worker_count", self.active_worker_count);
+        comma(&mut out);
+        push_json_line_object_field(&mut out, "route", &self.route.to_json_line());
+        comma(&mut out);
+        push_json_line_object_field(&mut out, "generation", &self.generation.to_json_line());
+        comma(&mut out);
+        push_string_array_field(
+            &mut out,
+            "known_non_claims",
+            &[
+                "routes_by_manifest_not_semantic_inference",
+                "active_set_workers_are_concatenated_before_generation",
+                "does_not_train_router_weights_yet",
+                "does_not_claim_language_model_quality",
+            ],
+        );
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
 impl ByteGenerationTrace {
     pub fn to_json_line(&self) -> String {
         let mut out = String::new();
@@ -10783,6 +13252,77 @@ impl MiniTransformerGenerationTrace {
         } else {
             &MINI_TRANSFORMER_GENERATION_KNOWN_NON_CLAIMS
         };
+        push_string_array_field(&mut out, "known_non_claims", known_non_claims);
+        out.push('}');
+        out.push('\n');
+        out
+    }
+}
+
+impl MiniTransformerSwarmGenerationTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", MINI_TRANSFORMER_SWARM_GENERATION_SCHEMA);
+        comma(&mut out);
+        push_string_field(&mut out, "authority", GENERATION_AUTHORITY);
+        comma(&mut out);
+        push_string_field(&mut out, "model", MINI_TRANSFORMER_SWARM_MODEL_ID);
+        comma(&mut out);
+        push_string_field(&mut out, "tokenizer", self.config.tokenizer_id.as_str());
+        comma(&mut out);
+        push_string_field(&mut out, "attention_kind", self.attention_kind.as_str());
+        comma(&mut out);
+        push_string_field(&mut out, "position_policy", self.position_policy.as_str());
+        comma(&mut out);
+        push_string_field(&mut out, "composition", self.composition.as_str());
+        comma(&mut out);
+        push_bool_field(
+            &mut out,
+            "incremental_attention_state",
+            self.attention_kind.uses_incremental_state(),
+        );
+        comma(&mut out);
+        push_decode_config_field(&mut out, "decode", self.config);
+        comma(&mut out);
+        push_decode_priors_field(&mut out, "decode_priors", self.decode_priors);
+        comma(&mut out);
+        push_hash_field(&mut out, "swarm_model_hash", self.swarm_model_hash);
+        comma(&mut out);
+        push_usize_field(&mut out, "worker_count", self.worker_count);
+        comma(&mut out);
+        push_usize_field(&mut out, "best_worker_index", self.best_worker_index);
+        comma(&mut out);
+        push_hash_field(&mut out, "embedding_hash", self.embedding_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "attention_hash", self.attention_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "mlp_hash", self.mlp_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "output_head_hash", self.output_head_hash);
+        comma(&mut out);
+        push_usize_field(&mut out, "context_seq_len", self.context_seq_len);
+        comma(&mut out);
+        out.push_str("\"prompt\":{");
+        push_usize_field(&mut out, "bytes", self.prompt_bytes.len());
+        comma(&mut out);
+        push_u8_array_field(&mut out, "tokens", &self.prompt_bytes);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"generation\":{");
+        push_usize_field(&mut out, "new_tokens", self.generated_bytes.len());
+        comma(&mut out);
+        push_u8_array_field(&mut out, "tokens", &self.generated_bytes);
+        out.push('}');
+        comma(&mut out);
+        push_generation_steps_field(&mut out, "steps", &self.steps);
+        comma(&mut out);
+        let known_non_claims: &[&str] =
+            if self.position_policy == MiniTransformerPositionPolicy::Nope {
+                &MINI_TRANSFORMER_NOPE_GENERATION_KNOWN_NON_CLAIMS
+            } else {
+                &MINI_TRANSFORMER_GENERATION_KNOWN_NON_CLAIMS
+            };
         push_string_array_field(&mut out, "known_non_claims", known_non_claims);
         out.push('}');
         out.push('\n');
@@ -11099,6 +13639,303 @@ pub fn generate_mini_transformer(
     config: ByteGenerationConfig,
 ) -> Result<MiniTransformerGenerationTrace, TrainError> {
     generate_mini_transformer_with_priors(model, prompt, config, None)
+}
+
+pub fn generate_mini_transformer_swarm(
+    model: &MiniTransformerMlpSwarmModel,
+    prompt: &[u8],
+    config: ByteGenerationConfig,
+) -> Result<MiniTransformerSwarmGenerationTrace, TrainError> {
+    generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors(
+        model,
+        prompt,
+        config,
+        MiniTransformerAttentionKind::Linear,
+        MiniTransformerPositionPolicy::Nope,
+        MiniTransformerSwarmComposition::AverageLogits,
+        None,
+    )
+}
+
+pub fn generate_mini_transformer_swarm_with_attention_kind_position_policy_and_priors(
+    model: &MiniTransformerMlpSwarmModel,
+    prompt: &[u8],
+    config: ByteGenerationConfig,
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+    decode_priors: Option<&ByteDecodePriors>,
+) -> Result<MiniTransformerSwarmGenerationTrace, TrainError> {
+    generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors(
+        model,
+        prompt,
+        config,
+        attention_kind,
+        position_policy,
+        MiniTransformerSwarmComposition::AverageLogits,
+        decode_priors,
+    )
+}
+
+pub fn generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors(
+    model: &MiniTransformerMlpSwarmModel,
+    prompt: &[u8],
+    config: ByteGenerationConfig,
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+    composition: MiniTransformerSwarmComposition,
+    decode_priors: Option<&ByteDecodePriors>,
+) -> Result<MiniTransformerSwarmGenerationTrace, TrainError> {
+    if prompt.is_empty()
+        || model.context_seq_len == 0
+        || model.workers.is_empty()
+        || attention_kind.uses_incremental_state()
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    validate_decode_priors(config.decode, decode_priors)?;
+
+    let mut context = prompt.to_vec();
+    let mut generated_bytes = Vec::with_capacity(config.max_new_tokens);
+    let mut steps = Vec::with_capacity(config.max_new_tokens);
+    let mut padded_context = Vec::with_capacity(model.context_seq_len);
+
+    for step_index in 0..config.max_new_tokens {
+        let input_token = *context.last().ok_or(TrainError::InvalidConfig)?;
+        let context_len = model.context_seq_len.min(context.len());
+        let context_start = context.len() - context_len;
+        let context_window = if context_len < model.context_seq_len {
+            padded_context.clear();
+            padded_context.resize(model.context_seq_len - context_len, b' ');
+            padded_context.extend_from_slice(&context[context_start..]);
+            padded_context.as_slice()
+        } else {
+            &context[context_start..]
+        };
+        let row = mini_transformer_swarm_ensemble_row_for_context(
+            model,
+            context_window,
+            attention_kind,
+            position_policy,
+            composition,
+        )?;
+        let selection = select_byte_from_row_with_priors(
+            &row.logits_q8,
+            &row.probabilities_q15,
+            config.decode,
+            step_index,
+            &context,
+            decode_priors,
+        )?;
+        let predicted_token = selection.token;
+        let predicted_index = usize::from(predicted_token);
+        generated_bytes.push(predicted_token);
+        context.push(predicted_token);
+        steps.push(ByteGenerationStepTrace {
+            step_index,
+            input_token,
+            predicted_token,
+            predicted_logit_q8: row.logits_q8[predicted_index],
+            predicted_probability_q15: row.probabilities_q15[predicted_index],
+            candidate_count: selection.candidate_count,
+            rejected_candidates: selection.rejected_candidates,
+        });
+    }
+
+    Ok(MiniTransformerSwarmGenerationTrace {
+        config,
+        attention_kind,
+        position_policy,
+        composition,
+        prompt_bytes: prompt.to_vec(),
+        generated_bytes,
+        swarm_model_hash: model.model_hash(),
+        worker_count: model.worker_count(),
+        best_worker_index: model.best_worker_index,
+        embedding_hash: model.embedding_hash(),
+        attention_hash: model.attention_hash(),
+        mlp_hash: model.mlp_hash(),
+        output_head_hash: model.output_head_hash(),
+        context_seq_len: model.context_seq_len,
+        decode_priors: decode_priors.map(ByteDecodePriors::trace),
+        steps,
+    })
+}
+
+fn mini_transformer_swarm_ensemble_row_for_context(
+    model: &MiniTransformerMlpSwarmModel,
+    context_window: &[u8],
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+    composition: MiniTransformerSwarmComposition,
+) -> Result<ByteSoftmaxRow, TrainError> {
+    if model.workers.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut worker_rows = Vec::with_capacity(model.workers.len());
+    for worker in &model.workers {
+        let cache = mini_transformer_forward_for_attention_and_position(
+            worker,
+            context_window,
+            attention_kind,
+            position_policy,
+        )?;
+        worker_rows.push(cache);
+    }
+
+    let logits_q8 = match composition {
+        MiniTransformerSwarmComposition::AverageLogits => {
+            mini_transformer_average_worker_logits_q8(&worker_rows)
+        }
+        MiniTransformerSwarmComposition::ConfidenceWeighted => {
+            mini_transformer_confidence_weighted_worker_logits_q8(&worker_rows)
+        }
+        MiniTransformerSwarmComposition::ConfidenceRouter => {
+            mini_transformer_confidence_routed_worker_logits_q8(&worker_rows)
+        }
+    };
+    let mut probabilities_q15 = [0_i16; BYTE_VOCAB];
+    base2_softmax_i32_q15(&logits_q8, &mut probabilities_q15).ok_or(TrainError::CoreRejected(
+        "mini_transformer_swarm_output_softmax",
+    ))?;
+
+    Ok(ByteSoftmaxRow {
+        logits_q8,
+        probabilities_q15,
+    })
+}
+
+fn mini_transformer_swarm_prompt_affinity(
+    model: &MiniTransformerMlpSwarmModel,
+    prompt: &[u8],
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+    composition: MiniTransformerSwarmComposition,
+    max_windows: usize,
+) -> Result<MiniTransformerSwarmPromptAffinityTrace, TrainError> {
+    if prompt.len() < 2 || max_windows == 0 {
+        return Ok(MiniTransformerSwarmPromptAffinityTrace {
+            eval_windows: 0,
+            probability_error_q15: 0,
+            score: 0,
+        });
+    }
+    if model.context_seq_len == 0
+        || model.workers.is_empty()
+        || attention_kind.uses_incremental_state()
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let start = prompt.len().saturating_sub(max_windows.saturating_add(1));
+    let mut eval_windows = 0_usize;
+    let mut probability_error_q15 = 0_usize;
+    let mut padded_context = Vec::with_capacity(model.context_seq_len);
+
+    for target_index in start.max(1)..prompt.len() {
+        let context = &prompt[..target_index];
+        let context_len = model.context_seq_len.min(context.len());
+        let context_start = context.len() - context_len;
+        let context_window = if context_len < model.context_seq_len {
+            padded_context.clear();
+            padded_context.resize(model.context_seq_len - context_len, b' ');
+            padded_context.extend_from_slice(&context[context_start..]);
+            padded_context.as_slice()
+        } else {
+            &context[context_start..]
+        };
+        let row = mini_transformer_swarm_ensemble_row_for_context(
+            model,
+            context_window,
+            attention_kind,
+            position_policy,
+            composition,
+        )?;
+        probability_error_q15 = probability_error_q15.saturating_add(
+            byte_sample_probability_error_q15(&row.probabilities_q15, prompt[target_index]),
+        );
+        eval_windows = eval_windows.saturating_add(1);
+    }
+
+    let mean_error = if eval_windows == 0 {
+        i64::from(i16::MAX)
+    } else {
+        i64::try_from(probability_error_q15 / eval_windows).unwrap_or(i64::MAX)
+    };
+    let score = i64::from(i16::MAX)
+        .saturating_sub(mean_error)
+        .saturating_mul(10);
+
+    Ok(MiniTransformerSwarmPromptAffinityTrace {
+        eval_windows,
+        probability_error_q15,
+        score,
+    })
+}
+
+fn mini_transformer_average_worker_logits_q8(
+    rows: &[MiniTransformerMlpForwardCache],
+) -> [i32; BYTE_VOCAB] {
+    let mut sums = [0_i64; BYTE_VOCAB];
+    for row in rows {
+        for (sum, &logit) in sums.iter_mut().zip(row.logits_q8.iter()) {
+            *sum = sum.saturating_add(i64::from(logit));
+        }
+    }
+    let divisor = rows.len().max(1) as i64;
+    mini_transformer_logit_sums_to_q8(&sums, divisor)
+}
+
+fn mini_transformer_confidence_weighted_worker_logits_q8(
+    rows: &[MiniTransformerMlpForwardCache],
+) -> [i32; BYTE_VOCAB] {
+    let mut sums = [0_i64; BYTE_VOCAB];
+    let mut total_weight = 0_i64;
+    for row in rows {
+        let weight = i64::from(mini_transformer_logit_margin_q8(&row.logits_q8).max(1));
+        total_weight = total_weight.saturating_add(weight);
+        for (sum, &logit) in sums.iter_mut().zip(row.logits_q8.iter()) {
+            *sum = sum.saturating_add(i64::from(logit).saturating_mul(weight));
+        }
+    }
+    mini_transformer_logit_sums_to_q8(&sums, total_weight.max(1))
+}
+
+fn mini_transformer_confidence_routed_worker_logits_q8(
+    rows: &[MiniTransformerMlpForwardCache],
+) -> [i32; BYTE_VOCAB] {
+    rows.iter()
+        .enumerate()
+        .max_by_key(|&(index, row)| {
+            (
+                mini_transformer_logit_margin_q8(&row.logits_q8),
+                core::cmp::Reverse(index),
+            )
+        })
+        .map(|(_, row)| row.logits_q8)
+        .unwrap_or([0_i32; BYTE_VOCAB])
+}
+
+fn mini_transformer_logit_sums_to_q8(sums: &[i64; BYTE_VOCAB], divisor: i64) -> [i32; BYTE_VOCAB] {
+    let mut logits_q8 = [0_i32; BYTE_VOCAB];
+    for (out, &sum) in logits_q8.iter_mut().zip(sums.iter()) {
+        let averaged = sum / divisor.max(1);
+        *out = averaged.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    }
+    logits_q8
+}
+
+fn mini_transformer_logit_margin_q8(logits_q8: &[i32; BYTE_VOCAB]) -> i32 {
+    let mut best = i32::MIN;
+    let mut second = i32::MIN;
+    for &logit in logits_q8 {
+        if logit > best {
+            second = best;
+            best = logit;
+        } else if logit > second {
+            second = logit;
+        }
+    }
+    best.saturating_sub(second).max(0)
 }
 
 pub fn generate_mini_transformer_with_priors(
@@ -11898,6 +14735,102 @@ fn byte_window_starts(
         start = start.saturating_add(stride);
     }
     starts
+}
+
+fn mini_transformer_window_starts(
+    token_count: usize,
+    seq_len: usize,
+    stride: usize,
+    window_offset: usize,
+    max_windows: Option<usize>,
+) -> Vec<usize> {
+    if seq_len == 0 || stride == 0 || window_offset >= token_count {
+        return Vec::new();
+    }
+    let Some(last_start) = token_count
+        .checked_sub(seq_len)
+        .and_then(|value| value.checked_sub(1))
+    else {
+        return Vec::new();
+    };
+    if window_offset > last_start {
+        return Vec::new();
+    }
+
+    let available = (last_start - window_offset) / stride + 1;
+    let limit = max_windows.unwrap_or(available).min(available);
+    if limit == 0 {
+        return Vec::new();
+    }
+    if limit >= available {
+        return byte_window_starts(token_count, seq_len, stride, window_offset, Some(limit));
+    }
+    if limit == 1 {
+        return vec![window_offset];
+    }
+
+    let mut starts = Vec::with_capacity(limit);
+    let numerator_max = available - 1;
+    let denominator = limit - 1;
+    let half = denominator / 2;
+    for index in 0..limit {
+        let stride_index = index.saturating_mul(numerator_max).saturating_add(half) / denominator;
+        starts.push(window_offset + stride_index * stride);
+    }
+    starts
+}
+
+fn mini_transformer_loss_guard_starts(
+    starts: &[usize],
+    batch_start_index: usize,
+    batch_end_index: usize,
+) -> Vec<usize> {
+    const GLOBAL_GUARD_POINTS: usize = 16;
+
+    let mut guarded = Vec::with_capacity(
+        GLOBAL_GUARD_POINTS.saturating_add(batch_end_index.saturating_sub(batch_start_index)),
+    );
+    if starts.is_empty() {
+        return guarded;
+    }
+
+    let end = batch_end_index.min(starts.len());
+    for &start in &starts[batch_start_index.min(end)..end] {
+        push_unique_usize(&mut guarded, start);
+    }
+
+    let len = starts.len();
+    let points = GLOBAL_GUARD_POINTS.min(len);
+    if points == 1 {
+        push_unique_usize(&mut guarded, starts[0]);
+        return guarded;
+    }
+
+    let numerator_max = len - 1;
+    let denominator = points - 1;
+    let half = denominator / 2;
+    for point in 0..points {
+        let index = point.saturating_mul(numerator_max).saturating_add(half) / denominator;
+        push_unique_usize(&mut guarded, starts[index]);
+    }
+    guarded
+}
+
+fn mini_transformer_loss_guard_regressed(
+    before_loss: usize,
+    after_loss: usize,
+    guard_windows: usize,
+) -> bool {
+    const PER_WINDOW_TOLERANCE_Q15: usize = 1024;
+
+    let tolerance = guard_windows.saturating_mul(PER_WINDOW_TOLERANCE_Q15);
+    after_loss > before_loss.saturating_add(tolerance)
+}
+
+fn push_unique_usize(values: &mut Vec<usize>, value: usize) {
+    if !values.contains(&value) {
+        values.push(value);
+    }
 }
 
 fn mini_transformer_batch_learning_rate_shift(batch_windows: usize) -> Option<u8> {
@@ -20381,6 +23314,24 @@ fn push_hash_field(out: &mut String, name: &str, value: u64) {
     push_quoted(out, &format!("0x{value:016x}"));
 }
 
+fn push_json_line_object_field(out: &mut String, name: &str, json_line: &str) {
+    push_quoted(out, name);
+    out.push(':');
+    out.push_str(json_line.trim_end());
+}
+
+fn push_hash_array_field(out: &mut String, name: &str, values: &[u64]) {
+    push_quoted(out, name);
+    out.push_str(":[");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            comma(out);
+        }
+        push_quoted(out, &format!("0x{value:016x}"));
+    }
+    out.push(']');
+}
+
 fn push_u64_field(out: &mut String, name: &str, value: u64) {
     push_quoted(out, name);
     out.push(':');
@@ -23217,6 +26168,60 @@ mod tests {
     }
 
     #[test]
+    fn mini_transformer_qk_rule_prioritizes_dead_gradient_over_saturation() {
+        let interval = 4;
+        let mut q_window = MiniTransformerRuleShiftWindow::new();
+        let mut k_window = MiniTransformerRuleShiftWindow::new();
+        let dead_saturating_q = LinearWeightUpdateStats {
+            gradient_saturation_count: 1024,
+            zero_delta_count: mini_transformer_attention_projection_weight_count(),
+            weight_delta_l1: 0,
+        };
+        let moving_k = LinearWeightUpdateStats {
+            gradient_saturation_count: 0,
+            zero_delta_count: 0,
+            weight_delta_l1: 100_000,
+        };
+
+        for _ in 0..interval {
+            q_window.observe_accepted(dead_saturating_q);
+            k_window.observe_accepted(moving_k);
+        }
+
+        assert_eq!(
+            mini_transformer_rule_q_delta(q_window, k_window, interval),
+            Some((-1, "zero_delta"))
+        );
+    }
+
+    #[test]
+    fn mini_transformer_k_rule_prioritizes_dead_gradient_over_saturation() {
+        let interval = 4;
+        let mut k_window = MiniTransformerRuleShiftWindow::new();
+        let mut q_window = MiniTransformerRuleShiftWindow::new();
+        let dead_saturating_k = LinearWeightUpdateStats {
+            gradient_saturation_count: 1024,
+            zero_delta_count: mini_transformer_attention_projection_weight_count(),
+            weight_delta_l1: 0,
+        };
+        let moving_q = LinearWeightUpdateStats {
+            gradient_saturation_count: 0,
+            zero_delta_count: 0,
+            weight_delta_l1: 100_000,
+        };
+
+        for _ in 0..interval {
+            k_window.observe_accepted(dead_saturating_k);
+            q_window.observe_accepted(moving_q);
+        }
+
+        assert_eq!(
+            mini_transformer_rule_k_delta(k_window, q_window, interval),
+            Some((-1, "zero_delta"))
+        );
+    }
+
+    #[test]
     fn mini_transformer_mlp_training_trace_is_byte_stable() {
         let tokens = b"abababababab";
         let config = MiniTransformerMlpTrainConfig {
@@ -23259,6 +26264,475 @@ mod tests {
         assert!(left.contains(
             "\"trained_component\":\"embedding_i16_plus_output_head_i8_plus_gated_mlp_i8_plus_attention_qkvo_i8\""
         ));
+    }
+
+    #[test]
+    fn mini_transformer_binary_trace_has_fixed_step_records() {
+        let tokens = b"abababababab";
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            window_offset: 0,
+            max_windows: Some(6),
+            batch_windows: 1,
+            tokenizer_id: ByteTokenizerId::Identity,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 16,
+            embedding_learning_rate_shift: 14,
+            attention_learning_rate_shift: 24,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 18,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+            adaptive_attention_shifts: false,
+            adaptive_holographic_shifts: false,
+            attention_vo_error_feedback: false,
+            attention_vo_oracle: false,
+            reject_loss_regression: false,
+        };
+        let trace = run_mini_transformer_mlp_training(tokens, config).expect("trace");
+        let binary = trace.to_binary_trace_v1();
+        let final_offset = 16 + trace.steps.len() * 32;
+
+        assert_eq!(&binary[..4], MINI_TRANSFORMER_BINARY_TRACE_MAGIC);
+        assert_eq!(binary[4], MINI_TRANSFORMER_BINARY_TRACE_VERSION);
+        assert_eq!(binary[5], MINI_TRANSFORMER_BINARY_TRACE_SCHEMA_ID);
+        assert_eq!(binary[16], MINI_TRANSFORMER_BINARY_TAG_STEP_SAMPLE);
+        assert_eq!(
+            binary[final_offset],
+            MINI_TRANSFORMER_BINARY_TAG_FINAL_SUMMARY
+        );
+        assert_eq!(binary[final_offset + 1], 0);
+    }
+
+    #[test]
+    fn mini_transformer_streamed_binary_trace_matches_buffered_trace() {
+        let tokens = b"to be or not to be ";
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            window_offset: 0,
+            max_windows: Some(8),
+            batch_windows: 2,
+            tokenizer_id: ByteTokenizerId::Identity,
+            attention_kind: MiniTransformerAttentionKind::Linear,
+            position_policy: MiniTransformerPositionPolicy::Nope,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 16,
+            embedding_learning_rate_shift: 14,
+            attention_learning_rate_shift: 24,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 18,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+            adaptive_attention_shifts: false,
+            adaptive_holographic_shifts: false,
+            attention_vo_error_feedback: false,
+            attention_vo_oracle: false,
+            reject_loss_regression: false,
+        };
+        let mut streamed = Vec::new();
+        let buffered = {
+            let model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+            let mut writer = MiniTransformerBinaryTraceWriter::new(&mut streamed);
+            let run =
+                run_mini_transformer_mlp_training_from_model_with_progress_trace_detail_and_binary_trace(
+                    tokens,
+                    config,
+                    model,
+                    0,
+                    MiniTransformerTraceDetail::Summary,
+                    |_| Ok(()),
+                    |record| writer.write_record(record).map_err(|_| TrainError::TraceWrite),
+                )
+                .expect("streamed binary trace");
+            run.trace.to_binary_trace_v1()
+        };
+
+        assert_eq!(streamed, buffered);
+    }
+
+    #[test]
+    fn mini_transformer_swarm_trains_interleaved_worker_shards() {
+        let tokens = b"to be or not to be to be or not to be ";
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            window_offset: 0,
+            max_windows: Some(8),
+            batch_windows: 1,
+            tokenizer_id: ByteTokenizerId::Identity,
+            attention_kind: MiniTransformerAttentionKind::Linear,
+            position_policy: MiniTransformerPositionPolicy::Nope,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 16,
+            embedding_learning_rate_shift: 14,
+            attention_learning_rate_shift: 24,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 18,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+            adaptive_attention_shifts: false,
+            adaptive_holographic_shifts: false,
+            attention_vo_error_feedback: false,
+            attention_vo_oracle: false,
+            reject_loss_regression: false,
+        };
+        let run = run_mini_transformer_mlp_swarm_training(
+            tokens,
+            config,
+            MiniTransformerMlpSwarmTrainConfig {
+                workers: 2,
+                trace_detail: MiniTransformerTraceDetail::None,
+            },
+        )
+        .expect("swarm training");
+
+        assert_eq!(run.trace.worker_count, 2);
+        assert_eq!(run.trace.workers.len(), 2);
+        assert_eq!(run.trace.workers[0].window_offset, 0);
+        assert_eq!(run.trace.workers[1].window_offset, 1);
+        assert_eq!(run.trace.workers[0].stride, 2);
+        assert_eq!(run.trace.workers[1].stride, 2);
+        assert_eq!(run.trace.workers[0].max_windows, Some(4));
+        assert_eq!(run.trace.workers[1].max_windows, Some(4));
+        assert_eq!(run.trace.final_model_hash, run.model.model_hash());
+        assert!(
+            run.trace
+                .workers
+                .iter()
+                .any(|worker| worker.worker_index == run.trace.best_worker_index)
+        );
+        assert!(
+            run.trace
+                .to_json_line()
+                .contains("\"schema\":\"nsrl.training_mini_transformer_swarm_trace.v1\"")
+        );
+    }
+
+    #[test]
+    fn mini_transformer_swarm_trace_is_byte_stable() {
+        let tokens = b"abababababababab";
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            window_offset: 0,
+            max_windows: Some(6),
+            batch_windows: 1,
+            tokenizer_id: ByteTokenizerId::Identity,
+            attention_kind: MiniTransformerAttentionKind::Linear,
+            position_policy: MiniTransformerPositionPolicy::Nope,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 16,
+            embedding_learning_rate_shift: 14,
+            attention_learning_rate_shift: 24,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 18,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+            adaptive_attention_shifts: false,
+            adaptive_holographic_shifts: false,
+            attention_vo_error_feedback: false,
+            attention_vo_oracle: false,
+            reject_loss_regression: false,
+        };
+        let swarm_config = MiniTransformerMlpSwarmTrainConfig {
+            workers: 3,
+            trace_detail: MiniTransformerTraceDetail::None,
+        };
+        let left = run_mini_transformer_mlp_swarm_training(tokens, config, swarm_config)
+            .expect("left")
+            .trace
+            .to_json_line();
+        let right = run_mini_transformer_mlp_swarm_training(tokens, config, swarm_config)
+            .expect("right")
+            .trace
+            .to_json_line();
+
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn mini_transformer_swarm_scaling_benchmark_sweeps_worker_counts() {
+        let tokens = b"abababababababab";
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            window_offset: 0,
+            max_windows: Some(6),
+            batch_windows: 1,
+            tokenizer_id: ByteTokenizerId::Identity,
+            attention_kind: MiniTransformerAttentionKind::Linear,
+            position_policy: MiniTransformerPositionPolicy::Nope,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 16,
+            embedding_learning_rate_shift: 14,
+            attention_learning_rate_shift: 24,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 18,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+            adaptive_attention_shifts: false,
+            adaptive_holographic_shifts: false,
+            attention_vo_error_feedback: false,
+            attention_vo_oracle: false,
+            reject_loss_regression: false,
+        };
+        let trace = run_mini_transformer_mlp_swarm_scaling_benchmark(
+            tokens,
+            config,
+            3,
+            MiniTransformerTraceDetail::None,
+        )
+        .expect("scaling benchmark");
+
+        assert_eq!(trace.worker_counts, vec![1, 2, 3]);
+        assert_eq!(trace.runs.len(), 3);
+        assert_eq!(trace.runs[0].requested_worker_count, 1);
+        assert_eq!(trace.runs[0].effective_worker_count, 1);
+        assert_eq!(trace.runs[0].speedup_per_mille, 1000);
+        assert!(trace.runs.iter().all(|run| {
+            run.effective_worker_count > 0
+                && run.effective_worker_count <= run.requested_worker_count
+                && run.examined_windows > 0
+        }));
+
+        let json = trace.to_json_line();
+        assert!(
+            json.contains("\"schema\":\"nsrl.training_mini_transformer_swarm_scaling_trace.v1\"")
+        );
+        assert!(json.contains("\"worker_counts\":[1,2,3]"));
+        assert!(json.contains("\"speedup_per_mille\""));
+    }
+
+    #[test]
+    fn mini_transformer_swarm_model_roundtrips_and_generates() {
+        let tokens = b"to be or not to be to be or not to be ";
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            window_offset: 0,
+            max_windows: Some(8),
+            batch_windows: 1,
+            tokenizer_id: ByteTokenizerId::Identity,
+            attention_kind: MiniTransformerAttentionKind::Linear,
+            position_policy: MiniTransformerPositionPolicy::Nope,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 16,
+            embedding_learning_rate_shift: 14,
+            attention_learning_rate_shift: 24,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 18,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+            adaptive_attention_shifts: false,
+            adaptive_holographic_shifts: false,
+            attention_vo_error_feedback: false,
+            attention_vo_oracle: false,
+            reject_loss_regression: false,
+        };
+        let run = run_mini_transformer_mlp_swarm_training(
+            tokens,
+            config,
+            MiniTransformerMlpSwarmTrainConfig {
+                workers: 2,
+                trace_detail: MiniTransformerTraceDetail::None,
+            },
+        )
+        .expect("swarm training");
+        let bytes = run.swarm_model.try_to_bytes().expect("swarm bytes");
+        let decoded = MiniTransformerMlpSwarmModel::from_bytes(&bytes).expect("swarm model");
+
+        assert_eq!(decoded, run.swarm_model);
+        assert_eq!(decoded.worker_count(), 2);
+        assert_eq!(decoded.model_hash(), run.swarm_model.model_hash());
+        let manifest = decoded.to_expert_manifest().expect("swarm manifest");
+
+        assert_eq!(manifest.artifact_byte_count, bytes.len());
+        assert_eq!(manifest.model_hash, decoded.model_hash());
+        assert_eq!(manifest.worker_count, 2);
+        assert_eq!(manifest.worker_model_hashes.len(), 2);
+        assert_eq!(manifest.worker_parameter_bytes.len(), 2);
+        assert_eq!(
+            manifest.parameter_bytes,
+            manifest.worker_parameter_bytes.iter().sum::<usize>()
+        );
+        let manifest_json = manifest.to_json_line();
+        assert!(
+            manifest_json.contains("\"schema\":\"nsrl.mini_transformer_swarm_expert_manifest.v1\"")
+        );
+        assert!(manifest_json.contains("\"supported_compositions\":[\"average_logits\",\"confidence_weighted\",\"confidence_router\"]"));
+        assert!(manifest_json.contains("\"artifact\":{\"format\":\"nsrlswarm\""));
+        let mut oversized_manifest = manifest.clone();
+        oversized_manifest.parameter_bytes = manifest.parameter_bytes.saturating_add(1);
+        let route = route_mini_transformer_swarm_experts(
+            &[
+                MiniTransformerSwarmRouteCandidate {
+                    expert_id: String::from("fit.nsrlswarm"),
+                    manifest: manifest.clone(),
+                },
+                MiniTransformerSwarmRouteCandidate {
+                    expert_id: String::from("too-large.nsrlswarm"),
+                    manifest: oversized_manifest,
+                },
+            ],
+            MiniTransformerSwarmRouteConfig {
+                required_capability: Some(String::from("byte_generation")),
+                max_artifact_bytes: Some(bytes.len()),
+                max_parameter_bytes: Some(manifest.parameter_bytes),
+                active_expert_limit: 1,
+                prompt_affinity: false,
+                prompt_affinity_max_windows: 32,
+            },
+            b"to be",
+        )
+        .expect("swarm route");
+        assert_eq!(route.selected_expert_indices, vec![0]);
+        assert!(route.candidates[0].accepted);
+        assert!(!route.candidates[1].accepted);
+        assert_eq!(
+            route.candidates[1].reject_reason,
+            "parameter_budget_exceeded"
+        );
+        let route_json = route.to_json_line();
+        assert!(route_json.contains("\"schema\":\"nsrl.mini_transformer_swarm_route_trace.v1\""));
+        assert!(route_json.contains("\"selected_expert_indices\":[0]"));
+        assert!(
+            route_mini_transformer_swarm_experts(
+                &[MiniTransformerSwarmRouteCandidate {
+                    expert_id: String::from("fit.nsrlswarm"),
+                    manifest,
+                }],
+                MiniTransformerSwarmRouteConfig {
+                    required_capability: Some(String::from("lexeme_generation")),
+                    max_artifact_bytes: None,
+                    max_parameter_bytes: None,
+                    active_expert_limit: 1,
+                    prompt_affinity: false,
+                    prompt_affinity_max_windows: 32,
+                },
+                b"to be",
+            )
+            .is_err()
+        );
+        let routed_generation = generate_routed_mini_transformer_swarm_experts(
+            &[
+                MiniTransformerSwarmRoutedGenerationExpert {
+                    expert_id: String::from("left.nsrlswarm"),
+                    model: decoded.clone(),
+                },
+                MiniTransformerSwarmRoutedGenerationExpert {
+                    expert_id: String::from("right.nsrlswarm"),
+                    model: decoded.clone(),
+                },
+            ],
+            MiniTransformerSwarmRouteConfig {
+                required_capability: Some(String::from("byte_generation")),
+                max_artifact_bytes: Some(bytes.len()),
+                max_parameter_bytes: None,
+                active_expert_limit: 2,
+                prompt_affinity: true,
+                prompt_affinity_max_windows: 4,
+            },
+            b"to be",
+            ByteGenerationConfig::greedy(2),
+            MiniTransformerAttentionKind::Linear,
+            MiniTransformerPositionPolicy::Nope,
+            MiniTransformerSwarmComposition::ConfidenceRouter,
+            None,
+        )
+        .expect("routed swarm generation");
+        assert_eq!(routed_generation.route.selected_expert_indices, vec![0, 1]);
+        assert!(routed_generation.route.candidates.iter().all(|candidate| {
+            candidate.prompt_eval_windows > 0 && candidate.prompt_probability_error_q15.is_some()
+        }));
+        assert_eq!(routed_generation.selected_expert_ids.len(), 2);
+        assert_eq!(routed_generation.active_worker_count, 4);
+        assert_eq!(
+            routed_generation.generation.composition,
+            MiniTransformerSwarmComposition::ConfidenceRouter
+        );
+        assert_eq!(routed_generation.generation.generated_bytes.len(), 2);
+        assert!(
+            routed_generation
+                .to_json_line()
+                .contains("\"schema\":\"nsrl.mini_transformer_swarm_routed_generation_trace.v1\"")
+        );
+
+        let generation =
+            generate_mini_transformer_swarm_with_attention_kind_position_policy_and_priors(
+                &decoded,
+                b"to be",
+                ByteGenerationConfig::greedy(4),
+                MiniTransformerAttentionKind::Linear,
+                MiniTransformerPositionPolicy::Nope,
+                None,
+            )
+            .expect("swarm generation");
+
+        assert_eq!(generation.worker_count, 2);
+        assert_eq!(generation.swarm_model_hash, decoded.model_hash());
+        assert_eq!(
+            generation.composition,
+            MiniTransformerSwarmComposition::AverageLogits
+        );
+        assert_eq!(generation.generated_bytes.len(), 4);
+        assert!(
+            generation
+                .to_json_line()
+                .contains("\"schema\":\"nsrl.mini_transformer_swarm_generation_trace.v1\"")
+        );
+
+        let weighted_generation =
+            generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors(
+                &decoded,
+                b"to be",
+                ByteGenerationConfig::greedy(2),
+                MiniTransformerAttentionKind::Linear,
+                MiniTransformerPositionPolicy::Nope,
+                MiniTransformerSwarmComposition::ConfidenceWeighted,
+                None,
+            )
+            .expect("weighted swarm generation");
+        let router_generation =
+            generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors(
+                &decoded,
+                b"to be",
+                ByteGenerationConfig::greedy(2),
+                MiniTransformerAttentionKind::Linear,
+                MiniTransformerPositionPolicy::Nope,
+                MiniTransformerSwarmComposition::ConfidenceRouter,
+                None,
+            )
+            .expect("router swarm generation");
+
+        assert_eq!(
+            weighted_generation.composition,
+            MiniTransformerSwarmComposition::ConfidenceWeighted
+        );
+        assert_eq!(
+            router_generation.composition,
+            MiniTransformerSwarmComposition::ConfidenceRouter
+        );
+        assert!(
+            router_generation
+                .to_json_line()
+                .contains("\"composition\":\"confidence_router\"")
+        );
     }
 
     struct MiniTransformerTrainCoreWorkspaceBuffers {
@@ -24071,6 +27545,45 @@ mod tests {
                 .iter()
                 .all(|&value| value == 0)
         );
+    }
+
+    #[test]
+    fn byte_window_starts_remain_sequential() {
+        let starts = byte_window_starts(1000, 4, 10, 0, Some(5));
+        assert_eq!(starts, vec![0, 10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn mini_transformer_window_starts_spread_capped_runs() {
+        let starts = mini_transformer_window_starts(1000, 4, 10, 0, Some(5));
+        assert_eq!(starts, vec![0, 250, 500, 740, 990]);
+    }
+
+    #[test]
+    fn mini_transformer_window_starts_keep_full_runs_sequential() {
+        let sequential = byte_window_starts(1000, 4, 10, 0, None);
+        let distributed = mini_transformer_window_starts(1000, 4, 10, 0, None);
+        assert_eq!(distributed, sequential);
+    }
+
+    #[test]
+    fn mini_transformer_loss_guard_starts_mix_batch_and_global_points() {
+        let starts: Vec<usize> = (0..32).map(|index| index * 10).collect();
+        let guarded = mini_transformer_loss_guard_starts(&starts, 5, 7);
+
+        assert!(guarded.contains(&50));
+        assert!(guarded.contains(&60));
+        assert_eq!(guarded.first().copied(), Some(50));
+        assert_eq!(guarded.get(1).copied(), Some(60));
+        assert!(guarded.contains(&0));
+        assert!(guarded.contains(&310));
+        assert_eq!(guarded.len(), 17);
+    }
+
+    #[test]
+    fn mini_transformer_loss_guard_ignores_small_regressions() {
+        assert!(!mini_transformer_loss_guard_regressed(100_000, 117_000, 17));
+        assert!(mini_transformer_loss_guard_regressed(100_000, 118_000, 17));
     }
 
     #[test]

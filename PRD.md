@@ -6,19 +6,45 @@ NSRL: Numeric Stability Research Lab
 
 ## Summary
 
-NSRL is a from-scratch, pure Rust neural network runtime and research platform
-for building modern neural networks without floating-point operations in the
-inference runtime.
+NSRL is a local-first integer AI substrate for deterministic micro-model agents.
+It is built from scratch in Rust for CPU and WASM environments where predictable
+latency, small bundles, auditability, and zero driver dependence matter more than
+frontier-scale parameter count.
 
 The product is built around defensive integer ML: it does not merely replace
 floating-point operations with integer operations. It actively protects signal
-range, residual precision, rounding determinism, and normalization behavior
-across every layer.
+range, residual precision, rounding determinism, optimizer scale, and
+normalization behavior across every layer.
 
-The first target is a small, inspectable native base-2 Transformer that proves
-the numeric foundation: quantized QK attention, base-2 softmax, static residual
-scales, integer RMSNorm, gated nonlinear blocks, and exhaustive tests for
-fixed-point behavior.
+The strategic target is the agentic edge: many small NSRL-born expert models,
+each narrow enough to keep its active working set cache-friendly and cheap to
+ship, connected by a deterministic Rust router. NSRL competes on
+tokens-per-watt, cold-start latency, reproducible traces, and sub-100ms local
+routing rather than monolithic cloud-model scale.
+
+The first proof target remains a small, inspectable native base-2 Transformer
+that validates the numeric foundation: quantized QK attention, base-2 softmax,
+static residual scales, integer RMSNorm, gated nonlinear blocks, integer
+training, and exhaustive tests for fixed-point behavior.
+
+## Vision
+
+NSRL should not become a smaller imitation of a general cloud LLM. It should
+become the reference stack for local, deterministic, inspectable AI components:
+
+- micro-model experts packaged with explicit capability manifests,
+- symbolic or learned routers that compose experts without leaving the local
+  process,
+- training-time adaptive integer optimizers so deeper models do not depend on
+  hand-tuned global shifts,
+- generated, reviewable integer backward passes from a small graph IR, and
+- first-class WASM/browser deployment with strict bundle-size and startup
+  budgets.
+
+The core bet is that integer-only local agents can own niches where large
+floating-point stacks are physically and operationally awkward: private browser
+apps, offline-first software, embedded tools, local game logic, deterministic
+automation, and inexpensive client-side inference.
 
 ## Current Status
 
@@ -63,9 +89,10 @@ the earth is an ancient planet which has been changing the whole time since its 
 ```
 
 This is deliberately claimed as a full-system result, not a claim that the core
-model alone has solved long-context semantic planning. The next product
-frontier is reducing dependence on exact source-span grounding by adding an
-integer topic/memory state that can carry intent across sentence boundaries.
+model alone has solved long-context semantic planning. The next product frontier
+is turning this into an agentic micro-model system: expert packaging, deterministic
+routing, integer topic/memory state, adaptive integer optimization, and browser
+deployment.
 
 ## Problem
 
@@ -73,6 +100,11 @@ Modern neural networks usually depend on floating-point arithmetic for
 stability, scale management, normalization, optimization, and activation
 functions. Integer-only neural networks exist, but they are often hidden behind
 compiler stacks, framework quantization paths, or hardware-specific kernels.
+
+Large floating-point systems also assume a deployment shape that is wrong for
+many products: cloud calls, GPU drivers, heavyweight browser runtimes, high
+memory bandwidth, and monolithic models that must move too many bytes before
+they can do useful local work.
 
 Naive fixed-point designs fail in a different way: they silently lose bits.
 Repeated dynamic requantization, residual scale alignment, and precision-poor
@@ -93,6 +125,7 @@ This project aims to expose the full design from first principles:
 
 - Build a pure Rust, `no_std`-compatible CPU neural network runtime from
   scratch.
+- Make WASM/browser deployment a first-class runtime target.
 - Use no floating-point operations in the inference runtime.
 - Use deterministic integer and fixed-point arithmetic.
 - Preserve residual stream precision with static residual scales.
@@ -103,6 +136,14 @@ This project aims to expose the full design from first principles:
   RMSNorm, gated MLPs, and native base-2 attention.
 - Provide a Rust calibration and training crate that mirrors runtime integer
   behavior.
+- Provide adaptive integer optimizer support so training does not depend on
+  static global learning-rate shifts.
+- Provide an inspectable graph/code-generation path for forward definitions and
+  integer backward passes.
+- Package models as small experts with explicit capabilities, schemas, routing
+  hints, tokenizer contracts, and trace authority.
+- Support deterministic composition of multiple local experts through a Rust
+  router.
 - Provide strong tests for numeric correctness, stability, and performance
   assumptions.
 - Keep the codebase small enough to audit and reason about.
@@ -111,11 +152,13 @@ This project aims to expose the full design from first principles:
 
 - Competing with PyTorch, TensorFlow, ONNX Runtime, or vendor inference engines.
 - Supporting GPUs or accelerators in the first phase.
-- Training large models.
+- Training monolithic frontier-scale or cloud-replacement models.
 - Implementing every neural network layer type.
 - Running standard Llama, GPT, or HuggingFace checkpoints through post-training
   quantization. NSRL models must be born into NSRL's base-2 attention contract.
-- Hiding quantization behavior behind opaque compiler passes.
+- Hiding quantization behavior behind opaque compiler passes. Generated code is
+  allowed only when the emitted Rust is deterministic, reviewable, testable, and
+  bound to the same trace contracts as hand-written kernels.
 - Optimizing before the numeric contract is proven.
 
 ## Users
@@ -125,12 +168,15 @@ Primary users:
 - Engineers who want to understand integer neural networks from first
   principles.
 - Researchers experimenting with fixed-point neural network stability.
-- Systems programmers interested in deterministic CPU inference.
+- Systems programmers interested in deterministic CPU and WASM inference.
+- Product engineers building private local-first or offline-first AI features.
 
 Secondary users:
 
 - Students learning quantization and low-level model execution.
 - Practitioners who need reproducible inference on constrained hardware.
+- Browser, mobile, and game developers who need small local models without GPU
+  drivers or cloud calls.
 
 ## Core Product Principles
 
@@ -140,6 +186,14 @@ Secondary users:
   depth does not destroy learned signal through repeated right shifts.
 - **Determinism:** the same input, model, and CPU target produce the same output.
 - **Auditability:** implementation choices are visible in ordinary Rust source.
+- **Inspectable generation:** code generated from graph definitions must be
+  readable Rust with stable tests and explicit range checks.
+- **Agentic edge:** small expert models and deterministic routing are the default
+  scaling strategy.
+- **Local-first portability:** CPU and WASM targets are product surfaces, not
+  afterthoughts.
+- **Adaptive training:** integer optimizer state should replace manual
+  shift-sweep babysitting as models deepen.
 - **Attention-first:** the runtime is designed around native base-2 attention
   from the beginning.
 - **CPU sympathy:** use arithmetic patterns that map naturally to scalar and
@@ -167,11 +221,14 @@ artifact generated by such tooling must be serialized as integer constants.
 
 ## Product Components
 
-The project has two first-class components that must evolve together:
+The project has current first-class components that must evolve together:
 
 - `nsrl-core`: pure Rust, `no_std`-compatible integer inference runtime.
+- `nsrl-corpus`: deterministic corpus, byte-token, and lexeme-token builders.
+- `nsrl-train-core`: `no_std` borrowed-workspace training-step extraction.
 - `nsrl-train`: Rust calibration and training support that mirrors runtime
   rounding, residual scales, and block-floating normalization.
+- `nsrl-demo`: executable evidence surface for forward traces and benchmarks.
 
 The training and calibration crate exists because generic post-training
 quantization is not expected to produce reliable weights for this runtime.
@@ -179,7 +236,16 @@ After the base-2 attention decision, `nsrl-train` is no longer optional
 infrastructure; it is the proof system that creates models compatible with
 NSRL's mathematics.
 
-## Initial Model Target
+Planned components:
+
+- `nsrl-router`: deterministic expert selection, context passing, and traceable
+  agent orchestration.
+- `nsrl-graph`: a small integer graph IR plus code generator for checked
+  `no_std` forward and backward Rust.
+- `nsrl-wasm`: browser packaging, WASM SIMD validation, bundle budgets, and
+  local-first demo surfaces.
+
+## Initial Proof Model Target
 
 The first advanced model target is a tiny native base-2 Transformer character
 predictor:
@@ -198,10 +264,22 @@ This is intentionally smaller than a TinyStories-scale language model. It is
 large enough to test whether base-2 attention heads learn useful structure, but
 small enough that numeric traces and training failures remain inspectable.
 
-## Later Model Target
+## Strategic Model Target
 
-After the first character model learns, the project may scale toward a compact
-wordpiece or TinyStories-style model:
+After the first character and lexeme models learn, the project scales outward
+toward expert swarms rather than upward toward a single giant model.
+
+Target envelopes:
+
+```text
+micro expert:    1M-10M parameters
+large expert:    10M-50M parameters
+active route:    1-3 experts per request
+deployment:      native CPU and WASM bundles
+latency goal:    sub-100ms route + first useful output on ordinary clients
+```
+
+Each expert may still use the same native base-2 Transformer-style block:
 
 ```text
 input
@@ -216,7 +294,9 @@ input
   -> raw residual add
 ```
 
-Attention is no longer deferred. It is part of the numeric core.
+Attention is no longer deferred. It is part of the numeric core. The strategic
+architecture, however, is not "make this block enormous"; it is "package many
+small, typed, traceable experts and route between them deterministically."
 
 ## Functional Requirements
 
@@ -242,6 +322,17 @@ Attention is no longer deferred. It is part of the numeric core.
 - Provide simple model serialization for integer weights, scales, residual
   contract metadata, and lookup table versions.
 - Provide a calibration engine that mirrors runtime math exactly.
+- Provide expert manifests with capability tags, tokenizer IDs, input/output
+  schemas, routing hints, authority strings, model hashes, and bundle budgets.
+- Provide deterministic router traces that explain why an expert was selected.
+- Provide blockwise adaptive integer optimizer state for training-time momentum
+  and variance/magnitude tracking.
+- Provide a graph-generated backward path whose emitted Rust can be reviewed,
+  tested, and compared against scalar golden references.
+- Provide deterministic parallel batch-gradient accumulation with stable reduction
+  order before applying integer updates.
+- Provide WASM conformance tests for no-runtime-float inference, startup latency,
+  bundle size, and SIMD/no-SIMD fallback behavior.
 
 ## Quality Requirements
 
@@ -309,6 +400,33 @@ embedding
   -> integer output head
 ```
 
+Milestone 4: Agentic Edge is successful when:
+
+- Models can be packaged as expert artifacts with manifests, tokenizer contracts,
+  schemas, capabilities, hashes, and trace authority.
+- A deterministic Rust router can select one or more experts for a request.
+- Router traces explain expert selection and context handoff.
+- At least three experts can be composed locally without cloud calls or GPU
+  drivers.
+
+Milestone 5: Adaptive Integer Training is successful when:
+
+- Training supports blockwise integer momentum and variance/magnitude tracking.
+- Per-block or per-parameter update shifts are derived from integer history,
+  including `leading_zeros`/magnitude signals.
+- Static global shift sweeps are no longer required for the main expert training
+  lane.
+- The optimizer state is training-only and excluded from inference artifacts.
+
+Milestone 6: Graph And WASM Product Surface is successful when:
+
+- `nsrl-graph` can generate checked forward/backward Rust for the core block
+  primitives and match hand-written golden references.
+- A browser demo loads a small expert bundle, routes locally, and emits a
+  deterministic trace.
+- WASM bundle size, startup latency, and route-to-first-output latency are
+  measured in CI or release traces.
+
 ## Locked Decisions
 
 - Implementation language: Rust.
@@ -325,12 +443,24 @@ embedding
   leading-zero counts.
 - Training path: bespoke Rust training support; generic framework PTQ is not a
   compatibility target.
+- Scaling strategy: expert swarms and deterministic routing, not monolithic
+  frontier-scale models.
+- Generated code policy: allowed only when emitted Rust is inspectable,
+  deterministic, and trace-compatible.
+- Deployment wedge: local-first CPU and WASM inference.
+- Optimizer direction: adaptive integer optimizer state during training; no
+  optimizer state in inference artifacts.
 
 ## Open Questions
 
-- How strict should the "no floats" rule be for tests and offline calibration?
-- How small can the first character corpus be while still proving base-2
-  attention learns useful grammar?
-- How much of `nsrl-train` is required before the first end-to-end model demo?
-- What LUT size gives the best early tradeoff for RMSNorm accuracy and cache
-  behavior?
+- What is the smallest expert size that feels useful for grammar, routing, math,
+  domain style, and API/tool selection?
+- How should expert manifests describe capability, authority, and failure modes
+  without becoming a second opaque framework?
+- Should the first router be purely symbolic, learned, or hybrid?
+- What block size gives the best adaptive integer optimizer tradeoff between
+  quality, memory, and deterministic trace size?
+- How much of `nsrl-train` should be replaced by `nsrl-graph` generated backward
+  code, and which hand-written kernels remain the golden references?
+- What WASM bundle size and startup latency targets are strict enough to make
+  NSRL meaningfully better than browser ONNX/PyTorch-style deployments?

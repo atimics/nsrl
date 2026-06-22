@@ -2,21 +2,22 @@
 
 ## Overview
 
-NSRL is a pure Rust, `no_std`-compatible, integer-only CPU neural network
-runtime. The engineering priority is defensive integer design: preserve signal
-bits across depth, avoid undefined arithmetic behavior, and keep the runtime
-numerically auditable.
+NSRL is a pure Rust, `no_std`-compatible, integer-only neural network runtime
+and training stack for local-first micro-model agents. The engineering priority
+is defensive integer design in service of the agentic edge: preserve signal bits
+across depth, avoid undefined arithmetic behavior, keep the runtime numerically
+auditable, and make many small experts cheap to route, ship, and replay.
 
 The first forward-runtime version implements a small fixed-point inference
 engine, native base-2 integer attention, linear attention, static Q15 residual
 streams, branchless requantization, integer RMSNorm, a gated MLP block,
 deterministic trace output, and a 1,048,576-i8-weight benchmark preset.
 
-The active engineering frontier is now quality and control in `nsrl-train`, not
-whether integer training is possible. The trainer updates NSRL-native weights
-under the same arithmetic contract used by inference, using i64 batch
-accumulators, component-specific integer shifts, rollback safety, and traced
-decode controls.
+The active engineering frontier is no longer whether integer training is
+possible. It is turning the proof stack into a viable local AI substrate:
+adaptive integer optimizers, deterministic parallel gradient accumulation,
+expert manifests and routing, generated checked backward code, and first-class
+WASM/browser deployment.
 
 ## Numeric Contract
 
@@ -44,17 +45,67 @@ The implementation should use a Rust workspace:
 ```text
 crates/
   nsrl-core/      no_std integer-only inference runtime
+  nsrl-corpus/    deterministic corpus and tokenizer tooling
   nsrl-demo/      deterministic trace and benchmark binary
+  nsrl-train-core/no_std borrowed-workspace training steps
   nsrl-train/     calibration and training tools that mirror runtime math
 ```
 
 `nsrl-core` is the strict no-runtime-floats crate. The current LUT generation
-lives in `nsrl-core/build.rs` and emits static integer artifacts. `nsrl-demo`
-is the executable evidence surface for forward traces and CPU benchmarks.
-`nsrl-train` may use offline references, but its integer simulation path must
-match runtime requantization, residual scales, and RMSNorm normalization exactly.
-Because attention is natively base-2, `nsrl-train` must train NSRL-born models
-rather than adapt standard Euler-softmax checkpoints.
+lives in `nsrl-core/build.rs` and emits static integer artifacts. `nsrl-corpus`
+owns deterministic data preparation and tokenizer contracts. `nsrl-demo` is the
+executable evidence surface for forward traces and CPU benchmarks.
+`nsrl-train-core` is the allocator-free training-step extraction for callers
+that own memory. `nsrl-train` may use offline references, but its integer
+simulation path must match runtime requantization, residual scales, and RMSNorm
+normalization exactly. Because attention is natively base-2, `nsrl-train` must
+train NSRL-born models rather than adapt standard Euler-softmax checkpoints.
+
+Planned workspace surfaces:
+
+```text
+crates/
+  nsrl-router/    deterministic expert routing and context handoff
+  nsrl-graph/     integer graph IR and generated no_std forward/backward Rust
+  nsrl-wasm/      browser packaging, SIMD probes, and local-first demos
+```
+
+Generated code is permitted only when it emits ordinary reviewable Rust, uses
+the same checked integer primitives, and has golden tests against hand-written
+references. Code generation must reduce manual backward-pass burden without
+becoming an opaque framework.
+
+## Agentic Edge Architecture
+
+NSRL scales outward before it scales upward. The default deployment target is a
+swarm of small expert models connected by a deterministic router:
+
+```text
+request
+  -> router
+  -> one or more expert manifests
+  -> expert inference
+  -> local trace
+  -> response or tool decision
+```
+
+Each expert artifact must declare:
+
+- capability tags,
+- tokenizer contract,
+- input and output schema,
+- numeric contract version,
+- lookup table versions,
+- model and tensor hashes,
+- routing hints,
+- authority and known non-claims,
+- native and WASM bundle budgets.
+
+The router starts symbolic and deterministic. A learned router can be added only
+after the symbolic route trace is stable enough to act as a reference. Routing is
+part of the product surface: route decisions must be replayable, explainable, and
+cheap enough to preserve sub-100ms local interactions for small active expert
+sets.
 
 ## Tensor Representation
 
@@ -124,7 +175,7 @@ Consequences:
 - NSRL models must be trained or calibrated under this exact attention rule.
 - Standard HuggingFace checkpoints are not a compatibility target.
 - Softmax exponentiation is a shift-and-LUT primitive, not a Taylor expansion.
-- The first trainable model is a tiny character predictor, not a converted
+- The first proof trainable model is a tiny character predictor, not a converted
   PyTorch model.
 
 ## Attention Head Size
@@ -490,7 +541,7 @@ by the runtime, including native base-2 attention.
 - Saturation and underflow reports per layer.
 - Optional high-precision reference comparisons for analysis only.
 
-The first real training target is a roughly 1.1M-parameter character predictor:
+The first proof training target is a roughly 1.1M-parameter character predictor:
 
 ```text
 d_model:   128
@@ -503,17 +554,110 @@ vocab:     character or byte-level
 
 This was the first scale at which attention could show useful sequence behavior
 without making numeric debugging opaque. Strict integer-only training is now
-implemented for the small research lanes. The unsolved engineering questions
-are:
+implemented for the small research lanes. The next engineering shape is:
+
+- expert-scale training rather than monolithic frontier-scale training,
+- deterministic parallel batch-gradient accumulation,
+- adaptive integer optimizer state instead of hand-tuned static shifts,
+- generated checked backward code for new architectures,
+- and trace-thinning so training evidence does not dominate model size.
+
+The remaining research questions are:
 
 - whether the same arithmetic scales cleanly to larger lexeme and transformer
-  models,
+  experts,
 - how to reduce dependence on source-grounded composition without losing
   coherence,
-- how to tune component learning-rate shifts over time without static sweep
-  magic constants,
 - and whether linear attention plus integer test-time state updates can close
   enough of the softmax quality gap to justify the O(d^2) streaming interface.
+
+## Adaptive Integer Optimizer
+
+Static `learning_rate_shift` values are acceptable for proving integer weight
+movement, but they are not a depth strategy. The training stack needs an integer
+adaptive optimizer that can rebalance gradients without runtime floats.
+
+Initial optimizer target:
+
+```text
+gradient_i64
+  -> first moment i32 or i64 accumulator
+  -> magnitude/variance tracker u16 or i32
+  -> dynamic shift from leading-zero / magnitude history
+  -> bounded i8 or i16 weight delta
+```
+
+Implementation rules:
+
+- Start blockwise, then move per-parameter only where measurements justify the
+  memory cost.
+- Keep optimizer state training-only; inference artifacts contain only model
+  weights, scales, manifests, and LUT versions.
+- Derive update shifts from integer magnitude history, using operations such as
+  `leading_zeros`, saturating counters, and bounded right shifts.
+- Preserve deterministic reduction order so parallel training remains replayable.
+- Trace optimizer state summaries without dumping full optimizer tensors by
+  default.
+
+The first accepted version can be closer to integer RMSProp/Adam than exact
+floating-point Adam. The requirement is not bitwise compatibility with Adam; the
+requirement is automatic per-block or per-weight scale control under NSRL's
+integer contract.
+
+## Deterministic Parallel Training
+
+The host trainer must move from "mutate the model per window" toward a
+deterministic map-reduce batch shape:
+
+```text
+read-only model snapshot + token window -> private gradient accumulator
+private accumulators in stable chunk order -> batch accumulator
+batch accumulator -> single integer update application
+updated candidate model -> validation / rollback / trace
+```
+
+This structure gives CPU threads real work while preserving replay. The
+single-writer apply step remains responsible for saturation counts, rollback
+policy, adaptive optimizer state, and trace ordering.
+
+`nsrl-train-core` should therefore grow two families of APIs:
+
+- step-and-update APIs for tiny no_std appliance demos,
+- gradient-only APIs for parallel host training.
+
+The gradient-only APIs are the product path for larger experts.
+
+## Graph-Generated Backward Passes
+
+Hand-written backward passes are useful as golden references, but they are not a
+scalable architecture research strategy. `nsrl-graph` should provide a small
+static integer graph IR that can emit checked `no_std` Rust for forward and
+backward passes.
+
+Initial graph operations:
+
+- linear projection,
+- residual add,
+- RMSNorm,
+- Hard SiLU gated activation,
+- base-2 softmax,
+- causal attention,
+- linear attention,
+- embedding lookup,
+- output head.
+
+Generation requirements:
+
+- Emit readable Rust source, not bytecode.
+- Inject shape checks, range checks, scale assertions, saturation counters, and
+  deterministic rounding calls.
+- Reuse `nsrl-core` primitives rather than generating novel arithmetic.
+- Compare generated backward code against current hand-written backward fixtures.
+- Version generated code in traces so model artifacts can identify the graph
+  contract that produced them.
+
+The goal is to make new integer architectures cheap to try: write the forward
+graph, generate the backward code, and keep the emitted Rust auditable.
 
 ## Model Serialization
 
@@ -532,6 +676,12 @@ The manifest should include:
 - Model version.
 - Runtime numeric contract version.
 - Residual scale contract.
+- Expert capability tags.
+- Tokenizer contract.
+- Input and output schema.
+- Routing hints.
+- Authority and known non-claims.
+- Native and WASM bundle budgets.
 - Tensor names, shapes, dtypes, offsets.
 - Scale metadata.
 - Layer graph.
@@ -540,6 +690,28 @@ The manifest should include:
 
 A text format is acceptable for early prototypes if it keeps review and testing
 simple.
+
+## WASM Deployment Contract
+
+Browser deployment is a first-class engineering target because it is the
+distribution wedge for local-first AI. The WASM path must preserve the same
+integer model contract rather than becoming a separate runtime.
+
+Requirements:
+
+- Build `nsrl-core` for `wasm32` without runtime floating-point model math.
+- Keep model bundles small enough for ordinary web application delivery.
+- Detect WASM SIMD support and provide a scalar fallback.
+- Avoid hidden heap growth in the hot path; callers should be able to provide
+  workspaces or reuse allocated buffers.
+- Emit deterministic traces that can be compared with native traces where target
+  integer semantics match.
+- Measure browser startup time, bundle size, route-to-first-output latency, and
+  steady-state tokens per second.
+
+The browser product promise is not "run a cloud LLM locally." It is "load small,
+typed, deterministic experts instantly and compose them without server calls or
+GPU drivers."
 
 ## Testing Strategy
 
@@ -636,6 +808,16 @@ Correctness comes first, but CPU sympathy is part of correctness for this
 project. The scalar reference should still use arithmetic choices that can
 survive optimization.
 
+System-level budgets matter as much as kernel throughput. NSRL should measure:
+
+- active expert parameter bytes,
+- route-to-first-output latency,
+- tokens per watt where measurable,
+- native and WASM bundle size,
+- browser startup time,
+- deterministic trace overhead,
+- cache and allocation behavior for active expert sets.
+
 Initial implementation:
 
 - Plain scalar Rust loops.
@@ -644,13 +826,19 @@ Initial implementation:
 - Branchless round-half-up.
 - Static residual adds.
 - No handwritten SIMD.
+- Single-expert execution.
+- Deterministic traces before throughput shortcuts.
 
 Later implementation:
 
 - Blocked matrix multiplication.
 - SIMD kernels.
 - Packed weights.
-- Threaded batch or output-channel parallelism.
+- Threaded eval and deterministic parallel batch-gradient accumulation.
+- Output-channel or row-block parallelism where workspaces can be partitioned.
+- WASM SIMD with scalar fallback.
+- Expert prefetch and active-set memory budgeting.
+- Trace thinning for long training runs.
 
 Every optimized kernel must match the scalar reference exactly.
 
@@ -704,10 +892,11 @@ Status: complete for the forward runtime.
 - Projection back to Q15.
 - Layer-level tests.
 
-### Milestone 4: Tiny Model, Trace, And Benchmark
+### Milestone 4: Tiny Model, Trace, Benchmark, And Native Training
 
-Status: forward execution, deterministic trace output, and `bench-1m` benchmark
-are complete. Calibration and training remain open.
+Status: forward execution, deterministic trace output, `bench-1m`, corpus
+tooling, lexeme lanes, and integer-native training are implemented as research
+infrastructure.
 
 - End-to-end integer model execution.
 - Deterministic output tests.
@@ -715,17 +904,65 @@ are complete. Calibration and training remain open.
 - Small demo task.
 - `bench-1m` 1,048,576-i8-weight forward benchmark.
 - `nsrl-train` calibration path.
+- Byte, lexeme, MLP, attention, embedding, and mini-transformer training traces.
+- i64 batch accumulators and rollback safety.
 
-### Milestone 5: Larger Attention Research
+### Milestone 5: Agentic Expert Packaging
 
-- Integer logits.
-- Longer-context mask handling.
-- Larger base-2 attention models.
-- Attention output projection to Q15.
-- Collapse and saturation tests.
+Status: planned.
 
-Status: initial 128-token, 4-block benchmark complete. Cross-machine replay,
-WASM comparison, and learned weights are still future work.
+- Expert artifact manifest.
+- Capability tags and authority strings.
+- Tokenizer and input/output schemas.
+- Routing hints.
+- Model, tensor, and LUT hashes.
+- Native and WASM bundle budgets.
+- Deterministic router trace schema.
+- At least three locally routable experts.
+
+### Milestone 6: Adaptive Integer Optimizer
+
+Status: planned.
+
+- Blockwise integer momentum.
+- Blockwise variance or magnitude tracker.
+- Dynamic update shifts from integer history.
+- Stable deterministic reduction order.
+- Training-only optimizer state.
+- Trace summaries for optimizer movement, saturation, and zero-delta rates.
+
+### Milestone 7: Deterministic Parallel Training
+
+Status: planned.
+
+- Gradient-only `nsrl-train-core` step APIs.
+- Private per-worker accumulators.
+- Stable chunk-order accumulator reduction.
+- Single-writer update application.
+- Batch validation and rollback after parallel accumulation.
+- Replay tests proving identical serial and parallel traces for fixed chunking.
+
+### Milestone 8: `nsrl-graph`
+
+Status: planned.
+
+- Static integer graph IR.
+- Generated readable Rust forward and backward code.
+- Generated range checks, scale assertions, and saturation counters.
+- Golden parity tests against hand-written kernels.
+- Trace fields identifying graph and generator versions.
+
+### Milestone 9: WASM Local-First Surface
+
+Status: planned.
+
+- `wasm32` build profile for `nsrl-core`.
+- Browser demo that loads an expert bundle and emits a deterministic trace.
+- WASM SIMD probe and scalar fallback.
+- Bundle-size and startup-latency budgets.
+- Route-to-first-output timing for small expert sets.
+- Cross-target replay between native and browser builds where integer semantics
+  are expected to match.
 
 ## Key Risks
 
@@ -741,6 +978,15 @@ WASM comparison, and learned weights are still future work.
 - Calibration drifts away from runtime arithmetic.
 - Tests accidentally validate against behavior that uses runtime floats.
 - Premature SIMD optimization obscures numeric bugs.
+- A monolithic-model roadmap recreates the memory wall instead of exploiting the
+  local expert niche.
+- Expert routing is brittle, opaque, or slower than direct inference.
+- Adaptive optimizer state improves quality but makes training memory too large.
+- Generated backward code hides math bugs behind an attractive abstraction.
+- Parallel gradient accumulation breaks deterministic replay.
+- WASM SIMD availability and browser security constraints reduce real-world
+  throughput.
+- Trace volume outgrows the model artifacts and slows iteration.
 
 ## Locked Decisions
 
@@ -757,4 +1003,16 @@ WASM comparison, and learned weights are still future work.
 - RMSNorm magnitude handling: integer block-floating normalization with
   leading-zero counts.
 - Primary model preparation path: bespoke Rust calibration and training support.
-- First model scale: about 1.1M parameters, character or byte-level prediction.
+- Scaling strategy: local expert swarms and deterministic routing before
+  monolithic model scale.
+- First proof model scale: about 1.1M parameters, character or byte-level
+  prediction.
+- Product expert envelope: initially 1M-10M parameters, with larger experts only
+  when active memory and latency budgets justify them.
+- Generated code policy: allowed only as readable Rust with golden tests and
+  trace-visible graph versions.
+- Optimizer direction: adaptive integer optimizer state during training, no
+  optimizer state in inference artifacts.
+- Deployment wedge: local-first native CPU and WASM inference.
+- Parallelism rule: parallel training must reduce gradients in deterministic
+  stable order before a single update/validation step.

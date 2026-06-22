@@ -265,6 +265,65 @@ This is deliberately process-level scheduling. The trainer is currently mostly
 single-process CPU work, so a large EC2 instance is best used by running a fleet
 of independent ablations next to one long hero job.
 
+## Local Launch API
+
+For interactive work, run the local launch API next to the static dashboard:
+
+```sh
+AWS_PROFILE=staging \
+scripts/aws/launch-api.py --host 127.0.0.1 --port 8766
+```
+
+Health and run index:
+
+```sh
+curl http://127.0.0.1:8766/health
+curl http://127.0.0.1:8766/runs
+```
+
+Dry-run a launch without creating EC2:
+
+```sh
+curl -X POST http://127.0.0.1:8766/runs/dry-run \
+  -H 'content-type: application/json' \
+  --data '{
+    "run_name": "qk-rescue-64k-dry-run",
+    "max_windows": 65536,
+    "instance_type": "c8g.xlarge",
+    "publish_checkpoint": "wikibard-linear-nope-qk-rescue"
+  }'
+```
+
+Launch a real auto-terminating EC2 run:
+
+```sh
+curl -X POST http://127.0.0.1:8766/runs \
+  -H 'content-type: application/json' \
+  --data '{
+    "run_name": "qk-rescue-64k-001",
+    "max_windows": 65536,
+    "seq_len": 4,
+    "stride": 1211,
+    "batch_windows": 2,
+    "attention": "linear",
+    "position": "nope",
+    "out_shift": 18,
+    "mlp_shift": 17,
+    "embed_shift": 13,
+    "attention_shift": 22,
+    "attention_q_shift": 18,
+    "attention_qk_shift": 16,
+    "adaptive_rule_shifts": true,
+    "instance_type": "c8g.xlarge",
+    "publish_checkpoint": "wikibard-linear-nope-qk-rescue"
+  }'
+```
+
+The API writes a pending row into the dashboard, launches AL2023 ARM64 EC2 with
+the current S3 source bundle, tags the instance with the run name, and sets both
+`NSRL_TERMINATE_ON_EXIT=1` and EC2 instance-initiated shutdown behavior to
+`terminate`. User-data also schedules a 180-minute shutdown as a fallback.
+
 ## Export Results
 
 Download the dashboard run index and export it:
