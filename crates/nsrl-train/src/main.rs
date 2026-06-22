@@ -20,8 +20,8 @@ use nsrl_train::{
     MiniTransformerPositionPolicy, MiniTransformerSwarmComposition,
     MiniTransformerSwarmRouteConfig, MiniTransformerSwarmRoutedGenerationExpert,
     MiniTransformerTraceDetail, SoftmaxTrainConfig, TrainConfig, TrainError,
-    generate_byte_embed_softmax_with_priors,
-    generate_byte_softmax_with_priors, generate_lexeme_softmax_with_memory,
+    generate_byte_embed_softmax_with_priors, generate_byte_softmax_with_priors,
+    generate_lexeme_softmax_with_memory,
     generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors,
     generate_mini_transformer_with_attention_kind_position_policy_priors_and_ttt_shift,
     generate_routed_mini_transformer_swarm_experts, lexeme_quality_weights_from_vocab,
@@ -1143,7 +1143,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "--expert or --model is required for mini-transformer-swarm-route mode".into(),
                 );
             }
-            if route_config.prompt_affinity && mini_transformer_attention_kind.uses_incremental_state()
+            if route_config.prompt_affinity
+                && mini_transformer_attention_kind.uses_incremental_state()
             {
                 return Err(
                     "--mini-transformer-attention streaming modes are not supported for prompt-affinity swarm routing"

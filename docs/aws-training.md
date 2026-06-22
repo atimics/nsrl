@@ -43,6 +43,8 @@ an instance are cache/workspace copies only.
 - `s3://BUCKET/PREFIX/runs/<run-name>/<run-name>.progress.jsonl`
 - `s3://BUCKET/PREFIX/runs/<run-name>/<run-name>.trace.jsonl`
 - `s3://BUCKET/PREFIX/runs/<run-name>/<run-name>.nsrlmt`
+- `s3://BUCKET/PREFIX/runs/<run-name>/<run-name>.nsrlswarm` for swarm runs
+- `s3://BUCKET/PREFIX/runs/<run-name>/<run-name>.manifest.jsonl` for swarm runs
 - `s3://BUCKET/PREFIX/dashboard/index.html`
 - `s3://BUCKET/PREFIX/dashboard/runs.json`
 - `s3://BUCKET/PREFIX/dashboard/latest.json`
@@ -63,6 +65,13 @@ The trainer emits compact progress JSON at batch intervals through
 `--progress-out`. This is intentionally cheaper than live full-corpus
 validation, so live probability loss is still a final-trace metric unless a run
 explicitly chooses to pay for repeated evaluation.
+
+The EC2 launch API defaults to `mini-transformer-swarm` on Graviton and passes
+`RUSTFLAGS=-C target-cpu=native`. Set `swarm_workers` or `NSRL_SWARM_WORKERS`;
+`0` means use the instance's online CPU count. The shell runner itself remains
+single-worker by default unless `NSRL_MODE=mini-transformer-swarm` is set.
+Binary traces are still limited to `mini-transformer-mlp`; swarm runs should
+keep `NSRL_TRACE_FORMAT=json` until the binary swarm schema lands.
 
 ## Build A Versioned Dataset
 
@@ -154,6 +163,8 @@ NSRL_S3_URI=s3://BUCKET/PREFIX \
 NSRL_TOKENS=data/processed/wiki-bard-corpus.tokens.u8 \
 NSRL_TOKENS_S3_URI=s3://BUCKET/PREFIX/corpus/datasets/wikibard/20260621T000000Z/tokens/wikibard-20260621T000000Z.tokens.u8 \
 NSRL_RUN_NAME=smoke-8192 \
+NSRL_MODE=mini-transformer-swarm \
+NSRL_SWARM_WORKERS=0 \
 NSRL_MAX_WINDOWS=8192 \
 NSRL_SEQ_LEN=4 \
 NSRL_STRIDE=36965 \
@@ -161,6 +172,14 @@ NSRL_BATCH_WINDOWS=2 \
 NSRL_ADAPTIVE_RULE_SHIFTS=1 \
 NSRL_ADAPTIVE_HOLOGRAPHIC_SHIFTS=0 \
 scripts/aws/run-mini-transformer-training.sh
+```
+
+For the local launch API, the JSON body can set the same parallel knobs:
+
+```sh
+curl -X POST http://127.0.0.1:8766/runs \
+  -H 'content-type: application/json' \
+  -d '{"run_name":"c8g-swarm-65536","instance_type":"c8g.4xlarge","mode":"mini-transformer-swarm","swarm_workers":0,"max_windows":65536}'
 ```
 
 Open or download:

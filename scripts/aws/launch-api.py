@@ -40,6 +40,7 @@ INSTANCE_HOURLY_USD = {
 
 RUN_ENV_DEFAULTS = {
     "NSRL_RUN_ROOT": "/mnt/nsrl/aws-runs",
+    "NSRL_MODE": "mini-transformer-swarm",
     "NSRL_TOKENS": "/mnt/nsrl/tokens/wiki-bard-corpus.tokens.u8",
     "NSRL_TOKENS_S3_URI": DEFAULT_TOKENS_S3_URI,
     "NSRL_MAX_WINDOWS": "65536",
@@ -58,6 +59,9 @@ RUN_ENV_DEFAULTS = {
     "NSRL_POSITION": "nope",
     "NSRL_TRACE_FORMAT": "json",
     "NSRL_TRACE_DETAIL": "summary",
+    "NSRL_SWARM_WORKERS": "0",
+    "NSRL_SWARM_COMPOSITION": "average",
+    "NSRL_RUSTFLAGS": "-C target-cpu=native",
     "NSRL_ADAPTIVE_RULE_SHIFTS": "1",
     "NSRL_ADAPTIVE_RULE_INTERVAL_BATCHES": "128",
     "NSRL_ADAPTIVE_HOLOGRAPHIC_SHIFTS": "0",
@@ -68,6 +72,7 @@ RUN_ENV_DEFAULTS = {
 }
 
 FIELD_TO_ENV = {
+    "mode": "NSRL_MODE",
     "max_windows": "NSRL_MAX_WINDOWS",
     "seq_len": "NSRL_SEQ_LEN",
     "stride": "NSRL_STRIDE",
@@ -96,6 +101,7 @@ FIELD_TO_ENV = {
     "train_mode": "NSRL_TRAIN_MODE",
     "swarm_workers": "NSRL_SWARM_WORKERS",
     "swarm_composition": "NSRL_SWARM_COMPOSITION",
+    "rustflags": "NSRL_RUSTFLAGS",
 }
 
 

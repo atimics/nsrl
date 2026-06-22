@@ -71,6 +71,7 @@ dashboard_dir="${run_root}/dashboard"
 mkdir -p "$run_dir" "$dashboard_dir" "$(dirname "${NSRL_TOKENS:-data/processed/wiki-bard-corpus.tokens.u8}")"
 
 s3_uri="${NSRL_S3_URI%/}"
+train_mode="${NSRL_MODE:-${NSRL_TRAIN_MODE:-mini-transformer-mlp}}"
 tokens="${NSRL_TOKENS:-data/processed/wiki-bard-corpus.tokens.u8}"
 model_in="${NSRL_MODEL:-}"
 resume_model_s3_uri="${NSRL_MODEL_S3_URI:-${NSRL_RESUME_FROM_S3_URI:-}}"
@@ -83,13 +84,16 @@ fi
 model_out="${run_dir}/${run_name}.nsrlmt"
 swarm_model_out="${run_dir}/${run_name}.nsrlswarm"
 manifest_out="${run_dir}/${run_name}.manifest.jsonl"
-trace_out="${run_dir}/${run_name}.trace.jsonl"
+trace_ext="jsonl"
+if [[ "${NSRL_TRACE_FORMAT:-json}" == "binary" ]]; then
+  trace_ext="nsrlt"
+fi
+trace_out="${run_dir}/${run_name}.trace.${trace_ext}"
 progress_out="${run_dir}/${run_name}.progress.jsonl"
 log_out="${run_dir}/train.log"
 command_out="${run_dir}/command.txt"
 repo_rev="$(git rev-parse HEAD 2>/dev/null || true)"
 sync_seconds="${NSRL_SYNC_SECONDS:-60}"
-train_mode="${NSRL_TRAIN_MODE:-mini-transformer-mlp}"
 run_stage="preparing"
 aws_instance_id="${NSRL_AWS_INSTANCE_ID:-}"
 aws_instance_type="${NSRL_AWS_INSTANCE_TYPE:-}"
@@ -98,6 +102,22 @@ aws_instance_az="${NSRL_AWS_AVAILABILITY_ZONE:-}"
 aws_instance_launch_time="${NSRL_AWS_INSTANCE_LAUNCH_TIME:-}"
 cost_hourly_usd="${NSRL_INSTANCE_HOURLY_USD:-}"
 cost_currency="${NSRL_COST_CURRENCY:-USD}"
+
+detect_cpu_count() {
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+    return 0
+  fi
+  if command -v getconf >/dev/null 2>&1; then
+    getconf _NPROCESSORS_ONLN
+    return 0
+  fi
+  if command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.ncpu
+    return 0
+  fi
+  echo 1
+}
 
 load_ec2_metadata() {
   if ! command -v curl >/dev/null 2>&1; then
@@ -170,6 +190,25 @@ fi
 
 aws s3 cp "${s3_uri}/dashboard/runs.json" "${dashboard_dir}/runs.json" >/dev/null 2>&1 || true
 
+swarm_workers="${NSRL_SWARM_WORKERS:-0}"
+if [[ -z "$swarm_workers" || "$swarm_workers" == "0" ]]; then
+  swarm_workers="$(detect_cpu_count)"
+fi
+
+if [[ -n "${NSRL_RUSTFLAGS:-}" ]]; then
+  export RUSTFLAGS="$NSRL_RUSTFLAGS"
+fi
+
+if [[ "${NSRL_TRACE_FORMAT:-json}" == "binary" ]]; then
+  case "$train_mode" in
+    mini-transformer-mlp|mini_transformer_mlp) ;;
+    *)
+      echo "NSRL_TRACE_FORMAT=binary currently supports only mini-transformer-mlp mode" >&2
+      exit 2
+      ;;
+  esac
+fi
+
 cmd=(
   cargo run --release -p nsrl-train --
   --mode "$train_mode"
@@ -199,13 +238,13 @@ case "$train_mode" in
       --model-out "$model_out"
       --swarm-model-out "$swarm_model_out"
       --manifest-out "$manifest_out"
-      --swarm-workers "${NSRL_SWARM_WORKERS:-8}"
+      --swarm-workers "$swarm_workers"
       --swarm-composition "${NSRL_SWARM_COMPOSITION:-average}"
     )
     ;;
   mini-transformer-swarm-scaling|mini_transformer_swarm_scaling|mini-transformer-swarm-bench|mini_transformer_swarm_bench)
     cmd+=(
-      --swarm-workers "${NSRL_SWARM_WORKERS:-8}"
+      --swarm-workers "$swarm_workers"
       --swarm-composition "${NSRL_SWARM_COMPOSITION:-average}"
     )
     ;;
@@ -320,11 +359,14 @@ PY
   fi
 
   echo "NSRL_TERMINATE_ON_EXIT terminating ${instance_id} in ${region}" >&2
-  aws ec2 terminate-instances \
+  if ! aws ec2 terminate-instances \
     --region "$region" \
     --instance-ids "$instance_id" \
     --query 'TerminatingInstances[0].{InstanceId:InstanceId,Current:CurrentState.Name}' \
-    --output json >&2 || true
+    --output json >&2; then
+    echo "EC2 terminate API failed; falling back to instance-initiated shutdown" >&2
+    shutdown -h now || true
+  fi
 }
 
 render_dashboard running
@@ -392,14 +434,16 @@ path.write_text(json.dumps({
     "finished_at": os.environ["FINISHED_AT"],
 }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
-    aws s3 cp "$model_out" "${checkpoint_uri}/latest.nsrlmt" --only-show-errors
+    if [[ -f "$model_out" ]]; then
+      aws s3 cp "$model_out" "${checkpoint_uri}/latest.nsrlmt" --only-show-errors
+    fi
     if [[ -f "$swarm_model_out" ]]; then
       aws s3 cp "$swarm_model_out" "${checkpoint_uri}/latest.nsrlswarm" --only-show-errors
     fi
     if [[ -f "$manifest_out" ]]; then
       aws s3 cp "$manifest_out" "${checkpoint_uri}/latest.manifest.jsonl" --only-show-errors
     fi
-    aws s3 cp "$trace_out" "${checkpoint_uri}/latest.trace.jsonl" --only-show-errors
+    aws s3 cp "$trace_out" "${checkpoint_uri}/latest.trace.${trace_ext}" --only-show-errors
     if [[ -f "$progress_out" ]]; then
       aws s3 cp "$progress_out" "${checkpoint_uri}/latest.progress.jsonl" --only-show-errors
     fi

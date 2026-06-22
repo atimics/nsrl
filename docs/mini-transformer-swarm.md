@@ -86,16 +86,21 @@ Route over one or more packed swarm experts with:
 cargo run --release -p nsrl-train -- \
   --mode mini-transformer-swarm-route \
   --expert data/processed/wiki-bard-mini-transformer-swarm.nsrlswarm \
+  --prompt "To be" \
   --route-capability byte_generation \
+  --route-prompt-affinity \
   --route-active-experts 1 \
   --trace data/processed/wiki-bard-mini-transformer-swarm.route.jsonl
 ```
 
 The route trace uses schema `nsrl.mini_transformer_swarm_route_trace.v1`. It is
-a symbolic manifest router: each candidate records capability match, budget
-checks, deterministic score, rejection reason, and selected expert index. Use
+a deterministic manifest router with optional prompt replay scoring: each
+candidate records capability match, budget checks, manifest score, prompt
+affinity score, rejection reason, and selected expert index. Use
 `--route-max-artifact-bytes` and `--route-max-parameter-bytes` to enforce local
-memory budgets before inference.
+memory budgets before inference. `--route-prompt-affinity` evaluates each expert
+over the prompt's own next-byte transitions before selection; streaming
+attention modes are not used for that route-only scoring path.
 
 Route and generate from an active expert set with:
 

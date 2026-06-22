@@ -15,11 +15,17 @@ from typing import Any
 def load_json_line(path: pathlib.Path) -> dict[str, Any] | None:
     if not path.exists() or path.stat().st_size == 0:
         return None
-    with path.open("r", encoding="utf-8") as handle:
-        line = handle.readline().strip()
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            line = handle.readline().strip()
+    except UnicodeDecodeError:
+        return None
     if not line:
         return None
-    return json.loads(line)
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError:
+        return None
 
 
 def read_text(path: pathlib.Path | None) -> str:
