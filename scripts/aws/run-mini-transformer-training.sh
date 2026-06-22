@@ -10,6 +10,7 @@ Required:
 
 Common knobs:
   NSRL_RUN_NAME=hero-001
+  NSRL_TRAIN_MODE=mini-transformer-mlp
   NSRL_TOKENS=data/processed/wiki-bard-corpus.tokens.u8
   NSRL_TOKENS_S3_URI=s3://bucket/path/wiki-bard-corpus.tokens.u8
   NSRL_MODEL=data/processed/resume.nsrlmt
@@ -20,10 +21,13 @@ Common knobs:
   NSRL_SEQ_LEN=4
   NSRL_STRIDE=1
   NSRL_BATCH_WINDOWS=2
+  NSRL_SWARM_WORKERS=8
+  NSRL_SWARM_COMPOSITION=average
   NSRL_ATTENTION=linear
   NSRL_POSITION=nope
   NSRL_TRACE_FORMAT=json
   NSRL_TRACE_DETAIL=summary
+  NSRL_RUSTFLAGS='-C target-cpu=native'
   NSRL_ADAPTIVE_RULE_SHIFTS=1
   NSRL_ADAPTIVE_HOLOGRAPHIC_SHIFTS=0
   NSRL_SYNC_SECONDS=60
