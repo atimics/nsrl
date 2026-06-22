@@ -20,6 +20,8 @@ const currentModel = path.resolve(repoRoot, arg("current-model", "data/processed
 const tokens = path.resolve(repoRoot, arg("tokens", "data/processed/visionary-expanded-frozen-v4096/v4096.tokens.u16"));
 const vocab = path.resolve(repoRoot, arg("vocab", "data/processed/visionary-expanded-frozen-v4096/v4096.vocab.tsv"));
 const sampleMaxNewTokens = Number(arg("sample-max-new-tokens", "96"));
+const evalOffsets = parseOffsets(arg("eval-offsets", "0"));
+const evalMaxWindows = Number(arg("eval-max-windows", "32768"));
 const dashboardDir = path.join(runDir, "dashboard");
 const workersDir = path.join(runDir, "workers");
 const samplesDir = path.join(runDir, "samples");
@@ -59,7 +61,27 @@ function cpS3(uri, file) {
   return result.status === 0;
 }
 
-function evalModel(modelPath, seqLen) {
+function parseOffsets(value) {
+  const offsets = String(value || "0")
+    .split(/[,\s]+/)
+    .map((part) => Number(part.trim()))
+    .filter((value) => Number.isInteger(value) && value >= 0);
+  return offsets.length ? [...new Set(offsets)] : [0];
+}
+
+function evalCacheSuffix(seqLen) {
+  const offsets = evalOffsets.join("-");
+  return evalOffsets.length === 1 && evalOffsets[0] === 0
+    ? `seq${seqLen}.eval.json`
+    : `seq${seqLen}.offsets-${offsets}.mw${evalMaxWindows}.eval.json`;
+}
+
+function evalScore(result) {
+  if (!result) return null;
+  return Number(result.bits_per_token ?? result.mean_bits_per_token ?? NaN);
+}
+
+function evalModelAtOffset(modelPath, seqLen, offset) {
   const result = run("cargo", [
     "run",
     "--release",
@@ -78,16 +100,48 @@ function evalModel(modelPath, seqLen) {
     "--stride",
     "1",
     "--window-offset",
-    "0",
+    String(offset),
     "--max-windows",
-    "32768",
+    String(evalMaxWindows),
   ]);
   if (result.status !== 0) return null;
   try {
-    return JSON.parse(result.stdout).eval || null;
+    const evalResult = JSON.parse(result.stdout).eval || null;
+    return evalResult ? { offset, ...evalResult } : null;
   } catch {
     return null;
   }
+}
+
+function evalModel(modelPath, seqLen) {
+  const rows = evalOffsets.map((offset) => evalModelAtOffset(modelPath, seqLen, offset)).filter(Boolean);
+  if (!rows.length) return null;
+  if (rows.length === 1 && evalOffsets.length === 1 && evalOffsets[0] === 0) {
+    const { offset: _offset, ...single } = rows[0];
+    return single;
+  }
+  const bits = rows.map((row) => Number(row.bits_per_token)).filter(Number.isFinite);
+  if (!bits.length) return null;
+  const mean = bits.reduce((sum, value) => sum + value, 0) / bits.length;
+  const best = rows.reduce((winner, row) => (row.bits_per_token < winner.bits_per_token ? row : winner), rows[0]);
+  const worst = rows.reduce((winner, row) => (row.bits_per_token > winner.bits_per_token ? row : winner), rows[0]);
+  const uniform = rows.find((row) => Number.isFinite(Number(row.uniform_bits_per_token)))?.uniform_bits_per_token;
+  return {
+    schema: "nsrl.lexeme_eval_offset_panel.v1",
+    offsets: evalOffsets,
+    max_windows: evalMaxWindows,
+    windows: rows.reduce((sum, row) => sum + Number(row.windows || 0), 0),
+    vocab_size: rows[0].vocab_size,
+    bits_per_token: Number(mean.toFixed(3)),
+    mean_bits_per_token: Number(mean.toFixed(3)),
+    min_bits_per_token: Number(best.bits_per_token.toFixed(3)),
+    max_bits_per_token: Number(worst.bits_per_token.toFixed(3)),
+    best_offset: best.offset,
+    worst_offset: worst.offset,
+    uniform_bits_per_token: uniform,
+    reduction_vs_uniform: Number.isFinite(Number(uniform)) ? Number((uniform - mean).toFixed(3)) : undefined,
+    rows,
+  };
 }
 
 function generateSample(modelPath, label, prompt, seed) {
@@ -153,6 +207,34 @@ function baselineSeqLen(options) {
   return Number(arg("eval-seq-len", "8"));
 }
 
+function titleFromRunName(runName) {
+  if (runName.includes("simplewiki")) return "NSRL SimpleWiki Boring-English Optimizer";
+  if (runName.includes("crowley")) return "NSRL Crowley Lexeme Sweep";
+  if (runName.includes("visionary")) return "NSRL Visionary Lexeme Sweep";
+  return "NSRL Lexeme Sweep";
+}
+
+function candidateDetails(item, summary = null) {
+  const cfg = { ...payloadConfig(item), ...(summary?.config || {}) };
+  const parts = [];
+  const seqLen = payloadSeqLen(item, summary);
+  if (seqLen) parts.push(`seq ${seqLen}`);
+  const windows = Number(cfg.softmax_windows || item.maxWindows || 0);
+  if (windows) parts.push(`w ${windows}`);
+  const batchWindows = Number(cfg.softmax_batch_windows || 0);
+  if (batchWindows) parts.push(`b ${batchWindows}`);
+  const lrShift = Number(cfg.softmax_lr_shift || item.lrShift || 0);
+  if (lrShift) parts.push(`lr ${lrShift}`);
+  if (cfg.train_embeddings) {
+    parts.push(`embed lr ${cfg.embedding_lr_shift ?? ""}`.trim());
+  }
+  const hiddenDim = Number(cfg.hidden_dim || 0);
+  if (hiddenDim) parts.push(`hidden ${hiddenDim}`);
+  const context = cfg.lexeme_context_features || "";
+  if (context) parts.push(context);
+  return parts.join(" · ");
+}
+
 function renderHtml() {
   const html = `<!doctype html>
 <html lang="en">
@@ -181,7 +263,11 @@ function renderHtml() {
     .sample-card.best { border-color: #77b255; box-shadow: inset 3px 0 0 #77b255; }
     .sample-topline { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: #687280; font-size: 13px; }
     .sample-title { color: #17202a; font-weight: 700; }
-    .tweet { margin: 0; font-size: 20px; line-height: 1.45; color: #17202a; overflow-wrap: anywhere; }
+    .sample-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .sample-item { border-top: 1px solid #e8ecf2; padding-top: 10px; }
+    .sample-item:first-child { border-top: 0; padding-top: 0; }
+    .sample-label { color: #687280; font-size: 12px; font-weight: 700; margin-bottom: 5px; text-transform: uppercase; }
+    .tweet { margin: 0; font-size: 20px; line-height: 1.45; color: #17202a; overflow-wrap: anywhere; max-width: 76ch; }
     .model-path { margin-top: 12px; color: #687280; font-size: 12px; overflow-wrap: anywhere; }
     .running { color: #865c00; }
     .done { color: #087443; }
@@ -189,6 +275,7 @@ function renderHtml() {
     .bad { color: #b42318; }
     @media (max-width: 780px) {
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .sample-grid { grid-template-columns: 1fr; }
       table { display: block; overflow-x: auto; }
       .tweet { font-size: 17px; }
     }
@@ -200,19 +287,20 @@ function renderHtml() {
       td { border-color: #29313d; }
       .pill { background: #1d2430; border-color: #3a4554; }
       .sample-title, .tweet { color: #eef2f7; }
-      .sample-topline, .model-path { color: #abb3bf; }
+      .sample-item { border-color: #29313d; }
+      .sample-topline, .sample-label, .model-path { color: #abb3bf; }
     }
   </style>
 </head>
 <body>
 <main>
-  <h1>NSRL Lexeme Expanded Corpus Sweep</h1>
+  <h1 id="title">NSRL Lexeme Sweep</h1>
   <p class="sub" id="meta">Loading...</p>
   <div class="grid">
     <div class="stat"><span>Status</span><b id="status">...</b></div>
     <div class="stat"><span>Completed</span><b id="completed">...</b></div>
-    <div class="stat"><span>Best Bits/Token</span><b id="best">...</b></div>
-    <div class="stat"><span>Current Baseline</span><b id="baseline">...</b></div>
+    <div class="stat"><span>Best Mean Bits/Token</span><b id="best">...</b></div>
+    <div class="stat"><span>Baseline Mean</span><b id="baseline">...</b></div>
   </div>
   <table>
     <thead><tr><th>Candidate</th><th>Status</th><th>Runtime</th><th>Context</th><th>Bits/Token</th><th>Model</th></tr></thead>
@@ -226,6 +314,7 @@ function esc(value) {
 }
 async function refresh() {
   const data = await fetch('runs.json?ts=' + Date.now()).then(r => r.json());
+  document.getElementById('title').textContent = data.title || 'NSRL Lexeme Sweep';
   document.getElementById('meta').textContent = data.runName + ' · refresh ' + new Date(data.updatedAt).toLocaleTimeString();
   document.getElementById('status').textContent = data.status;
   document.getElementById('completed').textContent = data.completed + '/' + data.total;
@@ -233,13 +322,13 @@ async function refresh() {
   document.getElementById('baseline').textContent = data.currentEval ? data.currentEval.bits_per_token.toFixed(3) : '...';
   document.getElementById('rows').innerHTML = data.candidates.map(c => {
     const cls = c.status === 'succeeded' ? 'done' : (c.status === 'failed' ? 'bad' : (c.status === 'running' ? 'running' : 'pending'));
-    const bits = c.eval ? c.eval.bits_per_token.toFixed(3) : '';
+    const bits = c.eval ? c.eval.bits_per_token.toFixed(3) + (c.eval.max_bits_per_token ? ' / worst ' + c.eval.max_bits_per_token.toFixed(3) : '') : '';
     const runtime = c.elapsedMs ? (c.elapsedMs / 1000).toFixed(1) + 's' : '';
     return '<tr>' +
       '<td><b>' + esc(c.label) + '</b><br><code>' + esc(c.workerId) + '</code></td>' +
       '<td><span class="pill ' + cls + '">' + esc(c.status) + '</span></td>' +
       '<td>' + esc(runtime) + '</td>' +
-      '<td>' + esc(c.seqLen || '') + '</td>' +
+      '<td>' + esc(c.details || c.seqLen || '') + '</td>' +
       '<td>' + esc(bits) + '</td>' +
       '<td><code>' + esc(c.localModel || '') + '</code></td>' +
       '</tr>';
@@ -247,9 +336,10 @@ async function refresh() {
   document.getElementById('sampleCards').innerHTML = data.candidates.map(c => {
     const bits = c.eval ? c.eval.bits_per_token.toFixed(3) : '...';
     const isBest = data.best && data.best.workerId === c.workerId;
+    const samples = c.samples && c.samples.length ? c.samples : [{ label: 'world', prompt: 'the world is', text: c.worldSample || 'Waiting for sample...' }];
     return '<article class="sample-card' + (isBest ? ' best' : '') + '">' +
-      '<div class="sample-topline"><span class="sample-title">' + esc(c.label) + ' · ' + esc(c.workerId) + '</span><span>seq ' + esc(c.seqLen || '') + ' · ' + esc(bits) + ' bits/token' + (isBest ? ' · best' : '') + '</span></div>' +
-      '<p class="tweet">' + esc(c.worldSample || 'Waiting for sample...') + '</p>' +
+      '<div class="sample-topline"><span class="sample-title">' + esc(c.label) + ' · ' + esc(c.workerId) + '</span><span>' + esc(c.details || ('seq ' + (c.seqLen || ''))) + ' · ' + esc(bits) + ' bits/token' + (isBest ? ' · best' : '') + '</span></div>' +
+      '<div class="sample-grid">' + samples.map(s => '<div class="sample-item"><div class="sample-label">' + esc(s.label || s.prompt || 'sample') + '</div><p class="tweet">' + esc(s.text || 'Waiting for sample...') + '</p></div>').join('') + '</div>' +
       '<div class="model-path"><code>' + esc(c.localModel || '') + '</code></div>' +
       '</article>';
   }).join('');
@@ -267,7 +357,7 @@ function update() {
   const options = readJson(path.join(runDir, "run-options.json"));
   if (!options) throw new Error(`missing ${path.join(runDir, "run-options.json")}`);
   const currentSeqLen = baselineSeqLen(options);
-  const currentEvalPath = path.join(dashboardDir, `current-eval-seq${currentSeqLen}.json`);
+  const currentEvalPath = path.join(dashboardDir, `current-eval-${evalCacheSuffix(currentSeqLen)}`);
   let currentEval = readJson(currentEvalPath);
   if (!currentEval) {
     currentEval = evalModel(currentModel, currentSeqLen);
@@ -287,15 +377,23 @@ function update() {
     let localModel = "";
     let elapsedMs = null;
     let seqLen = payloadSeqLen(item);
+    let samples = [];
+    let details = candidateDetails(item);
     if (summary) {
       status = summary.ok ? "succeeded" : "failed";
       elapsedMs = summary.elapsed_ms || null;
       seqLen = payloadSeqLen(item, summary);
+      details = candidateDetails(item, summary);
+      samples = Array.isArray(summary.samples) ? summary.samples.map((sample) => ({
+        label: sample.label || sample.prompt || "sample",
+        prompt: sample.prompt || "",
+        text: sample.text || "",
+      })) : [];
       localModel = path.join(workersDir, `${workerId}.nsrllm`);
       if (summary.ok && !fs.existsSync(localModel)) {
         cpS3(summary.model_s3_uri, localModel);
       }
-      const evalPath = path.join(workersDir, `${workerId}.seq${seqLen}.eval.json`);
+      const evalPath = path.join(workersDir, `${workerId}.${evalCacheSuffix(seqLen)}`);
       evalResult = readJson(evalPath);
       if (!evalResult && fs.existsSync(localModel)) {
         evalResult = evalModel(localModel, seqLen);
@@ -315,19 +413,22 @@ function update() {
       seqLen,
       maxWindows: item.maxWindows,
       lrShift: item.lrShift,
+      details,
       status,
       elapsedMs,
       eval: evalResult,
       worldSample,
+      samples,
       localModel: fs.existsSync(localModel) ? path.relative(repoRoot, localModel) : "",
     });
   }
   const complete = candidates.filter((candidate) => candidate.status === "succeeded").length;
   const failed = candidates.filter((candidate) => candidate.status === "failed").length;
   const scored = candidates.filter((candidate) => candidate.eval);
-  const best = scored.sort((a, b) => a.eval.bits_per_token - b.eval.bits_per_token)[0] || null;
+  const best = scored.sort((a, b) => evalScore(a.eval) - evalScore(b.eval))[0] || null;
   const data = {
     schema: "nsrl.lexeme_sweep_dashboard.v1",
+    title: titleFromRunName(options.runName || ""),
     runName: options.runName,
     status: failed ? "failed" : complete === candidates.length ? "succeeded" : "running",
     updatedAt: new Date().toISOString(),
@@ -336,8 +437,10 @@ function update() {
     completed: complete,
     failed,
     currentSeqLen,
+    evalOffsets,
+    evalMaxWindows,
     currentEval,
-    best: best ? { label: best.label, workerId: best.workerId, bitsPerToken: best.eval.bits_per_token } : null,
+    best: best ? { label: best.label, workerId: best.workerId, bitsPerToken: evalScore(best.eval) } : null,
     candidates,
   };
   fs.writeFileSync(path.join(dashboardDir, "runs.json"), `${JSON.stringify(data, null, 2)}\n`);

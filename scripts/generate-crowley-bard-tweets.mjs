@@ -82,6 +82,8 @@ const bannedTerms = [
   "banquo",
   "gloucester",
   "cassio",
+  "alicia",
+  "crassus",
   "act i",
   "act ii",
 ];
@@ -104,8 +106,48 @@ const leakageSubstrings = [
   "helena",
   "bertram",
   "lafeu",
+  "alicia",
+  "crassus",
   "enter",
   "exeunt",
+];
+const decodeBannedTokens = [
+  "assistant",
+  "chatbot",
+  "model",
+  "training",
+  "prompt",
+  "json",
+  "http",
+  "www",
+  "class",
+  "align",
+  "bgcolor",
+  "nbsp",
+  "enter",
+  "exeunt",
+  "dramatis",
+  "alicia",
+  "crassus",
+  "parolles",
+  "helena",
+  "bertram",
+  "lafeu",
+  "hamlet",
+  "horatio",
+  "ophelia",
+  "polonius",
+  "romeo",
+  "juliet",
+  "othello",
+  "iago",
+  "falstaff",
+  "prospero",
+  "caliban",
+  "macbeth",
+  "banquo",
+  "gloucester",
+  "cassio",
 ];
 const danglingEndWords = new Set([
   "a",
@@ -141,10 +183,125 @@ const danglingEndWords = new Set([
   "who",
   "with",
 ]);
+const stopWords = new Set([
+  "a",
+  "all",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "but",
+  "by",
+  "for",
+  "from",
+  "has",
+  "hath",
+  "have",
+  "he",
+  "her",
+  "him",
+  "his",
+  "i",
+  "in",
+  "is",
+  "it",
+  "me",
+  "my",
+  "not",
+  "of",
+  "on",
+  "or",
+  "our",
+  "she",
+  "so",
+  "that",
+  "the",
+  "thee",
+  "their",
+  "them",
+  "thou",
+  "thy",
+  "to",
+  "we",
+  "with",
+  "ye",
+  "you",
+  "your",
+]);
+const glueWords = new Set([
+  ...stopWords,
+  "also",
+  "am",
+  "away",
+  "can",
+  "come",
+  "could",
+  "did",
+  "do",
+  "doth",
+  "down",
+  "even",
+  "ever",
+  "go",
+  "give",
+  "had",
+  "hath",
+  "have",
+  "has",
+  "hear",
+  "here",
+  "if",
+  "into",
+  "know",
+  "let",
+  "like",
+  "made",
+  "make",
+  "may",
+  "might",
+  "more",
+  "most",
+  "much",
+  "must",
+  "never",
+  "no",
+  "not",
+  "now",
+  "one",
+  "out",
+  "own",
+  "say",
+  "see",
+  "shall",
+  "should",
+  "still",
+  "take",
+  "than",
+  "then",
+  "there",
+  "these",
+  "thing",
+  "things",
+  "those",
+  "this",
+  "unto",
+  "up",
+  "upon",
+  "was",
+  "were",
+  "when",
+  "will",
+  "would",
+  "yet",
+]);
 
 const defaults = {
   runDir: "data/processed/crowley-bard-focused-v1",
   outDir: "",
+  model: "",
+  vocab: "",
+  tokens: "",
   rawCount: 96,
   keepCount: 16,
   minChars: 60,
@@ -158,6 +315,9 @@ function usage() {
 Options:
   --run-dir PATH       Balanced-prose run directory [${defaults.runDir}]
   --out-dir PATH       Output directory [RUN_DIR/tweets-strict]
+  --model PATH         Override model path instead of manifest model
+  --vocab PATH         Override vocab path instead of manifest vocab
+  --tokens PATH        Override token path instead of manifest tokens
   --raw-count N        Number of raw candidates to generate [${defaults.rawCount}]
   --keep-count N       Number of accepted tweets to keep [${defaults.keepCount}]
   --min-chars N        Minimum accepted text length [${defaults.minChars}]
@@ -197,6 +357,9 @@ function parseArgs(argv) {
   }
   if (options.minChars > options.maxChars) {
     throw new Error("--min-chars cannot be larger than --max-chars");
+  }
+  if ((options.model || options.vocab || options.tokens) && !(options.model && options.vocab && options.tokens)) {
+    throw new Error("--model, --vocab, and --tokens must be provided together");
   }
   if (!options.outDir) {
     options.outDir = path.join(options.runDir, "tweets-strict");
@@ -255,6 +418,34 @@ function repeatedTrigramCount(words) {
   return repeats;
 }
 
+function maxConsecutiveStopwords(words) {
+  let current = 0;
+  let max = 0;
+  for (const word of words) {
+    if (stopWords.has(word)) {
+      current += 1;
+      max = Math.max(max, current);
+    } else {
+      current = 0;
+    }
+  }
+  return max;
+}
+
+function maxConsecutiveWordsInSet(words, wordSet) {
+  let current = 0;
+  let max = 0;
+  for (const word of words) {
+    if (wordSet.has(word)) {
+      current += 1;
+      max = Math.max(max, current);
+    } else {
+      current = 0;
+    }
+  }
+  return max;
+}
+
 function countTerms(text, terms) {
   let count = 0;
   const hits = [];
@@ -270,6 +461,21 @@ function countTerms(text, terms) {
   return { count, hits };
 }
 
+function leakageHitsFor(text) {
+  const hits = [];
+  for (const term of leakageSubstrings) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const matchesWordLikeTerm = /^[a-z][a-z ]*[a-z]$/.test(term);
+    const regex = matchesWordLikeTerm
+      ? new RegExp(`\\b${escaped}\\b`)
+      : null;
+    if ((regex && regex.test(text)) || (!regex && text.includes(term))) {
+      hits.push(term);
+    }
+  }
+  return hits;
+}
+
 function analyze(rawText, options) {
   const text = trimTweet(rawText, options.minChars, options.maxChars);
   const words = wordsOf(text);
@@ -283,8 +489,18 @@ function analyze(rawText, options) {
   const repeatedTrigrams = repeatedTrigramCount(words);
   const cruft = countTerms(text, bannedTerms);
   const flavor = countTerms(text, flavorTerms);
-  const leakageHits = leakageSubstrings.filter((term) => text.includes(term));
+  const stopwordRatio = words.length
+    ? words.filter((word) => stopWords.has(word)).length / words.length
+    : 0;
+  const glueRatio = words.length
+    ? words.filter((word) => glueWords.has(word)).length / words.length
+    : 0;
+  const stopwordRun = maxConsecutiveStopwords(words);
+  const glueRun = maxConsecutiveWordsInSet(words, glueWords);
+  const leakageHits = leakageHitsFor(text);
   const punctuationRuns = (text.match(/[!?.,;:]{2,}/g) || []).length;
+  const sentenceTerminalCount = (text.match(/[.!?]/g) || []).length;
+  const expressiveTerminalCount = (text.match(/[!?]/g) || []).length;
   const lastWord = words[words.length - 1] || "";
   const rejectionReasons = [];
 
@@ -293,8 +509,16 @@ function analyze(rawText, options) {
   if (maxWordCount > 4) rejectionReasons.push("word_repeat_gt4");
   if (repeatedTrigrams > 0) rejectionReasons.push("repeated_trigram");
   if (distinctRatio < 0.55) rejectionReasons.push("low_distinct_ratio");
+  if (stopwordRatio > 0.55) rejectionReasons.push("stopword_heavy");
+  if (stopwordRun > 4) rejectionReasons.push("function_word_run");
+  if (stopwordRatio > 0.4 && stopwordRun >= 3) rejectionReasons.push("function_word_soup");
+  if (glueRatio > 0.72) rejectionReasons.push("glue_word_heavy");
+  if (glueRun > 8) rejectionReasons.push("glue_word_run");
   if (cruft.count > 0) rejectionReasons.push("cruft");
   if (leakageHits.length > 0) rejectionReasons.push("leakage_substring");
+  if (punctuationRuns > 0) rejectionReasons.push("punctuation_run");
+  if (sentenceTerminalCount > 4) rejectionReasons.push("terminal_heavy");
+  if (expressiveTerminalCount > 3) rejectionReasons.push("expressive_punctuation_heavy");
   if (danglingEndWords.has(lastWord)) rejectionReasons.push("dangling_end_word");
   if (words.length >= 12 && !/[.!?]$/.test(text)) rejectionReasons.push("no_sentence_terminal");
 
@@ -305,7 +529,13 @@ function analyze(rawText, options) {
   score += Math.min(40, flavor.count * 8);
   score -= Math.max(0, maxWordCount - 2) * 8;
   score -= repeatedTrigrams * 40;
+  if (stopwordRatio > 0.58) score -= Math.ceil((stopwordRatio - 0.58) * 200);
+  score -= Math.max(0, stopwordRun - 3) * 16;
+  if (glueRatio > 0.42) score -= Math.ceil((glueRatio - 0.42) * 220);
+  score -= Math.max(0, glueRun - 4) * 10;
   score -= punctuationRuns * 10;
+  score -= Math.max(0, sentenceTerminalCount - 2) * 12;
+  score -= Math.max(0, expressiveTerminalCount - 1) * 8;
   score -= cruft.count * 100;
   if (danglingEndWords.has(lastWord)) score -= 40;
   if (words.length >= 12 && !/[.!?]$/.test(text)) score -= 30;
@@ -316,6 +546,12 @@ function analyze(rawText, options) {
     words: words.length,
     distinct_words: distinctWords,
     distinct_ratio_q1000: Math.round(distinctRatio * 1000),
+    stopword_ratio_q1000: Math.round(stopwordRatio * 1000),
+    glue_word_ratio_q1000: Math.round(glueRatio * 1000),
+    max_stopword_run: stopwordRun,
+    max_glue_word_run: glueRun,
+    sentence_terminal_count: sentenceTerminalCount,
+    expressive_terminal_count: expressiveTerminalCount,
     max_word_count: maxWordCount,
     repeated_trigram_count: repeatedTrigrams,
     cruft_count: cruft.count,
@@ -342,6 +578,7 @@ function run(command, args) {
 }
 
 function generateCandidate(paths, candidate) {
+  const decodeBanArgs = decodeBannedTokens.flatMap((token) => ["--decode-ban-token", token]);
   run(paths.trainBin, [
     "--mode", "lexeme-generate",
     "--model", paths.model,
@@ -352,15 +589,24 @@ function generateCandidate(paths, candidate) {
     "--decode", "sample",
     "--sample-seed", String(candidate.sample_seed),
     "--top-k", String(candidate.top_k),
+    "--decode-function-word-run-cap", "4",
+    ...decodeBanArgs,
     "--corpus-prior",
     "--corpus-prior-order", "3",
     "--corpus-prior-logit-shift", "9",
+    "--decode-frequency-cap", "600",
+    "--decode-frequency-min-q15", "6144",
+    "--decode-frequency-logit-shift", "5",
+    "--decode-local-frequency-cap", "2",
+    "--decode-local-frequency-min-q15", "8192",
+    "--decode-local-frequency-logit-shift", "4",
+    "--decode-local-frequency-hard-cap", "2",
     "--repeat-window", "64",
     "--repeat-penalty-shift", "4",
     "--max-repeat-run", "2",
     "--no-repeat-ngram", "3",
     "--strict-adjacency",
-    "--quality-weight-profile", "cruft-aware",
+    "--quality-weight-profile", "prose-aware",
     "--text-out", candidate.raw_path,
     "--trace", candidate.trace_path,
   ]);
@@ -393,19 +639,19 @@ function main() {
   const outDir = resolveRepoPath(options.outDir);
   const candidateDir = path.join(path.dirname(outDir), "tweets-candidates");
   const manifestPath = path.join(runDir, "manifest.json");
-  if (!fs.existsSync(manifestPath)) {
+  if (!fs.existsSync(manifestPath) && !(options.model && options.vocab && options.tokens)) {
     throw new Error(`missing run manifest: ${manifestPath}`);
   }
-  const manifest = readJson(manifestPath);
+  const manifest = fs.existsSync(manifestPath) ? readJson(manifestPath) : {};
   const trainBin = resolveRepoPath("target/release/nsrl-train");
   if (!fs.existsSync(trainBin)) {
     throw new Error(`missing release binary: ${trainBin}`);
   }
   const paths = {
     trainBin,
-    model: resolveRepoPath(manifest.model),
-    vocab: resolveRepoPath(manifest.vocab),
-    tokens: resolveRepoPath(manifest.tokens),
+    model: resolveRepoPath(options.model || manifest.model),
+    vocab: resolveRepoPath(options.vocab || manifest.vocab),
+    tokens: resolveRepoPath(options.tokens || manifest.tokens),
   };
   for (const [name, filePath] of Object.entries(paths)) {
     if (name !== "trainBin" && !fs.existsSync(filePath)) {
@@ -483,7 +729,7 @@ function main() {
   fs.writeFileSync(
     path.join(outDir, "metrics.tsv"),
     [
-      "id\tsource_candidate_id\tscore\tchars\twords\tdistinct_words\tdistinct_ratio_q1000\tmax_word_count\trepeated_trigram_count\tcruft_count\tseed_text\ttop_k\tsample_seed\ttext",
+      "id\tsource_candidate_id\tscore\tchars\twords\tdistinct_words\tdistinct_ratio_q1000\tstopword_ratio_q1000\tglue_word_ratio_q1000\tmax_stopword_run\tmax_glue_word_run\tsentence_terminal_count\texpressive_terminal_count\tmax_word_count\trepeated_trigram_count\tcruft_count\tseed_text\ttop_k\tsample_seed\ttext",
       ...tweetRows.map((tweet) => [
         tweet.id,
         tweet.source_candidate_id,
@@ -492,6 +738,12 @@ function main() {
         wordsOf(tweet.text).length,
         new Set(wordsOf(tweet.text)).size,
         Math.round((new Set(wordsOf(tweet.text)).size / Math.max(1, wordsOf(tweet.text).length)) * 1000),
+        Math.round((wordsOf(tweet.text).filter((word) => stopWords.has(word)).length / Math.max(1, wordsOf(tweet.text).length)) * 1000),
+        Math.round((wordsOf(tweet.text).filter((word) => glueWords.has(word)).length / Math.max(1, wordsOf(tweet.text).length)) * 1000),
+        maxConsecutiveStopwords(wordsOf(tweet.text)),
+        maxConsecutiveWordsInSet(wordsOf(tweet.text), glueWords),
+        (tweet.text.match(/[.!?]/g) || []).length,
+        (tweet.text.match(/[!?]/g) || []).length,
         Math.max(0, ...Array.from(wordsOf(tweet.text).reduce((counts, word) => counts.set(word, (counts.get(word) || 0) + 1), new Map()).values())),
         repeatedTrigramCount(wordsOf(tweet.text)),
         countTerms(tweet.text, bannedTerms).count,

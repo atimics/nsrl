@@ -249,6 +249,25 @@ export class SolomonSampler {
         }
         return SolomonSample.__wrap(ret[0]);
     }
+    /**
+     * @param {string} prompt
+     * @param {string} seed
+     * @param {number} candidate_multiplier
+     * @param {number} passes
+     * @param {number} condition_limit
+     * @returns {SolomonSample}
+     */
+    sample_fast(prompt, seed, candidate_multiplier, passes, condition_limit) {
+        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.solomonsampler_sample_fast(this.__wbg_ptr, ptr0, len0, ptr1, len1, candidate_multiplier, passes, condition_limit);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return SolomonSample.__wrap(ret[0]);
+    }
 }
 if (Symbol.dispose) SolomonSampler.prototype[Symbol.dispose] = SolomonSampler.prototype.free;
 function __wbg_get_imports() {

@@ -9,6 +9,7 @@ const SCHEMA: &str = "nsrl.bitmap_sampler_trace.v1";
 const MODEL_MAGIC_CV3: &[u8; 8] = b"NSRLCV3\n";
 const MODEL_MAGIC_MCH: &[u8; 8] = b"NSRLMCH\n";
 const MODEL_MAGIC_TCH: &[u8; 8] = b"NSRLTCH\n";
+const LATENT_MODEL_MAGIC: &[u8; 8] = b"NSRLLAT1";
 const KERNEL: usize = 9;
 const HIDDEN_CHANNELS: usize = 8;
 const SIGNATURE_GRID: usize = 8;
@@ -52,6 +53,7 @@ struct Config {
     passes: usize,
     preview_columns: usize,
     text_index_path: Option<PathBuf>,
+    latent_model_path: Option<PathBuf>,
     prompt: Option<String>,
     text_all: bool,
     text_weight: i64,
@@ -79,6 +81,7 @@ impl Default for Config {
             passes: 8,
             preview_columns: 8,
             text_index_path: None,
+            latent_model_path: None,
             prompt: None,
             text_all: false,
             text_weight: 96,
@@ -257,6 +260,27 @@ struct TextCondition {
     target_signature: [u16; SIGNATURE_BINS],
 }
 
+#[derive(Debug)]
+struct LatentCondition {
+    model_path: PathBuf,
+    prompt: String,
+    latent_dim: usize,
+    text_feature_count: usize,
+    target_signature: [u16; SIGNATURE_BINS],
+}
+
+#[derive(Debug)]
+struct LatentTextModel {
+    latent_dim: usize,
+    text_feature_count: usize,
+    text_encoder_shift: u8,
+    decoder_shift: u8,
+    text_weights: Vec<i8>,
+    text_biases: Vec<i16>,
+    decoder_weights: Vec<i8>,
+    decoder_biases: [i16; SIGNATURE_BINS],
+}
+
 #[derive(Debug, Clone, Copy)]
 struct SampleQuality {
     total_score: i64,
@@ -324,6 +348,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if config.text_all && config.prompt.is_some() {
         return Err("--text-all cannot be combined with --prompt".into());
     }
+    if config.text_all && config.latent_model_path.is_some() {
+        return Err("--text-all cannot be combined with --latent-model".into());
+    }
+    if config.latent_model_path.is_some() && config.text_index_path.is_some() {
+        return Err("--latent-model cannot be combined with --text-index".into());
+    }
+    if config.latent_model_path.is_some() && config.prompt.is_none() {
+        return Err("--latent-model requires --prompt".into());
+    }
     fs::create_dir_all(&config.out_dir)?;
 
     let model = read_model(&config.model_path)?;
@@ -342,12 +375,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
     let image_bytes = checked_image_bytes(image_size)?;
-    let text_condition =
-        if !config.text_all && (config.text_index_path.is_some() || config.prompt.is_some()) {
-            Some(read_text_condition(&config)?)
-        } else {
-            None
-        };
+    let latent_condition = if config.latent_model_path.is_some() {
+        Some(read_latent_condition(&config)?)
+    } else {
+        None
+    };
+    let text_condition = if latent_condition.is_none()
+        && !config.text_all
+        && (config.text_index_path.is_some() || config.prompt.is_some())
+    {
+        Some(read_text_condition(&config)?)
+    } else {
+        None
+    };
     let text_targets = if config.text_all {
         Some(read_text_targets(
             config
@@ -363,10 +403,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .map(|targets| targets.len())
         .unwrap_or(config.sample_count);
     if model.text_conditioned() && text_condition.is_none() && text_targets.is_none() {
-        return Err(
-            "NSRLTCH text-conditioned models require --text-index with --prompt or --text-all"
-                .into(),
-        );
+        if latent_condition.is_none() {
+            return Err(
+                "NSRLTCH text-conditioned models require --text-index with --prompt, --latent-model with --prompt, or --text-all"
+                    .into(),
+            );
+        }
     }
     let candidate_count = output_count
         .checked_mul(config.candidate_multiplier)
@@ -382,9 +424,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 targets,
             )?
         } else {
-            let target_signature = text_condition
-                .as_ref()
-                .map(|condition| &condition.target_signature);
+            let target_signature =
+                active_target_signature(latent_condition.as_ref(), text_condition.as_ref());
             let candidates = sample_candidates(
                 &config,
                 &model,
@@ -413,9 +454,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             config.diversity_weight,
         )?
     } else {
-        let target_signature = text_condition
-            .as_ref()
-            .map(|condition| &condition.target_signature);
+        let target_signature =
+            active_target_signature(latent_condition.as_ref(), text_condition.as_ref());
         let candidates = sample_candidates(
             &config,
             &model,
@@ -458,6 +498,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         &pgm_path,
         prior.as_ref(),
         text_condition.as_ref(),
+        latent_condition.as_ref(),
         text_targets.as_deref(),
         selected_text_targets_path.as_deref(),
         &score_summary,
@@ -477,7 +518,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn usage() {
     println!(
-        "Usage: nsrl-bitmap-sample [--model PATH] [--out-dir PATH] [--prior-clean PATH] [--samples N] [--candidate-multiplier N] [--diversity-weight N] [--border-clear N] [--passes N] [--preview-columns N] [--text-index PATH] [--prompt TEXT|--text-all] [--text-weight N] [--seed TEXT] [--init noise|seal-prior|learned-prior|patch-prior|coordinate-prior]"
+        "Usage: nsrl-bitmap-sample [--model PATH] [--out-dir PATH] [--prior-clean PATH] [--samples N] [--candidate-multiplier N] [--diversity-weight N] [--border-clear N] [--passes N] [--preview-columns N] [--text-index PATH|--latent-model PATH] [--prompt TEXT|--text-all] [--text-weight N] [--seed TEXT] [--init noise|seal-prior|learned-prior|patch-prior|coordinate-prior]"
     );
 }
 
@@ -530,6 +571,11 @@ where
             "--text-index" => {
                 config.text_index_path = Some(PathBuf::from(
                     args.next().ok_or("--text-index requires PATH")?,
+                ));
+            }
+            "--latent-model" => {
+                config.latent_model_path = Some(PathBuf::from(
+                    args.next().ok_or("--latent-model requires PATH")?,
                 ));
             }
             "--prompt" => {
@@ -790,6 +836,150 @@ fn read_text_condition(config: &Config) -> Result<TextCondition, Box<dyn std::er
     })
 }
 
+fn read_latent_condition(config: &Config) -> Result<LatentCondition, Box<dyn std::error::Error>> {
+    let model_path = config
+        .latent_model_path
+        .as_ref()
+        .ok_or("--latent-model is required")?;
+    let prompt = config.prompt.as_ref().ok_or("--prompt is required")?;
+    let model = read_latent_model(model_path)?;
+    let target_signature = model.signature_for_prompt(prompt)?;
+    Ok(LatentCondition {
+        model_path: model_path.clone(),
+        prompt: prompt.clone(),
+        latent_dim: model.latent_dim,
+        text_feature_count: model.text_feature_count,
+        target_signature,
+    })
+}
+
+fn read_latent_model(path: &Path) -> Result<LatentTextModel, Box<dyn std::error::Error>> {
+    let mut cursor = Cursor {
+        bytes: fs::read(path)?,
+        offset: 0,
+    };
+    let magic = cursor.read_bytes(LATENT_MODEL_MAGIC.len())?.to_vec();
+    if magic.as_slice() != LATENT_MODEL_MAGIC {
+        return Err(format!("{} is not an NSRLLAT1 latent model", path.display()).into());
+    }
+    let latent_dim = usize::try_from(cursor.read_u32()?)?;
+    let text_feature_count = usize::try_from(cursor.read_u32()?)?;
+    let signature_bins = usize::try_from(cursor.read_u32()?)?;
+    let text_encoder_shift = u8::try_from(cursor.read_u32()?)?;
+    let _image_encoder_shift = u8::try_from(cursor.read_u32()?)?;
+    let decoder_shift = u8::try_from(cursor.read_u32()?)?;
+    let signature_grid = usize::try_from(cursor.read_u32()?)?;
+    if latent_dim == 0
+        || text_feature_count == 0
+        || signature_bins != SIGNATURE_BINS
+        || signature_grid != SIGNATURE_GRID
+    {
+        return Err(format!("{} has incompatible latent dimensions", path.display()).into());
+    }
+    let text_weight_count = latent_dim
+        .checked_mul(text_feature_count)
+        .ok_or("latent text weight count overflow")?;
+    let image_weight_count = latent_dim
+        .checked_mul(SIGNATURE_BINS)
+        .ok_or("latent image weight count overflow")?;
+    let decoder_weight_count = SIGNATURE_BINS
+        .checked_mul(latent_dim)
+        .ok_or("latent decoder weight count overflow")?;
+
+    let mut text_weights = Vec::with_capacity(text_weight_count);
+    for _ in 0..text_weight_count {
+        text_weights.push(cursor.read_i8()?);
+    }
+    let mut text_biases = Vec::with_capacity(latent_dim);
+    for _ in 0..latent_dim {
+        text_biases.push(cursor.read_i16()?);
+    }
+    cursor.read_bytes(image_weight_count)?;
+    cursor.read_bytes(
+        latent_dim
+            .checked_mul(2)
+            .ok_or("latent image bias count overflow")?,
+    )?;
+    let mut decoder_weights = Vec::with_capacity(decoder_weight_count);
+    for _ in 0..decoder_weight_count {
+        decoder_weights.push(cursor.read_i8()?);
+    }
+    let mut decoder_biases = [0_i16; SIGNATURE_BINS];
+    for bias in &mut decoder_biases {
+        *bias = cursor.read_i16()?;
+    }
+    if cursor.offset != cursor.bytes.len() {
+        return Err(format!(
+            "{} has {} trailing bytes",
+            path.display(),
+            cursor.bytes.len() - cursor.offset
+        )
+        .into());
+    }
+    Ok(LatentTextModel {
+        latent_dim,
+        text_feature_count,
+        text_encoder_shift,
+        decoder_shift,
+        text_weights,
+        text_biases,
+        decoder_weights,
+        decoder_biases,
+    })
+}
+
+impl LatentTextModel {
+    fn signature_for_prompt(
+        &self,
+        prompt: &str,
+    ) -> Result<[u16; SIGNATURE_BINS], Box<dyn std::error::Error>> {
+        let features = latent_text_features(prompt, self.text_feature_count);
+        let latent = self.encode_text(&features)?;
+        Ok(self.decode_signature(&latent))
+    }
+
+    fn encode_text(&self, features: &[i16]) -> Result<Vec<i16>, Box<dyn std::error::Error>> {
+        if features.len() != self.text_feature_count {
+            return Err("latent text feature count mismatch".into());
+        }
+        let mut out = vec![0_i16; self.latent_dim];
+        for dim in 0..self.latent_dim {
+            let mut acc = 0_i64;
+            for (feature, &value) in features.iter().enumerate() {
+                let weight = self.text_weights[dim * self.text_feature_count + feature];
+                acc = acc.saturating_add(i64::from(weight) * i64::from(value));
+            }
+            let value = signed_round_shift(acc, self.text_encoder_shift)
+                .saturating_add(i64::from(self.text_biases[dim]));
+            out[dim] = value.clamp(-511, 511) as i16;
+        }
+        Ok(out)
+    }
+
+    fn decode_signature(&self, latent: &[i16]) -> [u16; SIGNATURE_BINS] {
+        let mut out = [0_u16; SIGNATURE_BINS];
+        for (bin, out_value) in out.iter_mut().enumerate() {
+            let mut acc = i64::from(self.decoder_biases[bin]) << self.decoder_shift;
+            for (dim, &latent_value) in latent.iter().enumerate().take(self.latent_dim) {
+                let weight = self.decoder_weights[bin * self.latent_dim + dim];
+                acc = acc.saturating_add(i64::from(weight) * i64::from(latent_value));
+            }
+            let value = signed_round_shift(acc, self.decoder_shift).clamp(0, 255);
+            *out_value = u16::try_from(value).unwrap_or(0);
+        }
+        out
+    }
+}
+
+fn active_target_signature<'a>(
+    latent_condition: Option<&'a LatentCondition>,
+    text_condition: Option<&'a TextCondition>,
+) -> Option<&'a [u16; SIGNATURE_BINS]> {
+    latent_condition
+        .map(|condition| &condition.target_signature)
+        .or_else(|| text_condition.map(|condition| &condition.target_signature))
+}
+
 fn read_text_targets(path: &Path) -> Result<Vec<TextTarget>, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(path)?;
     let mut targets = Vec::new();
@@ -903,6 +1093,29 @@ fn unique_tokens(tokens: Vec<String>) -> Vec<String> {
         }
     }
     unique
+}
+
+fn latent_text_features(text: &str, feature_count: usize) -> Vec<i16> {
+    let mut features = vec![0_i16; feature_count];
+    for (position, token) in tokenize_text(text).into_iter().enumerate() {
+        if token.len() < 2 {
+            continue;
+        }
+        let hash = hash_seed(&[&token]);
+        let bin = usize::try_from(hash).unwrap_or(0) % feature_count;
+        let length = i16::try_from(token.len().min(12)).unwrap_or(12);
+        let position_bonus = i16::try_from(position % 5).unwrap_or(0).saturating_mul(4);
+        let value = 64_i16
+            .saturating_add(length.saturating_mul(12))
+            .saturating_add(position_bonus);
+        let signed = if hash & 0x8000_0000 == 0 {
+            value
+        } else {
+            -value
+        };
+        features[bin] = features[bin].saturating_add(signed).clamp(-511, 511);
+    }
+    features
 }
 
 fn active_conditions(model: &SampleModel) -> Vec<usize> {
@@ -2560,6 +2773,7 @@ fn write_trace(
     pgm_path: &Path,
     prior: Option<&CleanPrior>,
     text_condition: Option<&TextCondition>,
+    latent_condition: Option<&LatentCondition>,
     text_targets: Option<&[TextTarget]>,
     selected_text_targets_path: Option<&Path>,
     score_summary: &ScoreSummary,
@@ -2646,6 +2860,30 @@ fn write_trace(
         .unwrap_or_default();
     json_field(&mut out, "text_index", &text_index, true);
     json_field(&mut out, "text_prompt", &text_prompt, true);
+    let latent_model = latent_condition
+        .map(|condition| condition.model_path.display().to_string())
+        .unwrap_or_default();
+    let latent_prompt = latent_condition
+        .map(|condition| condition.prompt.clone())
+        .unwrap_or_default();
+    json_field(&mut out, "latent_model", &latent_model, true);
+    json_field(&mut out, "latent_prompt", &latent_prompt, true);
+    number_field(
+        &mut out,
+        "latent_dim",
+        latent_condition
+            .map(|condition| condition.latent_dim)
+            .unwrap_or(0),
+        true,
+    );
+    number_field(
+        &mut out,
+        "latent_text_features",
+        latent_condition
+            .map(|condition| condition.text_feature_count)
+            .unwrap_or(0),
+        true,
+    );
     number_field(
         &mut out,
         "text_all_targets",

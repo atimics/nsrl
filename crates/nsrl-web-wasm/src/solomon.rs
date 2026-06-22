@@ -24,6 +24,7 @@ const SPECK_INK_THRESHOLD: u8 = 96;
 const TEXT_WEIGHT: i64 = 96;
 const MAX_BROWSER_CANDIDATES: usize = 32;
 const MAX_BROWSER_PASSES: usize = 12;
+const MAX_BROWSER_CONDITIONS: usize = 64;
 
 #[wasm_bindgen]
 pub struct SolomonSampler {
@@ -70,14 +71,53 @@ impl SolomonSampler {
         candidate_multiplier: usize,
         passes: usize,
     ) -> Result<SolomonSample, JsValue> {
+        self.sample_with_condition_limit(
+            prompt,
+            seed,
+            candidate_multiplier,
+            passes,
+            self.active_conditions.len(),
+        )
+    }
+
+    pub fn sample_fast(
+        &self,
+        prompt: &str,
+        seed: &str,
+        candidate_multiplier: usize,
+        passes: usize,
+        condition_limit: usize,
+    ) -> Result<SolomonSample, JsValue> {
+        self.sample_with_condition_limit(
+            prompt,
+            seed,
+            candidate_multiplier,
+            passes,
+            condition_limit.min(MAX_BROWSER_CONDITIONS),
+        )
+    }
+}
+
+impl SolomonSampler {
+    fn sample_with_condition_limit(
+        &self,
+        prompt: &str,
+        seed: &str,
+        candidate_multiplier: usize,
+        passes: usize,
+        condition_limit: usize,
+    ) -> Result<SolomonSample, JsValue> {
         let candidate_multiplier = candidate_multiplier.clamp(1, MAX_BROWSER_CANDIDATES);
         let passes = passes.clamp(1, MAX_BROWSER_PASSES);
+        let condition_limit = condition_limit.max(1);
+        let used_condition_count = condition_limit.min(self.active_conditions.len());
+        let active_conditions = &self.active_conditions[..used_condition_count];
         let target = select_text_target(prompt, &self.targets).map_err(js_error)?;
         let mut best: Option<Candidate> = None;
         for source_index in 0..candidate_multiplier {
             let candidate = sample_candidate(
                 &self.model,
-                &self.active_conditions,
+                active_conditions,
                 source_index,
                 seed,
                 passes,
@@ -100,12 +140,14 @@ impl SolomonSampler {
             best.ok_or_else(|| JsValue::from_str("Solomon sampler produced no candidates"))?;
         let rgba = ink_to_rgba(&best.image);
         let metadata = format!(
-            "{{\"schema\":\"{}\",\"model_format\":\"NSRLTCH\",\"prompt\":\"{}\",\"seed\":\"{}\",\"candidate_multiplier\":{},\"passes\":{},\"source_index\":{},\"score\":{},\"quality_score\":{},\"text_distance\":{},\"target_number\":{},\"target_name\":\"{}\",\"target_score\":{},\"width\":{},\"height\":{}}}",
+            "{{\"schema\":\"{}\",\"model_format\":\"NSRLTCH\",\"prompt\":\"{}\",\"seed\":\"{}\",\"candidate_multiplier\":{},\"passes\":{},\"active_conditions\":{},\"used_conditions\":{},\"source_index\":{},\"score\":{},\"quality_score\":{},\"text_distance\":{},\"target_number\":{},\"target_name\":\"{}\",\"target_score\":{},\"width\":{},\"height\":{}}}",
             SCHEMA,
             json_escape(prompt),
             json_escape(seed),
             candidate_multiplier,
             passes,
+            self.active_conditions.len(),
+            used_condition_count,
             best.source_index,
             best.score,
             best.quality.total_score,
@@ -779,13 +821,13 @@ fn score_sample(image: &[u8], image_size: usize) -> Result<SampleQuality, String
                 }
                 if radius2 >= outer_low2 && radius2 <= outer_high2 {
                     outer_ring_sum = outer_ring_sum.saturating_add(value);
-                    ring_buckets[angle_bucket(dx, dy)] =
-                        ring_buckets[angle_bucket(dx, dy)].saturating_add(value);
+                    let bucket = angle_bucket(dx, dy);
+                    ring_buckets[bucket] = ring_buckets[bucket].saturating_add(value);
                 }
                 if radius2 >= inner_low2 && radius2 <= inner_high2 {
                     inner_ring_sum = inner_ring_sum.saturating_add(value);
-                    ring_buckets[angle_bucket(dx, dy)] =
-                        ring_buckets[angle_bucket(dx, dy)].saturating_add(value);
+                    let bucket = angle_bucket(dx, dy);
+                    ring_buckets[bucket] = ring_buckets[bucket].saturating_add(value);
                 }
             }
             if x + 1 < image_size {

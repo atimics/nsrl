@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 const SCHEMA: &str = "nsrl.bitmap_denoise_residual_conv_trace.v1";
 const MODEL_MAGIC: &[u8; 8] = b"NSRLCV1\n";
 const KERNEL: usize = 9;
-const CORRUPTION_KINDS: [&str; 8] = [
+const CORRUPTION_KINDS: [&str; 9] = [
     "pixel-dropout",
     "salt-pepper",
     "block-mask",
@@ -17,6 +17,7 @@ const CORRUPTION_KINDS: [&str; 8] = [
     "line-drop",
     "mixed-noise",
     "coarse-erase",
+    "box-blur",
 ];
 
 #[derive(Debug, Clone)]
