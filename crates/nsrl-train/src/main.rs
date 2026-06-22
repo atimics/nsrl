@@ -18,14 +18,14 @@ use nsrl_train::{
     MiniTransformerBinaryTraceWriter, MiniTransformerMlpModel, MiniTransformerMlpSwarmModel,
     MiniTransformerMlpSwarmTrainConfig, MiniTransformerMlpTrainConfig,
     MiniTransformerPositionPolicy, MiniTransformerSwarmComposition,
-    MiniTransformerSwarmRouteCandidate, MiniTransformerSwarmRouteConfig,
-    MiniTransformerSwarmRoutedGenerationExpert, MiniTransformerTraceDetail, SoftmaxTrainConfig,
-    TrainConfig, TrainError, generate_byte_embed_softmax_with_priors,
+    MiniTransformerSwarmRouteConfig, MiniTransformerSwarmRoutedGenerationExpert,
+    MiniTransformerTraceDetail, SoftmaxTrainConfig, TrainConfig, TrainError,
+    generate_byte_embed_softmax_with_priors,
     generate_byte_softmax_with_priors, generate_lexeme_softmax_with_memory,
     generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors,
     generate_mini_transformer_with_attention_kind_position_policy_priors_and_ttt_shift,
     generate_routed_mini_transformer_swarm_experts, lexeme_quality_weights_from_vocab,
-    route_mini_transformer_swarm_experts, run_byte_embed_softmax_training_with_model,
+    route_mini_transformer_swarm_expert_models, run_byte_embed_softmax_training_with_model,
     run_byte_softmax_training_with_model, run_gated_mlp_backward_smoke,
     run_lexeme_embedding_training_with_model_and_quality, run_lexeme_softmax_evaluate,
     run_lexeme_softmax_training_from_softmax_model_and_quality,
@@ -1143,16 +1143,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "--expert or --model is required for mini-transformer-swarm-route mode".into(),
                 );
             }
-            let mut candidates = Vec::with_capacity(expert_paths.len());
+            if route_config.prompt_affinity && mini_transformer_attention_kind.uses_incremental_state()
+            {
+                return Err(
+                    "--mini-transformer-attention streaming modes are not supported for prompt-affinity swarm routing"
+                        .into(),
+                );
+            }
+            let mut experts = Vec::with_capacity(expert_paths.len());
             for path in &expert_paths {
                 let model_bytes = fs::read(path)?;
                 let model = MiniTransformerMlpSwarmModel::from_bytes(&model_bytes)?;
-                candidates.push(MiniTransformerSwarmRouteCandidate {
+                experts.push(MiniTransformerSwarmRoutedGenerationExpert {
                     expert_id: path.to_string_lossy().into_owned(),
-                    manifest: model.to_expert_manifest()?,
+                    model,
                 });
             }
-            let route = route_mini_transformer_swarm_experts(&candidates, route_config, &prompt)?;
+            let route = route_mini_transformer_swarm_expert_models(
+                &experts,
+                route_config,
+                &prompt,
+                mini_transformer_attention_kind,
+                mini_transformer_position_policy,
+                swarm_composition,
+            )?;
             route.to_json_line()
         }
         "mini-transformer-swarm-routed-generate"

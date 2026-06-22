@@ -93,6 +93,9 @@ FIELD_TO_ENV = {
     "resume_checkpoint": "NSRL_RESUME_CHECKPOINT",
     "model_s3_uri": "NSRL_MODEL_S3_URI",
     "tokens_s3_uri": "NSRL_TOKENS_S3_URI",
+    "train_mode": "NSRL_TRAIN_MODE",
+    "swarm_workers": "NSRL_SWARM_WORKERS",
+    "swarm_composition": "NSRL_SWARM_COMPOSITION",
 }
 
 

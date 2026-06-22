@@ -12677,59 +12677,17 @@ pub fn route_mini_transformer_swarm_experts(
     config: MiniTransformerSwarmRouteConfig,
     prompt: &[u8],
 ) -> Result<MiniTransformerSwarmRouteDecisionTrace, TrainError> {
-    if candidates.is_empty() || config.active_expert_limit == 0 {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut candidate_traces = Vec::with_capacity(candidates.len());
-    for (expert_index, candidate) in candidates.iter().enumerate() {
-        candidate_traces.push(mini_transformer_swarm_route_candidate_trace(
-            expert_index,
-            candidate,
-            &config,
-            None,
-        ));
-    }
-
-    let mut selected = candidate_traces
-        .iter()
-        .filter(|candidate| candidate.accepted)
-        .collect::<Vec<_>>();
-    selected.sort_by_key(|candidate| {
-        (
-            core::cmp::Reverse(candidate.score),
-            candidate.parameter_bytes,
-            candidate.artifact_bytes,
-            candidate.expert_index,
-        )
-    });
-    let selected_expert_indices = selected
-        .into_iter()
-        .take(config.active_expert_limit)
-        .map(|candidate| candidate.expert_index)
-        .collect::<Vec<_>>();
-    if selected_expert_indices.is_empty() {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    Ok(MiniTransformerSwarmRouteDecisionTrace {
-        config,
-        prompt_bytes: prompt.to_vec(),
-        selected_expert_indices,
-        candidates: candidate_traces,
-    })
+    route_mini_transformer_swarm_experts_with_prompt_affinity(candidates, config, prompt, None)
 }
 
-pub fn generate_routed_mini_transformer_swarm_experts(
+pub fn route_mini_transformer_swarm_expert_models(
     experts: &[MiniTransformerSwarmRoutedGenerationExpert],
     route_config: MiniTransformerSwarmRouteConfig,
     prompt: &[u8],
-    config: ByteGenerationConfig,
     attention_kind: MiniTransformerAttentionKind,
     position_policy: MiniTransformerPositionPolicy,
     composition: MiniTransformerSwarmComposition,
-    decode_priors: Option<&ByteDecodePriors>,
-) -> Result<MiniTransformerSwarmRoutedGenerationTrace, TrainError> {
+) -> Result<MiniTransformerSwarmRouteDecisionTrace, TrainError> {
     let candidates = experts
         .iter()
         .map(|expert| {
@@ -12758,11 +12716,31 @@ pub fn generate_routed_mini_transformer_swarm_experts(
     } else {
         None
     };
-    let route = route_mini_transformer_swarm_experts_with_prompt_affinity(
+    route_mini_transformer_swarm_experts_with_prompt_affinity(
         &candidates,
         route_config,
         prompt,
         prompt_affinities.as_deref(),
+    )
+}
+
+pub fn generate_routed_mini_transformer_swarm_experts(
+    experts: &[MiniTransformerSwarmRoutedGenerationExpert],
+    route_config: MiniTransformerSwarmRouteConfig,
+    prompt: &[u8],
+    config: ByteGenerationConfig,
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+    composition: MiniTransformerSwarmComposition,
+    decode_priors: Option<&ByteDecodePriors>,
+) -> Result<MiniTransformerSwarmRoutedGenerationTrace, TrainError> {
+    let route = route_mini_transformer_swarm_expert_models(
+        experts,
+        route_config,
+        prompt,
+        attention_kind,
+        position_policy,
+        composition,
     )?;
     let mut selected_expert_ids = Vec::with_capacity(route.selected_expert_indices.len());
     let mut active_workers = Vec::new();
@@ -12964,8 +12942,9 @@ impl MiniTransformerSwarmRouteDecisionTrace {
             &mut out,
             "known_non_claims",
             &[
-                "symbolic_manifest_router_only",
-                "does_not_run_expert_inference",
+                "deterministic_router_not_trained_router_weights",
+                "prompt_affinity_is_fixed_prompt_replay_when_enabled",
+                "does_not_run_generation",
                 "does_not_measure_request_latency_yet",
                 "does_not_rank_semantic_quality",
             ],
@@ -13010,7 +12989,7 @@ impl MiniTransformerSwarmRoutedGenerationTrace {
             &mut out,
             "known_non_claims",
             &[
-                "routes_by_manifest_not_semantic_inference",
+                "routes_by_manifest_and_optional_prompt_affinity_not_trained_semantic_router",
                 "active_set_workers_are_concatenated_before_generation",
                 "does_not_train_router_weights_yet",
                 "does_not_claim_language_model_quality",
@@ -26611,6 +26590,39 @@ mod tests {
         let route_json = route.to_json_line();
         assert!(route_json.contains("\"schema\":\"nsrl.mini_transformer_swarm_route_trace.v1\""));
         assert!(route_json.contains("\"selected_expert_indices\":[0]"));
+        let prompt_affinity_route = route_mini_transformer_swarm_expert_models(
+            &[
+                MiniTransformerSwarmRoutedGenerationExpert {
+                    expert_id: String::from("left.nsrlswarm"),
+                    model: decoded.clone(),
+                },
+                MiniTransformerSwarmRoutedGenerationExpert {
+                    expert_id: String::from("right.nsrlswarm"),
+                    model: decoded.clone(),
+                },
+            ],
+            MiniTransformerSwarmRouteConfig {
+                required_capability: Some(String::from("byte_generation")),
+                max_artifact_bytes: Some(bytes.len()),
+                max_parameter_bytes: None,
+                active_expert_limit: 1,
+                prompt_affinity: true,
+                prompt_affinity_max_windows: 4,
+            },
+            b"to be",
+            MiniTransformerAttentionKind::Linear,
+            MiniTransformerPositionPolicy::Nope,
+            MiniTransformerSwarmComposition::ConfidenceRouter,
+        )
+        .expect("prompt-affinity route");
+        assert_eq!(prompt_affinity_route.selected_expert_indices, vec![0]);
+        assert!(
+            prompt_affinity_route
+                .candidates
+                .iter()
+                .all(|candidate| candidate.prompt_eval_windows > 0
+                    && candidate.prompt_probability_error_q15.is_some())
+        );
         assert!(
             route_mini_transformer_swarm_experts(
                 &[MiniTransformerSwarmRouteCandidate {

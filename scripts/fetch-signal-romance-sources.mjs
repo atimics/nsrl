@@ -200,13 +200,7 @@ Affirmative, traffic in sight.
 No joy.
 Read back confirmed.
 Hold this channel.
-Come back with your twenty.
-Breaker one nine, lane report.
-Eastbound rig, mile marker quiet.
-Load secure, rolling clean.
-Weather ahead, keep it slow.
 Convoy checks in by call sign.
-Fuel low, diverting to the nearest stop.
 Tower, request vector.
 Flight, maintain heading and report visual.
 Roger, holding pattern.
