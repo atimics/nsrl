@@ -46,7 +46,8 @@ nsrl-bitmap-sample                          →  samples/ (preview grid PNG + .i
 | `nsrl-bitmap-conv-denoise` | Single residual-conv denoiser | `NSRLCV1` |
 | `nsrl-bitmap-three-layer-denoise` | 3-layer integer conv denoiser (primary) | `NSRLCV3` |
 | `nsrl-bitmap-multichannel-denoise` | 8 fixed hidden kernels (edge/structure) | `NSRLMCH` |
-| `nsrl-bitmap-sample` | Generative sampler over a trained denoiser | reads CV3/MCH |
+| `nsrl-bitmap-sample` | Generative sampler over a trained denoiser | reads CV3/MCH/TCH |
+| `nsrl-solomon-latent-train` | Shared text/bitmap latent bridge over the 72 spirit rows | `NSRLLAT1` |
 
 The eight corruption kinds (`pixel-dropout`, `salt-pepper`, `block-mask`,
 `stroke-thin`, `stroke-thicken`, `line-drop`, `mixed-noise`, `coarse-erase`) are
@@ -58,6 +59,41 @@ The sampler supports several init modes (`--init`): `noise`, `seal-prior`
 `learned-prior`, `patch-prior`, `coordinate-prior`. Generation draws
 `samples × candidate-multiplier` candidates, runs `passes` integer denoise
 sweeps, then keeps `samples` ranked by a `diversity-weight` term for spread.
+
+## Learned Text/Bitmap Latent
+
+The text-conditioned sampler originally used a catalog bridge:
+
+```
+prompt -> best matching spirit row -> stored 8x8 seal signature -> NSRLTCH sampler
+```
+
+`nsrl-solomon-latent-train` adds a learned bottleneck bridge:
+
+```
+spirit text/name -> text encoder -> shared latent -> signature decoder
+seal signature   -> bitmap encoder -> shared latent
+```
+
+The first `NSRLLAT1` model keeps the bitmap encoder as a deterministic
+integer projection from each 8x8 ink signature, then learns a hashed text
+encoder and a latent-to-signature decoder. The sampler can consume the learned
+target field directly:
+
+```sh
+cargo run --release -p nsrl-train --bin nsrl-solomon-latent-train
+
+cargo run --release -p nsrl-train --bin nsrl-bitmap-sample -- \
+  --model data/processed/key-solomon-goetia-denoise-v1/text-multichannel-conv/model.nsrltch \
+  --latent-model data/processed/key-solomon-goetia-latent-v1/model.nsrllat \
+  --prompt "hidden geometry and rushing waters" \
+  --samples 16 --candidate-multiplier 4
+```
+
+The latent trace reports text-to-bitmap retrieval over the 72 paired rows,
+plus text/image signature reconstruction error in Q8. The sampler trace records
+`latent_model`, `latent_prompt`, `latent_dim`, and `latent_text_features` when
+this path is active.
 
 ## Reproduce
 
@@ -94,6 +130,8 @@ cargo run --release -p nsrl-train --bin nsrl-bitmap-sample -- \
   `max-bias-delta 12`.
 - **Sampler:** 64 samples, `seal-prior` init, 8 passes, seed
   `solomon-sampler-v1`.
+- **Latent bridge:** 64 latent channels, 512 hashed text features, 120 epochs,
+  model `data/processed/key-solomon-goetia-latent-v1/model.nsrllat`.
 
 ## Why it matters
 

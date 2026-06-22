@@ -64,6 +64,17 @@ def append_flag(args: list[str], flag: str, value: str | int) -> None:
     args.extend([flag, str(value)])
 
 
+def append_optional_int_flag(args: list[str], flag: str, value: object) -> None:
+    if value is None:
+        return
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return
+    if numeric > 0:
+        append_flag(args, flag, numeric)
+
+
 def run_command(cmd: list[str]) -> tuple[int, str, int]:
     started = time.time()
     completed = subprocess.run(
@@ -86,6 +97,38 @@ def lexeme_sample_specs(config: dict) -> list[dict]:
         {"label": "soul", "prompt": "the soul is", "seed": 11, "top_k": 12},
         {"label": "to-be", "prompt": "to be or not to be", "seed": 7, "top_k": 8},
     ]
+
+
+SIMPLEWIKI_CONTENT_DECODE_DEFAULTS = {
+    "corpus_prior_order": 3,
+    "corpus_prior_logit_shift": 7,
+    "repeat_window": 96,
+    "repeat_penalty_shift": 3,
+    "max_repeat_run": 2,
+    "no_repeat_ngram": 3,
+    "decode_frequency_cap": 2048,
+    "decode_frequency_min_q15": 2048,
+    "decode_frequency_logit_shift": 4,
+    "decode_local_frequency_cap": 2,
+    "decode_local_frequency_min_q15": 4096,
+    "decode_local_frequency_logit_shift": 4,
+    "decode_local_frequency_hard_cap": 2,
+    "prompt_topic_radius": 2,
+    "prompt_topic_min_q15": 4096,
+    "prompt_topic_logit_shift": 4,
+}
+
+
+def lexeme_sample_decode_config(run_name: str, config: dict) -> dict:
+    recipe = str_field(config, "sample_decode_recipe", "")
+    is_simplewiki = "simplewiki" in run_name.lower()
+    if recipe == "classic" or (not is_simplewiki and recipe not in {"simplewiki-content", "content"}):
+        return config
+    merged = dict(SIMPLEWIKI_CONTENT_DECODE_DEFAULTS)
+    merged.update(config)
+    if not recipe:
+        merged["sample_decode_recipe"] = "simplewiki-content"
+    return merged
 
 
 def handle_lexeme_crowley(event: dict, started: float) -> dict:
@@ -140,6 +183,10 @@ def handle_lexeme_crowley(event: dict, started: float) -> dict:
         "softmax_lr_decay_windows",
         max(1, (softmax_windows * softmax_epochs) // 2),
     )
+    softmax_batch_windows = int_field(config, "softmax_batch_windows", 1)
+    hidden_dim = int_field(config, "hidden_dim", 0)
+    hidden_lr_shift = int_field(config, "hidden_lr_shift", 8)
+    adapter_logit_shift = int_field(config, "adapter_logit_shift", 0)
     stride = int_field(config, "stride", 1)
     window_offset = int_field(config, "window_offset", worker_index)
     context_features = str_field(config, "lexeme_context_features", "mean")
@@ -209,6 +256,8 @@ def handle_lexeme_crowley(event: dict, started: float) -> dict:
         str(softmax_windows),
         "--epochs",
         str(softmax_epochs),
+        "--batch-windows",
+        str(softmax_batch_windows),
         "--lr-shift",
         str(softmax_lr_shift),
         "--lr-shift-decay-windows",
@@ -219,13 +268,24 @@ def handle_lexeme_crowley(event: dict, started: float) -> dict:
         str(softmax_max_lr_shift),
         "--max-weight-delta",
         str(int_field(config, "max_weight_delta", 1)),
+        "--max-embedding-delta",
+        str(int_field(config, "max_embedding_delta", 1)),
+        "--max-hidden-weight-delta",
+        str(int_field(config, "max_hidden_weight_delta", 1)),
         "--target-frequency-cap",
         str(frequency_cap),
         "--frequency-weight-min-q15",
         str(int_field(config, "frequency_weight_min_q15", 4096)),
         "--quality-weight-profile",
         quality_profile,
+        "--embed-lr-shift",
+        str(int_field(config, "embedding_lr_shift", 8)),
     ]
+    if hidden_dim > 0:
+        append_flag(softmax_cmd, "--lexeme-hidden-dim", hidden_dim)
+        append_flag(softmax_cmd, "--lexeme-hidden-lr-shift", hidden_lr_shift)
+    if adapter_logit_shift > 0:
+        append_flag(softmax_cmd, "--lexeme-adapter-logit-shift", adapter_logit_shift)
     if bool(config.get("train_embeddings", False)):
         softmax_cmd.append("--train-lexeme-embeddings")
 
@@ -270,8 +330,9 @@ def handle_lexeme_crowley(event: dict, started: float) -> dict:
             upload_s3(summary_path, s3_join(output_s3_prefix, "workers", f"{worker_id}.summary.json"))
             raise RuntimeError(f"lexeme worker {worker_index} failed during {label}")
 
+    sample_cfg = lexeme_sample_decode_config(run_name, config)
     sample_records = []
-    for sample in lexeme_sample_specs(config):
+    for sample in lexeme_sample_specs(sample_cfg):
         label = str(sample.get("label", "sample")).replace("/", "-")
         prompt = str(sample.get("prompt", "the world is"))
         sample_text = sample_dir / f"{label}.txt"
@@ -289,33 +350,50 @@ def handle_lexeme_crowley(event: dict, started: float) -> dict:
             "--prompt",
             prompt,
             "--max-new-tokens",
-            str(int(sample.get("max_new_tokens", int_field(config, "sample_max_new_tokens", 64)))),
+            str(int(sample.get("max_new_tokens", int_field(sample_cfg, "sample_max_new_tokens", 64)))),
             "--decode-profile",
-            str_field(config, "sample_decode_profile", "coherent-prose"),
+            str_field(sample_cfg, "sample_decode_profile", "coherent-prose"),
             "--sample-seed",
             str(int(sample.get("seed", 17))),
             "--top-k",
             str(int(sample.get("top_k", 12))),
             "--corpus-prior",
             "--corpus-prior-logit-shift",
-            str(int_field(config, "corpus_prior_logit_shift", 7)),
+            str(int_field(sample_cfg, "corpus_prior_logit_shift", 7)),
             "--corpus-prior-order",
-            str(int_field(config, "corpus_prior_order", 2)),
+            str(int_field(sample_cfg, "corpus_prior_order", 2)),
             "--repeat-window",
-            str(int_field(config, "repeat_window", 80)),
+            str(int_field(sample_cfg, "repeat_window", 80)),
             "--repeat-penalty-shift",
-            str(int_field(config, "repeat_penalty_shift", 3)),
+            str(int_field(sample_cfg, "repeat_penalty_shift", 3)),
             "--max-repeat-run",
-            str(int_field(config, "max_repeat_run", 2)),
+            str(int_field(sample_cfg, "max_repeat_run", 2)),
             "--no-repeat-ngram",
-            str(int_field(config, "no_repeat_ngram", 3)),
+            str(int_field(sample_cfg, "no_repeat_ngram", 3)),
             "--generated-only",
             "--stop-on-sentence-terminal",
-            "--text-out",
-            str(sample_text),
-            "--trace",
-            str(sample_trace),
         ]
+        for flag, key in [
+            ("--decode-frequency-cap", "decode_frequency_cap"),
+            ("--decode-frequency-min-q15", "decode_frequency_min_q15"),
+            ("--decode-frequency-logit-shift", "decode_frequency_logit_shift"),
+            ("--decode-local-frequency-cap", "decode_local_frequency_cap"),
+            ("--decode-local-frequency-min-q15", "decode_local_frequency_min_q15"),
+            ("--decode-local-frequency-logit-shift", "decode_local_frequency_logit_shift"),
+            ("--decode-local-frequency-hard-cap", "decode_local_frequency_hard_cap"),
+            ("--prompt-topic-radius", "prompt_topic_radius"),
+            ("--prompt-topic-min-q15", "prompt_topic_min_q15"),
+            ("--prompt-topic-logit-shift", "prompt_topic_logit_shift"),
+        ]:
+            append_optional_int_flag(generate_cmd, flag, sample_cfg.get(key))
+        generate_cmd.extend(
+            [
+                "--text-out",
+                str(sample_text),
+                "--trace",
+                str(sample_trace),
+            ]
+        )
         returncode, output, elapsed_ms = run_command(generate_cmd)
         stdout_chunks.append(f"## generate {label}\n$ {' '.join(shlex.quote(part) for part in generate_cmd)}\n{output}")
         if returncode != 0:
@@ -331,6 +409,7 @@ def handle_lexeme_crowley(event: dict, started: float) -> dict:
                 "prompt": prompt,
                 "elapsed_ms": elapsed_ms,
                 "chars": len(text),
+                "decode_recipe": str_field(sample_cfg, "sample_decode_recipe", "classic"),
                 "text": text.strip(),
                 "text_s3_uri": text_s3,
                 "trace_s3_uri": trace_s3,
@@ -387,10 +466,19 @@ def handle_lexeme_crowley(event: dict, started: float) -> dict:
             "softmax_windows": softmax_windows,
             "softmax_epochs": softmax_epochs,
             "softmax_seq_len": softmax_seq_len,
+            "softmax_batch_windows": softmax_batch_windows,
+            "hidden_dim": hidden_dim,
+            "hidden_lr_shift": hidden_lr_shift,
+            "adapter_logit_shift": adapter_logit_shift,
             "stride": stride,
             "window_offset": window_offset,
             "lexeme_context_features": context_features,
             "quality_weight_profile": quality_profile,
+            "train_embeddings": bool(config.get("train_embeddings", False)),
+            "max_weight_delta": int_field(config, "max_weight_delta", 1),
+            "max_embedding_delta": int_field(config, "max_embedding_delta", 1),
+            "max_hidden_weight_delta": int_field(config, "max_hidden_weight_delta", 1),
+            "sample_decode_recipe": str_field(sample_cfg, "sample_decode_recipe", "classic"),
         },
         "commands": command_records,
         "samples": sample_records,

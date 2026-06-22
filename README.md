@@ -112,6 +112,8 @@ auto-vectorized path — LLVM's scheduler wins on the M4 Max.
   `linear-streaming`, and `linear-streaming-ttt`
 - Integer bitmap denoising/sampling for Solomonic seals, including
   text-conditioned `NSRLTCH` generation over the 72 Goetic spirit signatures
+- Learned Solomon text/bitmap latent bridge (`NSRLLAT1`) for prompt -> latent
+  -> 8x8 target field sampling without direct catalog-row lookup
 - Prototype adaptive shift controllers for attention/MLP/output/embedding
   learning-rate shifts with traced rule events and holographic controller state
 

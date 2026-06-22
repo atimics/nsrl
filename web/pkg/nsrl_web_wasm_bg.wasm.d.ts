@@ -10,6 +10,7 @@ export const solomonsample_width: (a: number) => number;
 export const solomonsampler_model_card: (a: number) => [number, number];
 export const solomonsampler_new: (a: number, b: number, c: number, d: number) => [number, number, number];
 export const solomonsampler_sample: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+export const solomonsampler_sample_fast: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
 export const __wbg_nsrlchat_free: (a: number, b: number) => void;
 export const nsrlchat_adapt_and_reply: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
 export const nsrlchat_export_model: (a: number) => [number, number, number, number];

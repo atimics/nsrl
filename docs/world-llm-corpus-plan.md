@@ -118,6 +118,30 @@ Growth plan:
   `w16384-lr24` at `8.660` bits/token versus the current expanded-corpus
   baseline at `9.901`; the candidate lives at
   `data/aws-lambda-lexeme/candidates/visionary-expanded-frozen-v4096-w16384-lr24.nsrllm`.
+- A fixed-size Stage 2 continuation sweep
+  (`crowley-bard-fixed-size-curriculum-stage2-20260622T171622Z`) did not
+  improve the rotated held-out panel: the base scored mean `8.443`, worst
+  `8.823`, while the best continuation scored mean `8.461`, worst `8.881`.
+  Do not keep pushing the same short-continuation recipe.
+- The aphorism-only corpus path is cleaner source material. A decode-time policy
+  with source-name token bans, a function-word run cap, prose-aware quality
+  weights, and word-boundary leakage checks moved the expanded candidate from
+  `0/96` to `25/96` accepted strict tweets and the aphorism seq8/mean candidate
+  from `0/96` to `9/96`. The expanded accepts are still mostly word-salad; the
+  aphorism accepts are more sentence-like. Use aphorism as the next base and
+  treat decode policy as triage, not as a replacement for a better model.
+- The promoted local Crowley Bard model is now the aphorism seq8/mean base
+  reduced with a gentle continuation, without increasing model size:
+  `data/processed/crowley-bard-aphorism-v2/experiments/v4096.seq8-mean-reduce-base15-lr25-o98304.nsrllm`.
+  It keeps the 196K artifact size, improves the 10-offset held-out panel from
+  mean `9.479` / worst `9.517` bits/token to mean `9.093` / worst `9.134`, and
+  passed the strict tweet audit at `173/192` accepted candidates with top-24
+  mean score `150.3`.
+- Do not promote raw continuation candidates on eval alone. The best direct
+  continuation (`lr25-o98304-w32768`) scored mean `8.516`, but collapsed into
+  glue-word scaffolding and only accepted `88/192` strict samples. Weighted
+  lexeme reduction with the base model is the current safe path for fixed-size
+  Crowley improvements.
 - Add tweet/post-length generation filters: compactness, no metadata, no source
   labels, no malformed markup, low repetition, and strong lexical flavor.
 - Use strict candidate selection before any public-facing bot workflow.

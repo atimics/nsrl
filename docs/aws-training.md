@@ -84,12 +84,13 @@ directly for a different S3 token artifact.
 
 ## Lexeme Lambda Sweeps
 
-Crowley Bard quality currently scales better through guarded lexeme continuation
-than through naive model averaging. Keep the model shape fixed (`v4096`,
-embedding dim 16, context 8) until corpus and schedule sweeps stop producing
-cheap wins. Continual lexeme training must use a frozen vocab TSV from the
-baseline model; do not continue from `visionary-twitter-bot-demo/v4096.nsrllm`
-on token IDs discovered from a different corpus.
+Crowley Bard quality currently scales better through the aphorism corpus, strict
+decode/style audits, and weighted lexeme model reduction than through raw
+continuation alone. Keep the model shape fixed (`v4096`, embedding dim 16,
+context 8) until corpus, reduction, and schedule sweeps stop producing cheap
+wins. Continual lexeme training must use a frozen vocab TSV from the baseline
+model; do not continue from `visionary-twitter-bot-demo/v4096.nsrllm` on token
+IDs discovered from a different corpus.
 
 The current expanded-corpus sweep retokenizes the balanced-prose corpus against
 the Twitter bot vocab:
@@ -109,17 +110,111 @@ current bot model. The 2026-06-22 sweep used 4k/8k/12k/16k softmax windows by
 `lr_shift` 24/25 against `visionary-expanded-frozen-v4096`. Track it with:
 
 ```sh
-scripts/aws/watch-lexeme-sweep-dashboard.mjs \
+scripts/aws/serve-lexeme-sweep-dashboard.mjs \
   --run-dir data/aws-lambda-lexeme/runs/<run-name> \
-  --s3-prefix s3://nsrl-training-022118847419-us-east-1/wikibard/lambda-runs/<run-name>
-
-python3 -m http.server 8765 \
-  --directory data/aws-lambda-lexeme/runs/<run-name>/dashboard
+  --s3-prefix s3://nsrl-training-022118847419-us-east-1/wikibard/lambda-runs/<run-name> \
+  --tokens data/processed/<dataset>/v4096.tokens.u16 \
+  --vocab data/processed/<dataset>/v4096.vocab.tsv \
+  --current-model data/processed/<baseline>/v4096.nsrllm \
+  --eval-offsets 0,8192,32768,65536,131072,262144,524288,1048576,2097152,3000000 \
+  --eval-max-windows 8192 \
+  --port 8765
 ```
 
-The watcher writes a local auto-refreshing dashboard plus `runs.json`. It polls
-worker summaries from S3, downloads completed models, evaluates candidates
-against the expanded frozen-vocab tokens, and samples `the world is`.
+The live lexeme dashboard serves `http://127.0.0.1:8765/`. It keeps the
+lightweight Lambda sweep watcher path, but restores the workbench shape of the
+older cloud dashboard: a clickable run list, selected-run detail, comparison
+charts, worker progress, model samples, and interactive sampling for the active
+run.
+
+There are two dashboard lineages:
+
+- `scripts/aws/render-dashboard.py` is the older EC2/mini-transformer dashboard.
+  It writes a shared `dashboard/runs.json`, has the charted run workbench, and
+  is still the right renderer for `run-mini-transformer-training.sh`.
+- `scripts/aws/watch-lexeme-sweep-dashboard.mjs` was added later for Lambda
+  lexeme sweeps. It intentionally wrote one tiny static page per sweep and did
+  not reuse `render-dashboard.py`, which is why the lexeme path temporarily lost
+  historical run selection and charts.
+
+Use `serve-lexeme-sweep-dashboard.mjs` for interactive lexeme work. Use
+`watch-lexeme-sweep-dashboard.mjs --once` only when you need to materialize the
+static `dashboard/runs.json` artifact for a single sweep.
+
+For SimpleWiki fixed-size improvement, rank continuation candidates by a held-out
+offset panel rather than by the first token slice. The dashboard writes
+`mean_bits_per_token`, `max_bits_per_token`, and per-offset rows when
+`--eval-offsets` is set. Promote a candidate only when it improves both the mean
+and the worst validation slice against the current base. This keeps model size
+fixed while allowing curriculum-style rounds: train small `seq8 ordered`
+continuations on non-validation offsets, score the panel, then make the accepted
+candidate the next base.
+
+SimpleWiki scorecard from `simplewiki-boring-english-optimizer-20260622T083716Z`:
+
+- Baseline `v4096-seq8-ordered-64k`: mean `9.126` bits/token, worst slice
+  `9.501`.
+- Best fixed-size continuation `cont-w8k-lr24-b1`: mean `8.305`, worst slice
+  `8.839`.
+- `b4`, embedding-update, and hidden-head candidates were weaker on the same
+  panel, so the next round should stay with `b1`, `lr24`-style short
+  continuations rather than increasing model size.
+
+Fixed-size Stage 2 run:
+
+- Run: `simplewiki-fixed-size-curriculum-stage2-20260622T153928Z`
+- Base: `simplewiki-boring-english-optimizer-20260622T083716Z` /
+  `worker-001`
+- Local run dir:
+  `data/aws-lambda-lexeme/runs/simplewiki-fixed-size-curriculum-stage2-20260622T153928Z`
+- S3:
+  `s3://nsrl-training-022118847419-us-east-1/wikibard/lambda-runs/simplewiki-fixed-size-curriculum-stage2-20260622T153928Z`
+- Candidate family: same-size `seq8 ordered`, `batch_windows=1`, no hidden
+  head, no embedding training, `lr24`/`lr25` short continuations on offsets away
+  from the validation panel.
+- Gate: beat the base `8.305` mean and `8.839` worst-slice bits/token.
+- Promoted candidate: `r2-o2688k-w8k-lr24-b1` / `worker-008`, mean `8.059`,
+  worst slice `8.569`.
+- Local candidate:
+  `data/aws-lambda-lexeme/candidates/simplewiki-fixed-size-stage2-r2-o2688k-w8k-lr24-b1.nsrllm`
+- S3 candidate:
+  `s3://nsrl-training-022118847419-us-east-1/wikibard/candidates/simplewiki-fixed-size-stage2-r2-o2688k-w8k-lr24-b1.nsrllm`
+
+Prepared fixed-size Stage 3 run:
+
+- Run: `simplewiki-fixed-size-curriculum-stage3-20260622T161657Z`
+- Base: promoted Stage 2 candidate
+  `simplewiki-fixed-size-stage2-r2-o2688k-w8k-lr24-b1`
+- Local run dir:
+  `data/aws-lambda-lexeme/runs/simplewiki-fixed-size-curriculum-stage3-20260622T161657Z`
+- Rotated validation offsets:
+  `4096,16384,49152,98304,196608,393216,786432,1572864,2457600,3153920`
+- Audit offsets: the Stage 2 validation panel.
+- Candidate family: same-size `seq8 ordered`, `batch_windows=1`, no hidden
+  head, no embedding training, short `lr24` probes plus two `lr23`/`lr25`
+  checks.
+- Result: all 12 workers succeeded, but no candidate passed the rotated
+  validation gate. The Stage 2 base scored mean `7.755`, worst slice `8.246`;
+  the best Stage 3 candidate, `r3-o768k-w8k-lr24-b1` / `worker-002`, scored
+  mean `7.803`, worst slice `8.351`. Do not promote Stage 3.
+
+SimpleWiki decoder improvement:
+
+- Sweep:
+  `data/aws-lambda-lexeme/decode-sweeps/simplewiki-stage2-20260622T164407Z`
+- Model:
+  `data/aws-lambda-lexeme/candidates/simplewiki-fixed-size-stage2-r2-o2688k-w8k-lr24-b1.nsrllm`
+- Best recipe: `simplewiki-content`, mean sample-quality score `1.500` across
+  `the world is`, `the earth is`, `science is`, `people use`, and `water is`.
+  The baseline recipe scored `0.241` on the same prompt set.
+- Keep the model fixed and use this as a sample-time recipe: corpus prior order
+  `3`, repeat window `96`, global frequency cap `2048`, local frequency hard
+  cap `2`, and prompt-topic radius `2`.
+- The live dashboard applies this recipe automatically for SimpleWiki
+  interactive samples. The Lambda worker applies it for SimpleWiki sample
+  generation unless `sample_decode_recipe` is set to `classic`; non-SimpleWiki
+  runs must opt in with `sample_decode_recipe: "simplewiki-content"` or
+  `"content"`.
 
 Latest result:
 
@@ -129,6 +224,46 @@ Latest result:
 - Eval: `8.660` bits/token versus current baseline `9.901`
 - Candidate: `data/aws-lambda-lexeme/candidates/visionary-expanded-frozen-v4096-w16384-lr24.nsrllm`
 - S3: `s3://nsrl-training-022118847419-us-east-1/wikibard/candidates/visionary-expanded-frozen-v4096-w16384-lr24.nsrllm`
+
+Crowley fixed-size Stage 2 check:
+
+- Run: `crowley-bard-fixed-size-curriculum-stage2-20260622T171622Z`
+- Base: `visionary-expanded-frozen-v4096-w16384-lr24`
+- Local run dir:
+  `data/aws-lambda-lexeme/runs/crowley-bard-fixed-size-curriculum-stage2-20260622T171622Z`
+- S3:
+  `s3://nsrl-training-022118847419-us-east-1/wikibard/lambda-runs/crowley-bard-fixed-size-curriculum-stage2-20260622T171622Z`
+- Gate offsets:
+  `32768,65536,98304,131072,196608,262144,319488`
+- Result: all 12 workers succeeded, but no candidate passed the held-out
+  panel. The base scored mean `8.443`, worst slice `8.823`; the best
+  continuation, `r2-o144k-w4k-lr25` / `worker-011`, scored mean `8.461`,
+  worst slice `8.881`. Do not promote Stage 2.
+- Generation audit: decode-time token bans, a function-word run cap, prose-aware
+  quality weights, and a corrected word-boundary leakage gate materially improve
+  sample yield without changing model size. The current expanded candidate moved
+  from `0/96` to `25/96` accepted strict tweets, but the kept samples are still
+  mostly word-salad. The local aphorism seq8 candidate moved from `0/96` to
+  `9/96` and produces more sentence-like samples. Treat the decode policy as a
+  useful triage layer, not as a solved posting path; use the aphorism corpus as
+  the next base before any public bot wiring.
+
+Crowley aphorism reduction result:
+
+- Promoted local model:
+  `data/processed/crowley-bard-aphorism-v2/experiments/v4096.seq8-mean-reduce-base15-lr25-o98304.nsrllm`
+- Base model:
+  `data/processed/crowley-bard-aphorism-v2/v4096.seq8-mean.nsrllm`
+- Reduction recipe: lexeme-reduce average with 15 copies of the base model and
+  1 copy of `v4096.seq8-mean-continue-cruft-lr25-o98304-w32768.nsrllm`.
+- Eval panel: base mean `9.479`, worst `9.517`; promoted reduction mean
+  `9.093`, worst `9.134`, same 196K artifact size.
+- Strict tweet audit:
+  `data/processed/crowley-bard-aphorism-v2/experiments/tweets-style-audit-v2-reduce-base15-lr25-o98304-t60-r192`
+  accepted `173/192`, kept 24, top-24 mean score `150.3`.
+- Raw direct continuations should not be promoted on bits/token alone: the best
+  direct continuation scored mean `8.516` but accepted only `88/192` under the
+  style gate and showed heavy shall/let/upon scaffolding.
 
 ## Build A Versioned Dataset
 

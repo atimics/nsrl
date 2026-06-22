@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const SCHEMA: &str = "nsrl.bitmap_denoise_dataset.v1";
 const CLEAN_SCHEMA: &str = "nsrl.bitmap_clean_sample.v1";
 const PAIR_SCHEMA: &str = "nsrl.bitmap_denoise_pair.v1";
-const CORRUPTION_KINDS: [&str; 8] = [
+const CORRUPTION_KINDS: [&str; 9] = [
     "pixel-dropout",
     "salt-pepper",
     "block-mask",
@@ -18,6 +18,17 @@ const CORRUPTION_KINDS: [&str; 8] = [
     "line-drop",
     "mixed-noise",
     "coarse-erase",
+    "box-blur",
+];
+const CLEAN_AUGMENTATIONS: [&str; 8] = [
+    "identity",
+    "rot90",
+    "rot180",
+    "rot270",
+    "flip-h",
+    "flip-v",
+    "transpose",
+    "anti-transpose",
 ];
 const SHA256_K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -35,6 +46,7 @@ struct Config {
     input_manifest: PathBuf,
     out_dir: PathBuf,
     kinds: Vec<String>,
+    clean_augmentations: Vec<String>,
     image_size: usize,
     corruptions_per_image: usize,
     timesteps: usize,
@@ -51,6 +63,10 @@ impl Default for Config {
             ),
             out_dir: PathBuf::from("data/processed/key-solomon-goetia-denoise-v1"),
             kinds: vec!["seal-grid-cell".to_string()],
+            clean_augmentations: CLEAN_AUGMENTATIONS
+                .iter()
+                .map(|augmentation| (*augmentation).to_string())
+                .collect(),
             image_size: 128,
             corruptions_per_image: 8,
             timesteps: 8,
@@ -163,6 +179,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if selected.is_empty() {
         return Err(format!("no slices matched --kinds {}", config.kinds.join(",")).into());
     }
+    validate_clean_augmentations(&config.clean_augmentations)?;
     selected.sort_by(|left, right| {
         left.split_score
             .cmp(&right.split_score)
@@ -209,7 +226,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn usage() {
     println!(
-        "Usage: nsrl-build-solomon-bitmap-denoise-dataset [--input-manifest PATH] [--out-dir PATH] [--kinds LIST] [--image-size N] [--corruptions-per-image N] [--timesteps N] [--eval-ratio-permille N] [--seed TEXT] [--preview-pairs N]"
+        "Usage: nsrl-build-solomon-bitmap-denoise-dataset [--input-manifest PATH] [--out-dir PATH] [--kinds LIST] [--clean-augmentations LIST] [--image-size N] [--corruptions-per-image N] [--timesteps N] [--eval-ratio-permille N] [--seed TEXT] [--preview-pairs N]"
     );
 }
 
@@ -233,6 +250,10 @@ where
             }
             "--kinds" => {
                 config.kinds = split_list(&args.next().ok_or("--kinds requires LIST")?);
+            }
+            "--clean-augmentations" => {
+                config.clean_augmentations =
+                    split_list(&args.next().ok_or("--clean-augmentations requires LIST")?);
             }
             "--image-size" => {
                 config.image_size = parse_positive(&args.next().ok_or("--image-size requires N")?)?;
@@ -261,7 +282,24 @@ where
     if config.kinds.is_empty() {
         return Err("--kinds must contain at least one kind".into());
     }
+    if config.clean_augmentations.is_empty() {
+        return Err("--clean-augmentations must contain at least one augmentation".into());
+    }
     Ok(config)
+}
+
+fn validate_clean_augmentations(
+    augmentations: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for augmentation in augmentations {
+        if !CLEAN_AUGMENTATIONS
+            .iter()
+            .any(|known| known == augmentation)
+        {
+            return Err(format!("unknown clean augmentation: {augmentation}").into());
+        }
+    }
+    Ok(())
 }
 
 fn parse_positive(value: &str) -> Result<usize, Box<dyn std::error::Error>> {
@@ -362,79 +400,89 @@ fn write_split(
     let mut preview_clean = Vec::new();
     let mut preview_pairs = Vec::new();
 
-    for (clean_index, slice) in slices.iter().enumerate() {
-        let clean_offset = clean_bytes.len();
-        clean_bytes.extend_from_slice(&slice.clean);
-        let clean_coverage = coverage(&slice.clean);
-        clean_rows.push_str(&format!(
-            "{{\"schema\":\"{}\",\"split\":\"{}\",\"clean_index\":{},\"slice_id\":\"{}\",\"label\":\"{}\",\"kind\":\"{}\",\"source_file\":\"{}\",\"source_crop\":{},\"clean_offset\":{},\"bytes\":{},\"sha256\":\"{}\",\"mean_ink_q8\":{},\"coverage_gt_32_ppm\":{}}}\n",
-            CLEAN_SCHEMA,
-            json_escape(split),
-            clean_index,
-            json_escape(&slice.row.id),
-            json_escape(&slice.row.label),
-            json_escape(&slice.row.kind),
-            json_escape(&slice.row.source_file),
-            crop_json(&slice.row.crop),
-            clean_offset,
-            image_bytes,
-            sha256_hex(&slice.clean),
-            clean_coverage.mean_ink_q8,
-            clean_coverage.coverage_gt_32_ppm,
-        ));
-        if preview_clean.len() < config.preview_pairs {
-            preview_clean.push(slice.clean.clone());
-        }
-
-        for variant in 0..config.corruptions_per_image {
-            let pair_index = pair_inputs.len() / image_bytes;
-            let timestep = 1 + ((variant + clean_index) % config.timesteps);
-            let corruption = CORRUPTION_KINDS[(variant + clean_index) % CORRUPTION_KINDS.len()];
-            let corrupted = corrupt_image(
-                &slice.clean,
-                config.image_size,
-                config.image_size,
-                corruption,
-                timestep,
-                config.timesteps,
-                &[
-                    &config.seed,
-                    split,
-                    &slice.row.id,
-                    &variant.to_string(),
-                    corruption,
-                    &timestep.to_string(),
-                ],
-            )?;
-            let pair_offset = pair_index * image_bytes;
-            let input_coverage = coverage(&corrupted);
-            pair_inputs.extend_from_slice(&corrupted);
-            pair_targets.extend_from_slice(&slice.clean);
-            pair_rows.push_str(&format!(
-                "{{\"schema\":\"{}\",\"split\":\"{}\",\"pair_index\":{},\"clean_index\":{},\"variant\":{},\"slice_id\":\"{}\",\"label\":\"{}\",\"kind\":\"{}\",\"source_file\":\"{}\",\"corruption\":\"{}\",\"timestep\":{},\"timesteps\":{},\"input_offset\":{},\"target_offset\":{},\"bytes\":{},\"clean_sha256\":\"{}\",\"input_sha256\":\"{}\",\"clean_mean_ink_q8\":{},\"input_mean_ink_q8\":{}}}\n",
-                PAIR_SCHEMA,
+    let mut clean_index = 0_usize;
+    for slice in slices {
+        for augmentation in &config.clean_augmentations {
+            let clean = transform_clean_image(&slice.clean, config.image_size, augmentation)?;
+            let clean_offset = clean_bytes.len();
+            clean_bytes.extend_from_slice(&clean);
+            let clean_coverage = coverage(&clean);
+            clean_rows.push_str(&format!(
+                "{{\"schema\":\"{}\",\"split\":\"{}\",\"clean_index\":{},\"source_clean_index\":{},\"augmentation\":\"{}\",\"slice_id\":\"{}\",\"label\":\"{}\",\"kind\":\"{}\",\"source_file\":\"{}\",\"source_crop\":{},\"clean_offset\":{},\"bytes\":{},\"sha256\":\"{}\",\"mean_ink_q8\":{},\"coverage_gt_32_ppm\":{}}}\n",
+                CLEAN_SCHEMA,
                 json_escape(split),
-                pair_index,
                 clean_index,
-                variant,
+                clean_index / config.clean_augmentations.len(),
+                json_escape(augmentation),
                 json_escape(&slice.row.id),
                 json_escape(&slice.row.label),
                 json_escape(&slice.row.kind),
                 json_escape(&slice.row.source_file),
-                json_escape(corruption),
-                timestep,
-                config.timesteps,
-                pair_offset,
-                pair_offset,
+                crop_json(&slice.row.crop),
+                clean_offset,
                 image_bytes,
-                sha256_hex(&slice.clean),
-                sha256_hex(&corrupted),
+                sha256_hex(&clean),
                 clean_coverage.mean_ink_q8,
-                input_coverage.mean_ink_q8,
+                clean_coverage.coverage_gt_32_ppm,
             ));
-            if preview_pairs.len() < config.preview_pairs {
-                preview_pairs.push((corrupted, slice.clean.clone()));
+            if preview_clean.len() < config.preview_pairs {
+                preview_clean.push(clean.clone());
             }
+
+            for variant in 0..config.corruptions_per_image {
+                let pair_index = pair_inputs.len() / image_bytes;
+                let timestep = 1 + ((variant + clean_index) % config.timesteps);
+                let corruption = CORRUPTION_KINDS[(variant + clean_index) % CORRUPTION_KINDS.len()];
+                let corrupted = corrupt_image(
+                    &clean,
+                    config.image_size,
+                    config.image_size,
+                    corruption,
+                    timestep,
+                    config.timesteps,
+                    &[
+                        &config.seed,
+                        split,
+                        &slice.row.id,
+                        augmentation,
+                        &variant.to_string(),
+                        corruption,
+                        &timestep.to_string(),
+                    ],
+                )?;
+                let pair_offset = pair_index * image_bytes;
+                let input_coverage = coverage(&corrupted);
+                pair_inputs.extend_from_slice(&corrupted);
+                pair_targets.extend_from_slice(&clean);
+                pair_rows.push_str(&format!(
+                    "{{\"schema\":\"{}\",\"split\":\"{}\",\"pair_index\":{},\"clean_index\":{},\"source_clean_index\":{},\"variant\":{},\"augmentation\":\"{}\",\"slice_id\":\"{}\",\"label\":\"{}\",\"kind\":\"{}\",\"source_file\":\"{}\",\"corruption\":\"{}\",\"timestep\":{},\"timesteps\":{},\"input_offset\":{},\"target_offset\":{},\"bytes\":{},\"clean_sha256\":\"{}\",\"input_sha256\":\"{}\",\"clean_mean_ink_q8\":{},\"input_mean_ink_q8\":{}}}\n",
+                    PAIR_SCHEMA,
+                    json_escape(split),
+                    pair_index,
+                    clean_index,
+                    clean_index / config.clean_augmentations.len(),
+                    variant,
+                    json_escape(augmentation),
+                    json_escape(&slice.row.id),
+                    json_escape(&slice.row.label),
+                    json_escape(&slice.row.kind),
+                    json_escape(&slice.row.source_file),
+                    json_escape(corruption),
+                    timestep,
+                    config.timesteps,
+                    pair_offset,
+                    pair_offset,
+                    image_bytes,
+                    sha256_hex(&clean),
+                    sha256_hex(&corrupted),
+                    clean_coverage.mean_ink_q8,
+                    input_coverage.mean_ink_q8,
+                ));
+                if preview_pairs.len() < config.preview_pairs {
+                    preview_pairs.push((corrupted, clean.clone()));
+                }
+            }
+            clean_index += 1;
         }
     }
 
@@ -460,7 +508,7 @@ fn write_split(
     )?;
 
     Ok(SplitSummary {
-        clean_count: slices.len(),
+        clean_count: clean_bytes.len() / image_bytes,
         pair_count: pair_inputs.len() / image_bytes,
         clean_file: clean_file_rel,
         pair_input_file: pair_input_file_rel,
@@ -513,6 +561,16 @@ fn write_manifest(
         out.push('"');
     }
     out.push_str("],\n");
+    out.push_str("  \"clean_augmentations\":[");
+    for (index, augmentation) in config.clean_augmentations.iter().enumerate() {
+        if index != 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(&json_escape(augmentation));
+        out.push('"');
+    }
+    out.push_str("],\n");
     out.push_str("  \"corruption_kinds\":[");
     for (index, kind) in CORRUPTION_KINDS.iter().enumerate() {
         if index != 0 {
@@ -556,6 +614,49 @@ fn selected_clean_path(
         128 => Ok(&row.ink_128_u8),
         256 => Ok(&row.ink_256_u8),
         _ => Err(format!("unsupported --image-size {image_size}; expected 128 or 256").into()),
+    }
+}
+
+fn transform_clean_image(
+    input: &[u8],
+    image_size: usize,
+    augmentation: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let image_bytes = checked_image_bytes(image_size)?;
+    if input.len() != image_bytes {
+        return Err(format!(
+            "clean transform got {} bytes, expected {image_bytes}",
+            input.len()
+        )
+        .into());
+    }
+    let mut out = vec![0_u8; image_bytes];
+    for y in 0..image_size {
+        for x in 0..image_size {
+            let (sx, sy) = transform_coords(image_size, x, y, augmentation)?;
+            out[pixel_index(image_size, x, y)] = input[pixel_index(image_size, sx, sy)];
+        }
+    }
+    Ok(out)
+}
+
+fn transform_coords(
+    image_size: usize,
+    x: usize,
+    y: usize,
+    augmentation: &str,
+) -> Result<(usize, usize), Box<dyn std::error::Error>> {
+    let last = image_size.saturating_sub(1);
+    match augmentation {
+        "identity" => Ok((x, y)),
+        "rot90" => Ok((y, last - x)),
+        "rot180" => Ok((last - x, last - y)),
+        "rot270" => Ok((last - y, x)),
+        "flip-h" => Ok((last - x, y)),
+        "flip-v" => Ok((x, last - y)),
+        "transpose" => Ok((y, x)),
+        "anti-transpose" => Ok((last - y, last - x)),
+        _ => Err(format!("unknown clean augmentation: {augmentation}").into()),
     }
 }
 
@@ -709,6 +810,9 @@ fn corrupt_image(
             ))
         }
         "coarse-erase" => Ok(coarse_erase(
+            clean, width, height, timestep, timesteps, &mut rng,
+        )),
+        "box-blur" => Ok(box_blur_corruption(
             clean, width, height, timestep, timesteps, &mut rng,
         )),
         _ => Err(format!("unknown corruption kind: {corruption}").into()),
@@ -876,6 +980,55 @@ fn coarse_erase(
             x0 += cell;
         }
         y0 += cell;
+    }
+    out
+}
+
+fn box_blur_corruption(
+    clean: &[u8],
+    width: usize,
+    height: usize,
+    timestep: usize,
+    timesteps: usize,
+    rng: &mut Rng,
+) -> Vec<u8> {
+    let passes = 1 + (timestep * 3) / timesteps;
+    let mut out = clean.to_vec();
+    for _ in 0..passes {
+        out = box_blur_once(&out, width, height);
+    }
+    if rng.chance(1 + timestep, timesteps * 3) {
+        out = stroke_thicken(&out, width, height, timestep_div2(timestep), timesteps, rng);
+    } else {
+        out = salt_pepper(&out, timestep_div2(timestep), timesteps, rng);
+    }
+    out
+}
+
+fn box_blur_once(input: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let mut out = vec![0_u8; input.len()];
+    for y in 0..height {
+        for x in 0..width {
+            let mut sum = 0_u16;
+            let mut count = 0_u16;
+            for dy in [-1_i32, 0, 1] {
+                for dx in [-1_i32, 0, 1] {
+                    let nx = i32::try_from(x).unwrap_or(i32::MAX).saturating_add(dx);
+                    let ny = i32::try_from(y).unwrap_or(i32::MAX).saturating_add(dy);
+                    if nx < 0 || ny < 0 {
+                        continue;
+                    }
+                    let ux = usize::try_from(nx).unwrap_or(usize::MAX);
+                    let uy = usize::try_from(ny).unwrap_or(usize::MAX);
+                    if ux >= width || uy >= height {
+                        continue;
+                    }
+                    sum = sum.saturating_add(u16::from(input[pixel_index(width, ux, uy)]));
+                    count = count.saturating_add(1);
+                }
+            }
+            out[pixel_index(width, x, y)] = u8::try_from((sum + count / 2) / count).unwrap_or(0);
+        }
     }
     out
 }

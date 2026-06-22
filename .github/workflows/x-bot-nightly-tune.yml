@@ -123,12 +123,20 @@ jobs:
         if: steps.tune.outputs.published == 'true'
         run: |
           set -euo pipefail
-          aws lambda invoke \
+          smoke_error="$(mktemp)"
+          if ! aws lambda invoke \
             --region "$AWS_REGION" \
             --function-name "$FUNCTION_NAME" \
             --cli-binary-format raw-in-base64-out \
             --payload '{"test_generate":"@CrowleyBard what did the timeline dream overnight?","username":"nightly_smoke","id":"nightly-424242"}' \
-            /tmp/crowley-bard-nightly-smoke.json
+            /tmp/crowley-bard-nightly-smoke.json 2>"$smoke_error"; then
+            cat "$smoke_error" >&2
+            if grep -q 'AccessDeniedException' "$smoke_error"; then
+              echo "::warning::Lambda deploy succeeded, but this GitHub role cannot invoke the function for smoke testing."
+              exit 0
+            fi
+            exit 1
+          fi
           cat /tmp/crowley-bard-nightly-smoke.json
 
       - name: No candidate

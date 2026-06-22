@@ -28,6 +28,7 @@ export class SolomonSampler {
     model_card(): string;
     constructor(model_bytes: Uint8Array, text_index_tsv: string);
     sample(prompt: string, seed: string, candidate_multiplier: number, passes: number): SolomonSample;
+    sample_fast(prompt: string, seed: string, candidate_multiplier: number, passes: number, condition_limit: number): SolomonSample;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -43,6 +44,7 @@ export interface InitOutput {
     readonly solomonsampler_model_card: (a: number) => [number, number];
     readonly solomonsampler_new: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly solomonsampler_sample: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly solomonsampler_sample_fast: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly __wbg_nsrlchat_free: (a: number, b: number) => void;
     readonly nsrlchat_adapt_and_reply: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
     readonly nsrlchat_export_model: (a: number) => [number, number, number, number];
