@@ -121,6 +121,34 @@ TSV, ranks held-out prompts against unique seal targets, reports metrics per
 tier, and appends `eval-ledger.jsonl` rows with the model hash, prompt set
 version, train prompt count, top1/top5, and Q8 MAE.
 
+To grow the prompt pool from source-grounded variants and run the first scaling
+curve:
+
+```sh
+node scripts/build-solomon-grounded-corpus.mjs --variants-per-row 16
+
+node scripts/append-solomon-prompts.mjs \
+  --from-grounded data/processed/key-solomon-goetia-grounded-corpus-v1/grounded-text-signatures.tsv \
+  --out data/processed/key-solomon-goetia-latent-v1/prompts-expanded.jsonl
+
+node scripts/run-solomon-eval-scaling-curve.mjs \
+  --prompts data/processed/key-solomon-goetia-latent-v1/prompts-expanded.jsonl \
+  --sizes 288,576,1152,1425 \
+  --latent-dims 32,64,128 \
+  --epochs 12 \
+  --report-out docs/solomon-eval-scaling-curve.tsv
+```
+
+The first checked curve is [docs/solomon-eval-scaling-curve.tsv](solomon-eval-scaling-curve.tsv).
+It fixes 512 text features and 12 epochs, then sweeps prompt prefixes and
+latent widths `32,64,128`. In that short-budget sweep, held-out eval top1 peaks
+at `200` per mille with 352 train prompts and 32 latent channels. Novel-vocab
+top1 peaks at the same point (`208` per mille), while cluster-holdout top1 peaks
+at 352 train prompts and 128 latent channels (`195` per mille). The larger
+prompt pools underperform at 12 epochs, so the next curve should sweep epochs
+or learning shifts at 822 and 1040 train prompts rather than claiming monotonic
+data scaling from this first pass.
+
 ### Grounded synthetic text variants
 
 `scripts/build-solomon-grounded-corpus.mjs` expands each of the 72 demon rows

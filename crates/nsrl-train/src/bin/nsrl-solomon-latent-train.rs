@@ -6,8 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use nsrl_train::solomon_latent::{
-    DEFAULT_EVAL_PERMILLE, DEFAULT_PROMPT_SPLIT_SEED, default_gold_path, read_gold_hashes,
-    read_prompt_records, read_text_index_rows,
+    DEFAULT_EVAL_PERMILLE, DEFAULT_PROMPT_SPLIT_SEED, default_gold_path, prompt_partition_bucket,
+    read_gold_hashes, read_prompt_records, read_text_index_rows,
 };
 
 const SCHEMA: &str = "nsrl.solomon_latent_trace.v1";
@@ -389,7 +389,9 @@ fn read_prompt_training_rows(
     let gold_hashes = read_gold_hashes(&gold_path)?;
     let mut rows = Vec::new();
     for prompt in prompts {
-        if gold_hashes.contains(&prompt.prompt_hash) || prompt.bucket < config.eval_permille {
+        if gold_hashes.contains(&prompt.prompt_hash)
+            || prompt_partition_bucket(&prompt, &config.split_seed) < config.eval_permille
+        {
             continue;
         }
         let base = by_number

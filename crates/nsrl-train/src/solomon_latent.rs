@@ -356,6 +356,14 @@ pub fn prompt_hash(split_seed: &str, text: &str) -> String {
     stable_hex_u32(hash_parts(&[split_seed, text]))
 }
 
+pub fn prompt_partition_bucket(prompt: &PromptRecord, split_seed: &str) -> usize {
+    if prompt.tier == "tier-cluster-holdout" {
+        usize::try_from(hash_parts(&[split_seed, "cluster", &prompt.cluster]) % 1000).unwrap_or(0)
+    } else {
+        prompt.bucket
+    }
+}
+
 pub fn stable_hash_bytes(bytes: &[u8]) -> u32 {
     let mut hash = 2_166_136_261_u32;
     for &byte in bytes {

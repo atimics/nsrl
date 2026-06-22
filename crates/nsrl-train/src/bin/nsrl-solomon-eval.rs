@@ -10,8 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use nsrl_train::solomon_latent::{
     DEFAULT_EVAL_PERMILLE, DEFAULT_PROMPT_SPLIT_SEED, LatentTextModel, PromptRecord,
     SIGNATURE_BINS, TextIndexRow, default_gold_path, dot_i16, json_escape, latent_abs_error,
-    mean_q8, read_gold_hashes, read_latent_model, read_prompt_records, read_text_index_rows,
-    signature_abs_error, stable_hash_bytes, stable_hex_u32, text_features,
+    mean_q8, prompt_partition_bucket, read_gold_hashes, read_latent_model, read_prompt_records,
+    read_text_index_rows, signature_abs_error, stable_hash_bytes, stable_hex_u32, text_features,
 };
 
 const SCHEMA: &str = "nsrl.solomon_eval_ledger.v1";
@@ -117,9 +117,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .unwrap_or_else(|| default_gold_path(&config.prompts_path));
     let gold_hashes = read_gold_hashes(&gold_path)?;
-    let partitioned = partition_prompts(prompts, &gold_hashes, config.eval_permille);
+    let partitioned = partition_prompts(
+        prompts,
+        &gold_hashes,
+        config.eval_permille,
+        &config.split_seed,
+    );
     if let Some(path) = &config.partition_path {
-        write_partition(path, &partitioned)?;
+        write_partition(path, &partitioned, &config.split_seed)?;
     }
 
     let eval_prompts: Vec<&PartitionedPrompt> = partitioned
@@ -219,13 +224,14 @@ fn partition_prompts(
     prompts: Vec<PromptRecord>,
     gold_hashes: &HashSet<String>,
     eval_permille: usize,
+    split_seed: &str,
 ) -> Vec<PartitionedPrompt> {
     prompts
         .into_iter()
         .map(|prompt| {
             let partition = if gold_hashes.contains(&prompt.prompt_hash) {
                 Partition::Gold
-            } else if prompt.bucket < eval_permille {
+            } else if prompt_partition_bucket(&prompt, split_seed) < eval_permille {
                 Partition::Eval
             } else {
                 Partition::Train
@@ -238,18 +244,23 @@ fn partition_prompts(
 fn write_partition(
     path: &Path,
     prompts: &[PartitionedPrompt],
+    split_seed: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let mut out = String::new();
-    out.push_str("prompt_hash\tspirit_id\tbucket\tpartition\ttier\tsource\tcluster\ttext\n");
+    out.push_str(
+        "prompt_hash\tspirit_id\tbucket\tpartition_bucket\tpartition\ttier\tsource\tcluster\ttext\n",
+    );
     for prompt in prompts {
         out.push_str(&prompt.prompt.prompt_hash);
         out.push('\t');
         out.push_str(&prompt.prompt.spirit_id.to_string());
         out.push('\t');
         out.push_str(&prompt.prompt.bucket.to_string());
+        out.push('\t');
+        out.push_str(&prompt_partition_bucket(&prompt.prompt, split_seed).to_string());
         out.push('\t');
         out.push_str(prompt.partition.as_str());
         out.push('\t');
