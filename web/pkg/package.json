@@ -1,0 +1,20 @@
+{
+  "name": "nsrl-web-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://example.invalid/nsrl"
+  },
+  "files": [
+    "nsrl_web_wasm_bg.wasm",
+    "nsrl_web_wasm.js",
+    "nsrl_web_wasm.d.ts"
+  ],
+  "main": "nsrl_web_wasm.js",
+  "types": "nsrl_web_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
