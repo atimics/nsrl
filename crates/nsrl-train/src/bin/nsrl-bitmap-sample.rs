@@ -8,10 +8,16 @@ use std::path::{Path, PathBuf};
 const SCHEMA: &str = "nsrl.bitmap_sampler_trace.v1";
 const MODEL_MAGIC_CV3: &[u8; 8] = b"NSRLCV3\n";
 const MODEL_MAGIC_MCH: &[u8; 8] = b"NSRLMCH\n";
+const MODEL_MAGIC_TCH: &[u8; 8] = b"NSRLTCH\n";
 const KERNEL: usize = 9;
 const HIDDEN_CHANNELS: usize = 8;
 const SIGNATURE_GRID: usize = 8;
 const SIGNATURE_BINS: usize = SIGNATURE_GRID * SIGNATURE_GRID;
+const QUALITY_RING_BUCKETS: usize = 32;
+const QUALITY_BUCKET_STEPS: i64 = 4;
+const INK_THRESHOLD: u8 = 64;
+const STRONG_INK_THRESHOLD: u8 = 160;
+const SPECK_INK_THRESHOLD: u8 = 96;
 const HIDDEN_KERNELS: [[i8; KERNEL]; HIDDEN_CHANNELS] = [
     [1, 1, 1, 1, 0, 1, 1, 1, 1],
     [0, 1, 0, 1, 0, 1, 0, 1, 0],
@@ -22,7 +28,7 @@ const HIDDEN_KERNELS: [[i8; KERNEL]; HIDDEN_CHANNELS] = [
     [0, 1, 2, -1, 0, 1, -2, -1, 0],
     [-1, 2, -1, 2, 0, 2, -1, 2, -1],
 ];
-const CORRUPTION_KINDS: [&str; 8] = [
+const CORRUPTION_KINDS: [&str; 9] = [
     "pixel-dropout",
     "salt-pepper",
     "block-mask",
@@ -31,6 +37,7 @@ const CORRUPTION_KINDS: [&str; 8] = [
     "line-drop",
     "mixed-noise",
     "coarse-erase",
+    "box-blur",
 ];
 
 #[derive(Debug, Clone)]
@@ -44,6 +51,10 @@ struct Config {
     border_clear: usize,
     passes: usize,
     preview_columns: usize,
+    text_index_path: Option<PathBuf>,
+    prompt: Option<String>,
+    text_all: bool,
+    text_weight: i64,
     seed: String,
     init_mode: InitMode,
 }
@@ -67,6 +78,10 @@ impl Default for Config {
             border_clear: 0,
             passes: 8,
             preview_columns: 8,
+            text_index_path: None,
+            prompt: None,
+            text_all: false,
+            text_weight: 96,
             seed: "solomon-sampler-v1".to_string(),
             init_mode: InitMode::SealPrior,
         }
@@ -138,6 +153,7 @@ struct MultichannelModel {
     hidden_shift: u8,
     output_shift: u8,
     hidden_channels: usize,
+    text_conditioned: bool,
     corruption_count: usize,
     layers: Vec<MultichannelLayer>,
 }
@@ -152,7 +168,13 @@ impl SampleModel {
     fn format_name(&self) -> &'static str {
         match self {
             Self::Conv3(_) => "NSRLCV3",
-            Self::Multichannel(_) => "NSRLMCH",
+            Self::Multichannel(model) => {
+                if model.text_conditioned {
+                    "NSRLTCH"
+                } else {
+                    "NSRLMCH"
+                }
+            }
         }
     }
 
@@ -183,6 +205,10 @@ impl SampleModel {
             Self::Multichannel(model) => model.layers.len(),
         }
     }
+
+    fn text_conditioned(&self) -> bool {
+        matches!(self, Self::Multichannel(model) if model.text_conditioned)
+    }
 }
 
 #[derive(Debug)]
@@ -204,12 +230,45 @@ struct CleanPrior {
     image_count: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Candidate {
     source_index: usize,
     score: i64,
+    text_distance: i64,
+    quality: SampleQuality,
     signature: [u16; SIGNATURE_BINS],
     image: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct TextTarget {
+    number: usize,
+    name: String,
+    signature: [u16; SIGNATURE_BINS],
+}
+
+#[derive(Debug)]
+struct TextCondition {
+    index_path: PathBuf,
+    prompt: String,
+    target_number: usize,
+    target_name: String,
+    target_score: i64,
+    target_signature: [u16; SIGNATURE_BINS],
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SampleQuality {
+    total_score: i64,
+    ring_score: i64,
+    ring_coverage_score: i64,
+    ring_balance_penalty: i64,
+    stroke_score: i64,
+    interior_score: i64,
+    density_penalty: i64,
+    border_penalty: i64,
+    outside_penalty: i64,
+    speck_penalty: i64,
 }
 
 #[derive(Debug)]
@@ -220,8 +279,19 @@ struct ScoreSummary {
     selected_min_score: i64,
     selected_max_score: i64,
     selected_mean_score_q8: i64,
+    selected_min_text_distance: i64,
+    selected_mean_text_distance_q8: i64,
     selected_min_signature_distance: i64,
     selected_mean_signature_distance_q8: i64,
+    selected_mean_ring_score_q8: i64,
+    selected_mean_ring_coverage_score_q8: i64,
+    selected_mean_ring_balance_penalty_q8: i64,
+    selected_mean_stroke_score_q8: i64,
+    selected_mean_interior_score_q8: i64,
+    selected_mean_density_penalty_q8: i64,
+    selected_mean_border_penalty_q8: i64,
+    selected_mean_outside_penalty_q8: i64,
+    selected_mean_speck_penalty_q8: i64,
 }
 
 fn main() {
@@ -245,6 +315,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if config.diversity_weight < 0 {
         return Err("--diversity-weight must be non-negative".into());
     }
+    if config.text_weight < 0 {
+        return Err("--text-weight must be non-negative".into());
+    }
+    if config.text_all && config.text_index_path.is_none() {
+        return Err("--text-all requires --text-index".into());
+    }
+    if config.text_all && config.prompt.is_some() {
+        return Err("--text-all cannot be combined with --prompt".into());
+    }
     fs::create_dir_all(&config.out_dir)?;
 
     let model = read_model(&config.model_path)?;
@@ -263,36 +342,98 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
     let image_bytes = checked_image_bytes(image_size)?;
-    let candidate_count = config
-        .sample_count
+    let text_condition =
+        if !config.text_all && (config.text_index_path.is_some() || config.prompt.is_some()) {
+            Some(read_text_condition(&config)?)
+        } else {
+            None
+        };
+    let text_targets = if config.text_all {
+        Some(read_text_targets(
+            config
+                .text_index_path
+                .as_ref()
+                .ok_or("--text-all requires --text-index")?,
+        )?)
+    } else {
+        None
+    };
+    let output_count = text_targets
+        .as_ref()
+        .map(|targets| targets.len())
+        .unwrap_or(config.sample_count);
+    if model.text_conditioned() && text_condition.is_none() && text_targets.is_none() {
+        return Err(
+            "NSRLTCH text-conditioned models require --text-index with --prompt or --text-all"
+                .into(),
+        );
+    }
+    let candidate_count = output_count
         .checked_mul(config.candidate_multiplier)
         .ok_or("candidate count overflow")?;
-    let mut candidates = Vec::with_capacity(candidate_count);
-    for candidate_index in 0..candidate_count {
-        let mut image = initial_image(&config, image_size, candidate_index, prior.as_ref())?;
-        for _ in 0..config.passes {
-            for &condition in &conditions {
-                image = apply_model_condition(&model, condition, &image)?;
-            }
+    let selected = if model.text_conditioned() {
+        if let Some(targets) = text_targets.as_ref() {
+            sample_text_conditioned_targets(
+                &config,
+                &model,
+                &conditions,
+                image_size,
+                prior.as_ref(),
+                targets,
+            )?
+        } else {
+            let target_signature = text_condition
+                .as_ref()
+                .map(|condition| &condition.target_signature);
+            let candidates = sample_candidates(
+                &config,
+                &model,
+                &conditions,
+                image_size,
+                prior.as_ref(),
+                candidate_count,
+                target_signature,
+            )?;
+            select_candidates(candidates, output_count, config.diversity_weight)?
         }
-        clear_border(&mut image, image_size, config.border_clear);
-        let score = score_sample(&image, image_size)?;
-        let signature = sample_signature(&image, image_size)?;
-        candidates.push(Candidate {
-            source_index: candidate_index,
-            score,
-            signature,
-            image,
-        });
-    }
-    let selected = select_candidates(candidates, config.sample_count, config.diversity_weight)?;
+    } else if let Some(targets) = text_targets.as_ref() {
+        let candidates = sample_candidates(
+            &config,
+            &model,
+            &conditions,
+            image_size,
+            prior.as_ref(),
+            candidate_count,
+            None,
+        )?;
+        select_text_targets(
+            &candidates,
+            targets,
+            config.text_weight,
+            config.diversity_weight,
+        )?
+    } else {
+        let target_signature = text_condition
+            .as_ref()
+            .map(|condition| &condition.target_signature);
+        let candidates = sample_candidates(
+            &config,
+            &model,
+            &conditions,
+            image_size,
+            prior.as_ref(),
+            candidate_count,
+            target_signature,
+        )?;
+        select_candidates(candidates, output_count, config.diversity_weight)?
+    };
     let score_summary = summarize_selection(&selected, candidate_count, config.diversity_weight)?;
 
-    let mut samples = Vec::with_capacity(config.sample_count * image_bytes);
+    let mut samples = Vec::with_capacity(output_count * image_bytes);
     let mut preview = Vec::new();
-    for candidate in selected {
+    for candidate in &selected {
         samples.extend_from_slice(&candidate.image);
-        preview.push(candidate.image);
+        preview.push(candidate.image.clone());
     }
 
     let raw_path = config.out_dir.join(format!("samples.ink{}.u8", image_size));
@@ -300,6 +441,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let sheet = make_contact_sheet(&preview, image_size, config.preview_columns, 4);
     let pgm_path = config.out_dir.join("samples.pgm");
     write_pgm(&pgm_path, sheet.width, sheet.height, &sheet.bytes)?;
+    let selected_text_targets_path = if let Some(targets) = text_targets.as_ref() {
+        Some(write_selected_text_targets(
+            &config.out_dir,
+            targets,
+            &selected,
+        )?)
+    } else {
+        None
+    };
     write_trace(
         &config,
         &model,
@@ -307,13 +457,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         &raw_path,
         &pgm_path,
         prior.as_ref(),
+        text_condition.as_ref(),
+        text_targets.as_deref(),
+        selected_text_targets_path.as_deref(),
         &score_summary,
     )?;
 
     println!(
         "{{\"schema\":\"{}\",\"samples\":{},\"passes\":{},\"init_mode\":\"{}\",\"out_dir\":\"{}\",\"pgm\":\"{}\"}}",
         SCHEMA,
-        config.sample_count,
+        output_count,
         config.passes,
         config.init_mode.as_str(),
         json_escape(&config.out_dir.display().to_string()),
@@ -324,7 +477,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn usage() {
     println!(
-        "Usage: nsrl-bitmap-sample [--model PATH] [--out-dir PATH] [--prior-clean PATH] [--samples N] [--candidate-multiplier N] [--diversity-weight N] [--border-clear N] [--passes N] [--preview-columns N] [--seed TEXT] [--init noise|seal-prior|learned-prior|patch-prior|coordinate-prior]"
+        "Usage: nsrl-bitmap-sample [--model PATH] [--out-dir PATH] [--prior-clean PATH] [--samples N] [--candidate-multiplier N] [--diversity-weight N] [--border-clear N] [--passes N] [--preview-columns N] [--text-index PATH] [--prompt TEXT|--text-all] [--text-weight N] [--seed TEXT] [--init noise|seal-prior|learned-prior|patch-prior|coordinate-prior]"
     );
 }
 
@@ -374,6 +527,20 @@ where
                 config.preview_columns =
                     args.next().ok_or("--preview-columns requires N")?.parse()?;
             }
+            "--text-index" => {
+                config.text_index_path = Some(PathBuf::from(
+                    args.next().ok_or("--text-index requires PATH")?,
+                ));
+            }
+            "--prompt" => {
+                config.prompt = Some(args.next().ok_or("--prompt requires TEXT")?);
+            }
+            "--text-all" => {
+                config.text_all = true;
+            }
+            "--text-weight" => {
+                config.text_weight = args.next().ok_or("--text-weight requires N")?.parse()?;
+            }
             "--seed" => {
                 config.seed = args.next().ok_or("--seed requires TEXT")?;
             }
@@ -395,7 +562,9 @@ fn read_model(path: &Path) -> Result<SampleModel, Box<dyn std::error::Error>> {
     let model = if magic.as_slice() == MODEL_MAGIC_CV3 {
         SampleModel::Conv3(read_cv3_model(&mut cursor)?)
     } else if magic.as_slice() == MODEL_MAGIC_MCH {
-        SampleModel::Multichannel(read_multichannel_model(&mut cursor)?)
+        SampleModel::Multichannel(read_multichannel_model(&mut cursor, false)?)
+    } else if magic.as_slice() == MODEL_MAGIC_TCH {
+        SampleModel::Multichannel(read_multichannel_model(&mut cursor, true)?)
     } else {
         return Err(format!("{} is not a sampler model", path.display()).into());
     };
@@ -447,16 +616,21 @@ fn read_cv3_model(cursor: &mut Cursor) -> Result<LayeredConvModel, Box<dyn std::
 
 fn read_multichannel_model(
     cursor: &mut Cursor,
+    text_conditioned: bool,
 ) -> Result<MultichannelModel, Box<dyn std::error::Error>> {
     let image_size = usize::try_from(cursor.read_u32()?)?;
     let timesteps = usize::try_from(cursor.read_u32()?)?;
     let hidden_shift = u8::try_from(cursor.read_u32()?)?;
     let output_shift = u8::try_from(cursor.read_u32()?)?;
     let hidden_channels = usize::try_from(cursor.read_u32()?)?;
-    if hidden_channels == 0 || hidden_channels > HIDDEN_KERNELS.len() {
+    let max_channels = if text_conditioned {
+        HIDDEN_KERNELS.len() + 2
+    } else {
+        HIDDEN_KERNELS.len()
+    };
+    if hidden_channels == 0 || hidden_channels > max_channels {
         return Err(format!(
-            "unsupported hidden channel count: {hidden_channels}; sampler supports {}",
-            HIDDEN_KERNELS.len()
+            "unsupported hidden channel count: {hidden_channels}; sampler supports {max_channels}"
         )
         .into());
     }
@@ -492,6 +666,7 @@ fn read_multichannel_model(
         hidden_shift,
         output_shift,
         hidden_channels,
+        text_conditioned,
         corruption_count,
         layers,
     })
@@ -555,6 +730,181 @@ fn read_clean_prior(
     })
 }
 
+fn read_text_condition(config: &Config) -> Result<TextCondition, Box<dyn std::error::Error>> {
+    let index_path = config
+        .text_index_path
+        .as_ref()
+        .ok_or("--text-index is required when --prompt is set")?;
+    let prompt = config
+        .prompt
+        .as_ref()
+        .ok_or("--prompt is required when --text-index is set")?;
+    let prompt_tokens = unique_tokens(tokenize_text(prompt));
+    if prompt_tokens.is_empty() {
+        return Err("--prompt must contain at least one ascii word".into());
+    }
+    let text = fs::read_to_string(index_path)?;
+    let mut best_number = 0_usize;
+    let mut best_name = String::new();
+    let mut best_score = i64::MIN;
+    let mut best_signature = [0_u16; SIGNATURE_BINS];
+    let mut row_count = 0_usize;
+    for (line_index, line) in text.lines().enumerate() {
+        if line_index == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 9 {
+            return Err(format!(
+                "{} line {} has {} fields, expected 9",
+                index_path.display(),
+                line_index + 1,
+                fields.len()
+            )
+            .into());
+        }
+        row_count += 1;
+        let number: usize = fields[0].parse()?;
+        let primary_name = fields[1];
+        let aliases = fields[2];
+        let signature = parse_text_signature(fields[7], index_path, line_index + 1)?;
+        let row_text = fields[8];
+        let score = text_match_score(&prompt_tokens, primary_name, aliases, row_text)?;
+        if score > best_score || (score == best_score && number < best_number) {
+            best_number = number;
+            best_name = primary_name.to_string();
+            best_score = score;
+            best_signature = signature;
+        }
+    }
+    if row_count == 0 {
+        return Err(format!("{} has no text index rows", index_path.display()).into());
+    }
+    Ok(TextCondition {
+        index_path: index_path.clone(),
+        prompt: prompt.clone(),
+        target_number: best_number,
+        target_name: best_name,
+        target_score: best_score,
+        target_signature: best_signature,
+    })
+}
+
+fn read_text_targets(path: &Path) -> Result<Vec<TextTarget>, Box<dyn std::error::Error>> {
+    let text = fs::read_to_string(path)?;
+    let mut targets = Vec::new();
+    for (line_index, line) in text.lines().enumerate() {
+        if line_index == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 9 {
+            return Err(format!(
+                "{} line {} has {} fields, expected 9",
+                path.display(),
+                line_index + 1,
+                fields.len()
+            )
+            .into());
+        }
+        targets.push(TextTarget {
+            number: fields[0].parse()?,
+            name: fields[1].to_string(),
+            signature: parse_text_signature(fields[7], path, line_index + 1)?,
+        });
+    }
+    targets.sort_by(|left, right| left.number.cmp(&right.number));
+    if targets.is_empty() {
+        return Err(format!("{} has no text target rows", path.display()).into());
+    }
+    Ok(targets)
+}
+
+fn parse_text_signature(
+    text: &str,
+    path: &Path,
+    line_number: usize,
+) -> Result<[u16; SIGNATURE_BINS], Box<dyn std::error::Error>> {
+    let mut signature = [0_u16; SIGNATURE_BINS];
+    let parts: Vec<&str> = text.split(',').collect();
+    if parts.len() != SIGNATURE_BINS {
+        return Err(format!(
+            "{} line {} has {} signature bins, expected {}",
+            path.display(),
+            line_number,
+            parts.len(),
+            SIGNATURE_BINS
+        )
+        .into());
+    }
+    for (index, part) in parts.iter().enumerate() {
+        signature[index] = part.parse()?;
+    }
+    Ok(signature)
+}
+
+fn text_match_score(
+    prompt_tokens: &[String],
+    primary_name: &str,
+    aliases: &str,
+    row_text: &str,
+) -> Result<i64, Box<dyn std::error::Error>> {
+    let mut score = 0_i64;
+    let row_tokens = unique_tokens(tokenize_text(&format!(
+        "{primary_name} {} {row_text}",
+        aliases.replace('|', " ")
+    )));
+    for token in prompt_tokens {
+        if row_tokens.iter().any(|row_token| row_token == token) {
+            score = score.saturating_add(200);
+            score = score.saturating_add(i64::try_from(token.len())?.saturating_mul(30));
+        }
+    }
+    for alias in aliases.split('|').chain(std::iter::once(primary_name)) {
+        let alias_tokens = unique_tokens(tokenize_text(alias));
+        if alias_tokens.is_empty() {
+            continue;
+        }
+        if alias_tokens
+            .iter()
+            .all(|alias_token| prompt_tokens.iter().any(|token| token == alias_token))
+        {
+            score = score.saturating_add(8_000);
+            score = score.saturating_add(i64::try_from(alias_tokens.len())?.saturating_mul(400));
+        }
+    }
+    Ok(score)
+}
+
+fn tokenize_text(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            current.push(char::from(byte.to_ascii_lowercase()));
+        } else if !current.is_empty() {
+            tokens.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
+}
+
+fn unique_tokens(tokens: Vec<String>) -> Vec<String> {
+    let mut unique = Vec::new();
+    for token in tokens {
+        if token.len() < 2 {
+            continue;
+        }
+        if !unique.iter().any(|known| known == &token) {
+            unique.push(token);
+        }
+    }
+    unique
+}
+
 fn active_conditions(model: &SampleModel) -> Vec<usize> {
     let timesteps = model.timesteps();
     let condition_count = model.corruption_count() * timesteps;
@@ -593,6 +943,99 @@ fn model_has_active_condition(model: &SampleModel, condition: usize) -> bool {
                 != u8::MAX
         }),
     }
+}
+
+fn sample_candidates(
+    config: &Config,
+    model: &SampleModel,
+    conditions: &[usize],
+    image_size: usize,
+    prior: Option<&CleanPrior>,
+    candidate_count: usize,
+    target_signature: Option<&[u16; SIGNATURE_BINS]>,
+) -> Result<Vec<Candidate>, Box<dyn std::error::Error>> {
+    let mut candidates = Vec::with_capacity(candidate_count);
+    for candidate_index in 0..candidate_count {
+        candidates.push(sample_candidate(
+            config,
+            model,
+            conditions,
+            image_size,
+            prior,
+            candidate_index,
+            target_signature,
+        )?);
+    }
+    Ok(candidates)
+}
+
+fn sample_text_conditioned_targets(
+    config: &Config,
+    model: &SampleModel,
+    conditions: &[usize],
+    image_size: usize,
+    prior: Option<&CleanPrior>,
+    targets: &[TextTarget],
+) -> Result<Vec<Candidate>, Box<dyn std::error::Error>> {
+    let mut selected = Vec::with_capacity(targets.len());
+    for (target_index, target) in targets.iter().enumerate() {
+        let mut candidates = Vec::with_capacity(config.candidate_multiplier);
+        for candidate_offset in 0..config.candidate_multiplier {
+            let source_index = target_index
+                .checked_mul(config.candidate_multiplier)
+                .and_then(|value| value.checked_add(candidate_offset))
+                .ok_or("candidate source index overflow")?;
+            candidates.push(sample_candidate(
+                config,
+                model,
+                conditions,
+                image_size,
+                prior,
+                source_index,
+                Some(&target.signature),
+            )?);
+        }
+        let mut target_selected = select_candidates(candidates, 1, 0)?;
+        selected.push(
+            target_selected
+                .pop()
+                .ok_or("not enough text-conditioned candidates")?,
+        );
+    }
+    Ok(selected)
+}
+
+fn sample_candidate(
+    config: &Config,
+    model: &SampleModel,
+    conditions: &[usize],
+    image_size: usize,
+    prior: Option<&CleanPrior>,
+    candidate_index: usize,
+    target_signature: Option<&[u16; SIGNATURE_BINS]>,
+) -> Result<Candidate, Box<dyn std::error::Error>> {
+    let mut image = initial_image(config, image_size, candidate_index, prior)?;
+    for _ in 0..config.passes {
+        for &condition in conditions {
+            image = apply_model_condition(model, condition, &image, target_signature)?;
+        }
+    }
+    clear_border(&mut image, image_size, config.border_clear);
+    let quality = score_sample(&image, image_size)?;
+    let signature = sample_signature(&image, image_size)?;
+    let text_distance = target_signature
+        .map(|target| text_signature_distance(&signature, target))
+        .unwrap_or(0);
+    let text_penalty = text_distance.saturating_mul(config.text_weight);
+    let score = quality.total_score.saturating_sub(text_penalty);
+    Ok(Candidate {
+        source_index: candidate_index,
+        score,
+        text_distance,
+        quality,
+        signature,
+        image,
+    })
 }
 
 fn initial_image(
@@ -1035,7 +1478,10 @@ fn jitter_patch_prior(image: &mut [u8], rng: &mut Rng) {
     }
 }
 
-fn score_sample(image: &[u8], image_size: usize) -> Result<i64, Box<dyn std::error::Error>> {
+fn score_sample(
+    image: &[u8],
+    image_size: usize,
+) -> Result<SampleQuality, Box<dyn std::error::Error>> {
     let image_bytes = checked_image_bytes(image_size)?;
     if image.len() != image_bytes {
         return Err(format!("sample has {} bytes, expected {image_bytes}", image.len()).into());
@@ -1053,60 +1499,207 @@ fn score_sample(image: &[u8], image_size: usize) -> Result<i64, Box<dyn std::err
     let inner_low2 = inner_low.saturating_mul(inner_low);
     let inner_high2 = inner_high.saturating_mul(inner_high);
     let center_radius2 = center_radius.saturating_mul(center_radius);
+    let outside_radius = outer_high.saturating_add(6);
+    let outside_radius2 = outside_radius.saturating_mul(outside_radius);
 
     let mut ink_sum = 0_i64;
     let mut outer_ring_sum = 0_i64;
     let mut inner_ring_sum = 0_i64;
     let mut center_sum = 0_i64;
+    let mut center_count = 0_i64;
     let mut border_ink = 0_i64;
-    let mut edge_count = 0_i64;
+    let mut outside_ink_sum = 0_i64;
+    let mut edge_sum = 0_i64;
+    let mut strong_ink_sum = 0_i64;
+    let mut soft_ink_sum = 0_i64;
+    let mut ring_buckets = [0_i64; QUALITY_RING_BUCKETS];
 
     for y in 0..image_size {
         for x in 0..image_size {
-            let value = i64::from(image[pixel_index(image_size, x, y)]);
+            let value_u8 = image[pixel_index(image_size, x, y)];
+            let value = i64::from(value_u8);
             ink_sum = ink_sum.saturating_add(value);
-            if value > 64 {
+            let dx = i64::try_from(x)?.saturating_sub(center);
+            let dy = i64::try_from(y)?.saturating_sub(center);
+            let radius2 = dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy));
+            if radius2 <= center_radius2 {
+                center_sum = center_sum.saturating_add(value);
+                center_count = center_count.saturating_add(1);
+            }
+            if value_u8 > STRONG_INK_THRESHOLD {
+                strong_ink_sum = strong_ink_sum.saturating_add(value);
+            } else if value_u8 > 0 && value_u8 <= STRONG_INK_THRESHOLD {
+                soft_ink_sum = soft_ink_sum.saturating_add(value);
+            }
+            if value_u8 > INK_THRESHOLD {
                 if x < 3 || y < 3 || x + 3 >= image_size || y + 3 >= image_size {
                     border_ink = border_ink.saturating_add(1);
                 }
-                let dx = i64::try_from(x)?.saturating_sub(center);
-                let dy = i64::try_from(y)?.saturating_sub(center);
-                let radius2 = dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy));
+                if radius2 > outside_radius2 {
+                    outside_ink_sum = outside_ink_sum.saturating_add(value);
+                }
                 if radius2 >= outer_low2 && radius2 <= outer_high2 {
                     outer_ring_sum = outer_ring_sum.saturating_add(value);
+                    let bucket = angle_bucket(dx, dy);
+                    ring_buckets[bucket] = ring_buckets[bucket].saturating_add(value);
                 }
                 if radius2 >= inner_low2 && radius2 <= inner_high2 {
                     inner_ring_sum = inner_ring_sum.saturating_add(value);
-                }
-                if radius2 <= center_radius2 {
-                    center_sum = center_sum.saturating_add(value);
+                    let bucket = angle_bucket(dx, dy);
+                    ring_buckets[bucket] = ring_buckets[bucket].saturating_add(value);
                 }
             }
             if x + 1 < image_size {
                 let right = image[pixel_index(image_size, x + 1, y)];
-                if abs_diff_u8(image[pixel_index(image_size, x, y)], right) > 64 {
-                    edge_count = edge_count.saturating_add(1);
+                let diff = abs_diff_u8(value_u8, right);
+                if diff > INK_THRESHOLD {
+                    edge_sum = edge_sum.saturating_add(i64::from(diff));
                 }
             }
             if y + 1 < image_size {
                 let down = image[pixel_index(image_size, x, y + 1)];
-                if abs_diff_u8(image[pixel_index(image_size, x, y)], down) > 64 {
-                    edge_count = edge_count.saturating_add(1);
+                let diff = abs_diff_u8(value_u8, down);
+                if diff > INK_THRESHOLD {
+                    edge_sum = edge_sum.saturating_add(i64::from(diff));
                 }
             }
         }
     }
 
+    let mut ring_hit_count = 0_i64;
+    let mut ring_bucket_total = 0_i64;
+    for &bucket_sum in &ring_buckets {
+        ring_bucket_total = ring_bucket_total.saturating_add(bucket_sum);
+        if bucket_sum >= 256 {
+            ring_hit_count = ring_hit_count.saturating_add(1);
+        }
+    }
+    let ring_mean = ring_bucket_total / i64::try_from(QUALITY_RING_BUCKETS)?;
+    let mut ring_balance_penalty = 0_i64;
+    for &bucket_sum in &ring_buckets {
+        ring_balance_penalty =
+            ring_balance_penalty.saturating_add(abs_i64(bucket_sum.saturating_sub(ring_mean)));
+    }
+    ring_balance_penalty /= 8;
+
+    let mut speck_count = 0_i64;
+    for y in 0..image_size {
+        for x in 0..image_size {
+            if image[pixel_index(image_size, x, y)] <= SPECK_INK_THRESHOLD {
+                continue;
+            }
+            if neighbor_ink_count(image, image_size, x, y) <= 1 {
+                speck_count = speck_count.saturating_add(1);
+            }
+        }
+    }
+
     let target_ink_sum = i64::try_from(image_bytes)?.saturating_mul(47);
-    let density_penalty = abs_i64(ink_sum.saturating_sub(target_ink_sum)) / 4;
-    let score = outer_ring_sum
-        .saturating_mul(4)
+    let target_center_sum = center_count.saturating_mul(38);
+    let density_penalty = abs_i64(ink_sum.saturating_sub(target_ink_sum)) / 3;
+    let center_density_error = abs_i64(center_sum.saturating_sub(target_center_sum));
+    let ring_coverage_score = ring_hit_count.saturating_mul(900);
+    let ring_miss_penalty = (i64::try_from(QUALITY_RING_BUCKETS)? - ring_hit_count)
+        .max(0)
+        .saturating_mul(550);
+    let ring_score = outer_ring_sum
+        .saturating_mul(3)
         .saturating_add(inner_ring_sum.saturating_mul(2))
-        .saturating_add(center_sum)
-        .saturating_add(edge_count.saturating_mul(18))
-        .saturating_sub(border_ink.saturating_mul(450))
-        .saturating_sub(density_penalty);
-    Ok(score)
+        .saturating_add(ring_coverage_score)
+        .saturating_sub(ring_miss_penalty)
+        .saturating_sub(ring_balance_penalty);
+    let stroke_score = edge_sum
+        .saturating_mul(2)
+        .saturating_add(strong_ink_sum / 4)
+        .saturating_sub(soft_ink_sum / 8);
+    let interior_score = target_center_sum
+        .saturating_sub(center_density_error)
+        .max(0)
+        .saturating_mul(6);
+    let border_penalty = border_ink.saturating_mul(550);
+    let outside_penalty = outside_ink_sum / 2;
+    let speck_penalty = speck_count.saturating_mul(900);
+    let total_score = ring_score
+        .saturating_add(stroke_score)
+        .saturating_add(interior_score)
+        .saturating_sub(density_penalty)
+        .saturating_sub(border_penalty)
+        .saturating_sub(outside_penalty)
+        .saturating_sub(speck_penalty);
+
+    Ok(SampleQuality {
+        total_score,
+        ring_score,
+        ring_coverage_score,
+        ring_balance_penalty,
+        stroke_score,
+        interior_score,
+        density_penalty,
+        border_penalty,
+        outside_penalty,
+        speck_penalty,
+    })
+}
+
+fn angle_bucket(dx: i64, dy: i64) -> usize {
+    let ax = abs_i64(dx);
+    let ay = abs_i64(dy);
+    if ax == 0 && ay == 0 {
+        return 0;
+    }
+    let (octant, major, minor) = if dx >= 0 && dy >= 0 {
+        if ax >= ay {
+            (0_usize, ax, ay)
+        } else {
+            (1_usize, ay, ax)
+        }
+    } else if dx < 0 && dy >= 0 {
+        if ay >= ax {
+            (2_usize, ay, ax)
+        } else {
+            (3_usize, ax, ay)
+        }
+    } else if dx < 0 && dy < 0 {
+        if ax >= ay {
+            (4_usize, ax, ay)
+        } else {
+            (5_usize, ay, ax)
+        }
+    } else if ay >= ax {
+        (6_usize, ay, ax)
+    } else {
+        (7_usize, ax, ay)
+    };
+    let local = if major == 0 {
+        0
+    } else {
+        ((minor.saturating_mul(QUALITY_BUCKET_STEPS)) / major).min(QUALITY_BUCKET_STEPS - 1)
+    };
+    (octant * usize::try_from(QUALITY_BUCKET_STEPS).unwrap_or(1)
+        + usize::try_from(local).unwrap_or(0))
+        % QUALITY_RING_BUCKETS
+}
+
+fn neighbor_ink_count(image: &[u8], image_size: usize, x: usize, y: usize) -> u8 {
+    let mut count = 0_u8;
+    for dy in 0..3 {
+        for dx in 0..3 {
+            if dx == 1 && dy == 1 {
+                continue;
+            }
+            let nx = x.checked_add(dx).and_then(|value| value.checked_sub(1));
+            let ny = y.checked_add(dy).and_then(|value| value.checked_sub(1));
+            if let (Some(nx), Some(ny)) = (nx, ny) {
+                if nx < image_size && ny < image_size {
+                    let value = image[pixel_index(image_size, nx, ny)];
+                    if value > INK_THRESHOLD {
+                        count = count.saturating_add(1);
+                    }
+                }
+            }
+        }
+    }
+    count
 }
 
 fn clear_border(image: &mut [u8], image_size: usize, border: usize) {
@@ -1201,6 +1794,67 @@ fn select_candidates(
     Ok(selected)
 }
 
+fn select_text_targets(
+    candidates: &[Candidate],
+    targets: &[TextTarget],
+    text_weight: i64,
+    diversity_weight: i64,
+) -> Result<Vec<Candidate>, Box<dyn std::error::Error>> {
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut selected = Vec::with_capacity(targets.len());
+    let mut used = vec![false; candidates.len()];
+    for target in targets {
+        let mut best_index = None;
+        let mut best_adjusted = i64::MIN;
+        let mut best_text_distance = i64::MAX;
+        let mut best_quality = i64::MIN;
+        let mut best_source = usize::MAX;
+        for (index, candidate) in candidates.iter().enumerate() {
+            if used[index] {
+                continue;
+            }
+            let text_distance = text_signature_distance(&candidate.signature, &target.signature);
+            let text_penalty = text_distance.saturating_mul(text_weight);
+            let diversity_bonus = if diversity_weight > 0 && !selected.is_empty() {
+                min_signature_distance_from_selected(&candidate.signature, &selected)
+                    .saturating_mul(diversity_weight)
+            } else {
+                0
+            };
+            let adjusted = candidate
+                .quality
+                .total_score
+                .saturating_sub(text_penalty)
+                .saturating_add(diversity_bonus);
+            if adjusted > best_adjusted
+                || (adjusted == best_adjusted && text_distance < best_text_distance)
+                || (adjusted == best_adjusted
+                    && text_distance == best_text_distance
+                    && candidate.quality.total_score > best_quality)
+                || (adjusted == best_adjusted
+                    && text_distance == best_text_distance
+                    && candidate.quality.total_score == best_quality
+                    && candidate.source_index < best_source)
+            {
+                best_index = Some(index);
+                best_adjusted = adjusted;
+                best_text_distance = text_distance;
+                best_quality = candidate.quality.total_score;
+                best_source = candidate.source_index;
+            }
+        }
+        let index = best_index.ok_or("not enough candidates for text targets")?;
+        used[index] = true;
+        let mut candidate = candidates[index].clone();
+        candidate.score = best_adjusted;
+        candidate.text_distance = best_text_distance;
+        selected.push(candidate);
+    }
+    Ok(selected)
+}
+
 fn summarize_selection(
     selected: &[Candidate],
     candidate_count: usize,
@@ -1214,18 +1868,57 @@ fn summarize_selection(
             selected_min_score: 0,
             selected_max_score: 0,
             selected_mean_score_q8: 0,
+            selected_min_text_distance: 0,
+            selected_mean_text_distance_q8: 0,
             selected_min_signature_distance: 0,
             selected_mean_signature_distance_q8: 0,
+            selected_mean_ring_score_q8: 0,
+            selected_mean_ring_coverage_score_q8: 0,
+            selected_mean_ring_balance_penalty_q8: 0,
+            selected_mean_stroke_score_q8: 0,
+            selected_mean_interior_score_q8: 0,
+            selected_mean_density_penalty_q8: 0,
+            selected_mean_border_penalty_q8: 0,
+            selected_mean_outside_penalty_q8: 0,
+            selected_mean_speck_penalty_q8: 0,
         });
     }
 
     let mut score_total = 0_i64;
     let mut selected_min_score = i64::MAX;
     let mut selected_max_score = i64::MIN;
+    let mut text_distance_total = 0_i64;
+    let mut selected_min_text_distance = i64::MAX;
+    let mut ring_score_total = 0_i64;
+    let mut ring_coverage_score_total = 0_i64;
+    let mut ring_balance_penalty_total = 0_i64;
+    let mut stroke_score_total = 0_i64;
+    let mut interior_score_total = 0_i64;
+    let mut density_penalty_total = 0_i64;
+    let mut border_penalty_total = 0_i64;
+    let mut outside_penalty_total = 0_i64;
+    let mut speck_penalty_total = 0_i64;
     for candidate in selected {
         selected_min_score = selected_min_score.min(candidate.score);
         selected_max_score = selected_max_score.max(candidate.score);
         score_total = score_total.saturating_add(candidate.score);
+        selected_min_text_distance = selected_min_text_distance.min(candidate.text_distance);
+        text_distance_total = text_distance_total.saturating_add(candidate.text_distance);
+        ring_score_total = ring_score_total.saturating_add(candidate.quality.ring_score);
+        ring_coverage_score_total =
+            ring_coverage_score_total.saturating_add(candidate.quality.ring_coverage_score);
+        ring_balance_penalty_total =
+            ring_balance_penalty_total.saturating_add(candidate.quality.ring_balance_penalty);
+        stroke_score_total = stroke_score_total.saturating_add(candidate.quality.stroke_score);
+        interior_score_total =
+            interior_score_total.saturating_add(candidate.quality.interior_score);
+        density_penalty_total =
+            density_penalty_total.saturating_add(candidate.quality.density_penalty);
+        border_penalty_total =
+            border_penalty_total.saturating_add(candidate.quality.border_penalty);
+        outside_penalty_total =
+            outside_penalty_total.saturating_add(candidate.quality.outside_penalty);
+        speck_penalty_total = speck_penalty_total.saturating_add(candidate.quality.speck_penalty);
     }
 
     let mut min_distance = 0_i64;
@@ -1254,9 +1947,24 @@ fn summarize_selection(
         selected_min_score,
         selected_max_score,
         selected_mean_score_q8: score_total.saturating_mul(256) / i64::try_from(selected.len())?,
+        selected_min_text_distance,
+        selected_mean_text_distance_q8: mean_q8(text_distance_total, selected.len())?,
         selected_min_signature_distance: min_distance,
         selected_mean_signature_distance_q8: mean_distance_q8,
+        selected_mean_ring_score_q8: mean_q8(ring_score_total, selected.len())?,
+        selected_mean_ring_coverage_score_q8: mean_q8(ring_coverage_score_total, selected.len())?,
+        selected_mean_ring_balance_penalty_q8: mean_q8(ring_balance_penalty_total, selected.len())?,
+        selected_mean_stroke_score_q8: mean_q8(stroke_score_total, selected.len())?,
+        selected_mean_interior_score_q8: mean_q8(interior_score_total, selected.len())?,
+        selected_mean_density_penalty_q8: mean_q8(density_penalty_total, selected.len())?,
+        selected_mean_border_penalty_q8: mean_q8(border_penalty_total, selected.len())?,
+        selected_mean_outside_penalty_q8: mean_q8(outside_penalty_total, selected.len())?,
+        selected_mean_speck_penalty_q8: mean_q8(speck_penalty_total, selected.len())?,
     })
+}
+
+fn mean_q8(total: i64, count: usize) -> Result<i64, Box<dyn std::error::Error>> {
+    Ok(total.saturating_mul(256) / i64::try_from(count)?)
 }
 
 fn min_signature_distance_from_selected(
@@ -1278,6 +1986,26 @@ fn signature_distance(left: &[u16; SIGNATURE_BINS], right: &[u16; SIGNATURE_BINS
     distance
 }
 
+fn text_signature_distance(
+    candidate: &[u16; SIGNATURE_BINS],
+    target: &[u16; SIGNATURE_BINS],
+) -> i64 {
+    let mut best = i64::MAX;
+    for variant in 0..8 {
+        let mut distance = 0_i64;
+        for y in 0..SIGNATURE_GRID {
+            for x in 0..SIGNATURE_GRID {
+                let (sx, sy) = transform_coords(SIGNATURE_GRID, x, y, variant);
+                let left = candidate[pixel_index(SIGNATURE_GRID, x, y)];
+                let right = target[pixel_index(SIGNATURE_GRID, sx, sy)];
+                distance = distance.saturating_add(i64::from(abs_diff_u16(left, right)));
+            }
+        }
+        best = best.min(distance);
+    }
+    best
+}
+
 fn random_signed(rng: &mut Rng, magnitude: i32) -> Result<i32, Box<dyn std::error::Error>> {
     let span = u32::try_from(magnitude.saturating_mul(2).saturating_add(1))?;
     Ok(i32::try_from(rng.rand_bounded(span))? - magnitude)
@@ -1287,6 +2015,7 @@ fn apply_model_condition(
     model: &SampleModel,
     condition: usize,
     input: &[u8],
+    target_signature: Option<&[u16; SIGNATURE_BINS]>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     match model {
         SampleModel::Conv3(model) => {
@@ -1299,7 +2028,13 @@ fn apply_model_condition(
         SampleModel::Multichannel(model) => {
             let mut image = input.to_vec();
             for layer in &model.layers {
-                image = apply_multichannel_layer_condition(model, layer, condition, &image)?;
+                image = apply_multichannel_layer_condition(
+                    model,
+                    layer,
+                    condition,
+                    &image,
+                    target_signature,
+                )?;
             }
             Ok(image)
         }
@@ -1349,6 +2084,7 @@ fn apply_multichannel_layer_condition(
     layer: &MultichannelLayer,
     condition: usize,
     input: &[u8],
+    target_signature: Option<&[u16; SIGNATURE_BINS]>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let image_bytes = checked_image_bytes(model.image_size)?;
     if input.len() != image_bytes {
@@ -1358,6 +2094,11 @@ fn apply_multichannel_layer_condition(
         )
         .into());
     }
+    let target_signature = if model.text_conditioned {
+        Some(target_signature.ok_or("NSRLTCH sampling requires a target text signature")?)
+    } else {
+        None
+    };
     let blend_shift = layer
         .condition_blend_shifts
         .get(condition)
@@ -1368,12 +2109,13 @@ fn apply_multichannel_layer_condition(
     for y in 0..model.image_size {
         for x in 0..model.image_size {
             let index = pixel_index(model.image_size, x, y);
-            hidden_features(
+            conditioned_features(
                 input,
                 model.image_size,
                 x,
                 y,
                 model.hidden_shift,
+                target_signature,
                 &mut features,
             );
             let raw = predict_multichannel_raw_pixel(
@@ -1387,6 +2129,39 @@ fn apply_multichannel_layer_condition(
         }
     }
     Ok(out)
+}
+
+fn conditioned_features(
+    input: &[u8],
+    image_size: usize,
+    x: usize,
+    y: usize,
+    hidden_shift: u8,
+    target_signature: Option<&[u16; SIGNATURE_BINS]>,
+    out: &mut [i16],
+) {
+    let image_channels = out.len().min(HIDDEN_CHANNELS);
+    hidden_features(
+        input,
+        image_size,
+        x,
+        y,
+        hidden_shift,
+        &mut out[..image_channels],
+    );
+    if out.len() <= HIDDEN_CHANNELS {
+        return;
+    }
+    if let Some(target_signature) = target_signature {
+        let bin_x = x * SIGNATURE_GRID / image_size;
+        let bin_y = y * SIGNATURE_GRID / image_size;
+        let target = i16::try_from(target_signature[bin_y * SIGNATURE_GRID + bin_x]).unwrap_or(0);
+        let input_center = i16::from(input[pixel_index(image_size, x, y)]);
+        out[HIDDEN_CHANNELS] = target.saturating_sub(input_center).clamp(-511, 511);
+        if out.len() > HIDDEN_CHANNELS + 1 {
+            out[HIDDEN_CHANNELS + 1] = target.saturating_sub(64).clamp(-511, 511);
+        }
+    }
 }
 
 fn local_features(input: &[u8], image_size: usize, x: usize, y: usize, out: &mut [i16; KERNEL]) {
@@ -1437,12 +2212,12 @@ fn hidden_features(
 ) {
     let mut local = [0_i16; KERNEL];
     local_features(input, image_size, x, y, &mut local);
-    for (channel, value) in out.iter_mut().enumerate() {
+    for (channel, kernel) in HIDDEN_KERNELS.iter().take(out.len()).enumerate() {
         let mut acc = 0_i64;
-        for (weight, feature) in HIDDEN_KERNELS[channel].iter().zip(local.iter()) {
+        for (weight, feature) in kernel.iter().zip(local.iter()) {
             acc = acc.saturating_add(i64::from(*weight) * i64::from(*feature));
         }
-        *value = signed_round_shift(acc, hidden_shift).clamp(-511, 511) as i16;
+        out[channel] = signed_round_shift(acc, hidden_shift).clamp(-511, 511) as i16;
     }
 }
 
@@ -1744,6 +2519,39 @@ fn write_pgm(
     Ok(())
 }
 
+fn write_selected_text_targets(
+    out_dir: &Path,
+    targets: &[TextTarget],
+    selected: &[Candidate],
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if targets.len() != selected.len() {
+        return Err(format!(
+            "selected text target count mismatch: {} targets, {} samples",
+            targets.len(),
+            selected.len()
+        )
+        .into());
+    }
+    let path = out_dir.join("selected-text-targets.tsv");
+    let mut out = String::from(
+        "tile_index\tnumber\tname\tsource_index\tscore\ttext_distance\tquality_score\n",
+    );
+    for (index, (target, candidate)) in targets.iter().zip(selected.iter()).enumerate() {
+        out.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            index,
+            target.number,
+            tsv_escape(&target.name),
+            candidate.source_index,
+            candidate.score,
+            candidate.text_distance,
+            candidate.quality.total_score,
+        ));
+    }
+    fs::write(&path, out)?;
+    Ok(path)
+}
+
 fn write_trace(
     config: &Config,
     model: &SampleModel,
@@ -1751,6 +2559,9 @@ fn write_trace(
     raw_path: &Path,
     pgm_path: &Path,
     prior: Option<&CleanPrior>,
+    text_condition: Option<&TextCondition>,
+    text_targets: Option<&[TextTarget]>,
+    selected_text_targets_path: Option<&Path>,
     score_summary: &ScoreSummary,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut out = String::new();
@@ -1774,7 +2585,7 @@ fn write_trace(
     number_field(&mut out, "image_size", model.image_size(), true);
     number_field(&mut out, "timesteps", model.timesteps(), true);
     number_field(&mut out, "layers", model.layer_count(), true);
-    number_field(&mut out, "samples", config.sample_count, true);
+    number_field(&mut out, "samples", score_summary.selected_count, true);
     number_field(
         &mut out,
         "candidate_multiplier",
@@ -1818,6 +2629,68 @@ fn write_trace(
         score_summary.selected_mean_score_q8,
         true,
     );
+    let text_index = text_condition
+        .map(|condition| condition.index_path.display().to_string())
+        .or_else(|| {
+            config
+                .text_index_path
+                .as_ref()
+                .map(|path| path.display().to_string())
+        })
+        .unwrap_or_default();
+    let text_prompt = text_condition
+        .map(|condition| condition.prompt.clone())
+        .unwrap_or_default();
+    let text_target_name = text_condition
+        .map(|condition| condition.target_name.clone())
+        .unwrap_or_default();
+    json_field(&mut out, "text_index", &text_index, true);
+    json_field(&mut out, "text_prompt", &text_prompt, true);
+    number_field(
+        &mut out,
+        "text_all_targets",
+        text_targets.map(|targets| targets.len()).unwrap_or(0),
+        true,
+    );
+    let selected_text_targets = selected_text_targets_path
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+    json_field(
+        &mut out,
+        "selected_text_targets",
+        &selected_text_targets,
+        true,
+    );
+    signed_number_field(&mut out, "text_weight", config.text_weight, true);
+    number_field(
+        &mut out,
+        "text_target_number",
+        text_condition
+            .map(|condition| condition.target_number)
+            .unwrap_or(0),
+        true,
+    );
+    json_field(&mut out, "text_target_name", &text_target_name, true);
+    signed_number_field(
+        &mut out,
+        "text_target_score",
+        text_condition
+            .map(|condition| condition.target_score)
+            .unwrap_or(0),
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_min_text_distance",
+        score_summary.selected_min_text_distance,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_text_distance_q8",
+        score_summary.selected_mean_text_distance_q8,
+        true,
+    );
     signed_number_field(
         &mut out,
         "selected_min_signature_distance",
@@ -1828,6 +2701,60 @@ fn write_trace(
         &mut out,
         "selected_mean_signature_distance_q8",
         score_summary.selected_mean_signature_distance_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_ring_score_q8",
+        score_summary.selected_mean_ring_score_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_ring_coverage_score_q8",
+        score_summary.selected_mean_ring_coverage_score_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_ring_balance_penalty_q8",
+        score_summary.selected_mean_ring_balance_penalty_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_stroke_score_q8",
+        score_summary.selected_mean_stroke_score_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_interior_score_q8",
+        score_summary.selected_mean_interior_score_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_density_penalty_q8",
+        score_summary.selected_mean_density_penalty_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_border_penalty_q8",
+        score_summary.selected_mean_border_penalty_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_outside_penalty_q8",
+        score_summary.selected_mean_outside_penalty_q8,
+        true,
+    );
+    signed_number_field(
+        &mut out,
+        "selected_mean_speck_penalty_q8",
+        score_summary.selected_mean_speck_penalty_q8,
         true,
     );
     number_field(&mut out, "passes", config.passes, true);
@@ -1899,6 +2826,16 @@ fn signed_number_field(out: &mut String, key: &str, value: i64, comma: bool) {
         out.push(',');
     }
     out.push('\n');
+}
+
+fn tsv_escape(value: &str) -> String {
+    value
+        .replace('\t', " ")
+        .replace('\r', " ")
+        .replace('\n', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn json_escape(value: &str) -> String {

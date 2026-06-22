@@ -7,8 +7,12 @@ use std::path::{Path, PathBuf};
 
 const SCHEMA: &str = "nsrl.bitmap_denoise_multichannel_trace.v1";
 const MODEL_MAGIC: &[u8; 8] = b"NSRLMCH\n";
+const TEXT_MODEL_MAGIC: &[u8; 8] = b"NSRLTCH\n";
 const KERNEL: usize = 9;
 const HIDDEN_CHANNELS: usize = 8;
+const TEXT_FEATURE_CHANNELS: usize = 2;
+const TEXT_SIGNATURE_GRID: usize = 8;
+const TEXT_SIGNATURE_BINS: usize = TEXT_SIGNATURE_GRID * TEXT_SIGNATURE_GRID;
 const HIDDEN_KERNELS: [[i8; KERNEL]; HIDDEN_CHANNELS] = [
     [1, 1, 1, 1, 0, 1, 1, 1, 1],
     [0, 1, 0, 1, 0, 1, 0, 1, 0],
@@ -19,7 +23,7 @@ const HIDDEN_KERNELS: [[i8; KERNEL]; HIDDEN_CHANNELS] = [
     [0, 1, 2, -1, 0, 1, -2, -1, 0],
     [-1, 2, -1, 2, 0, 2, -1, 2, -1],
 ];
-const CORRUPTION_KINDS: [&str; 8] = [
+const CORRUPTION_KINDS: [&str; 9] = [
     "pixel-dropout",
     "salt-pepper",
     "block-mask",
@@ -28,6 +32,7 @@ const CORRUPTION_KINDS: [&str; 8] = [
     "line-drop",
     "mixed-noise",
     "coarse-erase",
+    "box-blur",
 ];
 
 #[derive(Debug, Clone)]
@@ -35,6 +40,7 @@ struct Config {
     dataset_root: PathBuf,
     out_dir: PathBuf,
     model_out: PathBuf,
+    text_index_path: Option<PathBuf>,
     image_size: usize,
     timesteps: usize,
     layers: usize,
@@ -57,6 +63,7 @@ impl Default for Config {
             dataset_root,
             out_dir,
             model_out,
+            text_index_path: None,
             image_size: 128,
             timesteps: 8,
             layers: 3,
@@ -76,6 +83,8 @@ impl Default for Config {
 struct PairRow {
     corruption: String,
     timestep: usize,
+    slice_id: String,
+    text_signature: [u16; TEXT_SIGNATURE_BINS],
 }
 
 #[derive(Debug)]
@@ -86,8 +95,19 @@ struct SplitData {
 }
 
 #[derive(Debug)]
+struct TextIndex {
+    slice_ids: Vec<String>,
+}
+
+impl TextIndex {
+    fn has_slice_id(&self, slice_id: &str) -> bool {
+        self.slice_ids.iter().any(|known| known == slice_id)
+    }
+}
+
+#[derive(Debug)]
 struct ConvLayer {
-    condition_weights: Vec<[i8; HIDDEN_CHANNELS]>,
+    condition_weights: Vec<Vec<i8>>,
     condition_biases: Vec<i16>,
     condition_blend_shifts: Vec<u8>,
 }
@@ -98,6 +118,8 @@ struct LayeredConvModel {
     timesteps: usize,
     hidden_shift: u8,
     output_shift: u8,
+    feature_count: usize,
+    text_conditioned: bool,
     layers: Vec<ConvLayer>,
 }
 
@@ -139,8 +161,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     fs::create_dir_all(&config.out_dir)?;
 
-    let train = read_split(&config, "train")?;
-    let eval = read_split(&config, "eval")?;
+    let text_index = if let Some(path) = config.text_index_path.as_ref() {
+        Some(read_text_index(path)?)
+    } else {
+        None
+    };
+    let train = read_split(&config, "train", text_index.as_ref())?;
+    let eval = read_split(&config, "eval", text_index.as_ref())?;
     let (model, epochs) = train_model(&config, &train)?;
     write_model(&config.model_out, &model)?;
 
@@ -161,7 +188,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn usage() {
     println!(
-        "Usage: nsrl-bitmap-multichannel-denoise [--dataset PATH] [--out-dir PATH] [--model-out PATH] [--image-size N] [--timesteps N] [--layers N] [--epochs N] [--hidden-shift N] [--output-shift N] [--learning-shift N] [--bias-learning-shift N] [--max-weight-delta N] [--max-bias-delta N] [--preview-pairs N]"
+        "Usage: nsrl-bitmap-multichannel-denoise [--dataset PATH] [--out-dir PATH] [--model-out PATH] [--text-index PATH] [--image-size N] [--timesteps N] [--layers N] [--epochs N] [--hidden-shift N] [--output-shift N] [--learning-shift N] [--bias-learning-shift N] [--max-weight-delta N] [--max-bias-delta N] [--preview-pairs N]"
     );
 }
 
@@ -192,6 +219,17 @@ where
             }
             "--model-out" => {
                 config.model_out = PathBuf::from(args.next().ok_or("--model-out requires PATH")?);
+            }
+            "--text-index" => {
+                config.text_index_path = Some(PathBuf::from(
+                    args.next().ok_or("--text-index requires PATH")?,
+                ));
+                if config.out_dir == default.out_dir {
+                    config.out_dir = config.dataset_root.join("text-multichannel-conv");
+                    config.model_out = config.out_dir.join("model.nsrltch");
+                } else if config.model_out == default.model_out {
+                    config.model_out = config.out_dir.join("model.nsrltch");
+                }
             }
             "--image-size" => {
                 config.image_size = args.next().ok_or("--image-size requires N")?.parse()?
@@ -234,7 +272,11 @@ where
     Ok(config)
 }
 
-fn read_split(config: &Config, split: &str) -> Result<SplitData, Box<dyn std::error::Error>> {
+fn read_split(
+    config: &Config,
+    split: &str,
+    text_index: Option<&TextIndex>,
+) -> Result<SplitData, Box<dyn std::error::Error>> {
     let image_bytes = checked_image_bytes(config.image_size)?;
     let input_path = config
         .dataset_root
@@ -274,6 +316,31 @@ fn read_split(config: &Config, split: &str) -> Result<SplitData, Box<dyn std::er
         )
         .into());
     }
+    if let Some(index) = text_index {
+        let mut filtered_input = Vec::new();
+        let mut filtered_target = Vec::new();
+        let mut filtered_rows = Vec::new();
+        for (pair_index, row) in rows.into_iter().enumerate() {
+            if !index.has_slice_id(&row.slice_id) {
+                continue;
+            }
+            let start = pair_index * image_bytes;
+            let end = start + image_bytes;
+            let mut row = row;
+            row.text_signature = image_signature(&target[start..end], config.image_size)?;
+            filtered_input.extend_from_slice(&input[start..end]);
+            filtered_target.extend_from_slice(&target[start..end]);
+            filtered_rows.push(row);
+        }
+        if filtered_rows.is_empty() {
+            return Err(format!("{split} has no rows matching --text-index").into());
+        }
+        return Ok(SplitData {
+            input: filtered_input,
+            target: filtered_target,
+            rows: filtered_rows,
+        });
+    }
     Ok(SplitData {
         input,
         target,
@@ -294,12 +361,46 @@ fn read_pair_rows(path: &Path) -> Result<Vec<PairRow>, Box<dyn std::error::Error
             .ok_or_else(|| format!("{}:{} missing corruption", path.display(), index + 1))?;
         let timestep = json_usize_field(&line, "timestep")
             .ok_or_else(|| format!("{}:{} missing timestep", path.display(), index + 1))?;
+        let slice_id = json_string_field(&line, "slice_id")
+            .ok_or_else(|| format!("{}:{} missing slice_id", path.display(), index + 1))?;
         rows.push(PairRow {
             corruption,
             timestep,
+            slice_id,
+            text_signature: [0; TEXT_SIGNATURE_BINS],
         });
     }
     Ok(rows)
+}
+
+fn read_text_index(path: &Path) -> Result<TextIndex, Box<dyn std::error::Error>> {
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut slice_ids = Vec::new();
+    for (line_index, line) in reader.lines().enumerate() {
+        let line = line?;
+        if line_index == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 9 {
+            return Err(format!(
+                "{} line {} has {} fields, expected 9",
+                path.display(),
+                line_index + 1,
+                fields.len()
+            )
+            .into());
+        }
+        let slice_id = fields[3].to_string();
+        if !slice_ids.iter().any(|known| known == &slice_id) {
+            slice_ids.push(slice_id);
+        }
+    }
+    if slice_ids.is_empty() {
+        return Err(format!("{} has no text index rows", path.display()).into());
+    }
+    Ok(TextIndex { slice_ids })
 }
 
 fn train_model(
@@ -311,6 +412,8 @@ fn train_model(
         timesteps: config.timesteps,
         hidden_shift: config.hidden_shift,
         output_shift: config.output_shift,
+        feature_count: feature_count(config),
+        text_conditioned: config.text_index_path.is_some(),
         layers: Vec::new(),
     };
     let mut traces = Vec::new();
@@ -338,14 +441,14 @@ fn train_layer(
         return Err("layer input and target byte counts differ".into());
     }
     let mut layer = ConvLayer {
-        condition_weights: vec![[0; HIDDEN_CHANNELS]; condition_count],
+        condition_weights: vec![vec![0; feature_count(config)]; condition_count],
         condition_biases: vec![0; condition_count],
         condition_blend_shifts: vec![u8::MAX; condition_count],
     };
     let mut traces = Vec::new();
     let image_bytes = checked_image_bytes(config.image_size)?;
     for epoch in 0..config.epochs {
-        let mut weight_grads = vec![[0_i64; HIDDEN_CHANNELS]; condition_count];
+        let mut weight_grads = vec![vec![0_i64; feature_count(config)]; condition_count];
         let mut bias_grads = vec![0_i64; condition_count];
         let mut raw_error = 0_u64;
         for pair_index in 0..train.rows.len() {
@@ -356,13 +459,14 @@ fn train_layer(
             for y in 0..config.image_size {
                 for x in 0..config.image_size {
                     let index = pixel_index(config.image_size, x, y);
-                    let mut features = [0_i16; HIDDEN_CHANNELS];
-                    hidden_features(
+                    let mut features = vec![0_i16; feature_count(config)];
+                    conditioned_features(
                         input,
                         config.image_size,
                         x,
                         y,
                         config.hidden_shift,
+                        row,
                         &mut features,
                     );
                     let predicted = predict_raw_pixel(
@@ -374,7 +478,7 @@ fn train_layer(
                     );
                     let error = i16::from(target[index]) - i16::from(predicted);
                     raw_error = raw_error.saturating_add(abs_i16(error));
-                    for channel in 0..HIDDEN_CHANNELS {
+                    for channel in 0..features.len() {
                         weight_grads[condition][channel] = weight_grads[condition][channel]
                             .saturating_add(i64::from(error) * i64::from(features[channel]));
                     }
@@ -433,13 +537,14 @@ fn tune_condition_blends(
         for y in 0..config.image_size {
             for x in 0..config.image_size {
                 let index = pixel_index(config.image_size, x, y);
-                let mut features = [0_i16; HIDDEN_CHANNELS];
-                hidden_features(
+                let mut features = vec![0_i16; feature_count(config)];
+                conditioned_features(
                     input,
                     config.image_size,
                     x,
                     y,
                     config.hidden_shift,
+                    row,
                     &mut features,
                 );
                 let raw = predict_raw_pixel(
@@ -565,13 +670,14 @@ fn predict_layer_image(
     for y in 0..config.image_size {
         for x in 0..config.image_size {
             let index = pixel_index(config.image_size, x, y);
-            let mut features = [0_i16; HIDDEN_CHANNELS];
-            hidden_features(
+            let mut features = vec![0_i16; feature_count(config)];
+            conditioned_features(
                 input,
                 config.image_size,
                 x,
                 y,
                 config.hidden_shift,
+                row,
                 &mut features,
             );
             let raw = predict_raw_pixel(
@@ -615,11 +721,11 @@ fn hidden_features(
     x: usize,
     y: usize,
     hidden_shift: u8,
-    out: &mut [i16; HIDDEN_CHANNELS],
+    out: &mut [i16],
 ) {
     let mut local = [0_i16; KERNEL];
     local_features(input, image_size, x, y, &mut local);
-    for (channel, kernel) in HIDDEN_KERNELS.iter().enumerate() {
+    for (channel, kernel) in HIDDEN_KERNELS.iter().take(out.len()).enumerate() {
         let mut acc = 0_i64;
         for (weight, feature) in kernel.iter().zip(local.iter()) {
             acc = acc.saturating_add(i64::from(*weight) * i64::from(*feature));
@@ -628,19 +734,51 @@ fn hidden_features(
     }
 }
 
+fn conditioned_features(
+    input: &[u8],
+    image_size: usize,
+    x: usize,
+    y: usize,
+    hidden_shift: u8,
+    row: &PairRow,
+    out: &mut [i16],
+) {
+    let image_channels = out.len().min(HIDDEN_CHANNELS);
+    hidden_features(
+        input,
+        image_size,
+        x,
+        y,
+        hidden_shift,
+        &mut out[..image_channels],
+    );
+    if out.len() <= HIDDEN_CHANNELS {
+        return;
+    }
+    let bin_x = x * TEXT_SIGNATURE_GRID / image_size;
+    let bin_y = y * TEXT_SIGNATURE_GRID / image_size;
+    let target =
+        i16::try_from(row.text_signature[bin_y * TEXT_SIGNATURE_GRID + bin_x]).unwrap_or(0);
+    let input_center = i16::from(input[pixel_index(image_size, x, y)]);
+    out[HIDDEN_CHANNELS] = target.saturating_sub(input_center).clamp(-511, 511);
+    if out.len() > HIDDEN_CHANNELS + 1 {
+        out[HIDDEN_CHANNELS + 1] = target.saturating_sub(64).clamp(-511, 511);
+    }
+}
+
 fn predict_raw_pixel(
     layer: &ConvLayer,
     output_shift: u8,
     condition: usize,
     input_center: u8,
-    features: &[i16; HIDDEN_CHANNELS],
+    features: &[i16],
 ) -> u8 {
     let mut acc = i64::from(*layer.condition_biases.get(condition).unwrap_or(&0));
     let weights = layer
         .condition_weights
         .get(condition)
-        .copied()
-        .unwrap_or([0; HIDDEN_CHANNELS]);
+        .cloned()
+        .unwrap_or_else(|| vec![0; features.len()]);
     for (weight, feature) in weights.iter().zip(features.iter()) {
         acc = acc.saturating_add(i64::from(*weight) * i64::from(*feature));
     }
@@ -674,6 +812,14 @@ fn condition_count(config: &Config) -> Result<usize, Box<dyn std::error::Error>>
         .ok_or_else(|| "condition count overflow".into())
 }
 
+fn feature_count(config: &Config) -> usize {
+    if config.text_index_path.is_some() {
+        HIDDEN_CHANNELS + TEXT_FEATURE_CHANNELS
+    } else {
+        HIDDEN_CHANNELS
+    }
+}
+
 fn condition_index(config: &Config, row: &PairRow) -> Result<usize, Box<dyn std::error::Error>> {
     if row.timestep == 0 || row.timestep > config.timesteps {
         return Err(format!(
@@ -697,6 +843,39 @@ fn checked_image_bytes(image_size: usize) -> Result<usize, Box<dyn std::error::E
     image_size
         .checked_mul(image_size)
         .ok_or_else(|| "image byte count overflow".into())
+}
+
+fn image_signature(
+    image: &[u8],
+    image_size: usize,
+) -> Result<[u16; TEXT_SIGNATURE_BINS], Box<dyn std::error::Error>> {
+    let image_bytes = checked_image_bytes(image_size)?;
+    if image.len() != image_bytes {
+        return Err(format!(
+            "image signature got {} bytes, expected {image_bytes}",
+            image.len()
+        )
+        .into());
+    }
+    let mut sums = [0_u32; TEXT_SIGNATURE_BINS];
+    let mut counts = [0_u32; TEXT_SIGNATURE_BINS];
+    for y in 0..image_size {
+        let bin_y = y * TEXT_SIGNATURE_GRID / image_size;
+        for x in 0..image_size {
+            let bin_x = x * TEXT_SIGNATURE_GRID / image_size;
+            let bin = bin_y * TEXT_SIGNATURE_GRID + bin_x;
+            sums[bin] = sums[bin].saturating_add(u32::from(image[pixel_index(image_size, x, y)]));
+            counts[bin] = counts[bin].saturating_add(1);
+        }
+    }
+    let mut signature = [0_u16; TEXT_SIGNATURE_BINS];
+    for index in 0..TEXT_SIGNATURE_BINS {
+        if counts[index] != 0 {
+            signature[index] =
+                u16::try_from(sums[index].saturating_add(counts[index] / 2) / counts[index])?;
+        }
+    }
+    Ok(signature)
 }
 
 fn train_pixel_count(config: &Config, data: &SplitData) -> Result<u64, Box<dyn std::error::Error>> {
@@ -740,8 +919,12 @@ fn mean_q8(total: u64, count: u64) -> u64 {
 }
 
 fn format_q8(value: u64) -> String {
-    let whole = value / 256;
-    let fraction = ((value % 256) * 100 + 128) / 256;
+    let mut whole = value / 256;
+    let mut fraction = ((value % 256) * 100 + 128) / 256;
+    if fraction == 100 {
+        whole = whole.saturating_add(1);
+        fraction = 0;
+    }
     format!("{whole}.{fraction:02}")
 }
 
@@ -779,18 +962,24 @@ fn write_model(path: &Path, model: &LayeredConvModel) -> Result<(), Box<dyn std:
         fs::create_dir_all(parent)?;
     }
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(MODEL_MAGIC);
+    if model.text_conditioned {
+        bytes.extend_from_slice(TEXT_MODEL_MAGIC);
+    } else {
+        bytes.extend_from_slice(MODEL_MAGIC);
+    }
     bytes.extend_from_slice(&checked_u32(model.image_size, "image_size")?.to_le_bytes());
     bytes.extend_from_slice(&checked_u32(model.timesteps, "timesteps")?.to_le_bytes());
     bytes.extend_from_slice(&u32::from(model.hidden_shift).to_le_bytes());
     bytes.extend_from_slice(&u32::from(model.output_shift).to_le_bytes());
-    bytes.extend_from_slice(&checked_u32(HIDDEN_CHANNELS, "hidden channels")?.to_le_bytes());
+    bytes.extend_from_slice(&checked_u32(model.feature_count, "feature count")?.to_le_bytes());
     bytes
         .extend_from_slice(&checked_u32(CORRUPTION_KINDS.len(), "corruption count")?.to_le_bytes());
     bytes.extend_from_slice(&checked_u32(model.layers.len(), "layer count")?.to_le_bytes());
     for layer in &model.layers {
         for weights in &layer.condition_weights {
-            bytes.extend_from_slice(&weights.map(|value| value as u8));
+            for &weight in weights {
+                bytes.push(weight as u8);
+            }
         }
         for bias in &layer.condition_biases {
             bytes.extend_from_slice(&bias.to_le_bytes());
@@ -825,6 +1014,23 @@ fn write_trace(
         &mut out,
         "model_out",
         &config.model_out.display().to_string(),
+        true,
+    );
+    let text_index = config
+        .text_index_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+    json_field(&mut out, "text_index", &text_index, true);
+    number_field(&mut out, "feature_count", model.feature_count, true);
+    number_field(
+        &mut out,
+        "text_feature_channels",
+        if model.text_conditioned {
+            TEXT_FEATURE_CHANNELS
+        } else {
+            0
+        },
         true,
     );
     number_field(&mut out, "image_size", config.image_size, true);
