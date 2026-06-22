@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crowley Bard Chat</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="site-title">
+      <section class="stage">
+        <div class="portrait-wrap">
+          <img
+            class="banner"
+            src="./assets/crowley-bard-banner.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <img
+            class="portrait"
+            src="./assets/crowley-bard-pfp.png"
+            alt="Crowley Bard"
+          />
+        </div>
+
+        <div class="hud" aria-live="polite">
+          <div>
+            <p class="eyebrow">NSRL WASM</p>
+            <h1 id="site-title">Crowley Bard</h1>
+          </div>
+          <div class="meters" aria-label="Model state">
+            <span id="statusPill">Loading</span>
+            <span id="turnPill">Turn 0</span>
+            <span id="adaptPill">Adapt 0</span>
+          </div>
+        </div>
+
+        <section class="oracle" aria-live="polite" aria-label="Current message">
+          <p id="oracleText">The model is waking in the browser.</p>
+        </section>
+
+        <form class="command" id="chatForm">
+          <input
+            id="promptInput"
+            name="prompt"
+            autocomplete="off"
+            maxlength="280"
+            placeholder="Speak one line"
+            disabled
+          />
+          <button id="sendButton" type="submit" disabled>Send</button>
+        </form>
+
+        <div class="controls" aria-label="Generation controls">
+          <label>
+            <span>Tokens</span>
+            <input id="tokenSlider" type="range" min="24" max="140" step="4" value="72" />
+          </label>
+          <label>
+            <span>Top K</span>
+            <input id="topKSlider" type="range" min="4" max="32" step="1" value="12" />
+          </label>
+          <button id="resetButton" type="button">Reset</button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
