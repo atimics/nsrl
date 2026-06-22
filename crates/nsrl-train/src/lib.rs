@@ -2735,6 +2735,18 @@ struct DecodeCandidateSet {
     rejected_candidates: DecodeRejectStats,
 }
 
+#[derive(Debug, Default)]
+struct LexemeDecodeScratch {
+    candidates: Vec<usize>,
+    scored_candidates: Vec<ScoredLexemeDecodeCandidate>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ScoredLexemeDecodeCandidate {
+    score_q8: i32,
+    candidate: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ByteGenerationTrace {
     pub config: ByteGenerationConfig,
@@ -15434,6 +15446,7 @@ pub fn generate_lexeme_softmax_with_memory(
     let mut generated_tokens = Vec::with_capacity(config.max_new_tokens);
     let mut steps = Vec::with_capacity(config.max_new_tokens);
     let mut stopped_on_sentence_terminal = false;
+    let mut decode_scratch = LexemeDecodeScratch::default();
 
     for step_index in 0..config.max_new_tokens {
         let input_token = *context.last().ok_or(TrainError::InvalidConfig)?;
@@ -15448,16 +15461,17 @@ pub fn generate_lexeme_softmax_with_memory(
             model.head_layout,
             model.adapter_logit_shift,
         )?;
-        let selection = select_lexeme_from_row(
+        let selection = select_lexeme_from_row_with_scratch(
             &row.logits_q8,
             &row.probabilities_q15,
-            config.decode,
+            &config.decode,
             step_index,
             &context,
             decode_priors,
             quality_weights_q15,
             topic_priors,
             memory_priors,
+            &mut decode_scratch,
         );
         let predicted_token = selection.token;
         let predicted_index = usize::from(predicted_token);
@@ -21828,6 +21842,7 @@ fn decode_sample_u64(seed: u64, step_index: usize, context: &[u8]) -> u64 {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn select_lexeme_from_row(
     logits_q8: &[i32],
     probabilities_q15: &[i16],
@@ -21838,6 +21853,34 @@ fn select_lexeme_from_row(
     quality_weights_q15: Option<&[i16]>,
     topic_priors: Option<&LexemeTopicPriors>,
     memory_priors: Option<&LexemeMemoryPriors>,
+) -> LexemeDecodeSelection {
+    let mut scratch = LexemeDecodeScratch::default();
+    select_lexeme_from_row_with_scratch(
+        logits_q8,
+        probabilities_q15,
+        &decode,
+        step_index,
+        context,
+        decode_priors,
+        quality_weights_q15,
+        topic_priors,
+        memory_priors,
+        &mut scratch,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn select_lexeme_from_row_with_scratch(
+    logits_q8: &[i32],
+    probabilities_q15: &[i16],
+    decode: &DecodeConfig,
+    step_index: usize,
+    context: &[u16],
+    decode_priors: Option<&LexemeDecodePriors>,
+    quality_weights_q15: Option<&[i16]>,
+    topic_priors: Option<&LexemeTopicPriors>,
+    memory_priors: Option<&LexemeMemoryPriors>,
+    scratch: &mut LexemeDecodeScratch,
 ) -> LexemeDecodeSelection {
     match decode.strategy {
         DecodeStrategy::Greedy => lexeme_decode_fallback_selection(
@@ -21850,6 +21893,7 @@ fn select_lexeme_from_row(
             quality_weights_q15,
             topic_priors,
             memory_priors,
+            scratch,
         ),
         DecodeStrategy::Sample => lexeme_sample_from_probabilities_q15(
             logits_q8,
@@ -21861,6 +21905,7 @@ fn select_lexeme_from_row(
             quality_weights_q15,
             topic_priors,
             memory_priors,
+            scratch,
         )
         .unwrap_or_else(|| {
             lexeme_decode_fallback_selection(
@@ -21873,6 +21918,7 @@ fn select_lexeme_from_row(
                 quality_weights_q15,
                 topic_priors,
                 memory_priors,
+                scratch,
             )
         }),
     }
@@ -21882,15 +21928,16 @@ fn select_lexeme_from_row(
 fn lexeme_sample_from_probabilities_q15(
     logits_q8: &[i32],
     probabilities_q15: &[i16],
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     step_index: usize,
     context: &[u16],
     decode_priors: Option<&LexemeDecodePriors>,
     quality_weights_q15: Option<&[i16]>,
     topic_priors: Option<&LexemeTopicPriors>,
     memory_priors: Option<&LexemeMemoryPriors>,
+    scratch: &mut LexemeDecodeScratch,
 ) -> Option<LexemeDecodeSelection> {
-    let candidate_set = lexeme_decode_candidates(
+    let rejected_candidates = lexeme_decode_candidates(
         logits_q8,
         decode,
         step_index,
@@ -21899,9 +21946,9 @@ fn lexeme_sample_from_probabilities_q15(
         quality_weights_q15,
         topic_priors,
         memory_priors,
+        scratch,
     );
-    let candidates = candidate_set.candidates;
-    let rejected_candidates = candidate_set.rejected_candidates;
+    let candidates = scratch.candidates.as_slice();
     let mut mass = 0_u64;
     for &candidate in candidates.iter() {
         mass = mass.saturating_add(lexeme_decode_candidate_weight_q15(
@@ -21958,15 +22005,16 @@ fn lexeme_sample_from_probabilities_q15(
 fn lexeme_decode_fallback_selection(
     logits_q8: &[i32],
     probabilities_q15: &[i16],
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     step_index: usize,
     context: &[u16],
     decode_priors: Option<&LexemeDecodePriors>,
     quality_weights_q15: Option<&[i16]>,
     topic_priors: Option<&LexemeTopicPriors>,
     memory_priors: Option<&LexemeMemoryPriors>,
+    scratch: &mut LexemeDecodeScratch,
 ) -> LexemeDecodeSelection {
-    let candidate_set = lexeme_decode_candidates(
+    let rejected_candidates = lexeme_decode_candidates(
         logits_q8,
         decode,
         step_index,
@@ -21975,8 +22023,9 @@ fn lexeme_decode_fallback_selection(
         quality_weights_q15,
         topic_priors,
         memory_priors,
+        scratch,
     );
-    let candidates = candidate_set.candidates;
+    let candidates = scratch.candidates.as_slice();
     let token = if decode.repeat_window == 0
         && decode.repeat_penalty_shift == 0
         && !decode.corpus_prior
@@ -22019,7 +22068,7 @@ fn lexeme_decode_fallback_selection(
     LexemeDecodeSelection {
         token,
         candidate_count: candidates.len(),
-        rejected_candidates: candidate_set.rejected_candidates,
+        rejected_candidates,
         selected_score: lexeme_decode_score_trace(
             logits_q8,
             probabilities_q15,
@@ -22037,14 +22086,15 @@ fn lexeme_decode_fallback_selection(
 #[allow(clippy::too_many_arguments)]
 fn lexeme_decode_candidates(
     logits_q8: &[i32],
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     step_index: usize,
     context: &[u16],
     decode_priors: Option<&LexemeDecodePriors>,
     quality_weights_q15: Option<&[i16]>,
     topic_priors: Option<&LexemeTopicPriors>,
     memory_priors: Option<&LexemeMemoryPriors>,
-) -> DecodeCandidateSet {
+    scratch: &mut LexemeDecodeScratch,
+) -> DecodeRejectStats {
     let vocab_size = logits_q8.len();
     let top_k = if decode.top_k == 0 || decode.top_k > vocab_size {
         vocab_size
@@ -22054,7 +22104,8 @@ fn lexeme_decode_candidates(
     let strict_memory_active =
         lexeme_strict_memory_active(decode, step_index, context, memory_priors);
     let mut rejected_candidates = DecodeRejectStats::default();
-    let mut candidates = Vec::with_capacity(vocab_size.saturating_sub(256));
+    scratch.scored_candidates.clear();
+    scratch.candidates.clear();
     for candidate in 0..vocab_size {
         if candidate < 256 {
             rejected_candidates.byte_fallback += 1;
@@ -22107,49 +22158,47 @@ fn lexeme_decode_candidates(
             rejected_candidates.adjacency += 1;
             continue;
         }
-        candidates.push(candidate);
-    }
-    if candidates.len() > top_k {
-        rejected_candidates.top_k_truncated += candidates.len() - top_k;
-        candidates.select_nth_unstable_by(top_k, |&left, &right| {
-            compare_lexeme_decode_candidates(
-                left,
-                right,
-                logits_q8,
-                decode,
-                context,
-                decode_priors,
-                quality_weights_q15,
-                topic_priors,
-                memory_priors,
-            )
-        });
-        candidates.truncate(top_k);
-    }
-    candidates.sort_unstable_by(|&left, &right| {
-        compare_lexeme_decode_candidates(
-            left,
-            right,
+        let score_q8 = lexeme_decode_effective_logit_q8(
             logits_q8,
+            candidate,
             decode,
             context,
             decode_priors,
             quality_weights_q15,
             topic_priors,
             memory_priors,
-        )
-    });
-    if candidates.is_empty() {
-        candidates.push(usize::from(lexeme_argmax_concept_i32(logits_q8)));
+        );
+        scratch.scored_candidates.push(ScoredLexemeDecodeCandidate {
+            score_q8,
+            candidate,
+        });
     }
-    DecodeCandidateSet {
-        candidates,
-        rejected_candidates,
+    if scratch.scored_candidates.len() > top_k {
+        rejected_candidates.top_k_truncated = scratch.scored_candidates.len() - top_k;
+        scratch
+            .scored_candidates
+            .select_nth_unstable_by(top_k, compare_scored_lexeme_decode_candidates);
+        scratch.scored_candidates.truncate(top_k);
     }
+    scratch
+        .scored_candidates
+        .sort_unstable_by(compare_scored_lexeme_decode_candidates);
+    scratch.candidates.extend(
+        scratch
+            .scored_candidates
+            .iter()
+            .map(|scored| scored.candidate),
+    );
+    if scratch.candidates.is_empty() {
+        scratch
+            .candidates
+            .push(usize::from(lexeme_argmax_concept_i32(logits_q8)));
+    }
+    rejected_candidates
 }
 
 fn lexeme_strict_memory_active(
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     step_index: usize,
     context: &[u16],
     memory_priors: Option<&LexemeMemoryPriors>,
@@ -22168,39 +22217,14 @@ fn lexeme_strict_memory_active(
     cycle == 0 || step_index % cycle < decode.strict_memory_on_steps
 }
 
-#[allow(clippy::too_many_arguments)]
-fn compare_lexeme_decode_candidates(
-    left: usize,
-    right: usize,
-    logits_q8: &[i32],
-    decode: DecodeConfig,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
+fn compare_scored_lexeme_decode_candidates(
+    left: &ScoredLexemeDecodeCandidate,
+    right: &ScoredLexemeDecodeCandidate,
 ) -> core::cmp::Ordering {
-    lexeme_decode_effective_logit_q8(
-        logits_q8,
-        right,
-        decode,
-        context,
-        decode_priors,
-        quality_weights_q15,
-        topic_priors,
-        memory_priors,
-    )
-    .cmp(&lexeme_decode_effective_logit_q8(
-        logits_q8,
-        left,
-        decode,
-        context,
-        decode_priors,
-        quality_weights_q15,
-        topic_priors,
-        memory_priors,
-    ))
-    .then_with(|| left.cmp(&right))
+    right
+        .score_q8
+        .cmp(&left.score_q8)
+        .then_with(|| left.candidate.cmp(&right.candidate))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -22208,7 +22232,7 @@ fn lexeme_decode_score_trace(
     logits_q8: &[i32],
     probabilities_q15: &[i16],
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     context: &[u16],
     decode_priors: Option<&LexemeDecodePriors>,
     quality_weights_q15: Option<&[i16]>,
@@ -22317,7 +22341,7 @@ fn clamp_u64_to_i16_q15(value: u64) -> i16 {
 fn lexeme_decode_candidate_weight_q15(
     probabilities_q15: &[i16],
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     context: &[u16],
     decode_priors: Option<&LexemeDecodePriors>,
     quality_weights_q15: Option<&[i16]>,
@@ -22504,7 +22528,7 @@ fn lexeme_decode_quality_logit_adjust_q8(weights: &[i16], candidate: usize) -> i
 fn lexeme_decode_frequency_weight_q15(
     priors: Option<&LexemeDecodePriors>,
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> u64 {
     if decode.frequency_penalty_cap == 0 {
         return i16::MAX as u64;
@@ -22526,7 +22550,7 @@ fn lexeme_decode_frequency_weight_q15(
 fn lexeme_decode_frequency_logit_adjust_q8(
     priors: Option<&LexemeDecodePriors>,
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> i32 {
     if decode.frequency_penalty_cap == 0 {
         return 0;
@@ -22539,7 +22563,7 @@ fn lexeme_decode_frequency_logit_adjust_q8(
 fn lexeme_decode_local_frequency_weight_q15(
     candidate: usize,
     context: &[u16],
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> u64 {
     if decode.local_frequency_penalty_cap == 0 {
         return i16::MAX as u64;
@@ -22560,7 +22584,7 @@ fn lexeme_decode_local_frequency_weight_q15(
 fn lexeme_decode_exceeds_local_frequency_hard_cap(
     candidate: u16,
     context: &[u16],
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> bool {
     decode.local_frequency_hard_cap > 0
         && context
@@ -22575,7 +22599,7 @@ fn lexeme_decode_token_set_contains(token: u16, tokens: &[u16], count: usize) ->
     tokens[..count.min(tokens.len())].contains(&token)
 }
 
-fn lexeme_decode_is_function_word(token: u16, decode: DecodeConfig) -> bool {
+fn lexeme_decode_is_function_word(token: u16, decode: &DecodeConfig) -> bool {
     lexeme_decode_token_set_contains(
         token,
         &decode.function_word_tokens,
@@ -22586,7 +22610,7 @@ fn lexeme_decode_is_function_word(token: u16, decode: DecodeConfig) -> bool {
 fn lexeme_would_exceed_function_word_run(
     candidate: u16,
     context: &[u16],
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> bool {
     if decode.function_word_run_cap == 0 || !lexeme_decode_is_function_word(candidate, decode) {
         return false;
@@ -22604,7 +22628,7 @@ fn lexeme_would_exceed_function_word_run(
 fn lexeme_decode_local_frequency_logit_adjust_q8(
     candidate: usize,
     context: &[u16],
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> i32 {
     if decode.local_frequency_penalty_cap == 0 {
         return 0;
@@ -22617,7 +22641,7 @@ fn lexeme_decode_local_frequency_logit_adjust_q8(
 fn lexeme_decode_island_weight_q15(
     priors: Option<&LexemeDecodePriors>,
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> u64 {
     if decode.island_penalty_count_cap == 0 || decode.island_penalty_min_degree == 0 {
         return i16::MAX as u64;
@@ -22647,7 +22671,7 @@ fn lexeme_decode_island_weight_q15(
 fn lexeme_decode_island_logit_adjust_q8(
     priors: Option<&LexemeDecodePriors>,
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> i32 {
     if decode.island_penalty_count_cap == 0 {
         return 0;
@@ -22659,7 +22683,7 @@ fn lexeme_decode_island_logit_adjust_q8(
 
 fn lexeme_decode_rejects_strict_topic(
     token: u16,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     topic_priors: Option<&LexemeTopicPriors>,
     quality_weights_q15: Option<&[i16]>,
 ) -> bool {
@@ -22686,7 +22710,7 @@ fn lexeme_decode_rejects_strict_topic(
 fn lexeme_decode_topic_weight_q15(
     priors: Option<&LexemeTopicPriors>,
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> u64 {
     if decode.prompt_topic_radius == 0 {
         return i16::MAX as u64;
@@ -22703,7 +22727,7 @@ fn lexeme_decode_topic_weight_q15(
 fn lexeme_decode_topic_logit_adjust_q8(
     priors: Option<&LexemeTopicPriors>,
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> i32 {
     if decode.prompt_topic_radius == 0 {
         return 0;
@@ -22717,7 +22741,7 @@ fn lexeme_decode_memory_logit_adjust_q8(
     priors: Option<&LexemeMemoryPriors>,
     context: &[u16],
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     topic_priors: Option<&LexemeTopicPriors>,
 ) -> i32 {
     let memory_q15 = i32::from(lexeme_decode_memory_probability_q15(
@@ -22735,7 +22759,7 @@ fn lexeme_decode_memory_probability_q15(
     priors: Option<&LexemeMemoryPriors>,
     context: &[u16],
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     topic_priors: Option<&LexemeTopicPriors>,
 ) -> u16 {
     let Some((priors, token)) =
@@ -22759,7 +22783,7 @@ fn lexeme_decode_memory_probability_q15(
 fn lexeme_decode_memory_context_order(
     priors: Option<&LexemeMemoryPriors>,
     context: &[u16],
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
 ) -> Option<u8> {
     if decode.memory_context_order == 0 {
         return None;
@@ -22773,7 +22797,7 @@ fn lexeme_decode_memory_context_order(
 fn lexeme_decode_effective_logit_q8(
     logits_q8: &[i32],
     candidate: usize,
-    decode: DecodeConfig,
+    decode: &DecodeConfig,
     context: &[u16],
     decode_priors: Option<&LexemeDecodePriors>,
     quality_weights_q15: Option<&[i16]>,
@@ -27717,7 +27741,7 @@ mod tests {
             &logits,
             &probabilities,
             256,
-            decode,
+            &decode,
             &[256, 256],
             None,
             None,
@@ -27947,19 +27971,19 @@ mod tests {
 
         assert!(lexeme_decode_rejects_strict_topic(
             500,
-            decode,
+            &decode,
             Some(&topic),
             Some(&quality_weights)
         ));
         assert!(!lexeme_decode_rejects_strict_topic(
             258,
-            decode,
+            &decode,
             Some(&topic),
             Some(&quality_weights)
         ));
         assert!(!lexeme_decode_rejects_strict_topic(
             401,
-            decode,
+            &decode,
             Some(&topic),
             Some(&quality_weights)
         ));
