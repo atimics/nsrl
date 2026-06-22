@@ -1,0 +1,287 @@
+:root {
+  color-scheme: dark;
+  --bg: #10100e;
+  --panel: #181814;
+  --panel-2: #202018;
+  --ink: #f5f0df;
+  --muted: #b8b19e;
+  --line: #403d32;
+  --brass: #c49b4f;
+  --wine: #7c2839;
+  --teal: #27706d;
+  --shadow: 0 20px 80px rgba(0, 0, 0, 0.42);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(124, 40, 57, 0.28), transparent 32rem),
+    linear-gradient(140deg, #10100e 0%, #1d1718 46%, #132322 100%);
+  color: var(--ink);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+}
+
+.stage {
+  width: min(980px, 100%);
+  min-height: min(820px, calc(100dvh - 56px));
+  display: grid;
+  grid-template-rows: auto auto 1fr auto auto;
+  overflow: hidden;
+  border: 1px solid rgba(245, 240, 223, 0.16);
+  border-radius: 8px;
+  background: rgba(16, 16, 14, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.portrait-wrap {
+  position: relative;
+  min-height: 188px;
+  background: #14120f;
+  border-bottom: 1px solid var(--line);
+}
+
+.banner {
+  width: 100%;
+  height: 230px;
+  object-fit: cover;
+  display: block;
+}
+
+.portrait {
+  position: absolute;
+  left: 28px;
+  bottom: -48px;
+  width: 112px;
+  height: 112px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 240, 223, 0.34);
+  background: #090807;
+}
+
+.hud {
+  min-height: 116px;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: end;
+  padding: 60px 28px 20px 160px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, rgba(196, 155, 79, 0.12), rgba(39, 112, 109, 0.08));
+}
+
+.eyebrow {
+  margin: 0 0 5px;
+  color: var(--brass);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.25;
+  font-weight: 760;
+}
+
+.meters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.meters span,
+.controls button {
+  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(245, 240, 223, 0.18);
+  border-radius: 8px;
+  background: rgba(24, 24, 20, 0.84);
+  color: var(--ink);
+  padding: 0 12px;
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.oracle {
+  display: grid;
+  place-items: center;
+  min-height: 290px;
+  padding: 32px;
+  background:
+    linear-gradient(rgba(16, 16, 14, 0.82), rgba(16, 16, 14, 0.82)),
+    url("./assets/crowley-bard-pfp.png") center / 320px auto no-repeat;
+}
+
+#oracleText {
+  width: min(760px, 100%);
+  margin: 0;
+  padding: 0;
+  color: var(--ink);
+  font-size: 1.72rem;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.command {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 18px 20px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+#promptInput {
+  min-width: 0;
+  height: 52px;
+  border: 1px solid rgba(245, 240, 223, 0.18);
+  border-radius: 8px;
+  background: #0f100d;
+  color: var(--ink);
+  padding: 0 16px;
+  outline: none;
+}
+
+#promptInput:focus {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px rgba(196, 155, 79, 0.16);
+}
+
+#promptInput::placeholder {
+  color: #8f8978;
+}
+
+#sendButton {
+  width: 96px;
+  height: 52px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--brass), #e2c275);
+  color: #15110a;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+#sendButton:disabled,
+#promptInput:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 0 20px 18px;
+  background: var(--panel);
+}
+
+.controls label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.controls input[type="range"] {
+  width: 100%;
+  accent-color: var(--teal);
+}
+
+.controls button {
+  height: 40px;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 0;
+  }
+
+  .stage {
+    min-height: 100dvh;
+    border-width: 0;
+    border-radius: 0;
+  }
+
+  .banner {
+    height: 170px;
+  }
+
+  .portrait {
+    left: 18px;
+    bottom: -36px;
+    width: 84px;
+    height: 84px;
+  }
+
+  .hud {
+    min-height: 132px;
+    display: grid;
+    align-items: end;
+    padding: 48px 18px 18px;
+  }
+
+  .meters {
+    justify-content: flex-start;
+  }
+
+  h1 {
+    font-size: 1.62rem;
+  }
+
+  .oracle {
+    min-height: 260px;
+    padding: 24px 18px;
+  }
+
+  #oracleText {
+    font-size: 1.28rem;
+  }
+
+  .command {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  #sendButton {
+    width: 100%;
+  }
+
+  .controls {
+    grid-template-columns: 1fr;
+    padding: 0 14px 14px;
+  }
+}

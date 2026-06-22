@@ -5,6 +5,7 @@ members = [
     "crates/nsrl-demo",
     "crates/nsrl-train-core",
     "crates/nsrl-train",
+    "crates/nsrl-web-wasm",
 ]
 resolver = "3"
 
