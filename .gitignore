@@ -1,5 +1,12 @@
 /target/
-/data/
+/data/*
+!/data/
+!/data/processed/
+/data/processed/*
+!/data/processed/key-solomon-goetia-latent-v1/
+/data/processed/key-solomon-goetia-latent-v1/*
+!/data/processed/key-solomon-goetia-latent-v1/prompts.jsonl
+!/data/processed/key-solomon-goetia-latent-v1/gold.tsv
 /.claude/
 __pycache__/
 *.pyc

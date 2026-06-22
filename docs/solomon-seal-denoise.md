@@ -95,6 +95,58 @@ plus text/image signature reconstruction error in Q8. The sampler trace records
 `latent_model`, `latent_prompt`, `latent_dim`, and `latent_text_features` when
 this path is active.
 
+### Growing held-out prompt eval
+
+The prompt eval uses stable hash buckets instead of insertion order, so new
+prompts can be appended without reshuffling any existing train/eval assignment:
+
+```sh
+node scripts/build-solomon-prompt-corpus.mjs
+
+cargo run --release -p nsrl-train --bin nsrl-solomon-latent-train -- \
+  --prompts data/processed/key-solomon-goetia-latent-v1/prompts.jsonl
+
+cargo run --release -p nsrl-train --bin nsrl-solomon-eval
+```
+
+`prompts.jsonl` uses schema `nsrl.solomon_prompt.v1` with stable `bucket`,
+`tier`, `cluster`, and `prompt_hash` fields. `gold.tsv` pins exact prompt
+hashes; gold prompts never enter training even when their bucket would otherwise
+be train. The default split seed is `solomon-prompt-split-v1`, and the default
+eval bucket is `180` permille to match the bitmap dataset builder.
+
+`nsrl-solomon-latent-train --prompts` trains only on prompt rows outside both
+the eval bucket and the frozen gold set. `nsrl-solomon-eval` writes a partition
+TSV, ranks held-out prompts against unique seal targets, reports metrics per
+tier, and appends `eval-ledger.jsonl` rows with the model hash, prompt set
+version, train prompt count, top1/top5, and Q8 MAE.
+
+### Grounded synthetic text variants
+
+`scripts/build-solomon-grounded-corpus.mjs` expands each of the 72 demon rows
+into balanced, source-grounded text variants while keeping the same seal slice
+and 8x8 signature target. It uses the existing Goetia TSV and, when present,
+additional OCR sources under `data/raw/`:
+
+```sh
+curl -L https://archive.org/download/dictionnaireinfe00coll_1/dictionnaireinfe00coll_1_djvu.txt \
+  -o data/raw/dictionnaire-infernal-1863-djvu.txt
+curl -L https://archive.org/download/discoveryofwitch00scot/discoveryofwitch00scot_djvu.txt \
+  -o data/raw/scot-discovery-witchcraft-djvu.txt
+
+node scripts/build-solomon-grounded-corpus.mjs --variants-per-row 32
+
+cargo run --release -p nsrl-train --bin nsrl-solomon-latent-train -- \
+  --text-index data/processed/key-solomon-goetia-grounded-corpus-v1/grounded-text-signatures.tsv \
+  --out-dir data/processed/key-solomon-goetia-latent-grounded-v1
+```
+
+The expanded TSV keeps the original first nine text-index columns for backward
+compatibility, then appends variant provenance (`variant_id`, `source_lanes`,
+`prompt_kind`, `support_terms`, `source_urls`). The latent trainer treats these
+as many text examples mapped to 72 unique image targets, so retrieval is ranked
+against unique seals rather than duplicate text variants.
+
 ## Reproduce
 
 ```sh

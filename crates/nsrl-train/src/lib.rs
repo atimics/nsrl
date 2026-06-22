@@ -18,6 +18,8 @@ use nsrl_core::{
     self_attention_i16_q15_checked, sqrt_power_of_four_shift,
 };
 
+pub mod solomon_latent;
+
 pub const SCHEMA: &str = "nsrl.training_smoke_trace.v1";
 pub const SOFTMAX_SCHEMA: &str = "nsrl.training_softmax_trace.v1";
 pub const LINEAR_BACKWARD_SCHEMA: &str = "nsrl.training_linear_backward_trace.v1";
