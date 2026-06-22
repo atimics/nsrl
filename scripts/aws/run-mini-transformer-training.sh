@@ -28,6 +28,9 @@ Common knobs:
   NSRL_ADAPTIVE_HOLOGRAPHIC_SHIFTS=0
   NSRL_SYNC_SECONDS=60
   NSRL_TERMINATE_ON_EXIT=0
+  NSRL_TRAIN_MODE=mini-transformer-mlp
+  NSRL_SWARM_WORKERS=8
+  NSRL_SWARM_COMPOSITION=average
 
 Artifacts:
   Local: data/aws-runs/<run-name>/
@@ -74,12 +77,15 @@ if [[ -z "$model_in" && -n "$resume_model_s3_uri" ]]; then
   model_in="${run_dir}/resume.nsrlmt"
 fi
 model_out="${run_dir}/${run_name}.nsrlmt"
+swarm_model_out="${run_dir}/${run_name}.nsrlswarm"
+manifest_out="${run_dir}/${run_name}.manifest.jsonl"
 trace_out="${run_dir}/${run_name}.trace.jsonl"
 progress_out="${run_dir}/${run_name}.progress.jsonl"
 log_out="${run_dir}/train.log"
 command_out="${run_dir}/command.txt"
 repo_rev="$(git rev-parse HEAD 2>/dev/null || true)"
 sync_seconds="${NSRL_SYNC_SECONDS:-60}"
+train_mode="${NSRL_TRAIN_MODE:-mini-transformer-mlp}"
 run_stage="preparing"
 aws_instance_id="${NSRL_AWS_INSTANCE_ID:-}"
 aws_instance_type="${NSRL_AWS_INSTANCE_TYPE:-}"
@@ -162,7 +168,7 @@ aws s3 cp "${s3_uri}/dashboard/runs.json" "${dashboard_dir}/runs.json" >/dev/nul
 
 cmd=(
   cargo run --release -p nsrl-train --
-  --mode mini-transformer-mlp
+  --mode "$train_mode"
   --tokens "$tokens"
   --seq-len "${NSRL_SEQ_LEN:-4}"
   --stride "${NSRL_STRIDE:-1}"
@@ -180,11 +186,33 @@ cmd=(
   --mini-transformer-position "${NSRL_POSITION:-nope}"
   --trace-format "${NSRL_TRACE_FORMAT:-json}"
   --mini-transformer-trace-detail "${NSRL_TRACE_DETAIL:-summary}"
-  --model-out "$model_out"
   --trace "$trace_out"
-  --progress-out "$progress_out"
-  --progress-interval-batches "${NSRL_PROGRESS_INTERVAL_BATCHES:-128}"
 )
+
+case "$train_mode" in
+  mini-transformer-swarm|mini_transformer_swarm)
+    cmd+=(
+      --model-out "$model_out"
+      --swarm-model-out "$swarm_model_out"
+      --manifest-out "$manifest_out"
+      --swarm-workers "${NSRL_SWARM_WORKERS:-8}"
+      --swarm-composition "${NSRL_SWARM_COMPOSITION:-average}"
+    )
+    ;;
+  mini-transformer-swarm-scaling|mini_transformer_swarm_scaling|mini-transformer-swarm-bench|mini_transformer_swarm_bench)
+    cmd+=(
+      --swarm-workers "${NSRL_SWARM_WORKERS:-8}"
+      --swarm-composition "${NSRL_SWARM_COMPOSITION:-average}"
+    )
+    ;;
+  *)
+    cmd+=(
+      --model-out "$model_out"
+      --progress-out "$progress_out"
+      --progress-interval-batches "${NSRL_PROGRESS_INTERVAL_BATCHES:-128}"
+    )
+    ;;
+esac
 
 if [[ -n "$model_in" ]]; then
   cmd+=(--resume-from "$model_in")
@@ -339,6 +367,8 @@ if [[ "$exit_code" -eq 0 ]]; then
     TRACE_S3_URI="${s3_uri}/runs/${run_name}/$(basename "$trace_out")" \
     PROGRESS_S3_URI="${s3_uri}/runs/${run_name}/$(basename "$progress_out")" \
     RUN_JSON_S3_URI="${s3_uri}/runs/${run_name}/run.json" \
+    SWARM_MODEL_S3_URI="${s3_uri}/runs/${run_name}/$(basename "$swarm_model_out")" \
+    MANIFEST_S3_URI="${s3_uri}/runs/${run_name}/$(basename "$manifest_out")" \
     FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     python3 - <<'PY'
 import json, os, pathlib
@@ -353,12 +383,22 @@ path.write_text(json.dumps({
     "trace_s3_uri": os.environ["TRACE_S3_URI"],
     "progress_s3_uri": os.environ["PROGRESS_S3_URI"],
     "run_json_s3_uri": os.environ["RUN_JSON_S3_URI"],
+    "swarm_model_s3_uri": os.environ["SWARM_MODEL_S3_URI"],
+    "manifest_s3_uri": os.environ["MANIFEST_S3_URI"],
     "finished_at": os.environ["FINISHED_AT"],
 }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
     aws s3 cp "$model_out" "${checkpoint_uri}/latest.nsrlmt" --only-show-errors
+    if [[ -f "$swarm_model_out" ]]; then
+      aws s3 cp "$swarm_model_out" "${checkpoint_uri}/latest.nsrlswarm" --only-show-errors
+    fi
+    if [[ -f "$manifest_out" ]]; then
+      aws s3 cp "$manifest_out" "${checkpoint_uri}/latest.manifest.jsonl" --only-show-errors
+    fi
     aws s3 cp "$trace_out" "${checkpoint_uri}/latest.trace.jsonl" --only-show-errors
-    aws s3 cp "$progress_out" "${checkpoint_uri}/latest.progress.jsonl" --only-show-errors
+    if [[ -f "$progress_out" ]]; then
+      aws s3 cp "$progress_out" "${checkpoint_uri}/latest.progress.jsonl" --only-show-errors
+    fi
     aws s3 cp "${run_dir}/run.json" "${checkpoint_uri}/latest.run.json" --only-show-errors
     aws s3 cp "$checkpoint_json" "${checkpoint_uri}/latest.checkpoint.json" --only-show-errors
   fi
