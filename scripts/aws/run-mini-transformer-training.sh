@@ -21,10 +21,13 @@ Common knobs:
   NSRL_SEQ_LEN=4
   NSRL_STRIDE=1
   NSRL_BATCH_WINDOWS=2
+  NSRL_BATCH_MODE=serial
+  NSRL_MAP_REDUCE_WORKERS=1
   NSRL_SWARM_WORKERS=8
   NSRL_SWARM_COMPOSITION=average
   NSRL_ATTENTION=linear
   NSRL_POSITION=nope
+  NSRL_TOKENIZER=identity
   NSRL_TRACE_FORMAT=json
   NSRL_TRACE_DETAIL=summary
   NSRL_RUSTFLAGS='-C target-cpu=native'
@@ -217,6 +220,8 @@ cmd=(
   --stride "${NSRL_STRIDE:-1}"
   --window-offset "${NSRL_WINDOW_OFFSET:-0}"
   --batch-windows "${NSRL_BATCH_WINDOWS:-2}"
+  --mini-transformer-batch-mode "${NSRL_BATCH_MODE:-serial}"
+  --mini-transformer-map-reduce-workers "${NSRL_MAP_REDUCE_WORKERS:-1}"
   --max-windows "${NSRL_MAX_WINDOWS:-32768}"
   --epochs "${NSRL_EPOCHS:-1}"
   --lr-shift "${NSRL_OUT_SHIFT:-18}"
@@ -227,6 +232,7 @@ cmd=(
   --attention-qk-lr-shift "${NSRL_ATTENTION_QK_SHIFT:-16}"
   --mini-transformer-attention "${NSRL_ATTENTION:-linear}"
   --mini-transformer-position "${NSRL_POSITION:-nope}"
+  --tokenizer "${NSRL_TOKENIZER:-identity}"
   --trace-format "${NSRL_TRACE_FORMAT:-json}"
   --mini-transformer-trace-detail "${NSRL_TRACE_DETAIL:-summary}"
   --trace "$trace_out"
@@ -240,6 +246,8 @@ case "$train_mode" in
       --manifest-out "$manifest_out"
       --swarm-workers "$swarm_workers"
       --swarm-composition "${NSRL_SWARM_COMPOSITION:-average}"
+      --progress-out "$progress_out"
+      --progress-interval-batches "${NSRL_PROGRESS_INTERVAL_BATCHES:-128}"
     )
     ;;
   mini-transformer-swarm-scaling|mini_transformer_swarm_scaling|mini-transformer-swarm-bench|mini_transformer_swarm_bench)

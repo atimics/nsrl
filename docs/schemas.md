@@ -5,6 +5,11 @@ demo, training, and generation runs. Schema rows are JSON Lines: one complete
 JSON object per line, with deterministic field order for byte-for-byte replay
 checks.
 
+Some schema identifiers are not row schemas but embedded I/O contract tags
+referenced from a row's `input_schema` / `output_schema` fields — for example
+`nsrl.byte_prompt.v1` and `nsrl.byte_generation.v1` are the input/output tags
+inside `nsrl.byte_generation_trace.v1`, not standalone rows.
+
 ## `nsrl.corpus_trace.v1`
 
 Authority: `deterministic_corpus_preparation`
@@ -1042,3 +1047,153 @@ cargo run --release -p nsrl-demo -- \
   --linear-kernel ternary \
   --trace /tmp/nsrl-bench-suite.jsonl
 ```
+
+## `nsrl.lexeme_softmax_eval.v1`
+
+Purpose: report held-out lexeme bits-per-token for a softmax model with no weight
+updates. Emitted by `--mode lexeme-evaluate`.
+
+This row carries no `authority` field. All metrics sit under a nested `eval`
+object.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema` | string | Literal `nsrl.lexeme_softmax_eval.v1`. |
+| `eval.windows` | integer | Number of evaluation windows scored. |
+| `eval.vocab_size` | integer | Lexeme vocabulary size. |
+| `eval.bits_per_token` | decimal | Mean −log₂ p_target over evaluation windows. |
+| `eval.uniform_bits_per_token` | decimal | log₂(vocab_size) reference baseline. |
+| `eval.reduction_vs_uniform` | decimal | Uniform baseline minus model bits/token. |
+
+## `nsrl.simplewiki_extract_trace.v1`
+
+Authority: `deterministic_corpus_preparation`
+
+Purpose: account for Simple English Wikipedia page extraction — how many pages
+were seen, accepted, and skipped — so corpus builds are auditable.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema` | string | Literal `nsrl.simplewiki_extract_trace.v1`. |
+| `authority` | string | Literal `deterministic_corpus_preparation`. |
+| `sources` | array | Source ID, URL, and expected input format. |
+| `config.max_simplewiki_pages` | integer/null | Page cap, or null for no cap. |
+| `simplewiki.input_bytes` | integer | Decompressed XML bytes read. |
+| `simplewiki.pages_seen` | integer | Pages encountered in the stream. |
+| `simplewiki.pages_accepted` | integer | Pages kept after filtering. |
+| `simplewiki.pages_skipped_redirect` | integer | Pages skipped as redirects. |
+| `simplewiki.pages_skipped_namespace` | integer | Pages skipped by namespace. |
+
+## `nsrl.linear_attention_microbench.v2`
+
+Purpose: emit the softmax-vs-linear attention microbenchmark row from the
+`linear_attention_bench` binary. This is a flat row with no `authority` field;
+timing values are host observations, not universal benchmark claims.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema` | string | Literal `nsrl.linear_attention_microbench.v2`. |
+| `case` | string | Case name (e.g. `seq128 d=32`). |
+| `seq_len` / `d_model` / `heads` / `head_dim` | integer | Attention configuration. |
+| `repeat` / `generation_repeat` | integer | Measured iteration counts. |
+| `softmax_median_micros` | integer | Median softmax attention microseconds. |
+| `linear_median_micros` | integer | Median full linear attention microseconds. |
+| `incremental_linear_median_micros` | integer | Median incremental linear microseconds. |
+| `rescan_generation_median_micros` | integer | Median prefix-rescan generation microseconds. |
+| `softmax_to_linear_speedup_x100` | integer | Speedup ×100. |
+| `rescan_to_incremental_speedup_x100` | integer | Speedup ×100. |
+| `*_workspace_bytes` / `linear_state_bytes` / `linear_key_sum_bytes` | integer | Memory footprints. |
+| `*_output_hash` | string | Stable output hashes for each path, used as determinism checks. |
+
+## `nsrl.training_mini_transformer_mlp_binary_trace.v1`
+
+Authority: `deterministic_training_replay`
+
+This is the binary (non-JSONL) trace variant of
+`nsrl.training_mini_transformer_mlp_trace.v1`, emitted when
+`--mini-transformer-trace-format binary` is selected for `mini-transformer-mlp`
+runs. Its byte layout, header, and record framing are documented separately in
+[binary-trace-format.md](binary-trace-format.md). Binary traces are limited to
+`mini-transformer-mlp`; swarm runs stay on JSON.
+
+## Swarm and routing schemas
+
+All swarm and routing rows carry `authority: deterministic_training_replay`. The
+operational walkthrough — modes, flags, artifact magics, and composition modes —
+lives in [mini-transformer-swarm.md](mini-transformer-swarm.md). The contracts
+below list the top-level structure of each row.
+
+### `nsrl.training_mini_transformer_swarm_trace.v1`
+
+Purpose: summarize a `mini-transformer-swarm` run: every worker shard, its
+metrics, and the promoted `best_worker_index`.
+
+Top-level objects: `schema`, `authority`, `task`, `data` (tokenizer,
+token_count, token_hash), `swarm` (worker_count, best_worker_index,
+base_window_offset, base_stride, final_model_hash), `model` (vocab, seq_len,
+d_model, heads, hidden_dim, position), `training` (epochs, seq_len, stride,
+window_offset), and a per-worker shard array with final metrics.
+
+### `nsrl.training_mini_transformer_swarm_progress.v1`
+
+Purpose: compact heartbeat row for swarm runs, written at batch intervals through
+`--progress-out`. Same `data`/`swarm`/`model`/`training` envelope as the swarm
+trace, without the final per-worker metric block.
+
+### `nsrl.training_mini_transformer_swarm_scaling_trace.v1`
+
+Purpose: host scaling sweep from `mini-transformer-swarm-scaling`, sweeping worker
+counts `1, 2, 4, ... N`.
+
+Top-level objects: `schema`, `authority`, `data`, `host`, `benchmark`
+(run_count, worker_counts), `model`, `training`. Each benchmark row records
+elapsed nanoseconds, windows/updates per second, speedup, parallel efficiency,
+effective worker count, and the best worker's final error metrics.
+
+### `nsrl.training_mini_transformer_swarm_worker_artifact.v1`
+
+Purpose: metadata header for one self-validating binary worker artifact (magic
+`NSRLWK1`) produced by `mini-transformer-swarm-worker`.
+
+Top-level objects: `schema`, `authority`, `data` (token_count, token_hash),
+`swarm` (worker_count, base_window_offset, base_stride, base_max_windows,
+base_model_hash), `artifact` (format, magic).
+
+### `nsrl.mini_transformer_swarm_expert_manifest.v1`
+
+Purpose: expert manifest sidecar for routers and dashboards
+(`mini-transformer-swarm-manifest`, or `--manifest-out` during swarm training).
+
+Top-level objects: `authority`, `model` (format, magic, bytes, model_hash, id),
+`contract` (input_schema, output_schema, residual_scale, weight_dtype,
+activation_dtype, accumulator_dtype, softmax, context_seq_len, worker_count),
+plus capability tags and routing hints.
+
+### `nsrl.mini_transformer_swarm_route_trace.v1`
+
+Purpose: deterministic manifest router decision (`mini-transformer-swarm-route`).
+
+Top-level objects: `schema`, `authority`, `router` (`deterministic_symbolic`),
+`config`, `prompt` (bytes, hash), and a per-candidate array recording capability
+match, budget checks, manifest score, prompt affinity score, rejection reason,
+and selected expert index.
+
+### `nsrl.mini_transformer_swarm_generation_trace.v1`
+
+Purpose: generation from a composed swarm artifact
+(`mini-transformer-swarm-generate`).
+
+Top-level fields: `schema`, `authority`, `model`, `tokenizer`, `attention_kind`,
+`position_policy`, `composition`, `decode`, `decode_priors`, `swarm_model_hash`,
+`worker_count`, `best_worker_index`, component hashes (embedding/attention/mlp/
+output_head), `context_seq_len`, `prompt`, `generation` (new_tokens, steps),
+`known_non_claims`.
+
+### `nsrl.mini_transformer_swarm_routed_generation_trace.v1`
+
+Purpose: route-then-generate (`mini-transformer-swarm-routed-generate`). Embeds
+the route decision and a normal swarm generation trace.
+
+Top-level objects: `schema`, `authority`, `router`, `active_worker_count`,
+`route` (the embedded route decision), and `generation` (the embedded swarm
+generation trace).

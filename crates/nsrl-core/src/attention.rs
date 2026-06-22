@@ -351,12 +351,8 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
             let query_end = query_start.checked_add(head_dim)?;
             let query = &workspace.q[query_start..query_end];
 
-            for key_index in 0..seq_len {
-                if params.causal && key_index > token {
-                    workspace.logits_q8[key_index] = MASKED_LOGIT;
-                    continue;
-                }
-
+            let effective_len = if params.causal { token + 1 } else { seq_len };
+            for key_index in 0..effective_len {
                 let key_start = key_index.checked_mul(d_model)?.checked_add(head_offset)?;
                 let key_end = key_start.checked_add(head_dim)?;
                 workspace.logits_q8[key_index] =
@@ -364,8 +360,8 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
             }
 
             base2_softmax_i32_q15(
-                &workspace.logits_q8[..seq_len],
-                &mut workspace.probabilities_q15[..seq_len],
+                &workspace.logits_q8[..effective_len],
+                &mut workspace.probabilities_q15[..effective_len],
             )?;
 
             // Pre-compute index bounds (checked once outside the hot loop).
@@ -374,7 +370,7 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
 
             // base2_softmax_i32_q15 guarantees non-negative outputs; no negative-prob scan needed.
             debug_assert!(
-                workspace.probabilities_q15[..seq_len]
+                workspace.probabilities_q15[..effective_len]
                     .iter()
                     .all(|&p| p >= 0)
             );
@@ -385,7 +381,7 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
             for out_index in 0..head_dim {
                 let mut acc = 0_i64;
 
-                for key_index in 0..seq_len {
+                for key_index in 0..effective_len {
                     let probability = workspace.probabilities_q15[key_index];
                     let value_index = key_index * d_model + base_v_offset + out_index;
                     acc = acc

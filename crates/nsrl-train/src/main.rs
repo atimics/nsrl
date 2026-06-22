@@ -14,24 +14,26 @@ use nsrl_train::{
     LEXEME_SENTENCE_STOP_TOKEN_CAP, LexemeContextFeatures, LexemeDecodePriors,
     LexemeEmbeddingModel, LexemeEmbeddingTrainConfig, LexemeGenerationConfig, LexemeMemoryPriors,
     LexemeQualityWeightProfile, LexemeSoftmaxModel, LexemeSoftmaxTrainConfig, LexemeTopicPriors,
-    LinearBackwardConfig, MiniTransformerAttentionKind, MiniTransformerBinaryTraceRecord,
-    MiniTransformerBinaryTraceWriter, MiniTransformerMlpModel, MiniTransformerMlpSwarmModel,
-    MiniTransformerMlpSwarmTrainConfig, MiniTransformerMlpTrainConfig,
+    LinearBackwardConfig, MiniTransformerAttentionKind, MiniTransformerBatchMode,
+    MiniTransformerBinaryTraceRecord, MiniTransformerBinaryTraceWriter, MiniTransformerMlpModel,
+    MiniTransformerMlpSwarmModel, MiniTransformerMlpSwarmTrainConfig,
+    MiniTransformerMlpSwarmWorkerArtifact, MiniTransformerMlpTrainConfig,
     MiniTransformerPositionPolicy, MiniTransformerSwarmComposition,
     MiniTransformerSwarmRouteConfig, MiniTransformerSwarmRoutedGenerationExpert,
     MiniTransformerTraceDetail, SoftmaxTrainConfig, TrainConfig, TrainError,
-    generate_byte_embed_softmax_with_priors, generate_byte_softmax_with_priors,
-    generate_lexeme_softmax_with_memory,
+    assemble_mini_transformer_mlp_swarm_worker_artifacts, generate_byte_embed_softmax_with_priors,
+    generate_byte_softmax_with_priors, generate_lexeme_softmax_with_memory,
     generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors,
     generate_mini_transformer_with_attention_kind_position_policy_priors_and_ttt_shift,
     generate_routed_mini_transformer_swarm_experts, lexeme_quality_weights_from_vocab,
-    route_mini_transformer_swarm_expert_models, run_byte_embed_softmax_training_with_model,
-    run_byte_softmax_training_with_model, run_gated_mlp_backward_smoke,
-    run_lexeme_embedding_training_with_model_and_quality, run_lexeme_softmax_evaluate,
-    run_lexeme_softmax_training_from_softmax_model_and_quality,
+    reduce_lexeme_softmax_models, route_mini_transformer_swarm_expert_models,
+    run_byte_embed_softmax_training_with_model, run_byte_softmax_training_with_model,
+    run_gated_mlp_backward_smoke, run_lexeme_embedding_training_with_model_and_quality,
+    run_lexeme_softmax_evaluate, run_lexeme_softmax_training_from_softmax_model_and_quality,
     run_lexeme_softmax_training_with_model_and_quality, run_linear_backward_smoke,
     run_mini_transformer_mlp_swarm_scaling_benchmark_from_model,
-    run_mini_transformer_mlp_swarm_training_from_model,
+    run_mini_transformer_mlp_swarm_training_from_model_with_progress,
+    run_mini_transformer_mlp_swarm_worker_from_model_with_progress,
     run_mini_transformer_mlp_training_from_model_with_progress_and_trace_detail,
     run_mini_transformer_mlp_training_from_model_with_progress_trace_detail_and_binary_trace,
     run_softmax_training, run_training_smoke,
@@ -76,8 +78,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut progress_interval_batches = 0_usize;
     let mut text_out_path = None;
     let mut generated_only_text = false;
-    let mut mini_transformer_attention_kind = MiniTransformerAttentionKind::Base2Softmax;
-    let mut mini_transformer_position_policy = MiniTransformerPositionPolicy::LearnedAbsolute;
+    let mut mini_transformer_attention_kind = MiniTransformerAttentionKind::Linear;
+    let mut mini_transformer_position_policy = MiniTransformerPositionPolicy::Nope;
     let mut mini_transformer_ttt_learning_rate_shift =
         nsrl_train::DEFAULT_MINI_TRANSFORMER_STREAMING_TTT_LEARNING_RATE_SHIFT;
     let mut mini_transformer_q_shift_explicit = false;
@@ -86,6 +88,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut swarm_workers = std::thread::available_parallelism()
         .map(|value| value.get())
         .unwrap_or(1);
+    let mut swarm_worker_index = None;
+    let mut swarm_worker_artifact_out_path = None;
+    let mut swarm_worker_artifact_paths = Vec::new();
     let mut swarm_composition = MiniTransformerSwarmComposition::AverageLogits;
     let mut route_config = MiniTransformerSwarmRouteConfig::default();
 
@@ -94,7 +99,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         match arg.as_str() {
             "--mode" => {
                 mode = args.next().ok_or(
-                    "--mode requires softmax, perceptron, linear-backward, gated-mlp-backward, byte-softmax, byte-generate, byte-embed-softmax, byte-embed-generate, mini-transformer-mlp, mini-transformer-swarm, mini-transformer-swarm-manifest, mini-transformer-swarm-route, mini-transformer-swarm-routed-generate, mini-transformer-swarm-scaling, mini-transformer-swarm-generate, or mini-transformer-generate",
+                    "--mode requires softmax, perceptron, linear-backward, gated-mlp-backward, byte-softmax, byte-generate, byte-embed-softmax, byte-embed-generate, lexeme-embedding, lexeme-softmax, lexeme-reduce, lexeme-generate, mini-transformer-mlp, mini-transformer-swarm, mini-transformer-swarm-worker, mini-transformer-swarm-assemble, mini-transformer-swarm-manifest, mini-transformer-swarm-route, mini-transformer-swarm-routed-generate, mini-transformer-swarm-scaling, mini-transformer-swarm-generate, or mini-transformer-generate",
                 )?;
             }
             "--epochs" => {
@@ -259,6 +264,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("--swarm-workers requires an integer")?
                     .parse()?;
             }
+            "--swarm-worker-count" => {
+                swarm_workers = args
+                    .next()
+                    .ok_or("--swarm-worker-count requires an integer")?
+                    .parse()?;
+            }
+            "--swarm-worker-index" => {
+                swarm_worker_index = Some(
+                    args.next()
+                        .ok_or("--swarm-worker-index requires an integer")?
+                        .parse()?,
+                );
+            }
             "--swarm-composition" => {
                 swarm_composition = parse_swarm_composition(
                     &args
@@ -335,6 +353,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 swarm_model_out_path = Some(PathBuf::from(
                     args.next()
                         .ok_or("--swarm-model-out requires a following path")?,
+                ));
+            }
+            "--swarm-worker-out" => {
+                swarm_worker_artifact_out_path = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("--swarm-worker-out requires a following path")?,
+                ));
+            }
+            "--swarm-worker-artifact" => {
+                swarm_worker_artifact_paths.push(PathBuf::from(
+                    args.next()
+                        .ok_or("--swarm-worker-artifact requires a following path")?,
                 ));
             }
             "--manifest-out" => {
@@ -725,6 +755,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 lexeme_softmax_config.batch_windows = value;
                 mini_transformer_config.batch_windows = value;
             }
+            "--mini-transformer-batch-mode" => {
+                mini_transformer_config.batch_mode = parse_mini_transformer_batch_mode(
+                    &args
+                        .next()
+                        .ok_or("--mini-transformer-batch-mode requires serial or map-reduce")?,
+                )?;
+            }
+            "--mini-transformer-map-reduce-workers" => {
+                mini_transformer_config.map_reduce_workers = args
+                    .next()
+                    .ok_or("--mini-transformer-map-reduce-workers requires an integer")?
+                    .parse()?;
+            }
             "--max-windows" => {
                 byte_softmax_config.max_windows = Some(
                     args.next()
@@ -923,6 +966,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             run.trace.to_json_line()
         }
+        "lexeme-reduce" | "lexeme_reduce" => {
+            if let Some(path) = model_path {
+                expert_paths.insert(0, path);
+            }
+            if expert_paths.is_empty() {
+                return Err("--model or --expert is required for lexeme-reduce mode".into());
+            }
+            let mut models = Vec::with_capacity(expert_paths.len());
+            for path in &expert_paths {
+                let model_bytes = fs::read(path)?;
+                models.push(LexemeSoftmaxModel::from_bytes(&model_bytes)?);
+            }
+            let (model, trace) = reduce_lexeme_softmax_models(models)?;
+            if let Some(path) = model_out_path {
+                fs::write(path, model.try_to_bytes()?)?;
+            }
+            trace.to_json_line()
+        }
         "lexeme-evaluate" | "lexeme_evaluate" => {
             let token_path = tokens_path.ok_or("--tokens is required for lexeme-evaluate mode")?;
             let model_path = model_path.ok_or("--model is required for lexeme-evaluate mode")?;
@@ -1016,8 +1077,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 0
             };
-            let run = if trace_format == TraceFormat::Binary && trace_path.is_some() {
-                let trace_file = fs::File::create(trace_path.as_ref().expect("trace path"))?;
+            let run = if let (TraceFormat::Binary, Some(trace_path)) = (trace_format, &trace_path) {
+                let trace_file = fs::File::create(trace_path)?;
                 let mut binary_writer =
                     MiniTransformerBinaryTraceWriter::new(BufWriter::new(trace_file));
                 let run = {
@@ -1087,9 +1148,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         .into(),
                 );
             }
-            if progress_path.is_some() {
-                return Err("--progress-out is not supported for mini-transformer-swarm".into());
-            }
             let path = tokens_path.ok_or("--tokens is required for mini-transformer-swarm mode")?;
             let tokens = fs::read(path)?;
             let model = if let Some(path) = model_path {
@@ -1103,7 +1161,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 MiniTransformerTraceDetail::None
             };
-            let run = run_mini_transformer_mlp_swarm_training_from_model(
+            let progress_interval = if progress_path.is_some() {
+                progress_interval_batches.max(1)
+            } else {
+                0
+            };
+            let mut write_progress =
+                |progress: &nsrl_train::MiniTransformerMlpSwarmTrainingProgressTrace| {
+                    if let Some(path) = progress_path.as_ref() {
+                        write_progress_trace(path, &progress.to_json_line())
+                    } else {
+                        Ok(())
+                    }
+                };
+            let run = run_mini_transformer_mlp_swarm_training_from_model_with_progress(
                 &tokens,
                 mini_transformer_config,
                 MiniTransformerMlpSwarmTrainConfig {
@@ -1111,6 +1182,118 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     trace_detail: effective_trace_detail,
                 },
                 model,
+                progress_interval,
+                &mut write_progress,
+            )?;
+            if let Some(path) = model_out_path {
+                fs::write(path, run.model.try_to_bytes()?)?;
+            }
+            if let Some(path) = swarm_model_out_path {
+                fs::write(path, run.swarm_model.try_to_bytes()?)?;
+            }
+            if let Some(path) = manifest_out_path {
+                fs::write(path, run.swarm_model.to_expert_manifest()?.to_json_line())?;
+            }
+            run.trace.to_json_line()
+        }
+        "mini-transformer-swarm-worker" | "mini_transformer_swarm_worker" => {
+            if trace_format == TraceFormat::Binary {
+                return Err(
+                    "--trace-format binary is not supported for mini-transformer-swarm-worker"
+                        .into(),
+                );
+            }
+            if mini_transformer_attention_kind == MiniTransformerAttentionKind::LinearStreamingNope
+                || mini_transformer_attention_kind
+                    == MiniTransformerAttentionKind::LinearStreamingTttNope
+            {
+                return Err(
+                    "--mini-transformer-attention linear-streaming modes are generation-only; swarm worker training uses trainable attention modes"
+                        .into(),
+                );
+            }
+            let worker_index =
+                swarm_worker_index.ok_or("--swarm-worker-index is required for worker mode")?;
+            let path =
+                tokens_path.ok_or("--tokens is required for mini-transformer-swarm-worker mode")?;
+            let tokens = fs::read(path)?;
+            let model = if let Some(path) = model_path {
+                let model_bytes = fs::read(path)?;
+                MiniTransformerMlpModel::from_bytes(&model_bytes)?
+            } else {
+                MiniTransformerMlpModel::new_initial_with_seq_len(mini_transformer_config.seq_len)
+            };
+            let effective_trace_detail = if mini_transformer_trace_detail_explicit {
+                mini_transformer_trace_detail
+            } else {
+                MiniTransformerTraceDetail::None
+            };
+            let progress_interval = if progress_path.is_some() {
+                progress_interval_batches.max(1)
+            } else {
+                0
+            };
+            let mut write_progress =
+                |progress: &nsrl_train::MiniTransformerMlpSwarmTrainingProgressTrace| {
+                    if let Some(path) = progress_path.as_ref() {
+                        write_progress_trace(path, &progress.to_json_line())
+                    } else {
+                        Ok(())
+                    }
+                };
+            let run = run_mini_transformer_mlp_swarm_worker_from_model_with_progress(
+                &tokens,
+                mini_transformer_config,
+                worker_index,
+                swarm_workers,
+                model,
+                progress_interval,
+                effective_trace_detail,
+                &mut write_progress,
+            )?;
+            if let Some(path) = model_out_path {
+                fs::write(path, run.artifact.model.try_to_bytes()?)?;
+            }
+            if let Some(path) = swarm_worker_artifact_out_path {
+                fs::write(path, run.artifact.try_to_bytes()?)?;
+            }
+            run.artifact.to_json_line()
+        }
+        "mini-transformer-swarm-assemble" | "mini_transformer_swarm_assemble" => {
+            if trace_format == TraceFormat::Binary {
+                return Err(
+                    "--trace-format binary is not supported for mini-transformer-swarm-assemble"
+                        .into(),
+                );
+            }
+            if swarm_worker_artifact_paths.is_empty() {
+                return Err(
+                    "--swarm-worker-artifact is required for mini-transformer-swarm-assemble"
+                        .into(),
+                );
+            }
+            let path = tokens_path
+                .ok_or("--tokens is required for mini-transformer-swarm-assemble mode")?;
+            let tokens = fs::read(path)?;
+            let model = if let Some(path) = model_path {
+                let model_bytes = fs::read(path)?;
+                MiniTransformerMlpModel::from_bytes(&model_bytes)?
+            } else {
+                MiniTransformerMlpModel::new_initial_with_seq_len(mini_transformer_config.seq_len)
+            };
+            let artifacts = swarm_worker_artifact_paths
+                .iter()
+                .map(|path| {
+                    let bytes = fs::read(path)?;
+                    MiniTransformerMlpSwarmWorkerArtifact::from_bytes(&bytes)
+                        .map_err(Box::<dyn std::error::Error>::from)
+                })
+                .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+            let run = assemble_mini_transformer_mlp_swarm_worker_artifacts(
+                &tokens,
+                mini_transformer_config,
+                &model,
+                artifacts,
             )?;
             if let Some(path) = model_out_path {
                 fs::write(path, run.model.try_to_bytes()?)?;
@@ -1355,7 +1538,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-generate|mini-transformer-mlp|mini-transformer-swarm|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--expert PATH] [--model-out PATH] [--swarm-model-out PATH] [--manifest-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-reduce|lexeme-generate|mini-transformer-mlp|mini-transformer-swarm|mini-transformer-swarm-worker|mini-transformer-swarm-assemble|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--expert PATH] [--model-out PATH] [--swarm-model-out PATH] [--swarm-worker-out PATH] [--swarm-worker-artifact PATH] [--manifest-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N|--swarm-worker-count N] [--swarm-worker-index N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
     );
     println!();
     println!("Runs a deterministic integer training trace.");
@@ -1466,6 +1649,16 @@ fn parse_mini_transformer_position_policy(
         | "position_embedding" => Ok(MiniTransformerPositionPolicy::LearnedAbsolute),
         "nope" | "no-position" | "no_position" | "none" => Ok(MiniTransformerPositionPolicy::Nope),
         _ => Err("--mini-transformer-position requires learned-absolute or nope".into()),
+    }
+}
+
+fn parse_mini_transformer_batch_mode(
+    value: &str,
+) -> Result<MiniTransformerBatchMode, Box<dyn std::error::Error>> {
+    match value {
+        "serial" => Ok(MiniTransformerBatchMode::Serial),
+        "map-reduce" | "map_reduce" | "mapreduce" => Ok(MiniTransformerBatchMode::MapReduce),
+        _ => Err("--mini-transformer-batch-mode requires serial or map-reduce".into()),
     }
 }
 

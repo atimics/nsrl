@@ -127,6 +127,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nsrl-sched"
+version = "0.1.0"
+
+[[package]]
 name = "nsrl-train"
 version = "0.1.0"
 dependencies = [

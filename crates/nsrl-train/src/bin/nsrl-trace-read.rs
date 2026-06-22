@@ -804,9 +804,9 @@ fn write_json<W: Write>(
         }
         write_step_json(writer, step)?;
     }
-    write!(
+    writeln!(
         writer,
-        "],\"omitted_step_records\":{}}}\n",
+        "],\"omitted_step_records\":{}}}",
         trace.steps.len() - rendered_step_count
     )?;
     Ok(())

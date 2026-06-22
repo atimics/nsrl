@@ -145,6 +145,41 @@ into an integer latent state: a small topic or Merkle-hologram memory that can
 survive across sentence boundaries and bias generation without requiring exact
 source overlap.
 
+## World-Model Prototypes
+
+Corpus work is now organized as three sibling tracks, each with a trained tiny
+model on disk. Signal and CosyWorld are state-conditioned world models
+(`private_state` → `expected_output`); Crowley Bard is an output-only literary
+voice. See `docs/world-llm-corpus-plan.md` for the full plan.
+
+| Track | Corpus | Model | Train tokens / windows | Train accuracy |
+| --- | --- | --- | --- | --- |
+| Signal LLM | 486 replay pairs | `cheap-trained/sim-state-pair-v1024-d16-seq16/signal-replay/v345-d16-seq16.nsrllm` | 37,386 / 37,354 | 915 / 1000 |
+| CosyWorld LLM | 23 kernel states / 27 frames | `cheap-trained/sim-state-pair-v1024-d16-seq16/cosyworld-kernel/v464-d16-seq16.nsrllm` | 68,672 / 68,640 | 901 / 1000 |
+| Crowley Bard | Shakespeare 120k / Blake 220k / Crowley 260k / synthetic SimpleWiki 100k bytes | `visionary-twitter-bot-demo/v4096.nsrllm` | 194,219 lexeme tokens / 131,072 softmax windows | 9.890 bits/token on local lexeme eval |
+| Crowley Bard expanded candidate | Balanced prose expanded corpus retokenized with frozen Twitter bot vocab | `aws-lambda-lexeme/candidates/visionary-expanded-frozen-v4096-w16384-lr24.nsrllm` | 359,879 lexeme tokens / 16,384 continuation windows | 8.660 bits/token on expanded frozen-vocab eval |
+
+- Signal corpus is built from the real `signal_replay` simulator at
+  `/Users/ratimics/develop/signal`. CosyWorld corpus is built from the C kernel
+  at `/Users/ratimics/develop/cosyworld/v2/core-c`.
+- A local Gemma4 teacher pipeline (`scripts/generate-state-outputs-ollama.mjs`)
+  drafts grounded output variants from simulator states. Smoke runs accept 6/6
+  Signal rows and 5/6 CosyWorld rows (with `--attempts 8`).
+- Crowley Bard is the most mature standalone demo and is being prepared as a
+  public twitterbot demo (see `scripts/x-bot/` and `docs/world-llm-corpus-plan.md`).
+- The 2026-06-22 expanded-corpus lexeme sweep
+  (`visionary-expanded-frozen-v4096-sweep-20260622T075244Z`) kept the model
+  shape fixed and continued from the current bot on a frozen-vocab expanded
+  corpus. The best Lambda candidate was `w16384-lr24` (`worker-006`), improving
+  the expanded-corpus eval from `9.901` to `8.660` bits/token. The local live
+  dashboard is served from `http://127.0.0.1:8765/` while the run workspace is
+  present.
+
+These are deliberately tiny (d_model=16, ~1k vocab for the state lanes). High
+train accuracy reflects small, formulaic corpora — the open gap is scale, not
+the integer contract. The numbers above are training-set metrics, not held-out
+quality.
+
 ## Near-Term Plan
 
 1. Run longer comparisons with the implemented rule-based adaptive shift
@@ -158,6 +193,9 @@ source overlap.
    grounding checks, and candidate scoring are faster and schema-consistent.
 4. Add integer topic state or Merkle-hologram memory as an advisory bias, then
    compare generation with source grounding weakened or disabled.
-5. Continue corpus work with clean, source-balanced SimpleWiki, Shakespeare,
-   Blake, Crowley, and other public-domain lanes. The goal is to run out of
-   useful clean data before running out of compute.
+5. Scale the three sibling tracks past their current prototypes (see
+   World-Model Prototypes above): expand Signal replay states and CosyWorld
+   kernel playthroughs, generate and filter Gemma4 teacher variants, then train
+   each lane separately before blending anything. Crowley Bard remains the
+   Shakespeare x Blake x Crowley twitterbot voice, not just a CosyWorld literary
+   adapter. See `docs/world-llm-corpus-plan.md`.

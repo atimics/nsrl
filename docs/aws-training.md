@@ -73,6 +73,63 @@ single-worker by default unless `NSRL_MODE=mini-transformer-swarm` is set.
 Binary traces are still limited to `mini-transformer-mlp`; swarm runs should
 keep `NSRL_TRACE_FORMAT=json` until the binary swarm schema lands.
 
+Mini-transformer runs also expose `NSRL_BATCH_MODE=serial|map-reduce` and
+`NSRL_MAP_REDUCE_WORKERS=N`. Map-reduce is the default Lambda cost lane for the
+fast linear/NoPE byte path: workers accumulate private i64 gradients from a
+frozen batch model, the main thread reduces them deterministically, and one
+checked candidate update commits or rejects atomically. Use
+`scripts/aws/run-crowley-bard-lambda-mapreduce.sh` for the current Crowley Bard
+64k comparison run, or call `scripts/aws/run-lambda-swarm-comparison.mjs`
+directly for a different S3 token artifact.
+
+## Lexeme Lambda Sweeps
+
+Crowley Bard quality currently scales better through guarded lexeme continuation
+than through naive model averaging. Keep the model shape fixed (`v4096`,
+embedding dim 16, context 8) until corpus and schedule sweeps stop producing
+cheap wins. Continual lexeme training must use a frozen vocab TSV from the
+baseline model; do not continue from `visionary-twitter-bot-demo/v4096.nsrllm`
+on token IDs discovered from a different corpus.
+
+The current expanded-corpus sweep retokenizes the balanced-prose corpus against
+the Twitter bot vocab:
+
+```sh
+cargo run --release -q -p nsrl-corpus -- lexeme-tokenize-fixed-vocab \
+  --corpus data/processed/visionary-balanced-prose-balanced-prose-interleave-v6-seq2/corpus.txt \
+  --vocab data/processed/visionary-twitter-bot-demo/v4096.vocab.tsv \
+  --tokens-out data/processed/visionary-expanded-frozen-v4096/v4096.tokens.u16 \
+  --trace data/processed/visionary-expanded-frozen-v4096/v4096.tokens.trace.jsonl \
+  --seq-len 32 \
+  --stride 1
+```
+
+Launch a guarded Lambda sweep as independent continuation candidates from the
+current bot model. The 2026-06-22 sweep used 4k/8k/12k/16k softmax windows by
+`lr_shift` 24/25 against `visionary-expanded-frozen-v4096`. Track it with:
+
+```sh
+scripts/aws/watch-lexeme-sweep-dashboard.mjs \
+  --run-dir data/aws-lambda-lexeme/runs/<run-name> \
+  --s3-prefix s3://nsrl-training-022118847419-us-east-1/wikibard/lambda-runs/<run-name>
+
+python3 -m http.server 8765 \
+  --directory data/aws-lambda-lexeme/runs/<run-name>/dashboard
+```
+
+The watcher writes a local auto-refreshing dashboard plus `runs.json`. It polls
+worker summaries from S3, downloads completed models, evaluates candidates
+against the expanded frozen-vocab tokens, and samples `the world is`.
+
+Latest result:
+
+- Run: `visionary-expanded-frozen-v4096-sweep-20260622T075244Z`
+- Local dashboard: `http://127.0.0.1:8765/`
+- Best candidate: `w16384-lr24` / `worker-006`
+- Eval: `8.660` bits/token versus current baseline `9.901`
+- Candidate: `data/aws-lambda-lexeme/candidates/visionary-expanded-frozen-v4096-w16384-lr24.nsrllm`
+- S3: `s3://nsrl-training-022118847419-us-east-1/wikibard/candidates/visionary-expanded-frozen-v4096-w16384-lr24.nsrllm`
+
 ## Build A Versioned Dataset
 
 Upload raw files to S3 first:
