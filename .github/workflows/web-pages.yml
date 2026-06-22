@@ -9,6 +9,7 @@ on:
     paths:
       - ".github/workflows/web-pages.yml"
       - "web/**"
+      - "scripts/build-web-chat.sh"
 
 permissions:
   contents: read

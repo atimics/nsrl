@@ -9,6 +9,7 @@ DynamoDB on AWS and can fall back to a local JSON file for dry-run testing.
 from __future__ import annotations
 
 import base64
+import binascii
 import datetime as dt
 import hashlib
 import hmac
@@ -22,6 +23,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,11 +34,51 @@ except ImportError:  # pragma: no cover - local machines may not have boto3.
 
 
 API_BASE = "https://api.x.com/2"
+UPLOAD_BASE = "https://upload.twitter.com/1.1"
 DEFAULT_USER_AGENT = "nsrl-crowley-bard-lambda/0.1"
 PUBLIC_MENTION_RE = re.compile(r"@\w+")
 MAX_STANDALONE_CANDIDATES = 12
 STANDALONE_POST_TTL_SECONDS = 180 * 24 * 60 * 60
 MENTION_FAILURE_TTL_SECONDS = 7 * 24 * 60 * 60
+SIGIL_SCHEMA = "nsrl.x_bot.solomon_sigil.v1"
+DECODE_BANNED_TOKENS = [
+    "assistant",
+    "chatbot",
+    "model",
+    "training",
+    "prompt",
+    "json",
+    "http",
+    "www",
+    "class",
+    "align",
+    "bgcolor",
+    "nbsp",
+    "enter",
+    "exeunt",
+    "dramatis",
+    "alicia",
+    "crassus",
+    "parolles",
+    "helena",
+    "bertram",
+    "lafeu",
+    "hamlet",
+    "horatio",
+    "ophelia",
+    "polonius",
+    "romeo",
+    "juliet",
+    "othello",
+    "iago",
+    "falstaff",
+    "prospero",
+    "caliban",
+    "macbeth",
+    "banquo",
+    "gloucester",
+    "cassio",
+]
 
 
 class BotConfigError(RuntimeError):
@@ -216,6 +258,13 @@ class BotConfig:
     context_adapt_timeout_seconds: int
     standalone_candidates: int
     public_tweet_min_score: int
+    sigil_enabled: bool
+    sigil_bin: str
+    sigil_model: str
+    sigil_text_index: str
+    sigil_candidates: int
+    sigil_passes: int
+    sigil_timeout_seconds: int
 
     @classmethod
     def from_env(cls) -> "BotConfig":
@@ -250,7 +299,7 @@ class BotConfig:
             nsrl_tokens=os.getenv(
                 "X_NSRL_TOKENS", os.path.join(task_root, "model", "v4096.tokens.u16")
             ),
-            nsrl_max_new_tokens=env_int("X_NSRL_MAX_NEW_TOKENS", 48, minimum=8),
+            nsrl_max_new_tokens=env_int("X_NSRL_MAX_NEW_TOKENS", 60, minimum=8),
             nsrl_top_k=env_int("X_NSRL_TOP_K", 12, minimum=1),
             nsrl_timeout_seconds=env_int("X_NSRL_TIMEOUT_SECONDS", 12, minimum=1),
             context_adapt=env_bool("X_CONTEXT_ADAPT", False),
@@ -270,6 +319,20 @@ class BotConfig:
                 maximum=MAX_STANDALONE_CANDIDATES,
             ),
             public_tweet_min_score=env_int("X_PUBLIC_TWEET_MIN_SCORE", 48, minimum=1),
+            sigil_enabled=env_bool("X_SIGIL_ENABLED", True),
+            sigil_bin=os.getenv(
+                "X_SIGIL_BIN", os.path.join(task_root, "bin", "nsrl-bitmap-sample")
+            ),
+            sigil_model=os.getenv(
+                "X_SIGIL_MODEL", os.path.join(task_root, "solomon", "model.nsrltch")
+            ),
+            sigil_text_index=os.getenv(
+                "X_SIGIL_TEXT_INDEX",
+                os.path.join(task_root, "solomon", "solomon-spirit-text-signatures.tsv"),
+            ),
+            sigil_candidates=env_int("X_SIGIL_CANDIDATES", 8, minimum=1),
+            sigil_passes=env_int("X_SIGIL_PASSES", 4, minimum=1),
+            sigil_timeout_seconds=env_int("X_SIGIL_TIMEOUT_SECONDS", 60, minimum=1),
         )
 
 
@@ -311,6 +374,7 @@ class XOAuth1Client:
         method: str,
         url: str,
         query_params: dict[str, Any] | None = None,
+        body_params: dict[str, Any] | None = None,
     ) -> str:
         oauth_params = {
             "oauth_consumer_key": self.credentials.consumer_key,
@@ -322,6 +386,9 @@ class XOAuth1Client:
         }
         signing_pairs: list[tuple[str, str]] = []
         for key, value in (query_params or {}).items():
+            if value is not None:
+                signing_pairs.append((str(key), str(value)))
+        for key, value in (body_params or {}).items():
             if value is not None:
                 signing_pairs.append((str(key), str(value)))
         signing_pairs.extend((key, value) for key, value in oauth_params.items())
@@ -363,18 +430,41 @@ class XOAuth1Client:
         *,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        form_body: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], dict[str, str]]:
         url = f"{self.api_base}{path}"
+        return self.request_absolute(
+            method,
+            url,
+            params=params,
+            json_body=json_body,
+            form_body=form_body,
+        )
+
+    def request_absolute(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+        form_body: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        if json_body is not None and form_body is not None:
+            raise ValueError("json_body and form_body are mutually exclusive")
         query = urllib.parse.urlencode(params or {})
         full_url = f"{url}?{query}" if query else url
         body = None
         headers = {
-            "Authorization": self._authorization_header(method, url, params),
+            "Authorization": self._authorization_header(method, url, params, form_body),
             "User-Agent": self.user_agent,
         }
         if json_body is not None:
             body = json.dumps(json_body, separators=(",", ":")).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        elif form_body is not None:
+            body = urllib.parse.urlencode(form_body).encode("utf-8")
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
         request = urllib.request.Request(
             full_url,
             data=body,
@@ -411,16 +501,49 @@ class XOAuth1Client:
         return body
 
     def post_reply(self, text: str, in_reply_to_tweet_id: str) -> dict[str, Any]:
+        return self.post_reply_with_media(text, in_reply_to_tweet_id, media_ids=None)
+
+    def post_reply_with_media(
+        self,
+        text: str,
+        in_reply_to_tweet_id: str,
+        *,
+        media_ids: list[str] | None,
+    ) -> dict[str, Any]:
         body = {
             "text": text,
             "reply": {"in_reply_to_tweet_id": in_reply_to_tweet_id},
         }
+        if media_ids:
+            body["media"] = {"media_ids": media_ids}
         response, _headers = self.request("POST", "/tweets", json_body=body)
         return response
 
     def post_tweet(self, text: str) -> dict[str, Any]:
-        response, _headers = self.request("POST", "/tweets", json_body={"text": text})
+        return self.post_tweet_with_media(text, media_ids=None)
+
+    def post_tweet_with_media(
+        self, text: str, *, media_ids: list[str] | None
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"text": text}
+        if media_ids:
+            body["media"] = {"media_ids": media_ids}
+        response, _headers = self.request("POST", "/tweets", json_body=body)
         return response
+
+    def upload_media_png(self, png_bytes: bytes) -> str:
+        response, _headers = self.request_absolute(
+            "POST",
+            f"{UPLOAD_BASE}/media/upload.json",
+            form_body={
+                "media_data": base64.b64encode(png_bytes).decode("ascii"),
+                "media_category": "tweet_image",
+            },
+        )
+        media_id = response.get("media_id_string") or response.get("media_id")
+        if not media_id:
+            raise XApiError(200, json.dumps(response), {})
+        return str(media_id)
 
 
 class StateStore:
@@ -536,6 +659,7 @@ class StateStore:
                 "text": str(tweet.get("text") or ""),
                 "engine": str(tweet.get("engine") or ""),
                 "quality_score": str(tweet.get("quality_score") or ""),
+                "sigil": public_sigil_metadata(tweet.get("sigil")),
                 "created_at": iso_now(now),
                 "updated_at": iso_now(now),
                 "expires_at": int(now.timestamp()) + STANDALONE_POST_TTL_SECONDS,
@@ -562,6 +686,7 @@ class StateStore:
                 "text": str(tweet.get("text") or ""),
                 "engine": str(tweet.get("engine") or ""),
                 "quality_score": str(tweet.get("quality_score") or ""),
+                "sigil": public_sigil_metadata(tweet.get("sigil")),
                 "posted_at": iso_now(now),
                 "updated_at": iso_now(now),
                 "response": response,
@@ -587,6 +712,7 @@ class StateStore:
                 "text": str(tweet.get("text") or ""),
                 "engine": str(tweet.get("engine") or ""),
                 "quality_score": str(tweet.get("quality_score") or ""),
+                "sigil": public_sigil_metadata(tweet.get("sigil")),
                 "error": error[:500],
                 "updated_at": iso_now(now),
                 "expires_at": int(now.timestamp()) + STANDALONE_POST_TTL_SECONDS,
@@ -679,6 +805,7 @@ def archive_training_event(
     reply_engine: str,
     dry_run: bool,
     reply_id: str | None = None,
+    sigil: dict[str, Any] | None = None,
 ) -> str | None:
     if not config.context_archive_s3_uri:
         return None
@@ -710,6 +837,7 @@ def archive_training_event(
                 "id": reply_id or "",
                 "text": reply_text,
                 "engine": reply_engine,
+                "sigil": public_sigil_metadata(sigil),
             },
         }
         boto3.client("s3").put_object(
@@ -763,6 +891,59 @@ STOPWORDS = {
     "with",
     "you",
     "your",
+}
+GLUE_WORDS = STOPWORDS | {
+    "all",
+    "also",
+    "am",
+    "away",
+    "be",
+    "come",
+    "do",
+    "doth",
+    "down",
+    "even",
+    "ever",
+    "give",
+    "had",
+    "hath",
+    "hear",
+    "here",
+    "know",
+    "let",
+    "made",
+    "make",
+    "may",
+    "might",
+    "more",
+    "most",
+    "much",
+    "must",
+    "never",
+    "no",
+    "now",
+    "one",
+    "own",
+    "say",
+    "see",
+    "shall",
+    "should",
+    "still",
+    "take",
+    "than",
+    "then",
+    "these",
+    "thing",
+    "things",
+    "those",
+    "thou",
+    "thy",
+    "unto",
+    "up",
+    "upon",
+    "were",
+    "would",
+    "yet",
 }
 
 DOMAIN_LINES = {
@@ -867,10 +1048,43 @@ def clean_generated_text(text: str) -> str:
     text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]+", " ", text)
     text = strip_public_mentions(text)
     text = re.sub(r"^(?:out|output|reply|tweet)\s*:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s+([,.!?;:])", r"\1", text)
     text = text.strip(" \t\r\n\"'")
+    text = trim_generated_sentence_span(text, min_chars=56, max_chars=230)
     if text and text[-1] not in ".!?":
         text = f"{text}."
     return text
+
+
+def trim_generated_sentence_span(text: str, *, min_chars: int, max_chars: int) -> str:
+    text = text.strip()
+    if len(text) <= min_chars:
+        return text
+    for index, char in enumerate(text):
+        if index < min_chars:
+            continue
+        if char in ".!?":
+            return text[: index + 1].strip()
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    last_space = cut.rfind(" ")
+    if last_space >= min_chars:
+        return cut[:last_space].strip()
+    return cut.strip()
+
+
+def max_word_run(words: list[str], word_set: set[str]) -> int:
+    current = 0
+    best = 0
+    for word in words:
+        if word.strip("'") in word_set:
+            current += 1
+            best = max(best, current)
+        else:
+            current = 0
+    return best
 
 
 WEAK_PUBLIC_TWEET_START_RE = re.compile(
@@ -883,6 +1097,10 @@ BROKEN_PUBLIC_TWEET_PHRASE_RE = re.compile(
 )
 DANGLING_PUBLIC_TWEET_END_RE = re.compile(
     r"\b(?:a|an|and|as|but|for|from|in|my|of|or|our|than|that|the|their|thy|to|which|who|whose|with|your)[.!?]?$",
+    re.IGNORECASE,
+)
+ABRUPT_COORDINATE_END_RE = re.compile(
+    r"\b(?:and|or|but)\s+(?:death|eyes?|face|heart|life|light|soul)[.!?]?$",
     re.IGNORECASE,
 )
 
@@ -899,8 +1117,14 @@ def score_public_tweet_text(text: str) -> dict[str, Any]:
         word for word in words if len(word) > 2 and word.strip("'") not in STOPWORDS
     ]
     content_ratio = len(content_words) / max(1, len(words))
+    glue_ratio = len([word for word in words if word.strip("'") in GLUE_WORDS]) / max(
+        1, len(words)
+    )
+    glue_run = max_word_run(words, GLUE_WORDS)
     heavy_punctuation = len(re.findall(r"[,;:]", text))
     sentence_count = len(re.findall(r"[.!?]", text))
+    expressive_count = len(re.findall(r"[!?]", text))
+    punctuation_runs = len(re.findall(r"[!?.,;:]{2,}", text))
     avg_word_len = sum(len(word.strip("'")) for word in words) / max(1, len(words))
     reasons: list[str] = []
     score = 50
@@ -958,6 +1182,18 @@ def score_public_tweet_text(text: str) -> dict[str, Any]:
     elif content_ratio > 0.85 and len(words) > 10:
         score -= 4
         reasons.append("overpacked")
+    if glue_ratio > 0.72:
+        score -= 28
+        reasons.append("glue heavy")
+    elif glue_ratio > 0.52:
+        score -= int((glue_ratio - 0.52) * 80)
+        reasons.append("glue weighted")
+    if glue_run > 8:
+        score -= 18
+        reasons.append("glue run")
+    elif glue_run > 5:
+        score -= (glue_run - 5) * 5
+        reasons.append("long glue run")
     if heavy_punctuation <= 2:
         score += 6
         reasons.append("clean punctuation")
@@ -970,6 +1206,12 @@ def score_public_tweet_text(text: str) -> dict[str, Any]:
     elif sentence_count > 2:
         score -= 8
         reasons.append("too many sentence breaks")
+    if expressive_count > 3:
+        score -= 12
+        reasons.append("expressive punctuation heavy")
+    if punctuation_runs:
+        score -= 14
+        reasons.append("punctuation run")
     if 3.2 <= avg_word_len <= 6.2:
         score += 3
         reasons.append("readable word shape")
@@ -985,6 +1227,9 @@ def score_public_tweet_text(text: str) -> dict[str, Any]:
     if DANGLING_PUBLIC_TWEET_END_RE.search(text):
         score -= 12
         reasons.append("dangling ending")
+    if ABRUPT_COORDINATE_END_RE.search(text):
+        score -= 16
+        reasons.append("abrupt coordinated ending")
     if text[-1] in ".!?":
         score += 4
         reasons.append("complete sentence")
@@ -999,8 +1244,12 @@ def score_public_tweet_text(text: str) -> dict[str, Any]:
         "words": len(words),
         "unique_ratio": round(unique_ratio, 3),
         "content_ratio": round(content_ratio, 3),
+        "glue_ratio": round(glue_ratio, 3),
+        "glue_run": glue_run,
         "heavy_punctuation": heavy_punctuation,
         "sentence_count": sentence_count,
+        "expressive_count": expressive_count,
+        "punctuation_runs": punctuation_runs,
         "max_repeat": max_repeat,
     }
 
@@ -1045,6 +1294,183 @@ def run_checked_command(
         detail = stderr or stdout or f"exit code {completed.returncode}"
         raise ReplyGenerationError(f"{label} failed: {detail}")
     return completed
+
+
+def stable_sigil_seed(source_id: str, text: str) -> str:
+    material = f"{source_id}|{text}".encode("utf-8")
+    return hashlib.sha256(material).hexdigest()[:16]
+
+
+def safe_file_stem(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._")
+    return safe[:96] or uuid.uuid4().hex
+
+
+def public_sigil_metadata(sigil: dict[str, Any] | None) -> dict[str, Any] | None:
+    if sigil is None:
+        return None
+    return {
+        key: value
+        for key, value in sigil.items()
+        if key not in {"png_bytes", "pgm_bytes"}
+    }
+
+
+def generate_solomon_sigil(
+    text: str,
+    *,
+    source_id: str,
+    config: BotConfig,
+) -> dict[str, Any] | None:
+    if not config.sigil_enabled:
+        return None
+    missing = [
+        path
+        for path in [config.sigil_bin, config.sigil_model, config.sigil_text_index]
+        if not os.path.exists(path)
+    ]
+    if missing:
+        raise ReplyGenerationError(f"missing Solomon sigil asset: {', '.join(missing)}")
+    if not os.access(config.sigil_bin, os.X_OK):
+        raise ReplyGenerationError(f"Solomon sampler is not executable: {config.sigil_bin}")
+
+    seed = stable_sigil_seed(source_id, text)
+    out_dir = f"/tmp/solomon-sigil-{safe_file_stem(source_id)}"
+    os.makedirs(out_dir, exist_ok=True)
+    for name in ["samples.pgm", "samples.ink128.u8", "trace.json", "sigil.png"]:
+        try:
+            os.unlink(os.path.join(out_dir, name))
+        except FileNotFoundError:
+            pass
+
+    run_checked_command(
+        [
+            config.sigil_bin,
+            "--model",
+            config.sigil_model,
+            "--text-index",
+            config.sigil_text_index,
+            "--prompt",
+            strip_public_mentions(text) or text,
+            "--seed",
+            seed,
+            "--out-dir",
+            out_dir,
+            "--samples",
+            "1",
+            "--candidate-multiplier",
+            str(config.sigil_candidates),
+            "--preview-columns",
+            "1",
+            "--init",
+            "seal-prior",
+            "--passes",
+            str(config.sigil_passes),
+        ],
+        timeout_seconds=config.sigil_timeout_seconds,
+        label="Solomon sigil generation",
+    )
+
+    pgm_path = os.path.join(out_dir, "samples.pgm")
+    png_path = os.path.join(out_dir, "sigil.png")
+    with open(pgm_path, "rb") as handle:
+        pgm_bytes = handle.read()
+    png_bytes, width, height = pgm_bytes_to_png(pgm_bytes)
+    with open(png_path, "wb") as handle:
+        handle.write(png_bytes)
+
+    trace: dict[str, Any] = {}
+    try:
+        with open(os.path.join(out_dir, "trace.json"), "r", encoding="utf-8") as handle:
+            trace = json.load(handle)
+    except (FileNotFoundError, json.JSONDecodeError):
+        trace = {}
+
+    return {
+        "schema": SIGIL_SCHEMA,
+        "seed": seed,
+        "source_id": source_id,
+        "prompt": strip_public_mentions(text) or text,
+        "png_path": png_path,
+        "pgm_path": pgm_path,
+        "trace_path": os.path.join(out_dir, "trace.json"),
+        "bytes": len(png_bytes),
+        "width": width,
+        "height": height,
+        "target_name": str(trace.get("text_target_name") or ""),
+        "target_number": str(trace.get("text_target_number") or ""),
+        "target_score": str(trace.get("text_target_score") or ""),
+        "text_distance": str(trace.get("selected_min_text_distance") or ""),
+        "png_bytes": png_bytes,
+    }
+
+
+def pgm_bytes_to_png(pgm: bytes) -> tuple[bytes, int, int]:
+    width, height, pixels = parse_binary_pgm(pgm)
+    raw = bytearray()
+    row_len = width
+    for row in range(height):
+        raw.append(0)
+        start = row * row_len
+        raw.extend(pixels[start : start + row_len])
+    compressed = zlib.compress(bytes(raw), level=9)
+    png = bytearray(b"\x89PNG\r\n\x1a\n")
+    png.extend(png_chunk(b"IHDR", width.to_bytes(4, "big") + height.to_bytes(4, "big") + b"\x08\x00\x00\x00\x00"))
+    png.extend(png_chunk(b"IDAT", compressed))
+    png.extend(png_chunk(b"IEND", b""))
+    return bytes(png), width, height
+
+
+def png_chunk(kind: bytes, data: bytes) -> bytes:
+    crc = binascii.crc32(kind)
+    crc = binascii.crc32(data, crc) & 0xFFFFFFFF
+    return len(data).to_bytes(4, "big") + kind + data + crc.to_bytes(4, "big")
+
+
+def parse_binary_pgm(pgm: bytes) -> tuple[int, int, bytes]:
+    offset = 0
+
+    def next_token() -> bytes:
+        nonlocal offset
+        while offset < len(pgm) and pgm[offset] in b" \t\r\n":
+            offset += 1
+        if offset < len(pgm) and pgm[offset] == ord("#"):
+            while offset < len(pgm) and pgm[offset] not in b"\r\n":
+                offset += 1
+            return next_token()
+        start = offset
+        while offset < len(pgm) and pgm[offset] not in b" \t\r\n":
+            offset += 1
+        return pgm[start:offset]
+
+    magic = next_token()
+    if magic != b"P5":
+        raise ReplyGenerationError("Solomon sampler wrote non-binary PGM")
+    width = int(next_token())
+    height = int(next_token())
+    max_value = int(next_token())
+    if max_value != 255:
+        raise ReplyGenerationError(f"unsupported PGM max value: {max_value}")
+    while offset < len(pgm) and pgm[offset] in b" \t\r\n":
+        offset += 1
+        break
+    expected = width * height
+    pixels = pgm[offset : offset + expected]
+    if len(pixels) != expected:
+        raise ReplyGenerationError(
+            f"PGM pixel payload has {len(pixels)} bytes, expected {expected}"
+        )
+    return width, height, pixels
+
+
+def upload_sigil_if_needed(
+    client: XOAuth1Client, sigil: dict[str, Any] | None
+) -> list[str]:
+    if sigil is None:
+        return []
+    media_id = client.upload_media_png(bytes(sigil["png_bytes"]))
+    sigil["media_id"] = media_id
+    return [media_id]
 
 
 def adapt_model_for_context(mention: dict[str, Any], config: BotConfig) -> tuple[str, str]:
@@ -1202,30 +1628,49 @@ def generate_nsrl_reply_body(mention: dict[str, Any], config: BotConfig) -> tupl
         str(config.nsrl_max_new_tokens),
         "--decode-profile",
         "coherent-prose",
+        "--decode-function-word-run-cap",
+        "4",
         "--sample-seed",
         str(stable_sample_seed(mention)),
         "--top-k",
         str(config.nsrl_top_k),
         "--corpus-prior",
         "--corpus-prior-logit-shift",
-        "7",
+        "9",
         "--corpus-prior-order",
+        "3",
+        "--decode-frequency-cap",
+        "600",
+        "--decode-frequency-min-q15",
+        "6144",
+        "--decode-frequency-logit-shift",
+        "5",
+        "--decode-local-frequency-cap",
+        "2",
+        "--decode-local-frequency-min-q15",
+        "8192",
+        "--decode-local-frequency-logit-shift",
+        "4",
+        "--decode-local-frequency-hard-cap",
         "2",
         "--repeat-window",
-        "80",
+        "64",
         "--repeat-penalty-shift",
-        "3",
+        "4",
         "--max-repeat-run",
         "2",
         "--no-repeat-ngram",
         "3",
+        "--quality-weight-profile",
+        "prose-aware",
         "--generated-only",
-        "--stop-on-sentence-terminal",
         "--text-out",
         text_out,
         "--trace",
         trace_out,
     ]
+    for token in DECODE_BANNED_TOKENS:
+        cmd.extend(["--decode-ban-token", token])
     run_checked_command(
         cmd, timeout_seconds=config.nsrl_timeout_seconds, label="nsrl generation"
     )
@@ -1364,6 +1809,8 @@ def standalone_post_from_state(item: dict[str, Any]) -> dict[str, Any]:
         "text": str(item.get("text") or ""),
         "quality_score": str(item.get("quality_score") or ""),
     }
+    if item.get("sigil"):
+        tweet["sigil"] = item["sigil"]
     result: dict[str, Any] = {
         "ok": status == "posted",
         "dry_run": False,
@@ -1391,6 +1838,8 @@ def is_global_generation_error(exc: ReplyGenerationError) -> bool:
             "missing context-adaptation asset",
             "nsrl binary is not executable",
             "nsrl corpus binary is not executable",
+            "missing solomon sigil asset",
+            "solomon sampler is not executable",
             "unknown reply engine",
         ]
     )
@@ -1541,6 +1990,21 @@ def process_mentions(
         reply_engine = reply["engine"]
 
         if config.dry_run:
+            try:
+                sigil = generate_solomon_sigil(
+                    reply_text,
+                    source_id=tweet_id,
+                    config=config,
+                )
+            except ReplyGenerationError as exc:
+                result["skipped"].append(
+                    {"id": tweet_id, "reason": "sigil generation failed", "detail": str(exc)}
+                )
+                if is_global_generation_error(exc):
+                    break
+                store.mark_generation_failed(tweet_id, now, reason=str(exc))
+                last_processed_id = max_id(last_processed_id, tweet_id)
+                continue
             archive_error = archive_training_event(
                 config,
                 mention,
@@ -1549,11 +2013,17 @@ def process_mentions(
                 reply_text=reply_text,
                 reply_engine=reply_engine,
                 dry_run=True,
+                sigil=sigil,
             )
             if archive_error:
                 result["archive_errors"].append({"id": tweet_id, "error": archive_error})
             result["would_reply"].append(
-                {"id": tweet_id, "reply_engine": reply_engine, "text": reply_text}
+                {
+                    "id": tweet_id,
+                    "reply_engine": reply_engine,
+                    "text": reply_text,
+                    "sigil": public_sigil_metadata(sigil),
+                }
             )
             result["replied"] += 1
             if config.advance_state_on_dry_run:
@@ -1566,7 +2036,22 @@ def process_mentions(
             result["skipped"].append({"id": tweet_id, "reason": reason or "rate limit"})
             break
 
-        post_response = client.post_reply(reply_text, tweet_id)
+        try:
+            sigil = generate_solomon_sigil(reply_text, source_id=tweet_id, config=config)
+            media_ids = upload_sigil_if_needed(client, sigil)
+        except (ReplyGenerationError, XApiError) as exc:
+            result["skipped"].append(
+                {"id": tweet_id, "reason": "sigil upload failed", "detail": str(exc)}
+            )
+            if isinstance(exc, ReplyGenerationError) and is_global_generation_error(exc):
+                break
+            store.mark_generation_failed(tweet_id, now, reason=str(exc))
+            last_processed_id = max_id(last_processed_id, tweet_id)
+            continue
+
+        post_response = client.post_reply_with_media(
+            reply_text, tweet_id, media_ids=media_ids
+        )
         reply_id = str((post_response.get("data") or {}).get("id") or "")
         archive_error = archive_training_event(
             config,
@@ -1577,13 +2062,19 @@ def process_mentions(
             reply_engine=reply_engine,
             dry_run=False,
             reply_id=reply_id,
+            sigil=sigil,
         )
         if archive_error:
             result["archive_errors"].append({"id": tweet_id, "error": archive_error})
         store.mark_replied(tweet_id, now, reply_id=reply_id, dry_run=False)
         last_processed_id = max_id(last_processed_id, tweet_id)
         result["posted"].append(
-            {"id": tweet_id, "reply_id": reply_id, "reply_engine": reply_engine}
+            {
+                "id": tweet_id,
+                "reply_id": reply_id,
+                "reply_engine": reply_engine,
+                "sigil": public_sigil_metadata(sigil),
+            }
         )
         result["replied"] += 1
 
@@ -1665,6 +2156,11 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
                     config,
                     tweet_id=post_id,
                 )
+                sigil = generate_solomon_sigil(
+                    tweet["text"], source_id=post_id, config=config
+                )
+                if sigil is not None:
+                    tweet["sigil"] = public_sigil_metadata(sigil)
             except ReplyGenerationError as exc:
                 return {
                     "ok": False,
@@ -1688,12 +2184,22 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
                     "error": "standalone_post_reservation_failed",
                 }
             try:
-                response = client.post_tweet(tweet["text"])
-            except XApiError as exc:
+                media_ids = upload_sigil_if_needed(client, sigil)
+                if sigil is not None:
+                    tweet["sigil"] = public_sigil_metadata(sigil)
+                response = client.post_tweet_with_media(tweet["text"], media_ids=media_ids)
+            except (ReplyGenerationError, XApiError) as exc:
                 store.mark_standalone_failed(post_id, now, tweet=tweet, error=str(exc))
-                error = sanitized_x_error(exc)
-                error["dry_run"] = False
-                return error
+                if isinstance(exc, XApiError):
+                    error = sanitized_x_error(exc)
+                    error["dry_run"] = False
+                    return error
+                return {
+                    "ok": False,
+                    "dry_run": False,
+                    "error": "sigil_upload_failed",
+                    "detail": str(exc),
+                }
             store.mark_standalone_posted(
                 post_id,
                 utc_now(),

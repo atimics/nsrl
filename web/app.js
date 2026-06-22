@@ -1,12 +1,16 @@
-import init, { NsrlChat } from "./pkg/nsrl_web_wasm.js";
+import init, { NsrlChat, SolomonSampler } from "./pkg/nsrl_web_wasm.js";
 
 const ASSETS = {
   model: "./assets/model.nsrllm",
   vocab: "./assets/v4096.vocab.tsv",
   tokens: "./assets/v4096.tokens.u16",
+  solomonModel: "./assets/solomon-model.nsrltch",
+  solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv",
 };
+const SIGIL_CANDIDATES = 8;
+const SIGIL_PASSES = 4;
 
-const DB_NAME = "nsrl-crowley-bard";
+const DB_NAME = "nsrl-crowley-bard-aphorism-v2-decode-v2";
 const DB_VERSION = 1;
 const STORE_NAME = "session";
 
@@ -14,11 +18,13 @@ const state = {
   engine: null,
   transcript: "",
   turn: 0,
-  lastMessage: "The model is stable in the browser.",
+  lastMessage: "The aphorism model is stable in the browser.",
   lastAdaptWindows: 0,
   modelBytes: null,
   vocabText: "",
   tokenBytes: null,
+  solomon: null,
+  lastSigilMetadata: null,
 };
 
 const nodes = {
@@ -27,6 +33,7 @@ const nodes = {
   send: document.querySelector("#sendButton"),
   reset: document.querySelector("#resetButton"),
   oracle: document.querySelector("#oracleText"),
+  sigil: document.querySelector("#sigilCanvas"),
   status: document.querySelector("#statusPill"),
   turn: document.querySelector("#turnPill"),
   adapt: document.querySelector("#adaptPill"),
@@ -48,6 +55,7 @@ nodes.form.addEventListener("submit", async (event) => {
   nodes.input.value = "";
   setBusy(true, "Fine-tuning");
   nodes.oracle.textContent = message;
+  renderSolomonSigil(message, `human-${state.turn}`);
 
   await yieldFrame();
 
@@ -66,6 +74,7 @@ nodes.form.addEventListener("submit", async (event) => {
     state.lastMessage = result.text;
     state.lastAdaptWindows = result.fine_tune_windows;
     nodes.oracle.textContent = result.text;
+    renderSolomonSigil(result.text, `model-${state.turn}`);
     nodes.turn.textContent = `Turn ${state.turn}`;
     nodes.adapt.textContent = `Adapt ${result.fine_tune_windows}`;
     nodes.status.textContent = "Saving";
@@ -91,6 +100,7 @@ nodes.reset.addEventListener("click", async () => {
   state.lastMessage = "The model is awake again.";
   state.lastAdaptWindows = 0;
   nodes.oracle.textContent = state.lastMessage;
+  renderSolomonSigil(state.lastMessage, "reset");
   nodes.turn.textContent = "Turn 0";
   nodes.adapt.textContent = "Adapt 0";
   nodes.input.value = "";
@@ -102,14 +112,18 @@ async function boot() {
   setBusy(true, "Loading");
   try {
     await init();
-    const [modelBytes, vocabText, tokenBytes] = await Promise.all([
+    const [modelBytes, vocabText, tokenBytes, solomonModelBytes, solomonTextIndex] =
+      await Promise.all([
       fetchBytes(ASSETS.model),
       fetchText(ASSETS.vocab),
       fetchBytes(ASSETS.tokens),
+      fetchBytes(ASSETS.solomonModel),
+      fetchText(ASSETS.solomonTextIndex),
     ]);
     state.modelBytes = modelBytes;
     state.vocabText = vocabText;
     state.tokenBytes = tokenBytes;
+    state.solomon = new SolomonSampler(solomonModelBytes, solomonTextIndex);
     let saved = await loadLocalState();
     let savedModel = saved?.modelBytes instanceof Uint8Array ? saved.modelBytes : null;
     try {
@@ -128,6 +142,7 @@ async function boot() {
       state.lastAdaptWindows = Number(saved.lastAdaptWindows || 0);
     }
     nodes.oracle.textContent = state.lastMessage;
+    renderSolomonSigil(state.lastMessage, savedModel ? "restored" : "boot");
     nodes.turn.textContent = `Turn ${state.turn}`;
     nodes.adapt.textContent = `Adapt ${state.lastAdaptWindows}`;
     nodes.status.textContent = savedModel ? "Restored" : "Ready";
@@ -248,6 +263,47 @@ function nextSeed(message) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash ^ Date.now() ^ (state.turn * 2654435761)) >>> 0;
+}
+
+function renderSolomonSigil(text, salt = "") {
+  const canvas = nodes.sigil;
+  const context = canvas?.getContext("2d");
+  if (!canvas || !context || !state.solomon) {
+    return;
+  }
+  let sample = null;
+  try {
+    sample = state.solomon.sample(text, sigilSeed(text, salt), SIGIL_CANDIDATES, SIGIL_PASSES);
+    const width = sample.width();
+    const height = sample.height();
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    const rgba = new Uint8ClampedArray(sample.rgba());
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.putImageData(new ImageData(rgba, width, height), 0, 0);
+    state.lastSigilMetadata = JSON.parse(sample.metadata_json());
+  } catch (error) {
+    console.warn("Could not render Solomon sigil", error);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    state.lastSigilMetadata = null;
+  } finally {
+    sample?.free?.();
+  }
+}
+
+function sigilSeed(text, salt) {
+  return `web-${salt}-${hashText(text).toString(16)}`;
+}
+
+function hashText(text) {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 function yieldFrame() {

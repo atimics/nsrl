@@ -1,15 +1,19 @@
 #![deny(unsafe_code)]
 
+mod solomon;
+
 use std::collections::HashMap;
 
 use nsrl_corpus::{LEXEME_PAGE_BOUNDARY, encode_lexeme_prompt_tokens};
 use nsrl_train::{
-    DecodeConfig, DecodeStrategy, LEXEME_SENTENCE_STOP_TOKEN_CAP, LexemeDecodePriors,
-    LexemeGenerationConfig, LexemeQualityWeightProfile, LexemeSoftmaxModel,
-    LexemeSoftmaxTrainConfig, generate_lexeme_softmax_with_priors,
-    run_lexeme_softmax_training_from_softmax_model_and_quality,
+    DecodeConfig, DecodeStrategy, LEXEME_DECODE_TOKEN_SET_CAP, LEXEME_SENTENCE_STOP_TOKEN_CAP,
+    LexemeDecodePriors, LexemeGenerationConfig, LexemeQualityWeightProfile, LexemeSoftmaxModel,
+    LexemeSoftmaxTrainConfig, generate_lexeme_softmax_with_priors_and_quality,
+    lexeme_quality_weights_from_vocab, run_lexeme_softmax_training_from_softmax_model_and_quality,
 };
 use wasm_bindgen::prelude::*;
+
+pub use solomon::{SolomonSample, SolomonSampler};
 
 const DEFAULT_MAX_NEW_TOKENS: usize = 72;
 const MAX_BROWSER_TOKENS: usize = 180;
@@ -17,12 +21,56 @@ const DEFAULT_FINE_TUNE_BATCH_WINDOWS: usize = 2;
 const DEFAULT_FINE_TUNE_LR_SHIFT: u8 = 24;
 const DEFAULT_FINE_TUNE_MAX_LR_SHIFT: u8 = 26;
 const DEFAULT_TOP_K: usize = 12;
-const DEFAULT_REPEAT_WINDOW: usize = 80;
-const DEFAULT_REPEAT_PENALTY_SHIFT: u8 = 3;
+const DEFAULT_REPEAT_WINDOW: usize = 64;
+const DEFAULT_REPEAT_PENALTY_SHIFT: u8 = 4;
 const DEFAULT_MAX_REPEAT_RUN: usize = 2;
 const DEFAULT_NO_REPEAT_NGRAM: usize = 3;
-const DEFAULT_CORPUS_PRIOR_ORDER: u8 = 2;
-const DEFAULT_CORPUS_PRIOR_SHIFT: u8 = 7;
+const DEFAULT_CORPUS_PRIOR_ORDER: u8 = 3;
+const DEFAULT_CORPUS_PRIOR_SHIFT: u8 = 9;
+const DECODE_BANNED_TOKENS: &[&str] = &[
+    "assistant",
+    "chatbot",
+    "model",
+    "training",
+    "prompt",
+    "json",
+    "http",
+    "www",
+    "class",
+    "align",
+    "bgcolor",
+    "nbsp",
+    "enter",
+    "exeunt",
+    "dramatis",
+    "alicia",
+    "crassus",
+    "parolles",
+    "helena",
+    "bertram",
+    "lafeu",
+    "hamlet",
+    "horatio",
+    "ophelia",
+    "polonius",
+    "romeo",
+    "juliet",
+    "othello",
+    "iago",
+    "falstaff",
+    "prospero",
+    "caliban",
+    "macbeth",
+    "banquo",
+    "gloucester",
+    "cassio",
+];
+const FUNCTION_WORD_TOKENS: &[&str] = &[
+    "a", "all", "and", "are", "as", "at", "be", "but", "by", "for", "from", "has", "hath", "have",
+    "he", "her", "him", "his", "i", "if", "in", "into", "is", "it", "let", "me", "my", "no", "not",
+    "of", "on", "or", "our", "shall", "she", "so", "that", "the", "thee", "their", "them", "thou",
+    "thy", "to", "unto", "upon", "we", "when", "will", "with", "ye", "yet", "you", "your",
+];
 
 #[wasm_bindgen]
 pub struct NsrlChat {
@@ -30,6 +78,7 @@ pub struct NsrlChat {
     vocab_entries: Vec<String>,
     vocab_lookup: HashMap<String, u16>,
     decode_priors: Option<LexemeDecodePriors>,
+    quality_weights_q15: Vec<i16>,
     turn_count: u64,
 }
 
@@ -56,12 +105,19 @@ impl NsrlChat {
         } else {
             None
         };
+        let quality_weights_q15 = lexeme_quality_weights_from_vocab(
+            &vocab.entries,
+            model.vocab_size,
+            LexemeQualityWeightProfile::ProseAware,
+        )
+        .map_err(js_error)?;
 
         Ok(Self {
             model,
             vocab_entries: vocab.entries,
             vocab_lookup: vocab.lookup,
             decode_priors,
+            quality_weights_q15,
             turn_count: 0,
         })
     }
@@ -82,12 +138,14 @@ impl NsrlChat {
         );
         config.decode.top_k = config.decode.top_k.min(self.model.vocab_size);
         configure_sentence_stops(&mut config, &self.vocab_entries);
+        configure_token_sets(&mut config, &self.vocab_lookup);
 
-        let generation = generate_lexeme_softmax_with_priors(
+        let generation = generate_lexeme_softmax_with_priors_and_quality(
             &self.model,
             &prompt_tokens,
             config,
             self.decode_priors.as_ref(),
+            Some(&self.quality_weights_q15),
         )
         .map_err(js_error)?;
         self.turn_count = self.turn_count.wrapping_add(1);
@@ -132,12 +190,14 @@ impl NsrlChat {
         );
         config.decode.top_k = config.decode.top_k.min(self.model.vocab_size);
         configure_sentence_stops(&mut config, &self.vocab_entries);
+        configure_token_sets(&mut config, &self.vocab_lookup);
 
-        let generation = generate_lexeme_softmax_with_priors(
+        let generation = generate_lexeme_softmax_with_priors_and_quality(
             &self.model,
             &prompt_tokens,
             config,
             self.decode_priors.as_ref(),
+            Some(&self.quality_weights_q15),
         )
         .map_err(js_error)?;
         self.turn_count = self.turn_count.wrapping_add(1);
@@ -360,10 +420,19 @@ fn generation_config(
             corpus_prior: has_decode_priors,
             corpus_prior_order: DEFAULT_CORPUS_PRIOR_ORDER,
             corpus_prior_logit_shift: DEFAULT_CORPUS_PRIOR_SHIFT,
+            frequency_penalty_cap: 600,
+            frequency_penalty_min_weight_q15: 6144,
+            frequency_penalty_logit_shift: 5,
+            local_frequency_penalty_cap: 2,
+            local_frequency_penalty_min_weight_q15: 8192,
+            local_frequency_penalty_logit_shift: 4,
+            local_frequency_hard_cap: 2,
+            strict_adjacency: true,
+            function_word_run_cap: 4,
             ..DecodeConfig::greedy()
         },
-        quality_weight_profile: LexemeQualityWeightProfile::Off,
-        stop_on_sentence_terminal: true,
+        quality_weight_profile: LexemeQualityWeightProfile::ProseAware,
+        stop_on_sentence_terminal: false,
         sentence_terminal_token_count: 0,
         sentence_terminal_tokens: [0; LEXEME_SENTENCE_STOP_TOKEN_CAP],
     };
@@ -392,6 +461,37 @@ fn configure_sentence_stops(config: &mut LexemeGenerationConfig, vocab: &[String
     }
     config.sentence_terminal_tokens = tokens;
     config.sentence_terminal_token_count = count;
+}
+
+fn configure_token_sets(config: &mut LexemeGenerationConfig, vocab_lookup: &HashMap<String, u16>) {
+    let mut banned_tokens = [0_u16; LEXEME_DECODE_TOKEN_SET_CAP];
+    let mut banned_count = 0_usize;
+    for text in DECODE_BANNED_TOKENS {
+        if let Some(&token) = vocab_lookup.get(*text) {
+            if banned_count == LEXEME_DECODE_TOKEN_SET_CAP {
+                break;
+            }
+            banned_tokens[banned_count] = token;
+            banned_count += 1;
+        }
+    }
+
+    let mut function_word_tokens = [0_u16; LEXEME_DECODE_TOKEN_SET_CAP];
+    let mut function_word_count = 0_usize;
+    for text in FUNCTION_WORD_TOKENS {
+        if let Some(&token) = vocab_lookup.get(*text) {
+            if function_word_count == LEXEME_DECODE_TOKEN_SET_CAP {
+                break;
+            }
+            function_word_tokens[function_word_count] = token;
+            function_word_count += 1;
+        }
+    }
+
+    config.decode.banned_tokens = banned_tokens;
+    config.decode.banned_token_count = banned_count;
+    config.decode.function_word_tokens = function_word_tokens;
+    config.decode.function_word_token_count = function_word_count;
 }
 
 fn render_lexeme_tokens(tokens: &[u16], vocab: &[String]) -> String {
@@ -475,15 +575,41 @@ fn is_sentence_terminal_lexeme(text: &str) -> bool {
 }
 
 fn clean_generated_text(input: &str) -> String {
-    let mut text = input.trim().to_string();
+    let mut text = input.split_whitespace().collect::<Vec<_>>().join(" ");
     while text.starts_with([',', ';', ':']) {
         text.remove(0);
         text = text.trim_start().to_string();
     }
+    text = trim_to_sentence_span(&text, 56, 220);
     if text.is_empty() {
         String::from("...")
-    } else {
+    } else if text.ends_with(['.', '!', '?']) {
         text
+    } else {
+        format!("{text}.")
+    }
+}
+
+fn trim_to_sentence_span(input: &str, min_chars: usize, max_chars: usize) -> String {
+    let text = input.trim();
+    if text.len() <= min_chars {
+        return text.to_string();
+    }
+    for (index, ch) in text.char_indices() {
+        if index < min_chars {
+            continue;
+        }
+        if matches!(ch, '.' | '!' | '?') {
+            return text[..=index].trim().to_string();
+        }
+    }
+    if text.len() <= max_chars {
+        return text.to_string();
+    }
+    let cut = &text[..max_chars.min(text.len())];
+    match cut.rfind(' ') {
+        Some(index) if index >= min_chars => cut[..index].trim().to_string(),
+        _ => cut.trim().to_string(),
     }
 }
 

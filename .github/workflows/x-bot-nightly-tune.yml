@@ -32,6 +32,8 @@ env:
   RULE_NAME: ${{ vars.X_BOT_RULE_NAME || 'crowley-bard-mention-poll' }}
   SCHEDULE_EXPRESSION: ${{ vars.X_BOT_SCHEDULE_EXPRESSION || 'rate(15 minutes)' }}
   LAMBDA_ARCHITECTURE: arm64
+  LAMBDA_MEMORY_MB: ${{ vars.X_BOT_LAMBDA_MEMORY_MB || '1024' }}
+  LAMBDA_TIMEOUT: ${{ vars.X_BOT_LAMBDA_TIMEOUT || '120' }}
   X_DRY_RUN: "true"
   X_DRY_RUN_ADVANCE_STATE: ${{ vars.X_BOT_DRY_RUN_ADVANCE_STATE || 'true' }}
   X_CONTEXT_ADAPT: "false"
@@ -53,6 +55,10 @@ env:
   X_MAX_REPLIES_PER_15M: ${{ vars.X_BOT_MAX_REPLIES_PER_15M || '1' }}
   X_MAX_REPLIES_PER_DAY: ${{ vars.X_BOT_MAX_REPLIES_PER_DAY || '10' }}
   X_MAX_REPLIES_PER_MONTH: ${{ vars.X_BOT_MAX_REPLIES_PER_MONTH || '100' }}
+  X_SIGIL_ENABLED: ${{ vars.X_SIGIL_ENABLED || 'true' }}
+  X_SIGIL_CANDIDATES: ${{ vars.X_SIGIL_CANDIDATES || '8' }}
+  X_SIGIL_PASSES: ${{ vars.X_SIGIL_PASSES || '4' }}
+  X_SIGIL_TIMEOUT_SECONDS: ${{ vars.X_SIGIL_TIMEOUT_SECONDS || '60' }}
 
 jobs:
   nightly-tune:
@@ -73,7 +79,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build NSRL tools
-        run: cargo build --release -p nsrl-train -p nsrl-corpus
+        run: |
+          cargo build --release -p nsrl-train --bin nsrl-train --bin nsrl-bitmap-sample
+          cargo build --release -p nsrl-corpus --bin nsrl-corpus
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -95,6 +103,7 @@ jobs:
         env:
           X_BOT_LAMBDA_BIN: target/release/nsrl-train
           X_BOT_LAMBDA_CORPUS_BIN: target/release/nsrl-corpus
+          X_BOT_LAMBDA_SIGIL_BIN: target/release/nsrl-bitmap-sample
           X_BOT_MODEL_DIR: ${{ steps.tune.outputs.candidate_dir }}
         run: |
           set -euo pipefail
@@ -106,6 +115,7 @@ jobs:
         env:
           X_BOT_LAMBDA_BIN: target/release/nsrl-train
           X_BOT_LAMBDA_CORPUS_BIN: target/release/nsrl-corpus
+          X_BOT_LAMBDA_SIGIL_BIN: target/release/nsrl-bitmap-sample
           X_BOT_MODEL_DIR: ${{ steps.tune.outputs.candidate_dir }}
         run: scripts/x-bot/deploy.sh
 

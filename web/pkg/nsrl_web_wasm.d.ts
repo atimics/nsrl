@@ -12,10 +12,37 @@ export class NsrlChat {
     reply(prompt: string, max_new_tokens: number, sample_seed: number, top_k: number): string;
 }
 
+export class SolomonSample {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    height(): number;
+    metadata_json(): string;
+    rgba(): Uint8Array;
+    width(): number;
+}
+
+export class SolomonSampler {
+    free(): void;
+    [Symbol.dispose](): void;
+    model_card(): string;
+    constructor(model_bytes: Uint8Array, text_index_tsv: string);
+    sample(prompt: string, seed: string, candidate_multiplier: number, passes: number): SolomonSample;
+}
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_solomonsample_free: (a: number, b: number) => void;
+    readonly __wbg_solomonsampler_free: (a: number, b: number) => void;
+    readonly solomonsample_height: (a: number) => number;
+    readonly solomonsample_metadata_json: (a: number) => [number, number];
+    readonly solomonsample_rgba: (a: number) => [number, number];
+    readonly solomonsample_width: (a: number) => number;
+    readonly solomonsampler_model_card: (a: number) => [number, number];
+    readonly solomonsampler_new: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly solomonsampler_sample: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
     readonly __wbg_nsrlchat_free: (a: number, b: number) => void;
     readonly nsrlchat_adapt_and_reply: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
     readonly nsrlchat_export_model: (a: number) => [number, number, number, number];
