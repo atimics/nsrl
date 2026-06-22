@@ -131,7 +131,9 @@ h1 {
 
 .oracle {
   display: grid;
-  place-items: center;
+  grid-template-columns: 192px minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
   min-height: 290px;
   padding: 32px;
   background:
@@ -139,15 +141,24 @@ h1 {
     url("./assets/crowley-bard-pfp.png") center / 320px auto no-repeat;
 }
 
+.sigil-canvas {
+  width: 192px;
+  height: 192px;
+  border: 1px solid rgba(245, 240, 223, 0.24);
+  border-radius: 8px;
+  background: #efe8d2;
+  image-rendering: pixelated;
+}
+
 #oracleText {
-  width: min(760px, 100%);
+  width: min(680px, 100%);
   margin: 0;
   padding: 0;
   color: var(--ink);
-  font-size: 1.72rem;
+  font-size: 1.58rem;
   line-height: 1.38;
   overflow-wrap: anywhere;
-  text-align: center;
+  text-align: left;
 }
 
 .command {
@@ -263,12 +274,20 @@ h1 {
   }
 
   .oracle {
+    grid-template-columns: 1fr;
     min-height: 260px;
     padding: 24px 18px;
+    justify-items: center;
+  }
+
+  .sigil-canvas {
+    width: 152px;
+    height: 152px;
   }
 
   #oracleText {
     font-size: 1.28rem;
+    text-align: center;
   }
 
   .command {

@@ -2,7 +2,9 @@
 
 Scheduled Lambda for the fictional Crowley Bard demo account. It polls direct
 `@` mentions, generates one short contextual reply, and posts through X API v2
-using OAuth 1.0a user credentials.
+using OAuth 1.0a user credentials. Every posted reply or standalone tweet is
+paired with a text-conditioned Solomon sigil image generated locally by the
+bundled integer sampler, uploaded to X media, and attached to the tweet.
 
 This handles public mentions, not Direct Messages.
 
@@ -12,6 +14,24 @@ the frozen Crowley vocab, continues the bundled `.nsrllm` for a small fixed
 number of windows in `/tmp`, generates from that temporary adapted model, and
 discards it. This is behind `X_CONTEXT_ADAPT=false` by default because the tiny
 model can overfit short noisy context.
+
+The local package and S3 sync scripts now default to the promoted aphorism
+model bundle:
+
+- model:
+  `data/processed/crowley-bard-aphorism-v2/experiments/v4096.seq8-mean-reduce-base15-lr25-o98304.nsrllm`
+- vocab: `data/processed/crowley-bard-aphorism-v2/v4096.vocab.tsv`
+- tokens: `data/processed/crowley-bard-aphorism-v2/v4096.tokens.u16`
+
+Override with `X_BOT_MODEL_DIR` for a conventional `v4096.*` bundle, or with
+`X_BOT_MODEL_PATH`, `X_BOT_VOCAB_PATH`, and `X_BOT_TOKENS_PATH` for explicit
+artifact paths.
+
+The Lambda package also includes the Solomon sigil runtime:
+
+- sampler: `bin/nsrl-bitmap-sample`
+- model: `solomon/model.nsrltch`
+- text index: `solomon/solomon-spirit-text-signatures.tsv`
 
 ## Safety Defaults
 
@@ -26,6 +46,8 @@ model can overfit short noisy context.
   - `100` replies per month
 - `X_CONTEXT_ADAPT=false` by default. The adapted model is per-invocation and is
   never written back to the base model bundle.
+- `X_SIGIL_ENABLED=true` by default. If Solomon generation or media upload
+  fails, the bot skips the post instead of publishing text without a sigil.
 
 ## Secret
 
@@ -107,6 +129,13 @@ Optional repo variables:
 - `X_BOT_CONTEXT_MAX_CHARS`, default `1800`
 - `X_BOT_CONTEXT_ADAPT_MAX_WINDOWS`, default `64`
 - `X_BOT_CONTEXT_ADAPT_LR_SHIFT`, default `18`
+- `X_BOT_NSRL_MAX_NEW_TOKENS`, default `60`
+- `X_BOT_LAMBDA_MEMORY_MB`, default `1024`
+- `X_BOT_LAMBDA_TIMEOUT`, default `120`
+- `X_SIGIL_ENABLED`, default `true`
+- `X_SIGIL_CANDIDATES`, default `8`
+- `X_SIGIL_PASSES`, default `4`
+- `X_SIGIL_TIMEOUT_SECONDS`, default `60`
 
 Sync the current local model bundle to S3 before using the workflow:
 
@@ -179,7 +208,9 @@ aws lambda invoke \
 Set `"dry_run":false` only when the preview text is ready to publish.
 Standalone generation scores candidates for handle/URL safety, length,
 repetition, balanced content, punctuation, and complete-thought shape, then
-posts only the best candidate above `min_score`.
+posts only the best candidate above `min_score`. Dry-run standalone responses
+include a `sigil` object with the Solomon seed, target row, trace path, and PNG
+size; live posts upload that PNG and attach the returned media id.
 
 ## Context Adaptation
 
@@ -231,13 +262,15 @@ aws logs tail /aws/lambda/crowley-bard-mention-bot \
 ## Go Live
 
 After the dry-run output looks right and the exposed credentials have been
-rotated, update the Lambda config:
+rotated, redeploy with dry-run disabled so the full model and Solomon sigil
+environment stays intact:
 
 ```sh
-aws lambda update-function-configuration \
-  --region us-west-2 \
-  --function-name crowley-bard-mention-bot \
-  --environment 'Variables={X_SECRET_ID=crowley-bard/x-api,X_STATE_TABLE=crowley-bard-mention-state,X_BOT_HANDLE=CrowleyBard,X_DRY_RUN=false,X_BOOTSTRAP_REPLY=false,X_MAX_MENTIONS_PER_POLL=10,X_MAX_REPLIES_PER_RUN=1,X_MAX_REPLIES_PER_15M=1,X_MAX_REPLIES_PER_DAY=10,X_MAX_REPLIES_PER_MONTH=100}'
+AWS_REGION=us-east-1 \
+X_BOT_HANDLE=CrowleyBard \
+X_DRY_RUN=false \
+X_BOOTSTRAP_REPLY=false \
+scripts/x-bot/deploy.sh
 ```
 
 Keep the first live schedule at `rate(15 minutes)`. Tighten the daily/monthly

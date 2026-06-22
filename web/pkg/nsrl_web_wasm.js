@@ -129,6 +129,128 @@ export class NsrlChat {
     }
 }
 if (Symbol.dispose) NsrlChat.prototype[Symbol.dispose] = NsrlChat.prototype.free;
+
+export class SolomonSample {
+    static __wrap(ptr) {
+        const obj = Object.create(SolomonSample.prototype);
+        obj.__wbg_ptr = ptr;
+        SolomonSampleFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SolomonSampleFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_solomonsample_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    height() {
+        const ret = wasm.solomonsample_height(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {string}
+     */
+    metadata_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.solomonsample_metadata_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    rgba() {
+        const ret = wasm.solomonsample_rgba(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    width() {
+        const ret = wasm.solomonsample_width(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) SolomonSample.prototype[Symbol.dispose] = SolomonSample.prototype.free;
+
+export class SolomonSampler {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SolomonSamplerFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_solomonsampler_free(ptr, 0);
+    }
+    /**
+     * @returns {string}
+     */
+    model_card() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.solomonsampler_model_card(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @param {Uint8Array} model_bytes
+     * @param {string} text_index_tsv
+     */
+    constructor(model_bytes, text_index_tsv) {
+        const ptr0 = passArray8ToWasm0(model_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(text_index_tsv, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.solomonsampler_new(ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0];
+        SolomonSamplerFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {string} prompt
+     * @param {string} seed
+     * @param {number} candidate_multiplier
+     * @param {number} passes
+     * @returns {SolomonSample}
+     */
+    sample(prompt, seed, candidate_multiplier, passes) {
+        const ptr0 = passStringToWasm0(prompt, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(seed, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.solomonsampler_sample(this.__wbg_ptr, ptr0, len0, ptr1, len1, candidate_multiplier, passes);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return SolomonSample.__wrap(ret[0]);
+    }
+}
+if (Symbol.dispose) SolomonSampler.prototype[Symbol.dispose] = SolomonSampler.prototype.free;
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -181,6 +303,12 @@ function __wbg_get_imports() {
 const NsrlChatFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_nsrlchat_free(ptr, 1));
+const SolomonSampleFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_solomonsample_free(ptr, 1));
+const SolomonSamplerFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_solomonsampler_free(ptr, 1));
 
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;

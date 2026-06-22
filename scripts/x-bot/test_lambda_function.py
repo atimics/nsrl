@@ -17,6 +17,7 @@ class FakeClient:
         self.users = users
         self.replies = []
         self.tweets = []
+        self.media_uploads = []
 
     def get_me(self):
         return {"data": {"id": "42", "username": "CrowleyBard"}}
@@ -30,13 +31,30 @@ class FakeClient:
         return {"data": self.mentions, "includes": {"users": self.users}}
 
     def post_reply(self, text, in_reply_to_tweet_id):
-        self.replies.append({"text": text, "in_reply_to_tweet_id": in_reply_to_tweet_id})
+        return self.post_reply_with_media(text, in_reply_to_tweet_id, media_ids=None)
+
+    def post_reply_with_media(self, text, in_reply_to_tweet_id, *, media_ids=None):
+        self.replies.append(
+            {
+                "text": text,
+                "in_reply_to_tweet_id": in_reply_to_tweet_id,
+                "media_ids": media_ids or [],
+            }
+        )
         return {"data": {"id": f"reply-{in_reply_to_tweet_id}", "text": text}}
 
     def post_tweet(self, text):
+        return self.post_tweet_with_media(text, media_ids=None)
+
+    def post_tweet_with_media(self, text, *, media_ids=None):
         tweet_id = f"tweet-{len(self.tweets) + 1}"
-        self.tweets.append({"id": tweet_id, "text": text})
+        self.tweets.append({"id": tweet_id, "text": text, "media_ids": media_ids or []})
         return {"data": {"id": tweet_id, "text": text}}
+
+    def upload_media_png(self, png_bytes):
+        media_id = f"media-{len(self.media_uploads) + 1}"
+        self.media_uploads.append({"id": media_id, "bytes": png_bytes})
+        return media_id
 
 
 def config(**overrides):
@@ -73,6 +91,13 @@ def config(**overrides):
         context_adapt_timeout_seconds=20,
         standalone_candidates=6,
         public_tweet_min_score=48,
+        sigil_enabled=False,
+        sigil_bin="/missing/nsrl-bitmap-sample",
+        sigil_model="/missing/model.nsrltch",
+        sigil_text_index="/missing/solomon-spirit-text-signatures.tsv",
+        sigil_candidates=16,
+        sigil_passes=8,
+        sigil_timeout_seconds=12,
     )
     for key, value in overrides.items():
         setattr(base, key, value)
@@ -173,6 +198,17 @@ class MentionReplyTests(unittest.TestCase):
             tweet["text"], "morning light opens softly and the window finally answers."
         )
         self.assertNotIn("@", tweet["text"])
+
+    def test_public_tweet_score_penalizes_glue_word_collapse(self):
+        clean = bot.score_public_tweet_text(
+            "silent delight returns through dark stars with a little fire."
+        )
+        glue = bot.score_public_tweet_text(
+            "so let no love shall have you now upon thy life will let thee so shall love."
+        )
+        self.assertGreater(clean["score"], glue["score"])
+        self.assertGreater(glue["glue_ratio"], clean["glue_ratio"])
+        self.assertIn("glue", " ".join(glue["reasons"]))
 
     def test_false_post_tweet_event_does_not_select_standalone_prompt(self):
         self.assertIsNone(bot.standalone_prompt_from_event({"post_tweet": False}))
@@ -335,6 +371,50 @@ class MentionReplyTests(unittest.TestCase):
             client=client, store=self.state, config=config(dry_run=False), now=self.now
         )
         self.assertEqual(result_again["replied"], 0)
+
+    def test_binary_pgm_converts_to_png(self):
+        png, width, height = bot.pgm_bytes_to_png(b"P5\n2 2\n255\n\x00\x7f\x80\xff")
+        self.assertEqual((width, height), (2, 2))
+        self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertIn(b"IHDR", png)
+        self.assertIn(b"IDAT", png)
+
+    def test_dry_run_reply_includes_sigil_metadata_when_enabled(self):
+        self.state.set_last_seen_id("99", self.now)
+        client = FakeClient(
+            [{"id": "100", "author_id": "7", "text": "@CrowleyBard what is love?"}],
+            [{"id": "7", "username": "signal_summoner"}],
+        )
+        sigil = {"seed": "abc", "target_name": "Asmoday", "png_bytes": b"png"}
+        with mock.patch.object(bot, "generate_solomon_sigil", return_value=sigil):
+            result = bot.process_mentions(
+                client=client,
+                store=self.state,
+                config=config(sigil_enabled=True),
+                now=self.now,
+            )
+        self.assertEqual(result["replied"], 1)
+        self.assertEqual(result["would_reply"][0]["sigil"]["seed"], "abc")
+        self.assertNotIn("png_bytes", result["would_reply"][0]["sigil"])
+
+    def test_live_reply_uploads_and_attaches_sigil(self):
+        self.state.set_last_seen_id("99", self.now)
+        client = FakeClient(
+            [{"id": "100", "author_id": "7", "text": "@CrowleyBard reply in thunder"}],
+            [{"id": "7", "username": "signal_summoner"}],
+        )
+        sigil = {"seed": "abc", "target_name": "Asmoday", "png_bytes": b"png"}
+        with mock.patch.object(bot, "generate_solomon_sigil", return_value=sigil):
+            result = bot.process_mentions(
+                client=client,
+                store=self.state,
+                config=config(dry_run=False, sigil_enabled=True),
+                now=self.now,
+            )
+        self.assertEqual(result["replied"], 1)
+        self.assertEqual(client.media_uploads[0]["bytes"], b"png")
+        self.assertEqual(client.replies[0]["media_ids"], ["media-1"])
+        self.assertEqual(result["posted"][0]["sigil"]["media_id"], "media-1")
 
 
 if __name__ == "__main__":
