@@ -50,6 +50,7 @@ pub const MINI_TRANSFORMER_BINARY_TRACE_SCHEMA: &str =
     "nsrl.training_mini_transformer_mlp_binary_trace.v1";
 pub const DEFAULT_MINI_TRANSFORMER_STREAMING_TTT_LEARNING_RATE_SHIFT: u8 = 8;
 pub const LEXEME_SENTENCE_STOP_TOKEN_CAP: usize = 16;
+pub const LEXEME_DECODE_TOKEN_SET_CAP: usize = 64;
 pub const AUTHORITY: &str = "deterministic_training_replay";
 pub const GENERATION_AUTHORITY: &str = "deterministic_integer_generation";
 pub const TASK: &str = "tiny_next_char_output_head";
@@ -1816,6 +1817,11 @@ pub struct DecodeConfig {
     pub strict_memory: bool,
     pub strict_topic: bool,
     pub strict_adjacency: bool,
+    pub banned_token_count: usize,
+    pub banned_tokens: [u16; LEXEME_DECODE_TOKEN_SET_CAP],
+    pub function_word_token_count: usize,
+    pub function_word_tokens: [u16; LEXEME_DECODE_TOKEN_SET_CAP],
+    pub function_word_run_cap: usize,
 }
 
 impl DecodeConfig {
@@ -1856,6 +1862,11 @@ impl DecodeConfig {
             strict_memory: false,
             strict_topic: false,
             strict_adjacency: false,
+            banned_token_count: 0,
+            banned_tokens: [0; LEXEME_DECODE_TOKEN_SET_CAP],
+            function_word_token_count: 0,
+            function_word_tokens: [0; LEXEME_DECODE_TOKEN_SET_CAP],
+            function_word_run_cap: 0,
         }
     }
 }
@@ -2692,8 +2703,10 @@ pub struct DecodeRejectStats {
     pub non_printable: usize,
     pub outside_ascii_lower: usize,
     pub byte_fallback: usize,
+    pub banned_token: usize,
     pub repeat_run: usize,
     pub repeat_ngram: usize,
+    pub function_word_run: usize,
     pub local_frequency: usize,
     pub topic: usize,
     pub memory: usize,
@@ -6032,13 +6045,14 @@ pub fn run_lexeme_softmax_evaluate(
     model: LexemeSoftmaxModel,
     seq_len: usize,
     stride: usize,
+    window_offset: usize,
     max_windows: Option<usize>,
 ) -> Result<LexemeSoftmaxEvalResult, TrainError> {
     if seq_len == 0 || !seq_len.is_power_of_two() || stride == 0 {
         return Err(TrainError::InvalidConfig);
     }
     let tokens = decode_u16_tokens(token_bytes)?;
-    let starts = lexeme_softmax_starts(tokens.len(), seq_len, stride, 0, max_windows);
+    let starts = lexeme_softmax_starts(tokens.len(), seq_len, stride, window_offset, max_windows);
     if starts.is_empty() {
         return Err(TrainError::InvalidConfig);
     }
@@ -19821,6 +19835,9 @@ fn lexeme_quality_weight_q15(lexeme: &str, profile: LexemeQualityWeightProfile) 
     if lower.starts_with("http") || lower == "www" || lower.ends_with("html") {
         return 4096;
     }
+    if matches!(lower.as_str(), "." | "!" | "?") {
+        return i16::MAX;
+    }
     if lower.len() == 1 && lower != "a" && lower != "i" {
         return 8192;
     }
@@ -20687,8 +20704,12 @@ fn add_decode_reject_stats(left: &mut DecodeRejectStats, right: DecodeRejectStat
         .outside_ascii_lower
         .saturating_add(right.outside_ascii_lower);
     left.byte_fallback = left.byte_fallback.saturating_add(right.byte_fallback);
+    left.banned_token = left.banned_token.saturating_add(right.banned_token);
     left.repeat_run = left.repeat_run.saturating_add(right.repeat_run);
     left.repeat_ngram = left.repeat_ngram.saturating_add(right.repeat_ngram);
+    left.function_word_run = left
+        .function_word_run
+        .saturating_add(right.function_word_run);
     left.local_frequency = left.local_frequency.saturating_add(right.local_frequency);
     left.topic = left.topic.saturating_add(right.topic);
     left.memory = left.memory.saturating_add(right.memory);
@@ -22040,6 +22061,11 @@ fn lexeme_decode_candidates(
             continue;
         }
         let token = candidate as u16;
+        if lexeme_decode_token_set_contains(token, &decode.banned_tokens, decode.banned_token_count)
+        {
+            rejected_candidates.banned_token += 1;
+            continue;
+        }
         if decode.max_repeat_run > 0
             && lexeme_would_exceed_repeat_run(token, context, decode.max_repeat_run)
         {
@@ -22048,6 +22074,10 @@ fn lexeme_decode_candidates(
         }
         if would_repeat_ngram(token, context, decode.no_repeat_ngram_order) {
             rejected_candidates.repeat_ngram += 1;
+            continue;
+        }
+        if lexeme_would_exceed_function_word_run(token, context, decode) {
+            rejected_candidates.function_word_run += 1;
             continue;
         }
         if lexeme_decode_exceeds_local_frequency_hard_cap(token, context, decode) {
@@ -22366,6 +22396,11 @@ fn validate_lexeme_decode_priors(
     {
         return Err(TrainError::InvalidConfig);
     }
+    if decode.banned_token_count > LEXEME_DECODE_TOKEN_SET_CAP
+        || decode.function_word_token_count > LEXEME_DECODE_TOKEN_SET_CAP
+    {
+        return Err(TrainError::InvalidConfig);
+    }
     if decode.island_penalty_count_cap > 0
         && !valid_q15_weight_floor(decode.island_penalty_min_weight_q15)
     {
@@ -22534,6 +22569,36 @@ fn lexeme_decode_exceeds_local_frequency_hard_cap(
             .take(decode.local_frequency_hard_cap)
             .count()
             >= decode.local_frequency_hard_cap
+}
+
+fn lexeme_decode_token_set_contains(token: u16, tokens: &[u16], count: usize) -> bool {
+    tokens[..count.min(tokens.len())].contains(&token)
+}
+
+fn lexeme_decode_is_function_word(token: u16, decode: DecodeConfig) -> bool {
+    lexeme_decode_token_set_contains(
+        token,
+        &decode.function_word_tokens,
+        decode.function_word_token_count,
+    )
+}
+
+fn lexeme_would_exceed_function_word_run(
+    candidate: u16,
+    context: &[u16],
+    decode: DecodeConfig,
+) -> bool {
+    if decode.function_word_run_cap == 0 || !lexeme_decode_is_function_word(candidate, decode) {
+        return false;
+    }
+    let run_len = 1_usize.saturating_add(
+        context
+            .iter()
+            .rev()
+            .take_while(|&&token| lexeme_decode_is_function_word(token, decode))
+            .count(),
+    );
+    run_len > decode.function_word_run_cap
 }
 
 fn lexeme_decode_local_frequency_logit_adjust_q8(
@@ -25060,6 +25125,38 @@ fn push_lexeme_decode_config_field(out: &mut String, name: &str, config: LexemeG
     comma(out);
     push_bool_field(out, "strict_adjacency", config.decode.strict_adjacency);
     comma(out);
+    push_usize_field(out, "banned_token_count", config.decode.banned_token_count);
+    comma(out);
+    push_u16_array_field(
+        out,
+        "banned_tokens",
+        &config.decode.banned_tokens[..config
+            .decode
+            .banned_token_count
+            .min(LEXEME_DECODE_TOKEN_SET_CAP)],
+    );
+    comma(out);
+    push_usize_field(
+        out,
+        "function_word_token_count",
+        config.decode.function_word_token_count,
+    );
+    comma(out);
+    push_u16_array_field(
+        out,
+        "function_word_tokens",
+        &config.decode.function_word_tokens[..config
+            .decode
+            .function_word_token_count
+            .min(LEXEME_DECODE_TOKEN_SET_CAP)],
+    );
+    comma(out);
+    push_usize_field(
+        out,
+        "function_word_run_cap",
+        config.decode.function_word_run_cap,
+    );
+    comma(out);
     push_string_field(
         out,
         "quality_weight_profile",
@@ -25183,9 +25280,13 @@ fn push_decode_reject_stats_field(out: &mut String, name: &str, stats: DecodeRej
     comma(out);
     push_usize_field(out, "byte_fallback", stats.byte_fallback);
     comma(out);
+    push_usize_field(out, "banned_token", stats.banned_token);
+    comma(out);
     push_usize_field(out, "repeat_run", stats.repeat_run);
     comma(out);
     push_usize_field(out, "repeat_ngram", stats.repeat_ngram);
+    comma(out);
+    push_usize_field(out, "function_word_run", stats.function_word_run);
     comma(out);
     push_usize_field(out, "local_frequency", stats.local_frequency);
     comma(out);
@@ -25632,9 +25733,12 @@ mod tests {
         vocab.push("february-february".to_string());
         vocab.push("february-align".to_string());
         vocab.push("minister-february".to_string());
+        vocab.push(".".to_string());
+        vocab.push("!".to_string());
+        vocab.push("?".to_string());
 
         let weights =
-            lexeme_quality_weights_from_vocab(&vocab, 268, LexemeQualityWeightProfile::CruftAware)
+            lexeme_quality_weights_from_vocab(&vocab, 271, LexemeQualityWeightProfile::CruftAware)
                 .expect("weights");
 
         assert_eq!(weights[256], 4096);
@@ -25649,6 +25753,9 @@ mod tests {
         assert_eq!(weights[265], 4096);
         assert_eq!(weights[266], 4096);
         assert_eq!(weights[267], 8192);
+        assert_eq!(weights[268], i16::MAX);
+        assert_eq!(weights[269], i16::MAX);
+        assert_eq!(weights[270], i16::MAX);
     }
 
     #[test]
@@ -25784,6 +25891,49 @@ mod tests {
         let line = trace.to_json_line();
         assert!(line.contains("\"schema\":\"nsrl.training_lexeme_softmax_trace.v1\""));
         assert!(line.contains("\"model\":{\"id\":\"lexeme_softmax_embedding_head_v1\""));
+    }
+
+    #[test]
+    fn lexeme_softmax_evaluate_respects_window_offset() {
+        let tokens =
+            encode_u16_test_tokens(&[256, 300, 256, 300, 256, 300, 256, 300, 256, 300, 256, 300]);
+        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
+        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
+        let run = run_lexeme_softmax_training_with_model(
+            &tokens,
+            embedding_model,
+            LexemeSoftmaxTrainConfig {
+                epochs: 1,
+                seq_len: 2,
+                stride: 1,
+                window_offset: 0,
+                max_windows: Some(4),
+                batch_windows: 1,
+                learning_rate: 1,
+                learning_rate_shift: 20,
+                lr_shift_decay_windows: 0,
+                lr_shift_decay_step: 1,
+                max_learning_rate_shift: 20,
+                max_weight_delta: 1,
+                max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                quality_weight_profile: LexemeQualityWeightProfile::Off,
+                context_features: LexemeContextFeatures::Mean,
+                train_embeddings: false,
+                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
+                ..LexemeSoftmaxTrainConfig::default()
+            },
+        )
+        .expect("lexeme softmax train");
+
+        let full = run_lexeme_softmax_evaluate(&tokens, run.model.clone(), 2, 1, 0, None)
+            .expect("full eval");
+        let offset =
+            run_lexeme_softmax_evaluate(&tokens, run.model, 2, 1, 3, None).expect("offset eval");
+
+        assert_eq!(full.windows, 10);
+        assert_eq!(offset.windows, 7);
     }
 
     #[test]
@@ -27606,6 +27756,72 @@ mod tests {
 
         assert_eq!(selection.token, 257);
         assert_eq!(selection.rejected_candidates.local_frequency, 1);
+    }
+
+    #[test]
+    fn lexeme_decode_banned_token_rejects_configured_concepts() {
+        let mut logits = vec![0_i32; 260];
+        let mut probabilities = vec![1_i16; 260];
+        logits[256] = 3_000;
+        probabilities[256] = 30_000;
+        logits[257] = 2_000;
+        probabilities[257] = 20_000;
+        let mut banned_tokens = [0_u16; LEXEME_DECODE_TOKEN_SET_CAP];
+        banned_tokens[0] = 256;
+        let decode = DecodeConfig {
+            banned_token_count: 1,
+            banned_tokens,
+            ..DecodeConfig::greedy()
+        };
+
+        let selection = select_lexeme_from_row(
+            &logits,
+            &probabilities,
+            decode,
+            0,
+            &[300],
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(selection.token, 257);
+        assert_eq!(selection.rejected_candidates.banned_token, 1);
+    }
+
+    #[test]
+    fn lexeme_function_word_run_cap_rejects_continued_glue_words() {
+        let mut logits = vec![0_i32; 260];
+        let mut probabilities = vec![1_i16; 260];
+        logits[256] = 3_000;
+        probabilities[256] = 30_000;
+        logits[258] = 2_000;
+        probabilities[258] = 20_000;
+        let mut function_word_tokens = [0_u16; LEXEME_DECODE_TOKEN_SET_CAP];
+        function_word_tokens[0] = 256;
+        function_word_tokens[1] = 257;
+        let decode = DecodeConfig {
+            function_word_token_count: 2,
+            function_word_tokens,
+            function_word_run_cap: 2,
+            ..DecodeConfig::greedy()
+        };
+
+        let selection = select_lexeme_from_row(
+            &logits,
+            &probabilities,
+            decode,
+            0,
+            &[300, 256, 257],
+            None,
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(selection.token, 258);
+        assert!(selection.rejected_candidates.function_word_run >= 1);
     }
 
     #[test]

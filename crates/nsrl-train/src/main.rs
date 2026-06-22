@@ -11,12 +11,12 @@ use nsrl_corpus::encode_lexeme_prompt_tokens;
 use nsrl_train::{
     ByteDecodePriors, ByteEmbedSoftmaxModel, ByteEmbedSoftmaxTrainConfig, ByteGenerationConfig,
     ByteSoftmaxModel, ByteSoftmaxTrainConfig, ByteTokenizerId, DecodeStrategy,
-    LEXEME_SENTENCE_STOP_TOKEN_CAP, LexemeContextFeatures, LexemeDecodePriors,
-    LexemeEmbeddingModel, LexemeEmbeddingTrainConfig, LexemeGenerationConfig, LexemeMemoryPriors,
-    LexemeQualityWeightProfile, LexemeSoftmaxModel, LexemeSoftmaxTrainConfig, LexemeTopicPriors,
-    LinearBackwardConfig, MiniTransformerAttentionKind, MiniTransformerBatchMode,
-    MiniTransformerBinaryTraceRecord, MiniTransformerBinaryTraceWriter, MiniTransformerMlpModel,
-    MiniTransformerMlpSwarmModel, MiniTransformerMlpSwarmTrainConfig,
+    LEXEME_DECODE_TOKEN_SET_CAP, LEXEME_SENTENCE_STOP_TOKEN_CAP, LexemeContextFeatures,
+    LexemeDecodePriors, LexemeEmbeddingModel, LexemeEmbeddingTrainConfig, LexemeGenerationConfig,
+    LexemeMemoryPriors, LexemeQualityWeightProfile, LexemeSoftmaxModel, LexemeSoftmaxTrainConfig,
+    LexemeTopicPriors, LinearBackwardConfig, MiniTransformerAttentionKind,
+    MiniTransformerBatchMode, MiniTransformerBinaryTraceRecord, MiniTransformerBinaryTraceWriter,
+    MiniTransformerMlpModel, MiniTransformerMlpSwarmModel, MiniTransformerMlpSwarmTrainConfig,
     MiniTransformerMlpSwarmWorkerArtifact, MiniTransformerMlpTrainConfig,
     MiniTransformerPositionPolicy, MiniTransformerSwarmComposition,
     MiniTransformerSwarmRouteConfig, MiniTransformerSwarmRoutedGenerationExpert,
@@ -78,6 +78,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut progress_interval_batches = 0_usize;
     let mut text_out_path = None;
     let mut generated_only_text = false;
+    let mut lexeme_decode_banned_terms = Vec::new();
     let mut mini_transformer_attention_kind = MiniTransformerAttentionKind::Linear;
     let mut mini_transformer_position_policy = MiniTransformerPositionPolicy::Nope;
     let mut mini_transformer_ttt_learning_rate_shift =
@@ -496,6 +497,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .parse()?;
                 byte_generation_config.decode.no_repeat_ngram_order = value;
                 lexeme_generation_config.decode.no_repeat_ngram_order = value;
+            }
+            "--decode-ban-token" => {
+                lexeme_decode_banned_terms.push(
+                    args.next()
+                        .ok_or("--decode-ban-token requires a following lexeme")?
+                        .to_ascii_lowercase(),
+                );
+            }
+            "--decode-function-word-run-cap" => {
+                lexeme_generation_config.decode.function_word_run_cap = args
+                    .next()
+                    .ok_or("--decode-function-word-run-cap requires an integer")?
+                    .parse()?;
             }
             "--max-weight-delta" => {
                 lexeme_softmax_config.max_weight_delta = args
@@ -996,6 +1010,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 model,
                 seq_len,
                 stride,
+                lexeme_softmax_config.window_offset,
                 lexeme_softmax_config.max_windows,
             )?;
             result.to_json_line()
@@ -1009,6 +1024,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let vocab = load_lexeme_vocab(&vocab_path)?;
             let mut generation_config = lexeme_generation_config;
             configure_lexeme_sentence_stop_tokens(&mut generation_config, &vocab.entries);
+            configure_lexeme_decode_token_policy(
+                &mut generation_config,
+                &vocab,
+                &lexeme_decode_banned_terms,
+            )?;
             let model = LexemeSoftmaxModel::from_bytes(&fs::read(model_path)?)?;
             let prompt_tokens = encode_lexeme_prompt_tokens(&prompt, &vocab.lookup);
             let decode_priors =
@@ -1538,7 +1558,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-reduce|lexeme-generate|mini-transformer-mlp|mini-transformer-swarm|mini-transformer-swarm-worker|mini-transformer-swarm-assemble|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--expert PATH] [--model-out PATH] [--swarm-model-out PATH] [--swarm-worker-out PATH] [--swarm-worker-artifact PATH] [--manifest-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N|--swarm-worker-count N] [--swarm-worker-index N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
+        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-reduce|lexeme-generate|mini-transformer-mlp|mini-transformer-swarm|mini-transformer-swarm-worker|mini-transformer-swarm-assemble|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--expert PATH] [--model-out PATH] [--swarm-model-out PATH] [--swarm-worker-out PATH] [--swarm-worker-artifact PATH] [--manifest-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--decode-ban-token TEXT] [--decode-function-word-run-cap N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N|--swarm-worker-count N] [--swarm-worker-index N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
     );
     println!();
     println!("Runs a deterministic integer training trace.");
@@ -1568,6 +1588,7 @@ fn apply_decode_profile(
             config.decode.repeat_penalty_shift = 3;
             config.decode.max_repeat_run = 2;
             config.decode.no_repeat_ngram_order = 3;
+            config.decode.function_word_run_cap = 4;
             config.decode.corpus_prior = true;
             config.decode.corpus_prior_order = 3;
             config.decode.corpus_prior_logit_shift = 7;
@@ -1591,6 +1612,7 @@ fn apply_decode_profile(
             config.decode.repeat_penalty_shift = 3;
             config.decode.max_repeat_run = 2;
             config.decode.no_repeat_ngram_order = 4;
+            config.decode.function_word_run_cap = 4;
             config.decode.corpus_prior = true;
             config.decode.corpus_prior_order = 3;
             config.decode.corpus_prior_logit_shift = 7;
@@ -1716,6 +1738,13 @@ struct LexemeVocab {
     lookup: HashMap<String, u16>,
 }
 
+const LEXEME_FUNCTION_WORDS: &[&str] = &[
+    "a", "all", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from", "has", "hath",
+    "have", "he", "her", "him", "his", "i", "in", "is", "it", "me", "my", "not", "of", "on", "or",
+    "our", "she", "so", "that", "the", "thee", "their", "them", "thou", "thy", "to", "we", "with",
+    "ye", "you", "your",
+];
+
 fn load_lexeme_vocab(path: &PathBuf) -> Result<LexemeVocab, Box<dyn std::error::Error>> {
     let text = fs::read_to_string(path)?;
     let mut entries = Vec::new();
@@ -1741,6 +1770,55 @@ fn load_lexeme_vocab(path: &PathBuf) -> Result<LexemeVocab, Box<dyn std::error::
     }
 
     Ok(LexemeVocab { entries, lookup })
+}
+
+fn configure_lexeme_decode_token_policy(
+    config: &mut LexemeGenerationConfig,
+    vocab: &LexemeVocab,
+    banned_terms: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    config.decode.banned_token_count = 0;
+    config.decode.banned_tokens = [0; LEXEME_DECODE_TOKEN_SET_CAP];
+    for term in banned_terms {
+        if let Some(&token) = vocab.lookup.get(term.as_str()) {
+            add_lexeme_decode_token(
+                &mut config.decode.banned_tokens,
+                &mut config.decode.banned_token_count,
+                token,
+            )?;
+        }
+    }
+
+    config.decode.function_word_token_count = 0;
+    config.decode.function_word_tokens = [0; LEXEME_DECODE_TOKEN_SET_CAP];
+    if config.decode.function_word_run_cap > 0 {
+        for &term in LEXEME_FUNCTION_WORDS {
+            if let Some(&token) = vocab.lookup.get(term) {
+                add_lexeme_decode_token(
+                    &mut config.decode.function_word_tokens,
+                    &mut config.decode.function_word_token_count,
+                    token,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn add_lexeme_decode_token(
+    tokens: &mut [u16; LEXEME_DECODE_TOKEN_SET_CAP],
+    count: &mut usize,
+    token: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if tokens[..(*count).min(LEXEME_DECODE_TOKEN_SET_CAP)].contains(&token) {
+        return Ok(());
+    }
+    if *count == LEXEME_DECODE_TOKEN_SET_CAP {
+        return Err("lexeme decode token set exceeds capacity".into());
+    }
+    tokens[*count] = token;
+    *count += 1;
+    Ok(())
 }
 
 fn load_lexeme_quality_weights(
