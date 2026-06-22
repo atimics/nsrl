@@ -16,6 +16,40 @@ scripts/run-signal-romance-lexeme.sh
 
 The lexeme runner trains a word-ish NSRL model over the same ranker-to-voice frames. In current local experiments it moved raw generation from printable-but-ungrounded byte noise to Signal-shaped lines with about 70% raw grounding on known-frame probes.
 
+For cheap coherent radio-chatter frames from the Signal sim vocabulary:
+
+```sh
+node scripts/build-signal-sim-log-corpus.mjs \
+  --out-dir data/processed/signal-sim-log-smoke \
+  --repeat 1
+```
+
+Those frames use short copy/readback/stand-by phrasing and can be fed into the
+Signal corpus builder with `--extra-frames`, or through `BUILD_SIM_LOGS=1` on
+the lexeme runner when a training run is actually wanted.
+
+For the absolute cheapest tiny models, train directly on the raw `sim-log-voice.txt`
+lines instead of the `RANKED`/`VOICE` wrapped corpus. At this scale the model is
+not smart enough to treat `RANKED`, `VOICE`, and `END` as control syntax; it
+learns them as ordinary output tokens. Use raw prompts such as `Caution LM traffic`
+for those voice-only models.
+
+Sim-log frames and `training-pairs.jsonl` now include `private_state` and
+`expected_output`. The private state is a compact pilot intent/checklist; the
+expected output is the radio line. Use the paired file for future
+private-state-to-output training. For the tiniest output-only models, train on
+`sim-log-voice.txt` so field names do not leak into generation.
+
+For a real simulator-state radio lane, use
+`scripts/build-signal-replay-corpus.mjs`. It builds/runs Signal's C
+`signal_replay` tool and maps deterministic replay rows to clipped pilot radio
+training pairs; see `docs/simulator-state-corpora.md`.
+
+For context-dependent reading, use
+`scripts/build-contextual-reading-pairs.mjs` instead. That builder simulates a
+Signal private state and pairs it with fixed Shakespeare or Blake source text;
+see `docs/contextual-reading-pairs.md`.
+
 To fetch and include optional public-domain/public style lanes:
 
 ```sh

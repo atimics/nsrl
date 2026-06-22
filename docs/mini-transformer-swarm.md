@@ -35,6 +35,109 @@ written to `--model-out` is the promoted best worker, ranked by final total
 error, then final probability error, then invalid forward count, then worker
 index for deterministic ties.
 
+## Island Fan-Out
+
+`mini-transformer-swarm-worker` runs one deterministic worker shard and writes a
+self-validating binary worker artifact. This is the Lambda-friendly path: invoke
+one worker per shard, then assemble the artifacts after every invocation
+finishes.
+
+Worker invocation:
+
+```sh
+cargo run --release -p nsrl-train -- \
+  --mode mini-transformer-swarm-worker \
+  --tokens data/processed/wiki-bard-corpus.tokens.u8 \
+  --mini-transformer-attention linear \
+  --mini-transformer-position nope \
+  --swarm-worker-index 0 \
+  --swarm-worker-count 8 \
+  --max-windows 8192 \
+  --batch-windows 1 \
+  --swarm-worker-out data/processed/worker-000.nsrlwk \
+  --trace data/processed/worker-000.trace.jsonl
+```
+
+Assembler invocation:
+
+```sh
+cargo run --release -p nsrl-train -- \
+  --mode mini-transformer-swarm-assemble \
+  --tokens data/processed/wiki-bard-corpus.tokens.u8 \
+  --mini-transformer-attention linear \
+  --mini-transformer-position nope \
+  --max-windows 8192 \
+  --batch-windows 1 \
+  --swarm-worker-artifact data/processed/worker-000.nsrlwk \
+  --swarm-worker-artifact data/processed/worker-001.nsrlwk \
+  --swarm-model-out data/processed/wiki-bard-mini-transformer-swarm.nsrlswarm \
+  --model-out data/processed/wiki-bard-mini-transformer-swarm-best.nsrlmt \
+  --manifest-out data/processed/wiki-bard-mini-transformer-swarm.manifest.jsonl \
+  --trace data/processed/wiki-bard-mini-transformer-swarm.trace.jsonl
+```
+
+The worker artifact uses magic `NSRLWK1` and stores the worker shard metadata,
+base model hash, worker summary metrics, and the worker `.nsrlmt` payload. The
+assembler validates token hash, base config, base model hash, worker indexes,
+window hashes, final model hashes, and recomputed shard eval metrics before
+packing the normal `.nsrlswarm` artifact. Worker artifacts must cover indexes
+`0..worker_count`; duplicate or missing workers are rejected.
+
+### Lambda Cost/Speed Lane
+
+Lambda map-reduce is the default cheap lane for swarm comparisons. It uses the
+same deterministic worker artifact path as island fan-out, but each Lambda
+worker now defaults to the hash-matched inner batch reducer:
+`ascii-lower`, linear attention, NoPE position, `stride=1`, `batch_windows=2`,
+`batch_mode=map-reduce`, two in-invocation reducers, adaptive rule shifts, and
+sparse progress writes.
+
+For the current Crowley Bard token dataset, the convenience wrapper is the
+normal path:
+
+```sh
+BUILD=1 DEPLOY=1 scripts/aws/run-crowley-bard-lambda-mapreduce.sh
+```
+
+After the Lambda package has been deployed once, repeat runs can omit the build
+and deploy step:
+
+```sh
+scripts/aws/run-crowley-bard-lambda-mapreduce.sh
+```
+
+Override `MAX_WINDOWS`, `WORKERS`, `MEMORY_MB`, or
+`NSRL_TOKENS_S3_URI` when comparing scale or a new corpus version. The generic
+orchestrator remains available when you need an explicit dataset:
+
+```sh
+scripts/aws/build-lambda-swarm-worker.sh
+
+node scripts/aws/run-lambda-swarm-comparison.mjs \
+  --deploy \
+  --run \
+  --s3-uri s3://BUCKET/PREFIX \
+  --tokens-s3-uri s3://BUCKET/PREFIX/corpus/datasets/DATASET/VERSION/tokens/tokens.u8 \
+  --run-name lambda-swarm-64k \
+  --workers 4 \
+  --max-windows 65536 \
+  --seq-len 8 \
+  --stride 1 \
+  --batch-windows 2 \
+  --batch-mode map-reduce \
+  --map-reduce-workers 2 \
+  --tokenizer ascii-lower \
+  --adaptive-rule-shifts 1 \
+  --progress-interval-batches 1024
+```
+
+The orchestrator creates or updates the ARM64 Python Lambda function, invokes
+one `mini-transformer-swarm-worker` shard per worker, waits for `.nsrlwk`
+artifacts in S3, assembles them locally with `mini-transformer-swarm-assemble`,
+uploads the packed `.nsrlswarm`, and writes `metrics.json`/`metrics.tsv`. Pass
+`--lambda-gb-second-usd` and `--lambda-request-usd` to pin whatever current AWS
+price sheet you want used for the estimate.
+
 ## Scaling Sweep
 
 Use `mini-transformer-swarm-scaling` to measure host scaling before committing

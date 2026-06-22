@@ -15,6 +15,7 @@ const defaults = {
   styleChunkBytes: 256,
   styleEveryFrames: 16,
   styleSourceDir: "data/processed/signal-romance-sources",
+  extraFrames: "",
   seed: "signal-romance-v1",
 };
 
@@ -34,6 +35,7 @@ Options:
   --style-chunk-bytes N      Bytes per interleaved style chunk [${defaults.styleChunkBytes}]
   --style-every-frames N     Insert one style chunk per N signal frames [${defaults.styleEveryFrames}]
   --style-source-dir PATH    Optional extra style source directory [${defaults.styleSourceDir}]
+  --extra-frames PATHS       Extra frame JSONL file(s), comma-separated
   --seed TEXT                Deterministic split/sampling seed [${defaults.seed}]
 `);
 }
@@ -340,6 +342,62 @@ function parseSignalFrames(signalSftPath) {
   return { rawFrames: frames, frames: [...unique.values()] };
 }
 
+function normalizeExtraFrame(record, filePath, index) {
+  if (!record || typeof record !== "object") {
+    throw new Error(`${filePath}:${index + 1}: expected object frame`);
+  }
+  const line = compact(record.line ?? record.target ?? "");
+  if (!line) {
+    throw new Error(`${filePath}:${index + 1}: missing line/target`);
+  }
+  const fields = record.fields && typeof record.fields === "object" ? record.fields : {};
+  const source = compact(record.source || `extra:${path.basename(filePath)}`);
+  const sourceId = compact(record.source_id || record.id || `${path.basename(filePath)}:${index + 1}`);
+  const speaker = compact(record.speaker || fields.speaker || "SHIP");
+  const role = compact(record.role || fields.role || "ship");
+  const state = compact(record.state || fields.state || "");
+  const frame = makeFrame({ source, sourceId, speaker, role, state, line, fields });
+  const prompt = compact(record.prompt || "") ? String(record.prompt) : frame.prompt;
+  const target = compact(record.target || "") || frame.target;
+  const stations = Array.isArray(record.stations) && record.stations.length > 0
+    ? [...new Set(record.stations.map(compact).filter(Boolean))]
+    : frame.stations;
+  const commodities = Array.isArray(record.commodities) && record.commodities.length > 0
+    ? [...new Set(record.commodities.map(compact).filter(Boolean))]
+    : frame.commodities;
+  const groundingTerms = Array.isArray(record.grounding_terms) && record.grounding_terms.length > 0
+    ? [...new Set(record.grounding_terms.map(compact).filter(Boolean))]
+    : frame.grounding_terms;
+  return {
+    ...frame,
+    id: compact(record.id || "") || frame.id,
+    prompt,
+    target: compact(target),
+    stations,
+    commodities,
+    grounding_terms: groundingTerms.length > 0 ? groundingTerms : fallbackGroundingTerms(line),
+  };
+}
+
+function loadExtraFrames(extraFrames) {
+  if (!extraFrames) {
+    return [];
+  }
+  const frames = [];
+  for (const rawPath of String(extraFrames).split(",")) {
+    const trimmed = rawPath.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const resolved = resolveRepoPath(trimmed);
+    const records = parseJsonl(readText(resolved, "extra frame JSONL"), resolved);
+    records.forEach((record, index) => {
+      frames.push(normalizeExtraFrame(record, resolved, index));
+    });
+  }
+  return frames;
+}
+
 function voiceDoctrine(signalVoicePath) {
   const text = readText(signalVoicePath, "Signal voice seed");
   const beforeCanonical = text.split(/Canonical radio lines:/i)[0] ?? text;
@@ -471,7 +529,15 @@ function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
   const parsed = parseSignalFrames(options.signalSft);
-  const frames = parsed.frames.sort((a, b) => a.id.localeCompare(b.id));
+  const extraFrames = loadExtraFrames(options.extraFrames);
+  const uniqueFrames = new Map();
+  for (const frame of [...parsed.frames, ...extraFrames]) {
+    const key = [frame.source, frame.speaker, frame.role, frame.state, frame.prompt, frame.target].join("\0");
+    if (!uniqueFrames.has(key)) {
+      uniqueFrames.set(key, frame);
+    }
+  }
+  const frames = [...uniqueFrames.values()].sort((a, b) => a.id.localeCompare(b.id));
   const evalCount = Math.min(options.evalCount, Math.max(0, frames.length - 1));
   const evalIds = new Set(
     frames
@@ -530,7 +596,16 @@ function main() {
     signal_sft_path: resolveRepoPath(options.signalSft),
     signal_voice_path: resolveRepoPath(options.signalVoice),
     raw_signal_frames: parsed.rawFrames.length,
-    unique_signal_frames: frames.length,
+    unique_signal_frames: parsed.frames.length,
+    extra_frames: extraFrames.length,
+    extra_frame_paths: options.extraFrames
+      ? String(options.extraFrames)
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .map(resolveRepoPath)
+      : [],
+    total_unique_frames: frames.length,
     train_frames: trainFrames.length,
     eval_frames: evalFrames.length,
     signal_repeat: options.signalRepeat,

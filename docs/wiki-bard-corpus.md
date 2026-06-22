@@ -68,6 +68,11 @@ The next corpus lane layers public-domain visionary/literary texts on top of
 Wiki-Bard. The first additions are Project Gutenberg texts by Aleister Crowley
 and William Blake:
 
+Crowley Bard is the dedicated Shakespeare x Blake x Crowley twitterbot-style
+track that grew out of this work. Keep it planned as a standalone output-only
+model, separate from the Signal and CosyWorld state-conditioned LLMs; see
+`docs/world-llm-corpus-plan.md`.
+
 | Source | File | URL |
 | --- | --- | --- |
 | Crowley, `Household Gods` | `data/raw/crowley-household-gods-pg14040.txt` | `https://www.gutenberg.org/cache/epub/14040/pg14040.txt` |

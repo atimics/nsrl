@@ -1,0 +1,144 @@
+name: Deploy Crowley Bard X Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Keep Lambda in dry-run mode"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      model_s3_uri:
+        description: "Optional S3 URI containing v4096.nsrllm, vocab, and tokens"
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - ".github/workflows/x-bot-deploy.yml"
+      - "scripts/x-bot/**"
+      - "crates/nsrl-core/**"
+      - "crates/nsrl-corpus/**"
+      - "crates/nsrl-train-core/**"
+      - "crates/nsrl-train/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  FUNCTION_NAME: ${{ vars.X_BOT_FUNCTION_NAME || 'crowley-bard-mention-bot' }}
+  ROLE_NAME: ${{ vars.X_BOT_LAMBDA_ROLE_NAME || 'crowley-bard-mention-bot-role' }}
+  POLICY_NAME: ${{ vars.X_BOT_LAMBDA_POLICY_NAME || 'crowley-bard-mention-bot-policy' }}
+  STATE_TABLE: ${{ vars.X_BOT_STATE_TABLE || 'crowley-bard-mention-state' }}
+  SECRET_NAME: ${{ vars.X_BOT_SECRET_NAME || 'crowley-bard/x-api' }}
+  X_CONTEXT_ARCHIVE_S3_URI: ${{ vars.X_BOT_CONTEXT_ARCHIVE_S3_URI || '' }}
+  RULE_NAME: ${{ vars.X_BOT_RULE_NAME || 'crowley-bard-mention-poll' }}
+  SCHEDULE_EXPRESSION: ${{ vars.X_BOT_SCHEDULE_EXPRESSION || 'rate(15 minutes)' }}
+  LAMBDA_ARCHITECTURE: arm64
+  X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'true' }}
+  X_DRY_RUN_ADVANCE_STATE: ${{ vars.X_BOT_DRY_RUN_ADVANCE_STATE || 'true' }}
+  X_REPLY_ENGINE: nsrl-live
+  X_NSRL_MAX_NEW_TOKENS: ${{ vars.X_BOT_NSRL_MAX_NEW_TOKENS || '48' }}
+  X_NSRL_TOP_K: ${{ vars.X_BOT_NSRL_TOP_K || '12' }}
+  X_NSRL_TIMEOUT_SECONDS: ${{ vars.X_BOT_NSRL_TIMEOUT_SECONDS || '12' }}
+  X_CONTEXT_ADAPT: ${{ vars.X_BOT_CONTEXT_ADAPT || 'false' }}
+  X_CONTEXT_MAX_CHARS: ${{ vars.X_BOT_CONTEXT_MAX_CHARS || '1800' }}
+  X_CONTEXT_REPEAT_COUNT: ${{ vars.X_BOT_CONTEXT_REPEAT_COUNT || '3' }}
+  X_CONTEXT_ADAPT_MAX_WINDOWS: ${{ vars.X_BOT_CONTEXT_ADAPT_MAX_WINDOWS || '64' }}
+  X_CONTEXT_ADAPT_LR_SHIFT: ${{ vars.X_BOT_CONTEXT_ADAPT_LR_SHIFT || '18' }}
+  X_CONTEXT_ADAPT_TIMEOUT_SECONDS: ${{ vars.X_BOT_CONTEXT_ADAPT_TIMEOUT_SECONDS || '20' }}
+  X_MAX_MENTIONS_PER_POLL: ${{ vars.X_BOT_MAX_MENTIONS_PER_POLL || '10' }}
+  X_MAX_REPLIES_PER_RUN: ${{ vars.X_BOT_MAX_REPLIES_PER_RUN || '1' }}
+  X_MAX_REPLIES_PER_15M: ${{ vars.X_BOT_MAX_REPLIES_PER_15M || '1' }}
+  X_MAX_REPLIES_PER_DAY: ${{ vars.X_BOT_MAX_REPLIES_PER_DAY || '10' }}
+  X_MAX_REPLIES_PER_MONTH: ${{ vars.X_BOT_MAX_REPLIES_PER_MONTH || '100' }}
+
+jobs:
+  deploy:
+    name: Build and Deploy Lambda
+    runs-on: ubuntu-24.04-arm
+    concurrency:
+      group: crowley-bard-x-bot-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build NSRL binaries for Lambda
+        run: cargo build --release -p nsrl-train -p nsrl-corpus
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+
+      - name: Resolve Crowley model bundle
+        env:
+          INPUT_MODEL_S3_URI: ${{ github.event_name == 'workflow_dispatch' && inputs.model_s3_uri || '' }}
+          VAR_MODEL_S3_URI: ${{ vars.X_BOT_MODEL_S3_URI }}
+        run: |
+          set -euo pipefail
+          MODEL_S3_URI="${INPUT_MODEL_S3_URI:-$VAR_MODEL_S3_URI}"
+          MODEL_DIR="scripts/x-bot/build/model-source"
+          mkdir -p "$MODEL_DIR"
+
+          if [[ -n "$MODEL_S3_URI" ]]; then
+            aws s3 cp "$MODEL_S3_URI/v4096.nsrllm" "$MODEL_DIR/v4096.nsrllm"
+            aws s3 cp "$MODEL_S3_URI/v4096.vocab.tsv" "$MODEL_DIR/v4096.vocab.tsv"
+            aws s3 cp "$MODEL_S3_URI/v4096.tokens.u16" "$MODEL_DIR/v4096.tokens.u16"
+          elif [[ -f scripts/x-bot/model/v4096.nsrllm ]]; then
+            cp scripts/x-bot/model/v4096.nsrllm "$MODEL_DIR/v4096.nsrllm"
+            cp scripts/x-bot/model/v4096.vocab.tsv "$MODEL_DIR/v4096.vocab.tsv"
+            cp scripts/x-bot/model/v4096.tokens.u16 "$MODEL_DIR/v4096.tokens.u16"
+          else
+            echo "No Crowley model bundle found."
+            echo "Set repo variable X_BOT_MODEL_S3_URI or pass model_s3_uri to workflow_dispatch."
+            exit 1
+          fi
+
+          ls -lh "$MODEL_DIR"
+
+      - name: Package Lambda
+        env:
+          X_BOT_LAMBDA_BIN: target/release/nsrl-train
+          X_BOT_LAMBDA_CORPUS_BIN: target/release/nsrl-corpus
+          X_BOT_MODEL_DIR: scripts/x-bot/build/model-source
+        run: |
+          set -euo pipefail
+          scripts/x-bot/package.sh
+          unzip -l scripts/x-bot/build/crowley-bard-mention-lambda.zip
+
+      - name: Deploy Lambda
+        env:
+          X_BOT_LAMBDA_BIN: target/release/nsrl-train
+          X_BOT_LAMBDA_CORPUS_BIN: target/release/nsrl-corpus
+          X_BOT_MODEL_DIR: scripts/x-bot/build/model-source
+        run: scripts/x-bot/deploy.sh
+
+      - name: Smoke live inference
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --region "$AWS_REGION" \
+            --function-name "$FUNCTION_NAME" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"test_generate":"@CrowleyBard what is the model?","username":"actions_smoke","id":"424242"}' \
+            /tmp/crowley-bard-smoke.json
+          cat /tmp/crowley-bard-smoke.json

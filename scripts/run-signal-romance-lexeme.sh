@@ -14,6 +14,7 @@ Common knobs:
   SIGNAL_REPEAT=40
   STYLE_BYTES=0
   FETCH_SOURCES=0
+  BUILD_SIM_LOGS=0
   EVAL_COUNT=0
   SOFTMAX_SEQ_LEN=16
   SOFTMAX_WINDOWS=150000
@@ -37,6 +38,9 @@ style_chunk_bytes="${STYLE_CHUNK_BYTES:-256}"
 style_every_frames="${STYLE_EVERY_FRAMES:-16}"
 eval_count="${EVAL_COUNT:-0}"
 fetch_sources="${FETCH_SOURCES:-0}"
+build_sim_logs="${BUILD_SIM_LOGS:-0}"
+sim_log_dir="${SIM_LOG_DIR:-data/processed/signal-sim-log-corpus}"
+extra_frames="${EXTRA_FRAMES:-}"
 build_corpus="${BUILD_CORPUS:-1}"
 train="${TRAIN:-1}"
 eval="${EVAL:-1}"
@@ -62,6 +66,7 @@ token_trace="$out_dir/v${vocab_max}.tokens.trace.jsonl"
 echo "out_dir=$out_dir"
 echo "signal_repeat=$signal_repeat"
 echo "style_bytes=$style_bytes"
+echo "build_sim_logs=$build_sim_logs"
 echo "softmax_seq_len=$softmax_seq_len"
 date -u +"started_at=%Y-%m-%dT%H:%M:%SZ"
 
@@ -69,6 +74,17 @@ if [[ "$build_corpus" != "0" ]]; then
   if [[ "$fetch_sources" != "0" ]]; then
     node scripts/fetch-signal-romance-sources.mjs \
       --out-dir "${STYLE_SOURCE_DIR:-data/processed/signal-romance-sources}"
+  fi
+
+  if [[ "$build_sim_logs" != "0" ]]; then
+    node scripts/build-signal-sim-log-corpus.mjs \
+      --out-dir "$sim_log_dir" \
+      --repeat "${SIM_LOG_REPEAT:-1}"
+    if [[ -n "$extra_frames" ]]; then
+      extra_frames="${extra_frames},${sim_log_dir}/sim-log-frames.jsonl"
+    else
+      extra_frames="${sim_log_dir}/sim-log-frames.jsonl"
+    fi
   fi
 
   build_args=(
@@ -84,6 +100,9 @@ if [[ "$build_corpus" != "0" ]]; then
   )
   if [[ -n "${STYLE_SOURCE_DIR:-}" ]]; then
     build_args+=(--style-source-dir "$STYLE_SOURCE_DIR")
+  fi
+  if [[ -n "$extra_frames" ]]; then
+    build_args+=(--extra-frames "$extra_frames")
   fi
 
   node scripts/build-signal-romance-corpus.mjs \

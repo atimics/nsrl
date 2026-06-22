@@ -597,16 +597,27 @@ pub fn linear_backward_input_prescaled_i32_i8_i16_per_channel_checked(
         return None;
     }
 
-    for (in_index, out) in grad_input.iter_mut().enumerate() {
-        let mut acc = 0_i64;
+    const INPUT_TILE: usize = 8;
+    let mut input_base = 0_usize;
+    while input_base < input_dim {
+        let tile_len = (input_dim - input_base).min(INPUT_TILE);
+        let mut accs = [0_i64; INPUT_TILE];
 
         for (out_index, &scaled_grad) in scaled_grad_output.iter().enumerate() {
-            let weight_index = out_index.checked_mul(input_dim)?.checked_add(in_index)?;
-            let product = i64::from(scaled_grad).checked_mul(i64::from(weights[weight_index]))?;
-            acc = acc.checked_add(product)?;
+            let row_start = out_index.checked_mul(input_dim)?.checked_add(input_base)?;
+            let row_end = row_start.checked_add(tile_len)?;
+            for (tile_index, &weight) in weights[row_start..row_end].iter().enumerate() {
+                let product = i64::from(scaled_grad).checked_mul(i64::from(weight))?;
+                accs[tile_index] = accs[tile_index].checked_add(product)?;
+            }
         }
 
-        *out = requantize_i64_to_i16(acc, grad_input_scales[in_index])?;
+        for (tile_index, &acc) in accs.iter().enumerate().take(tile_len) {
+            let in_index = input_base.checked_add(tile_index)?;
+            grad_input[in_index] = requantize_i64_to_i16(acc, grad_input_scales[in_index])?;
+        }
+
+        input_base = input_base.checked_add(tile_len)?;
     }
 
     Some(())

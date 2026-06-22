@@ -266,6 +266,14 @@ points are:
 
 ## Current model quality
 
+Corpus and model work is organized as three sibling tracks: **Signal LLM** and
+**CosyWorld LLM** (state-conditioned world models that map a `private_state` to
+an `expected_output`) and **Crowley Bard** (an output-only Shakespeare × Blake ×
+Crowley twitterbot voice). All three have trained tiny prototypes on disk; the
+open gap is corpus scale, not the integer contract. See
+[docs/current-results.md](docs/current-results.md) and
+[docs/world-llm-corpus-plan.md](docs/world-llm-corpus-plan.md).
+
 ### Bits-per-token (BPT) baseline
 
 Lexeme softmax model on the SimpleWiki expository corpus (4096-token vocabulary,
@@ -351,10 +359,12 @@ quantize-to-zero — does not appear in the published literature.
 
 ```
 crates/
-  nsrl-core/     no_std integer inference runtime (no unsafe except NEON module)
-  nsrl-corpus/   tokenizer and corpus pipeline tools
-  nsrl-demo/     forward trace and benchmark binaries
-  nsrl-train/    integer training framework and generation CLI
+  nsrl-core/       no_std integer inference runtime (no unsafe except NEON module)
+  nsrl-corpus/     tokenizer and corpus pipeline tools
+  nsrl-demo/       forward trace and benchmark binaries
+  nsrl-train-core/ no_std integer training kernels (shared by the trainer)
+  nsrl-train/      integer training framework and generation CLI
+  nsrl-sched/      integer-only swarm scheduling kernel (library)
 docs/
   schemas.md              JSONL trace contracts
   current-results.md      current claims, evidence, and next steps
