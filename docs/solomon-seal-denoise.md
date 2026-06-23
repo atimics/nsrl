@@ -151,9 +151,9 @@ data scaling from this first pass.
 
 Improved checkpoints can be announced through the existing X/Twitter Lambda
 without adding another credential path. The watcher prepares a model-generation
-prompt for the top-level tweet, keeps the sigil image on that generated tweet,
-and puts exact metrics in a deterministic reply. By default this only prepares a
-dry-run payload:
+prompt for the top-level tweet and keeps the sigil image on that generated
+tweet. Exact metrics should be surfaced on the published dashboard instead of
+in the X thread. By default this only prepares a dry-run payload:
 
 ```sh
 node scripts/post-solomon-improved-checkpoint.mjs \

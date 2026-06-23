@@ -212,10 +212,9 @@ posts only the best candidate above `min_score`. Dry-run standalone responses
 include a `sigil` object with the Solomon seed, target row, trace path, and PNG
 size; live posts upload that PNG and attach the returned media id.
 
-The same endpoint can attach a deterministic precomposed reply under a
-standalone generated tweet. This is the preferred shape for checkpoint
-announcements: the top-level tweet comes from the model and carries the sigil
-image, while the reply contains exact metrics. Live posts still require an
+For checkpoint announcements, use a standalone generated tweet. The public post
+comes from the model and carries the sigil image; exact metrics belong on the
+published dashboard instead of in the X thread. Live posts still require an
 explicit `id`, so retries are idempotent:
 
 ```sh
@@ -223,14 +222,13 @@ aws lambda invoke \
   --region us-east-1 \
   --function-name crowley-bard-mention-bot \
   --cli-binary-format raw-in-base64-out \
-  --payload '{"post_tweet":true,"dry_run":true,"id":"solomon-checkpoint-eval-200","prompt":"Solomon checkpoint improved. Speak one compact omen about integer seals learning from held-out prompts.","reply_text":"Solomon checkpoint improved: eval top1 200/1000.\nTrain prompts 352; prompt rows 576; ld32 tf512 e12.\nNovel 208/1000, cluster 173/1000, gold 76/1000.\nModel 0ce31085. #NSRL"}' \
+  --payload '{"post_tweet":true,"dry_run":true,"id":"solomon-checkpoint-eval-200","prompt":"Solomon checkpoint improved. Speak one compact omen about integer seals learning from held-out prompts."}' \
   /tmp/crowley-bard-solomon-checkpoint.json
 ```
 
 For Solomon eval curves, prefer the local watcher script. It reads the checked
 curve TSV, compares the selected metric against a git-ignored state file, and
-prepares an idempotent Lambda payload with a model-generation prompt and a
-metrics reply:
+prepares an idempotent Lambda payload with a model-generation prompt only:
 
 ```sh
 node scripts/post-solomon-improved-checkpoint.mjs \

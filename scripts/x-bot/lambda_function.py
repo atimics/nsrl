@@ -673,40 +673,26 @@ class StateStore:
         *,
         tweet: dict[str, Any],
         response: dict[str, Any],
-        thread_reply: dict[str, Any] | None = None,
-        reply_response: dict[str, Any] | None = None,
-        reply_error: str = "",
     ) -> None:
         data = response.get("data") if isinstance(response.get("data"), dict) else {}
-        reply_data = (
-            reply_response.get("data")
-            if reply_response and isinstance(reply_response.get("data"), dict)
-            else {}
-        )
         key = f"standalone#{post_id}"
-        item = {
-            "pk": key,
-            "post_id": post_id,
-            "status": "posted",
-            "tweet_id": str(data.get("id") or ""),
-            "text": str(tweet.get("text") or ""),
-            "engine": str(tweet.get("engine") or ""),
-            "quality_score": str(tweet.get("quality_score") or ""),
-            "sigil": public_sigil_metadata(tweet.get("sigil")),
-            "posted_at": iso_now(now),
-            "updated_at": iso_now(now),
-            "response": response,
-            "expires_at": int(now.timestamp()) + STANDALONE_POST_TTL_SECONDS,
-        }
-        if thread_reply:
-            item["reply_text"] = str(thread_reply.get("text") or "")
-            item["reply_engine"] = str(thread_reply.get("engine") or "")
-        if reply_data:
-            item["reply_id"] = str(reply_data.get("id") or "")
-            item["reply_response"] = reply_response
-        if reply_error:
-            item["reply_error"] = reply_error
-        self.put_item(key, item)
+        self.put_item(
+            key,
+            {
+                "pk": key,
+                "post_id": post_id,
+                "status": "posted",
+                "tweet_id": str(data.get("id") or ""),
+                "text": str(tweet.get("text") or ""),
+                "engine": str(tweet.get("engine") or ""),
+                "quality_score": str(tweet.get("quality_score") or ""),
+                "sigil": public_sigil_metadata(tweet.get("sigil")),
+                "posted_at": iso_now(now),
+                "updated_at": iso_now(now),
+                "response": response,
+                "expires_at": int(now.timestamp()) + STANDALONE_POST_TTL_SECONDS,
+            },
+        )
 
     def mark_standalone_failed(
         self,
@@ -1858,22 +1844,6 @@ def standalone_text_from_event(event: dict[str, Any]) -> str | None:
     return None
 
 
-def standalone_reply_from_event(
-    event: dict[str, Any], config: BotConfig
-) -> dict[str, Any] | None:
-    for key in ("reply_text", "thread_reply_text", "metrics_text"):
-        value = event.get(key)
-        if isinstance(value, str) and value.strip():
-            return {
-                "engine": "precomposed-reply",
-                "text": clean_precomposed_tweet_text(
-                    value,
-                    max_chars=config.max_reply_chars,
-                ),
-            }
-    return None
-
-
 def standalone_post_from_state(item: dict[str, Any]) -> dict[str, Any]:
     status = str(item.get("status") or "unknown")
     tweet = {
@@ -1883,14 +1853,8 @@ def standalone_post_from_state(item: dict[str, Any]) -> dict[str, Any]:
     }
     if item.get("sigil"):
         tweet["sigil"] = item["sigil"]
-    thread_reply = None
-    if item.get("reply_text"):
-        thread_reply = {
-            "engine": str(item.get("reply_engine") or "precomposed-reply"),
-            "text": str(item.get("reply_text") or ""),
-        }
     result: dict[str, Any] = {
-        "ok": status == "posted" and not item.get("reply_error"),
+        "ok": status == "posted",
         "dry_run": False,
         "posted": False,
         "duplicate": True,
@@ -1899,18 +1863,11 @@ def standalone_post_from_state(item: dict[str, Any]) -> dict[str, Any]:
     }
     if item.get("tweet_id"):
         result["tweet_id"] = str(item["tweet_id"])
-    if thread_reply is not None:
-        result["thread_reply"] = thread_reply
-    if item.get("reply_id"):
-        result["reply_id"] = str(item["reply_id"])
     if status == "posting":
         result["error"] = "standalone_post_in_progress"
     elif status == "failed":
         result["error"] = "standalone_post_failed"
         result["detail"] = str(item.get("error") or "")
-    elif item.get("reply_error"):
-        result["error"] = "standalone_reply_failed"
-        result["detail"] = str(item.get("reply_error") or "")
     return result
 
 
@@ -2257,7 +2214,6 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
                 )
                 if sigil is not None:
                     tweet["sigil"] = public_sigil_metadata(sigil)
-                thread_reply = standalone_reply_from_event(event, config)
             except ReplyGenerationError as exc:
                 return {
                     "ok": False,
@@ -2266,10 +2222,7 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
                     "detail": str(exc),
                 }
             if config.dry_run:
-                result = {"ok": True, "dry_run": True, "would_post": True, **tweet}
-                if thread_reply is not None:
-                    result["thread_reply"] = thread_reply
-                return result
+                return {"ok": True, "dry_run": True, "would_post": True, **tweet}
             secret = load_secret(config)
             credentials = OAuth1Credentials.from_secret(secret)
             client = XOAuth1Client(credentials)
@@ -2300,47 +2253,13 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
                     "error": "sigil_upload_failed",
                     "detail": str(exc),
                 }
-            reply_response = None
-            reply_error = ""
-            if thread_reply is not None:
-                data = (
-                    response.get("data")
-                    if isinstance(response.get("data"), dict)
-                    else {}
-                )
-                tweet_id = str(data.get("id") or "")
-                if tweet_id:
-                    try:
-                        reply_response = client.post_reply(thread_reply["text"], tweet_id)
-                    except XApiError as exc:
-                        reply_error = str(exc)
-                        store.mark_standalone_posted(
-                            post_id,
-                            utc_now(),
-                            tweet=tweet,
-                            response=response,
-                            thread_reply=thread_reply,
-                            reply_error=reply_error,
-                        )
-                        error = sanitized_x_error(exc)
-                        error["dry_run"] = False
-                        error["posted"] = True
-                        error["post_id"] = post_id
-                        error["tweet"] = tweet
-                        error["thread_reply"] = thread_reply
-                        return error
-                else:
-                    reply_error = "standalone post response did not include tweet id"
             store.mark_standalone_posted(
                 post_id,
                 utc_now(),
                 tweet=tweet,
                 response=response,
-                thread_reply=thread_reply,
-                reply_response=reply_response,
-                reply_error=reply_error,
             )
-            result = {
+            return {
                 "ok": True,
                 "dry_run": False,
                 "posted": True,
@@ -2348,14 +2267,6 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
                 "tweet": tweet,
                 "response": response,
             }
-            if thread_reply is not None:
-                result["thread_reply"] = thread_reply
-            if reply_response is not None:
-                result["reply_response"] = reply_response
-            if reply_error:
-                result["reply_error"] = reply_error
-                result["ok"] = False
-            return result
         if "test_generate" in event:
             mention = {
                 "id": str(event.get("id") or "1"),

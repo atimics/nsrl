@@ -22,13 +22,6 @@ const defaults = {
 
 const schema = "nsrl.solomon_x_checkpoint_state.v1";
 
-const metricLabels = {
-  eval_top1_per_mille: "eval top1",
-  novel_top1_per_mille: "novel-vocab top1",
-  cluster_top1_per_mille: "cluster-holdout top1",
-  gold_top1_per_mille: "gold top1",
-};
-
 function usage() {
   console.log(
     [
@@ -37,9 +30,8 @@ function usage() {
       "       [--live] [--lambda-name NAME] [--region REGION] [--tweet-prompt TEXT]",
       "",
       "Reads a Solomon eval curve TSV, detects whether the selected metric has",
-      "beaten the saved best checkpoint, and prepares or sends an idempotent X",
-      "thread through the existing Crowley Bard Lambda: model-generated top-level",
-      "tweet with sigil image, deterministic metrics in the reply.",
+      "beaten the saved best checkpoint, and prepares or sends an idempotent",
+      "model-generated X/Twitter post with a Solomon sigil image.",
       "",
       "Default mode is safe: dry-run payload only, no Lambda invoke, no state write.",
     ].join("\n"),
@@ -186,28 +178,12 @@ function checkpointPostId(row, metric) {
   return `solomon-checkpoint-${safeMetric}-${row[metric]}-${hash}`;
 }
 
-function replyText(row, metric) {
-  const label = metricLabels[metric] || metric.replace(/_/g, " ");
-  const lines = [
-    `Solomon checkpoint improved: ${label} ${row[metric]}/1000.`,
-    `Train prompts ${row.n_train_prompts}; prompt rows ${row.prompt_rows}; ld${row.latent_dim} tf${row.text_features} e${row.epochs}.`,
-    `Novel ${row.novel_top1_per_mille}/1000, cluster ${row.cluster_top1_per_mille}/1000, gold ${row.gold_top1_per_mille}/1000.`,
-    `Model ${row.model_hash}. #NSRL`,
-  ];
-  const text = lines.join("\n");
-  if (text.length > 260) {
-    throw new Error(`checkpoint reply is ${text.length} chars; max is 260`);
-  }
-  return text;
-}
-
 function buildPayload(row, config) {
   return {
     post_tweet: true,
     dry_run: config.dryRun,
     id: checkpointPostId(row, config.metric),
     prompt: config.tweetPrompt,
-    reply_text: replyText(row, config.metric),
     source: "solomon-eval-checkpoint",
     metric: config.metric,
   };
