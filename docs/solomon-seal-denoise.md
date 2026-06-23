@@ -141,13 +141,37 @@ node scripts/run-solomon-eval-scaling-curve.mjs \
 
 The first checked curve is [docs/solomon-eval-scaling-curve.tsv](solomon-eval-scaling-curve.tsv).
 It fixes 512 text features and 12 epochs, then sweeps prompt prefixes and
-latent widths `32,64,128`. In that short-budget sweep, held-out eval top1 peaks
-at `200` per mille with 352 train prompts and 32 latent channels. Novel-vocab
-top1 peaks at the same point (`208` per mille), while cluster-holdout top1 peaks
-at 352 train prompts and 128 latent channels (`195` per mille). The larger
-prompt pools underperform at 12 epochs, so the next curve should sweep epochs
-or learning shifts at 822 and 1040 train prompts rather than claiming monotonic
-data scaling from this first pass.
+latent widths `32,64,128`. In that short-budget sweep, the honest conclusion is
+not "prompt scaling works." The held-out eval found that scaling does not work
+past the 576-row prompt prefix under the fixed 512-feature text bottleneck and
+12-epoch budget.
+
+The current defensible checkpoint is the `n576-ld32-tf512-e12` model at
+`data/processed/key-solomon-goetia-latent-v1/scaling-curve/n576-ld32-tf512-e12/model.nsrllat`.
+It reaches `200` per mille held-out eval top1 with 352 train prompts; the
+novel-vocab tier peaks at the same point (`208` per mille). The cluster-holdout
+tier peaks at the same prompt prefix with 128 latent channels (`195` per mille),
+but the 32-channel model is the cleaner public conditioning checkpoint because
+it wins the headline and novel-vocab criteria.
+
+The next sweep tests the bottleneck directly by keeping the large prompt pools
+and widening hashed text features from `512` to `2048` and `8192`:
+
+```sh
+node scripts/run-solomon-text-feature-sweep.mjs
+```
+
+This writes
+[docs/solomon-text-feature-sweep.tsv](solomon-text-feature-sweep.tsv) from
+`n1152` and `n1425` prompt prefixes across latent widths `32,64,128`. If bigger
+feature spaces make the larger pools improve on novel-vocab top1, the previous
+failure was likely text-feature collision pressure. If only paraphrase-tier
+metrics move, the result is lexical overlap rather than semantics.
+
+The first curve also has an epoch confound: 12 epochs gives each prompt count
+the same pass count but not the same number of total update opportunities. After
+the text-feature sweep, compare large prompt pools with either constant total
+updates or a tuned learning shift per size before making any data-scaling claim.
 
 Improved checkpoints can be announced through the existing X/Twitter Lambda
 without adding another credential path. The watcher prepares a model-generation

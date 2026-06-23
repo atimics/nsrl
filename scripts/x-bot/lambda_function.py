@@ -261,6 +261,7 @@ class BotConfig:
     sigil_enabled: bool
     sigil_bin: str
     sigil_model: str
+    sigil_latent_model: str
     sigil_text_index: str
     sigil_candidates: int
     sigil_passes: int
@@ -325,6 +326,10 @@ class BotConfig:
             ),
             sigil_model=os.getenv(
                 "X_SIGIL_MODEL", os.path.join(task_root, "solomon", "model.nsrltch")
+            ),
+            sigil_latent_model=os.getenv(
+                "X_SIGIL_LATENT_MODEL",
+                os.path.join(task_root, "solomon", "current-best.nsrllat"),
             ),
             sigil_text_index=os.getenv(
                 "X_SIGIL_TEXT_INDEX",
@@ -1324,9 +1329,15 @@ def generate_solomon_sigil(
 ) -> dict[str, Any] | None:
     if not config.sigil_enabled:
         return None
+    prompt = strip_public_mentions(text) or text
+    condition_mode = "text-index"
+    condition_args = ["--text-index", config.sigil_text_index]
+    if config.sigil_latent_model and os.path.exists(config.sigil_latent_model):
+        condition_mode = "latent-model"
+        condition_args = ["--latent-model", config.sigil_latent_model]
     missing = [
         path
-        for path in [config.sigil_bin, config.sigil_model, config.sigil_text_index]
+        for path in [config.sigil_bin, config.sigil_model, condition_args[1]]
         if not os.path.exists(path)
     ]
     if missing:
@@ -1348,10 +1359,9 @@ def generate_solomon_sigil(
             config.sigil_bin,
             "--model",
             config.sigil_model,
-            "--text-index",
-            config.sigil_text_index,
+            *condition_args,
             "--prompt",
-            strip_public_mentions(text) or text,
+            prompt,
             "--seed",
             seed,
             "--out-dir",
@@ -1390,7 +1400,9 @@ def generate_solomon_sigil(
         "schema": SIGIL_SCHEMA,
         "seed": seed,
         "source_id": source_id,
-        "prompt": strip_public_mentions(text) or text,
+        "prompt": prompt,
+        "condition": condition_mode,
+        "latent_model": config.sigil_latent_model if condition_mode == "latent-model" else "",
         "png_path": png_path,
         "pgm_path": pgm_path,
         "trace_path": os.path.join(out_dir, "trace.json"),

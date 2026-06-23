@@ -13,6 +13,7 @@ DEFAULT_VOCAB_PATH="$DEFAULT_MODEL_ROOT/v4096.vocab.tsv"
 DEFAULT_TOKENS_PATH="$DEFAULT_MODEL_ROOT/v4096.tokens.u16"
 DEFAULT_SIGIL_MODEL_PATH="$REPO_ROOT/web/assets/solomon-model.nsrltch"
 DEFAULT_SIGIL_TEXT_INDEX_PATH="$REPO_ROOT/web/assets/solomon-spirit-text-signatures.tsv"
+DEFAULT_SIGIL_LATENT_MODEL_PATH="$REPO_ROOT/data/processed/key-solomon-goetia-latent-v1/scaling-curve/n576-ld32-tf512-e12/model.nsrllat"
 MODEL_DIR="${X_BOT_MODEL_DIR:-}"
 MODEL_PATH="${X_BOT_MODEL_PATH:-${MODEL_DIR:+$MODEL_DIR/v4096.nsrllm}}"
 VOCAB_PATH="${X_BOT_VOCAB_PATH:-${MODEL_DIR:+$MODEL_DIR/v4096.vocab.tsv}}"
@@ -22,6 +23,7 @@ VOCAB_PATH="${VOCAB_PATH:-$DEFAULT_VOCAB_PATH}"
 TOKENS_PATH="${TOKENS_PATH:-$DEFAULT_TOKENS_PATH}"
 SIGIL_MODEL_PATH="${X_BOT_SIGIL_MODEL_PATH:-$DEFAULT_SIGIL_MODEL_PATH}"
 SIGIL_TEXT_INDEX_PATH="${X_BOT_SIGIL_TEXT_INDEX_PATH:-$DEFAULT_SIGIL_TEXT_INDEX_PATH}"
+SIGIL_LATENT_MODEL_PATH="${X_BOT_SIGIL_LATENT_MODEL_PATH:-$DEFAULT_SIGIL_LATENT_MODEL_PATH}"
 
 mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"
@@ -70,6 +72,16 @@ cp "$VOCAB_PATH" "$SCRIPT_DIR/build/package/model/v4096.vocab.tsv"
 cp "$TOKENS_PATH" "$SCRIPT_DIR/build/package/model/v4096.tokens.u16"
 cp "$SIGIL_MODEL_PATH" "$SCRIPT_DIR/build/package/solomon/model.nsrltch"
 cp "$SIGIL_TEXT_INDEX_PATH" "$SCRIPT_DIR/build/package/solomon/solomon-spirit-text-signatures.tsv"
+if [[ -n "$SIGIL_LATENT_MODEL_PATH" ]]; then
+  if [[ -f "$SIGIL_LATENT_MODEL_PATH" ]]; then
+    cp "$SIGIL_LATENT_MODEL_PATH" "$SCRIPT_DIR/build/package/solomon/current-best.nsrllat"
+  elif [[ -n "${X_BOT_SIGIL_LATENT_MODEL_PATH:-}" ]]; then
+    echo "missing Solomon latent model artifact: $SIGIL_LATENT_MODEL_PATH" >&2
+    exit 1
+  else
+    echo "warning: Solomon latent model not found; Lambda will fall back to the text index: $SIGIL_LATENT_MODEL_PATH" >&2
+  fi
+fi
 
 (
   cd "$SCRIPT_DIR/build/package"

@@ -94,6 +94,7 @@ def config(**overrides):
         sigil_enabled=False,
         sigil_bin="/missing/nsrl-bitmap-sample",
         sigil_model="/missing/model.nsrltch",
+        sigil_latent_model="/missing/current-best.nsrllat",
         sigil_text_index="/missing/solomon-spirit-text-signatures.tsv",
         sigil_candidates=16,
         sigil_passes=8,
@@ -499,6 +500,48 @@ class MentionReplyTests(unittest.TestCase):
         self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertIn(b"IHDR", png)
         self.assertIn(b"IDAT", png)
+
+    def test_sigil_prefers_latent_model_when_present(self):
+        sigil_bin = os.path.join(self.tmp.name, "nsrl-bitmap-sample")
+        sigil_model = os.path.join(self.tmp.name, "model.nsrltch")
+        latent_model = os.path.join(self.tmp.name, "current-best.nsrllat")
+        for path in [sigil_bin, sigil_model, latent_model]:
+            with open(path, "wb") as handle:
+                handle.write(b"x")
+        os.chmod(sigil_bin, 0o755)
+
+        commands = []
+
+        def fake_run_checked_command(cmd, *, timeout_seconds, label):
+            del timeout_seconds, label
+            commands.append(cmd)
+            out_dir = cmd[cmd.index("--out-dir") + 1]
+            os.makedirs(out_dir, exist_ok=True)
+            with open(os.path.join(out_dir, "samples.pgm"), "wb") as handle:
+                handle.write(b"P5\n1 1\n255\n\x80")
+            with open(os.path.join(out_dir, "trace.json"), "w", encoding="utf-8") as handle:
+                handle.write('{"latent_dim":32,"latent_text_features":512}')
+
+        with mock.patch.object(bot, "run_checked_command", side_effect=fake_run_checked_command):
+            sigil = bot.generate_solomon_sigil(
+                "@CrowleyBard speak from the bridge",
+                source_id="tweet-100",
+                config=config(
+                    sigil_enabled=True,
+                    sigil_bin=sigil_bin,
+                    sigil_model=sigil_model,
+                    sigil_latent_model=latent_model,
+                    sigil_text_index="/missing/text-index.tsv",
+                ),
+            )
+
+        self.assertEqual(sigil["condition"], "latent-model")
+        self.assertEqual(sigil["latent_model"], latent_model)
+        self.assertIn("--latent-model", commands[0])
+        self.assertIn(latent_model, commands[0])
+        self.assertNotIn("--text-index", commands[0])
+        self.assertEqual(sigil["prompt"], "speak from the bridge")
+        self.assertEqual((sigil["width"], sigil["height"]), (1, 1))
 
     def test_dry_run_reply_includes_sigil_metadata_when_enabled(self):
         self.state.set_last_seen_id("99", self.now)
