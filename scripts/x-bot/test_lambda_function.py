@@ -337,6 +337,85 @@ class MentionReplyTests(unittest.TestCase):
         self.assertEqual(len(client.tweets), 1)
         generate.assert_not_called()
 
+    def test_generated_standalone_can_include_metrics_reply_dry_run(self):
+        generated = "morning light opens softly and the window finally answers"
+        metrics = "Solomon checkpoint improved: eval top1 200/1000. #NSRL"
+        with (
+            mock.patch.object(
+                bot.BotConfig,
+                "from_env",
+                return_value=config(dry_run=True, reply_engine="nsrl-live"),
+            ),
+            mock.patch.object(
+                bot,
+                "generate_nsrl_reply_body",
+                return_value=(generated, "base"),
+            ),
+        ):
+            result = bot.lambda_handler(
+                {
+                    "post_tweet": True,
+                    "dry_run": True,
+                    "id": "solomon-checkpoint-eval-200",
+                    "prompt": "Solomon checkpoint improved",
+                    "reply_text": metrics,
+                },
+                None,
+            )
+        self.assertTrue(result["would_post"])
+        self.assertEqual(result["engine"], "nsrl-live:base")
+        self.assertEqual(result["text"], f"{generated}.")
+        self.assertEqual(result["thread_reply"]["engine"], "precomposed-reply")
+        self.assertEqual(result["thread_reply"]["text"], metrics)
+
+    def test_live_generated_standalone_posts_metrics_reply_once(self):
+        state = bot.FileStateStore(os.path.join(self.tmp.name, "threaded.json"))
+        client = FakeClient([], [])
+        generated = "morning light opens softly and the window finally answers"
+        metrics = "Solomon checkpoint improved: eval top1 200/1000. #NSRL"
+        event = {
+            "post_tweet": True,
+            "dry_run": False,
+            "prompt": "Solomon checkpoint improved",
+            "reply_text": metrics,
+            "id": "solomon-checkpoint-eval-200",
+            "candidate_count": 1,
+        }
+        with (
+            mock.patch.object(
+                bot.BotConfig,
+                "from_env",
+                return_value=config(dry_run=False, reply_engine="nsrl-live"),
+            ),
+            mock.patch.object(bot, "make_state_store", return_value=state),
+            mock.patch.object(bot, "load_secret", return_value={
+                "consumer_key": "ck",
+                "consumer_secret": "cs",
+                "access_token": "at",
+                "access_token_secret": "ats",
+            }),
+            mock.patch.object(bot, "XOAuth1Client", return_value=client),
+            mock.patch.object(
+                bot,
+                "generate_nsrl_reply_body",
+                return_value=(generated, "base"),
+            ),
+        ):
+            first = bot.lambda_handler(event, None)
+            second = bot.lambda_handler(event, None)
+        self.assertTrue(first["posted"])
+        self.assertEqual(client.tweets[0]["text"], f"{generated}.")
+        self.assertEqual(client.replies[0]["text"], metrics)
+        self.assertEqual(client.replies[0]["in_reply_to_tweet_id"], "tweet-1")
+        self.assertEqual(first["thread_reply"]["text"], metrics)
+        self.assertEqual(first["reply_response"]["data"]["id"], "reply-tweet-1")
+        self.assertTrue(second["duplicate"])
+        self.assertEqual(second["status"], "posted")
+        self.assertEqual(second["thread_reply"]["text"], metrics)
+        self.assertEqual(second["reply_id"], "reply-tweet-1")
+        self.assertEqual(len(client.tweets), 1)
+        self.assertEqual(len(client.replies), 1)
+
     def test_live_standalone_post_is_idempotent(self):
         state = bot.FileStateStore(os.path.join(self.tmp.name, "standalone.json"))
         client = FakeClient([], [])

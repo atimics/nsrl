@@ -150,8 +150,10 @@ or learning shifts at 822 and 1040 train prompts rather than claiming monotonic
 data scaling from this first pass.
 
 Improved checkpoints can be announced through the existing X/Twitter Lambda
-without adding another credential path. By default this only prepares a dry-run
-payload:
+without adding another credential path. The watcher prepares a model-generation
+prompt for the top-level tweet, keeps the sigil image on that generated tweet,
+and puts exact metrics in a deterministic reply. By default this only prepares a
+dry-run payload:
 
 ```sh
 node scripts/post-solomon-improved-checkpoint.mjs \
@@ -174,7 +176,8 @@ node scripts/run-solomon-eval-scaling-curve.mjs \
 
 The default posted metric is `eval_top1_per_mille`; pass `--post-metric
 novel_top1_per_mille` when the public criterion should be novel-vocab
-generalization instead.
+generalization instead. Pass `--tweet-prompt` to change the model prompt used
+for the top-level tweet.
 
 ### Grounded synthetic text variants
 

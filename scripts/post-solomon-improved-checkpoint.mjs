@@ -16,6 +16,8 @@ const defaults = {
   invokeLambda: false,
   dryRun: true,
   advanceStateOnDryRun: false,
+  tweetPrompt:
+    "Solomon checkpoint improved. Speak one compact omen about integer seals learning from held-out prompts.",
 };
 
 const schema = "nsrl.solomon_x_checkpoint_state.v1";
@@ -32,11 +34,12 @@ function usage() {
     [
       "Usage: post-solomon-improved-checkpoint.mjs [--curve PATH] [--state PATH]",
       "       [--metric COLUMN] [--min-improvement N] [--invoke-lambda]",
-      "       [--live] [--lambda-name NAME] [--region REGION]",
+      "       [--live] [--lambda-name NAME] [--region REGION] [--tweet-prompt TEXT]",
       "",
       "Reads a Solomon eval curve TSV, detects whether the selected metric has",
-      "beaten the saved best checkpoint, and prepares or sends an idempotent",
-      "precomposed X/Twitter post through the existing Crowley Bard Lambda.",
+      "beaten the saved best checkpoint, and prepares or sends an idempotent X",
+      "thread through the existing Crowley Bard Lambda: model-generated top-level",
+      "tweet with sigil image, deterministic metrics in the reply.",
       "",
       "Default mode is safe: dry-run payload only, no Lambda invoke, no state write.",
     ].join("\n"),
@@ -75,6 +78,8 @@ function parseArgs(argv) {
       config.dryRun = true;
     } else if (arg === "--advance-state-on-dry-run") {
       config.advanceStateOnDryRun = true;
+    } else if (arg === "--tweet-prompt") {
+      config.tweetPrompt = requireValue(argv, ++index, arg);
     } else {
       throw new Error(`unknown option: ${arg}`);
     }
@@ -181,7 +186,7 @@ function checkpointPostId(row, metric) {
   return `solomon-checkpoint-${safeMetric}-${row[metric]}-${hash}`;
 }
 
-function tweetText(row, metric) {
+function replyText(row, metric) {
   const label = metricLabels[metric] || metric.replace(/_/g, " ");
   const lines = [
     `Solomon checkpoint improved: ${label} ${row[metric]}/1000.`,
@@ -191,7 +196,7 @@ function tweetText(row, metric) {
   ];
   const text = lines.join("\n");
   if (text.length > 260) {
-    throw new Error(`checkpoint tweet is ${text.length} chars; max is 260`);
+    throw new Error(`checkpoint reply is ${text.length} chars; max is 260`);
   }
   return text;
 }
@@ -201,7 +206,8 @@ function buildPayload(row, config) {
     post_tweet: true,
     dry_run: config.dryRun,
     id: checkpointPostId(row, config.metric),
-    text: tweetText(row, config.metric),
+    prompt: config.tweetPrompt,
+    reply_text: replyText(row, config.metric),
     source: "solomon-eval-checkpoint",
     metric: config.metric,
   };
