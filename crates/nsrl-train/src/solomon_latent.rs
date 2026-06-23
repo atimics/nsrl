@@ -1,13 +1,18 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+pub use nsrl_eval::{json_escape, read_gold_hashes, stable_hash_bytes, stable_hex_u32};
 
 pub const PROMPT_SCHEMA: &str = "nsrl.solomon_prompt.v1";
 pub const DEFAULT_PROMPT_SPLIT_SEED: &str = "solomon-prompt-split-v1";
 pub const DEFAULT_EVAL_PERMILLE: usize = 180;
 pub const MODEL_MAGIC: &[u8; 8] = b"NSRLLAT1";
-pub const SIGNATURE_GRID: usize = 8;
+pub const MODEL_CLASS_EXTENSION_MAGIC: &[u8; 8] = b"NSRLCLS1";
+pub const SIGNATURE_GRID: usize = 16;
 pub const SIGNATURE_BINS: usize = SIGNATURE_GRID * SIGNATURE_GRID;
+const LAYOUT_INK_FLOOR: u16 = 32;
+const LAYOUT_INK_MIDPOINT: u16 = 54;
+const LAYOUT_INK_CEILING: u16 = 96;
 
 #[derive(Debug, Clone)]
 pub struct TextIndexRow {
@@ -49,6 +54,16 @@ pub struct LatentTextModel {
     pub image_biases: Vec<i16>,
     pub decoder_weights: Vec<i8>,
     pub decoder_biases: [i16; SIGNATURE_BINS],
+    pub class_head: Option<LatentClassHead>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LatentClassHead {
+    pub numbers: Vec<usize>,
+    pub names: Vec<String>,
+    pub codes: Vec<Vec<i16>>,
+    pub weights: Vec<i8>,
+    pub biases: Vec<i16>,
 }
 
 impl LatentTextModel {
@@ -93,6 +108,40 @@ impl LatentTextModel {
         }
         out
     }
+
+    pub fn predict_class(&self, features: &[i16]) -> Option<(usize, i64)> {
+        self.class_head
+            .as_ref()
+            .map(|head| head.predict(features, self.text_feature_count))
+    }
+}
+
+impl LatentClassHead {
+    pub fn predict(&self, features: &[i16], feature_count: usize) -> (usize, i64) {
+        let active_features: Vec<(usize, i16)> = features
+            .iter()
+            .copied()
+            .enumerate()
+            .take(feature_count)
+            .filter(|(_, value)| *value != 0)
+            .collect();
+        let mut best_index = 0_usize;
+        let mut best_score = i64::MIN;
+        for class_index in 0..self.numbers.len() {
+            let mut score = i64::from(self.biases[class_index]);
+            for &(feature, value) in &active_features {
+                let weight = self.weights[class_index * feature_count + feature];
+                score = score.saturating_add(i64::from(weight) * i64::from(value));
+            }
+            if score > best_score
+                || (score == best_score && self.numbers[class_index] < self.numbers[best_index])
+            {
+                best_score = score;
+                best_index = class_index;
+            }
+        }
+        (best_index, best_score)
+    }
 }
 
 pub fn read_text_index_rows(path: &Path) -> Result<Vec<TextIndexRow>, Box<dyn std::error::Error>> {
@@ -112,7 +161,7 @@ pub fn read_text_index_rows(path: &Path) -> Result<Vec<TextIndexRow>, Box<dyn st
             )
             .into());
         }
-        let signature = parse_signature(fields[7], path, line_index + 1)?;
+        let signature = sharpen_signature(&parse_signature(fields[7], path, line_index + 1)?);
         let variant_id = fields
             .get(9)
             .filter(|value| !value.trim().is_empty())
@@ -239,29 +288,6 @@ pub fn default_gold_path(prompts_path: &Path) -> PathBuf {
         .join("gold.tsv")
 }
 
-pub fn read_gold_hashes(path: &Path) -> Result<HashSet<String>, Box<dyn std::error::Error>> {
-    if !path.exists() {
-        return Ok(HashSet::new());
-    }
-    let text = fs::read_to_string(path)?;
-    let mut hashes = HashSet::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let first = trimmed.split('\t').next().unwrap_or("").trim();
-        if first == "prompt_hash" {
-            continue;
-        }
-        if first.len() != 8 || !first.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(format!("{} has invalid prompt hash {}", path.display(), first).into());
-        }
-        hashes.insert(first.to_ascii_lowercase());
-    }
-    Ok(hashes)
-}
-
 pub fn read_latent_model(path: &Path) -> Result<LatentTextModel, Box<dyn std::error::Error>> {
     let bytes = fs::read(path)?;
     read_latent_model_bytes(&bytes, path)
@@ -305,11 +331,46 @@ fn read_latent_model_bytes(
     let image_biases = cursor.read_i16_vec(latent_dim)?;
     let decoder_weights = cursor.read_i8_vec(decoder_weight_count)?;
     let decoder_bias_vec = cursor.read_i16_vec(SIGNATURE_BINS)?;
-    if cursor.remaining() != 0 {
-        return Err(format!("{} has trailing latent model bytes", path.display()).into());
-    }
     let mut decoder_biases = [0_i16; SIGNATURE_BINS];
     decoder_biases.copy_from_slice(&decoder_bias_vec);
+    let class_head = if cursor.remaining() == 0 {
+        None
+    } else {
+        let extension_magic = cursor.read_bytes(MODEL_CLASS_EXTENSION_MAGIC.len())?;
+        if extension_magic != MODEL_CLASS_EXTENSION_MAGIC {
+            return Err(
+                format!("{} has unsupported latent model extension", path.display()).into(),
+            );
+        }
+        let class_count = usize::try_from(cursor.read_u32()?)?;
+        if class_count == 0 {
+            return Err(format!("{} has empty class extension", path.display()).into());
+        }
+        let mut numbers = Vec::with_capacity(class_count);
+        let mut names = Vec::with_capacity(class_count);
+        let mut codes = Vec::with_capacity(class_count);
+        for _ in 0..class_count {
+            numbers.push(usize::try_from(cursor.read_u32()?)?);
+            let name_len = usize::try_from(cursor.read_u32()?)?;
+            names.push(String::from_utf8(cursor.read_bytes(name_len)?.to_vec())?);
+            codes.push(cursor.read_i16_vec(latent_dim)?);
+        }
+        let class_weight_count = class_count
+            .checked_mul(text_feature_count)
+            .ok_or("latent class weight count overflow")?;
+        let weights = cursor.read_i8_vec(class_weight_count)?;
+        let biases = cursor.read_i16_vec(class_count)?;
+        if cursor.remaining() != 0 {
+            return Err(format!("{} has trailing latent model bytes", path.display()).into());
+        }
+        Some(LatentClassHead {
+            numbers,
+            names,
+            codes,
+            weights,
+            biases,
+        })
+    };
     Ok(LatentTextModel {
         latent_dim,
         text_feature_count,
@@ -322,28 +383,98 @@ fn read_latent_model_bytes(
         image_biases,
         decoder_weights,
         decoder_biases,
+        class_head,
     })
 }
 
 pub fn text_features(text: &str, feature_count: usize) -> Vec<i16> {
     let mut features = vec![0_i16; feature_count];
-    for (position, token) in tokenize_text(text).into_iter().enumerate() {
-        if token.len() < 2 {
-            continue;
+    let tokens = tokenize_text(text);
+    if !tokens.is_empty() && tokens.len() <= 4 {
+        add_text_feature(&mut features, "whole", &tokens.join(" "), 0, 320);
+    }
+    for (position, token) in tokens.iter().enumerate() {
+        add_text_feature(&mut features, "tok", token, position, 72);
+        if let Some(next) = tokens.get(position + 1) {
+            add_text_feature(
+                &mut features,
+                "bi",
+                &format!("{token} {next}"),
+                position,
+                96,
+            );
         }
-        let hash = hash_text(&token);
-        let bin = usize::try_from(hash).unwrap_or(0) % feature_count;
-        let length = i16::try_from(token.len().min(12)).unwrap_or(12);
-        let position_bonus = i16::try_from(position % 5).unwrap_or(0).saturating_mul(4);
-        let value = 64_i16
-            .saturating_add(length.saturating_mul(12))
-            .saturating_add(position_bonus);
-        let signed = if hash & 0x8000_0000 == 0 {
-            value
-        } else {
-            -value
-        };
-        features[bin] = features[bin].saturating_add(signed).clamp(-511, 511);
+        if let (Some(next), Some(third)) = (tokens.get(position + 1), tokens.get(position + 2)) {
+            add_text_feature(
+                &mut features,
+                "tri",
+                &format!("{token} {next} {third}"),
+                position,
+                112,
+            );
+        }
+    }
+    let content = content_tokens(&tokens);
+    if !content.is_empty() && content.len() <= 5 {
+        add_text_feature(&mut features, "cwhole", &content.join(" "), 0, 336);
+        add_text_feature(
+            &mut features,
+            "cset",
+            &sorted_feature_key(&content.iter().map(String::as_str).collect::<Vec<_>>()),
+            0,
+            336,
+        );
+    }
+    for (position, token) in content.iter().enumerate() {
+        add_text_feature(&mut features, "ctok", token, position, 128);
+        if let Some(next) = content.get(position + 1) {
+            add_text_feature(
+                &mut features,
+                "cbi",
+                &format!("{token} {next}"),
+                position,
+                160,
+            );
+        }
+        if let (Some(next), Some(third)) = (content.get(position + 1), content.get(position + 2)) {
+            add_text_feature(
+                &mut features,
+                "ctri",
+                &format!("{token} {next} {third}"),
+                position,
+                176,
+            );
+        }
+        let window_end = (position + 16).min(content.len());
+        for right in (position + 1)..window_end {
+            add_text_feature(
+                &mut features,
+                "skip2",
+                &format!("{token} {}", content[right]),
+                position,
+                176,
+            );
+            add_text_feature(
+                &mut features,
+                "pair",
+                &sorted_feature_key(&[token.as_str(), content[right].as_str()]),
+                position,
+                192,
+            );
+            for third in (right + 1)..window_end {
+                add_text_feature(
+                    &mut features,
+                    "triple",
+                    &sorted_feature_key(&[
+                        token.as_str(),
+                        content[right].as_str(),
+                        content[third].as_str(),
+                    ]),
+                    position,
+                    192,
+                );
+            }
+        }
     }
     features
 }
@@ -362,19 +493,6 @@ pub fn prompt_partition_bucket(prompt: &PromptRecord, split_seed: &str) -> usize
     } else {
         prompt.bucket
     }
-}
-
-pub fn stable_hash_bytes(bytes: &[u8]) -> u32 {
-    let mut hash = 2_166_136_261_u32;
-    for &byte in bytes {
-        hash ^= u32::from(byte);
-        hash = hash.wrapping_mul(16_777_619);
-    }
-    hash | 1
-}
-
-pub fn stable_hex_u32(value: u32) -> String {
-    format!("{value:08x}")
 }
 
 pub fn dot_i16(left: &[i16], right: &[i16]) -> i64 {
@@ -404,22 +522,6 @@ pub fn mean_q8(total: u64, count: u64) -> u64 {
         return 0;
     }
     ((u128::from(total) * 256_u128) / u128::from(count)) as u64
-}
-
-pub fn json_escape(value: &str) -> String {
-    let mut out = String::new();
-    for ch in value.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            ch if ch.is_control() => out.push(' '),
-            _ => out.push(ch),
-        }
-    }
-    out
 }
 
 fn image_features(
@@ -455,6 +557,24 @@ fn parse_signature(
     Ok(signature)
 }
 
+fn sharpen_signature(input: &[u16; SIGNATURE_BINS]) -> [u16; SIGNATURE_BINS] {
+    let mut out = [0_u16; SIGNATURE_BINS];
+    for (target, &value) in out.iter_mut().zip(input.iter()) {
+        *target = sharpen_signature_value(value);
+    }
+    out
+}
+
+fn sharpen_signature_value(value: u16) -> u16 {
+    if value <= LAYOUT_INK_FLOOR {
+        return 0;
+    }
+    if value >= LAYOUT_INK_CEILING {
+        return 255;
+    }
+    if value >= LAYOUT_INK_MIDPOINT { 255 } else { 0 }
+}
+
 fn encode_latent(
     features: &[i16],
     weights: &[i8],
@@ -483,17 +603,153 @@ fn tokenize_text(text: &str) -> Vec<String> {
         if byte.is_ascii_alphanumeric() {
             current.push(char::from(byte.to_ascii_lowercase()));
         } else if !current.is_empty() {
-            tokens.push(std::mem::take(&mut current));
+            push_normalized_token(&mut tokens, &mut current);
         }
     }
     if !current.is_empty() {
-        tokens.push(current);
+        push_normalized_token(&mut tokens, &mut current);
     }
     tokens
 }
 
-fn hash_text(text: &str) -> u32 {
-    hash_parts(&[text])
+fn push_normalized_token(tokens: &mut Vec<String>, current: &mut String) {
+    let normalized = normalize_token(current);
+    current.clear();
+    if normalized.len() >= 2 {
+        tokens.push(normalized);
+    }
+}
+
+fn normalize_token(token: &str) -> String {
+    match token {
+        "teach" | "teacher" | "teaches" | "teacheth" | "teaching" => {
+            return "teach".to_string();
+        }
+        "know" | "knows" | "known" | "knowing" | "knoweth" | "knowledge" => {
+            return "know".to_string();
+        }
+        "make" | "makes" | "maketh" | "making" => return "make".to_string(),
+        "discover" | "discovers" | "discovereth" | "discovering" => {
+            return "discover".to_string();
+        }
+        "produce" | "produces" | "produceth" | "producing" => return "produce".to_string(),
+        "answer" | "answers" | "answereth" | "answering" => return "answer".to_string(),
+        "virtue" | "virtues" => return "virtue".to_string(),
+        "water" | "waters" => return "water".to_string(),
+        "rush" | "rushing" | "rushings" => return "rush".to_string(),
+        "herb" | "herbs" => return "herb".to_string(),
+        "stone" | "stones" => return "stone".to_string(),
+        "science" | "sciences" => return "science".to_string(),
+        _ => {}
+    }
+    if token.len() > 5 && token.ends_with("eth") {
+        token[..token.len() - 3].to_string()
+    } else if token.len() > 5 && token.ends_with("ing") {
+        token[..token.len() - 3].to_string()
+    } else if token.len() > 4 && token.ends_with("es") {
+        token[..token.len() - 2].to_string()
+    } else if token.len() > 3 && token.ends_with('s') {
+        token[..token.len() - 1].to_string()
+    } else {
+        token.to_string()
+    }
+}
+
+fn content_tokens(tokens: &[String]) -> Vec<String> {
+    tokens
+        .iter()
+        .filter(|token| token.len() >= 3 && !is_stopword(token))
+        .cloned()
+        .collect()
+}
+
+fn is_stopword(token: &str) -> bool {
+    matches!(
+        token,
+        "a" | "about"
+            | "after"
+            | "again"
+            | "all"
+            | "also"
+            | "an"
+            | "and"
+            | "any"
+            | "are"
+            | "as"
+            | "at"
+            | "be"
+            | "before"
+            | "both"
+            | "but"
+            | "by"
+            | "can"
+            | "etc"
+            | "for"
+            | "from"
+            | "great"
+            | "have"
+            | "he"
+            | "her"
+            | "him"
+            | "his"
+            | "in"
+            | "is"
+            | "it"
+            | "man"
+            | "many"
+            | "men"
+            | "must"
+            | "of"
+            | "or"
+            | "order"
+            | "seal"
+            | "shall"
+            | "she"
+            | "spirit"
+            | "spirits"
+            | "the"
+            | "this"
+            | "thou"
+            | "to"
+            | "unto"
+            | "upon"
+            | "which"
+            | "who"
+            | "will"
+            | "with"
+    )
+}
+
+fn sorted_feature_key(parts: &[&str]) -> String {
+    let mut parts = parts.to_vec();
+    parts.sort_unstable();
+    parts.join("\u{0}")
+}
+
+fn add_text_feature(
+    features: &mut [i16],
+    namespace: &str,
+    text: &str,
+    position: usize,
+    base_value: i16,
+) {
+    if text.len() < 2 || features.is_empty() {
+        return;
+    }
+    let hash = hash_parts(&[namespace, text]);
+    let bin = usize::try_from(hash).unwrap_or(0) % features.len();
+    let length = i16::try_from(text.len().min(28)).unwrap_or(28);
+    let position_bonus = i16::try_from(position % 7).unwrap_or(0).saturating_mul(5);
+    let value = base_value
+        .saturating_add(length.saturating_mul(6))
+        .saturating_add(position_bonus)
+        .min(384);
+    let signed = if hash & 0x8000_0000 == 0 {
+        value
+    } else {
+        -value
+    };
+    features[bin] = features[bin].saturating_add(signed).clamp(-511, 511);
 }
 
 fn hash_parts(parts: &[&str]) -> u32 {

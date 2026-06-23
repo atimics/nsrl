@@ -286,7 +286,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
             "--route-capability" => {
-                route_config.required_capability = Some(
+                route_config.required_capabilities.push(
                     args.next()
                         .ok_or("--route-capability requires a capability tag")?,
                 );

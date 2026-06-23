@@ -127,6 +127,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nsrl-eval"
+version = "0.1.0"
+
+[[package]]
 name = "nsrl-sched"
 version = "0.1.0"
 
@@ -136,6 +140,7 @@ version = "0.1.0"
 dependencies = [
  "nsrl-core",
  "nsrl-corpus",
+ "nsrl-eval",
  "nsrl-train-core",
 ]
 

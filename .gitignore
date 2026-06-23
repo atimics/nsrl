@@ -1,4 +1,5 @@
 /target/
+/target-linux-*/
 /data/*
 !/data/
 !/data/processed/

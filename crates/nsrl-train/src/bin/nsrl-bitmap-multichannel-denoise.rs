@@ -10,9 +10,17 @@ const MODEL_MAGIC: &[u8; 8] = b"NSRLMCH\n";
 const TEXT_MODEL_MAGIC: &[u8; 8] = b"NSRLTCH\n";
 const KERNEL: usize = 9;
 const HIDDEN_CHANNELS: usize = 8;
-const TEXT_FEATURE_CHANNELS: usize = 2;
-const TEXT_SIGNATURE_GRID: usize = 8;
+const POSITION_FEATURE_CHANNELS: usize = 6;
+const TEXT_FEATURE_CHANNELS: usize = 16;
+const TEXT_SIGNATURE_GRID: usize = 16;
 const TEXT_SIGNATURE_BINS: usize = TEXT_SIGNATURE_GRID * TEXT_SIGNATURE_GRID;
+const INK_THRESHOLD: u8 = 64;
+const STRONG_INK_THRESHOLD: u8 = 160;
+const TARGET_CLEAN_EDGE_CLEAR: usize = 3;
+const TARGET_CLEAN_RADIUS_MARGIN: usize = 2;
+const LAYOUT_INK_FLOOR: u16 = 32;
+const LAYOUT_INK_MIDPOINT: u16 = 54;
+const LAYOUT_INK_CEILING: u16 = 96;
 const HIDDEN_KERNELS: [[i8; KERNEL]; HIDDEN_CHANNELS] = [
     [1, 1, 1, 1, 0, 1, 1, 1, 1],
     [0, 1, 0, 1, 0, 1, 0, 1, 0],
@@ -23,7 +31,7 @@ const HIDDEN_KERNELS: [[i8; KERNEL]; HIDDEN_CHANNELS] = [
     [0, 1, 2, -1, 0, 1, -2, -1, 0],
     [-1, 2, -1, 2, 0, 2, -1, 2, -1],
 ];
-const CORRUPTION_KINDS: [&str; 9] = [
+const CORRUPTION_KINDS: [&str; 10] = [
     "pixel-dropout",
     "salt-pepper",
     "block-mask",
@@ -33,6 +41,7 @@ const CORRUPTION_KINDS: [&str; 9] = [
     "mixed-noise",
     "coarse-erase",
     "box-blur",
+    "noise-seed",
 ];
 
 #[derive(Debug, Clone)]
@@ -51,6 +60,8 @@ struct Config {
     bias_learning_shift: u8,
     max_weight_delta: i16,
     max_bias_delta: i16,
+    aux_clean_target_weight: u16,
+    aux_clean_target_mode: AuxCleanTargetMode,
     preview_pairs: usize,
 }
 
@@ -74,7 +85,41 @@ impl Default for Config {
             bias_learning_shift: 30,
             max_weight_delta: 4,
             max_bias_delta: 12,
+            aux_clean_target_weight: 0,
+            aux_clean_target_mode: AuxCleanTargetMode::WholeImage,
             preview_pairs: 32,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuxCleanTargetMode {
+    WholeImage,
+    SuppressArtifacts,
+    StrictArtifacts,
+    SignedArtifacts,
+}
+
+impl AuxCleanTargetMode {
+    fn parse(value: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        match value {
+            "whole-image" => Ok(Self::WholeImage),
+            "suppress-artifacts" => Ok(Self::SuppressArtifacts),
+            "strict-artifacts" => Ok(Self::StrictArtifacts),
+            "signed-artifacts" => Ok(Self::SignedArtifacts),
+            _ => Err(format!(
+                "unknown aux clean target mode: {value}; expected whole-image, suppress-artifacts, strict-artifacts, or signed-artifacts"
+            )
+            .into()),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::WholeImage => "whole-image",
+            Self::SuppressArtifacts => "suppress-artifacts",
+            Self::StrictArtifacts => "strict-artifacts",
+            Self::SignedArtifacts => "signed-artifacts",
         }
     }
 }
@@ -85,12 +130,22 @@ struct PairRow {
     timestep: usize,
     slice_id: String,
     text_signature: [u16; TEXT_SIGNATURE_BINS],
+    text_signature_stats: SignatureStats,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SignatureStats {
+    global_mean: i16,
+    row_means: [i16; TEXT_SIGNATURE_GRID],
+    col_means: [i16; TEXT_SIGNATURE_GRID],
 }
 
 #[derive(Debug)]
 struct SplitData {
     input: Vec<u8>,
     target: Vec<u8>,
+    aux_target: Option<Vec<u8>>,
+    aux_mask: Option<Vec<u8>>,
     rows: Vec<PairRow>,
 }
 
@@ -142,9 +197,13 @@ struct Metrics {
     input_abs_error: u64,
     layer_abs_errors: Vec<u64>,
     predicted_abs_error: u64,
+    input_aux_abs_error: u64,
+    predicted_aux_abs_error: u64,
     input_mean_abs_q8: u64,
     layer_mean_abs_q8: Vec<u64>,
     predicted_mean_abs_q8: u64,
+    input_aux_mean_abs_q8: u64,
+    predicted_aux_mean_abs_q8: u64,
 }
 
 fn main() {
@@ -158,6 +217,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = parse_args(env::args().skip(1))?;
     if config.image_size == 0 || config.timesteps == 0 || config.epochs == 0 || config.layers == 0 {
         return Err("image size, timesteps, layers, and epochs must be positive".into());
+    }
+    if config.aux_clean_target_weight > u16::from(u8::MAX) + 1 {
+        return Err("--aux-clean-target-weight must be <= 256".into());
     }
     fs::create_dir_all(&config.out_dir)?;
 
@@ -176,19 +238,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     write_trace(&config, &model, &epochs, &train_metrics, &eval_metrics)?;
 
     println!(
-        "{{\"schema\":\"{}\",\"model\":\"{}\",\"train_predicted_mae\":\"{}\",\"eval_predicted_mae\":\"{}\",\"eval_input_copy_mae\":\"{}\"}}",
+        "{{\"schema\":\"{}\",\"model\":\"{}\",\"train_predicted_mae\":\"{}\",\"eval_predicted_mae\":\"{}\",\"eval_input_copy_mae\":\"{}\",\"aux_clean_target_weight\":{},\"aux_clean_target_mode\":\"{}\",\"eval_aux_predicted_mae\":\"{}\",\"eval_aux_input_copy_mae\":\"{}\"}}",
         SCHEMA,
         json_escape(&config.model_out.display().to_string()),
         format_q8(train_metrics.predicted_mean_abs_q8),
         format_q8(eval_metrics.predicted_mean_abs_q8),
         format_q8(eval_metrics.input_mean_abs_q8),
+        config.aux_clean_target_weight,
+        config.aux_clean_target_mode.as_str(),
+        format_q8(eval_metrics.predicted_aux_mean_abs_q8),
+        format_q8(eval_metrics.input_aux_mean_abs_q8),
     );
     Ok(())
 }
 
 fn usage() {
     println!(
-        "Usage: nsrl-bitmap-multichannel-denoise [--dataset PATH] [--out-dir PATH] [--model-out PATH] [--text-index PATH] [--image-size N] [--timesteps N] [--layers N] [--epochs N] [--hidden-shift N] [--output-shift N] [--learning-shift N] [--bias-learning-shift N] [--max-weight-delta N] [--max-bias-delta N] [--preview-pairs N]"
+        "Usage: nsrl-bitmap-multichannel-denoise [--dataset PATH] [--out-dir PATH] [--model-out PATH] [--text-index PATH] [--image-size N] [--timesteps N] [--layers N] [--epochs N] [--hidden-shift N] [--output-shift N] [--learning-shift N] [--bias-learning-shift N] [--max-weight-delta N] [--max-bias-delta N] [--aux-clean-target-weight N<=256] [--aux-clean-target-mode whole-image|suppress-artifacts|strict-artifacts|signed-artifacts] [--preview-pairs N]"
     );
 }
 
@@ -263,6 +329,17 @@ where
             "--max-bias-delta" => {
                 config.max_bias_delta = args.next().ok_or("--max-bias-delta requires N")?.parse()?
             }
+            "--aux-clean-target-weight" => {
+                config.aux_clean_target_weight = args
+                    .next()
+                    .ok_or("--aux-clean-target-weight requires N")?
+                    .parse()?
+            }
+            "--aux-clean-target-mode" => {
+                config.aux_clean_target_mode = AuxCleanTargetMode::parse(
+                    &args.next().ok_or("--aux-clean-target-mode requires MODE")?,
+                )?
+            }
             "--preview-pairs" => {
                 config.preview_pairs = args.next().ok_or("--preview-pairs requires N")?.parse()?
             }
@@ -328,6 +405,7 @@ fn read_split(
             let end = start + image_bytes;
             let mut row = row;
             row.text_signature = image_signature(&target[start..end], config.image_size)?;
+            row.text_signature_stats = signature_stats(&row.text_signature);
             filtered_input.extend_from_slice(&input[start..end]);
             filtered_target.extend_from_slice(&target[start..end]);
             filtered_rows.push(row);
@@ -335,15 +413,21 @@ fn read_split(
         if filtered_rows.is_empty() {
             return Err(format!("{split} has no rows matching --text-index").into());
         }
+        let (aux_target, aux_mask) = aux_targets_for_pairs(config, &filtered_target)?;
         return Ok(SplitData {
             input: filtered_input,
             target: filtered_target,
+            aux_target,
+            aux_mask,
             rows: filtered_rows,
         });
     }
+    let (aux_target, aux_mask) = aux_targets_for_pairs(config, &target)?;
     Ok(SplitData {
         input,
         target,
+        aux_target,
+        aux_mask,
         rows,
     })
 }
@@ -368,6 +452,7 @@ fn read_pair_rows(path: &Path) -> Result<Vec<PairRow>, Box<dyn std::error::Error
             timestep,
             slice_id,
             text_signature: [0; TEXT_SIGNATURE_BINS],
+            text_signature_stats: empty_signature_stats(),
         });
     }
     Ok(rows)
@@ -401,6 +486,143 @@ fn read_text_index(path: &Path) -> Result<TextIndex, Box<dyn std::error::Error>>
         return Err(format!("{} has no text index rows", path.display()).into());
     }
     Ok(TextIndex { slice_ids })
+}
+
+fn aux_targets_for_pairs(
+    config: &Config,
+    target: &[u8],
+) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), Box<dyn std::error::Error>> {
+    if config.aux_clean_target_weight == 0 {
+        return Ok((None, None));
+    }
+    let image_bytes = checked_image_bytes(config.image_size)?;
+    if target.len() % image_bytes != 0 {
+        return Err("target byte count is not a multiple of image bytes".into());
+    }
+    let mut aux = Vec::with_capacity(target.len());
+    let mut mask = if matches!(
+        config.aux_clean_target_mode,
+        AuxCleanTargetMode::SuppressArtifacts
+            | AuxCleanTargetMode::StrictArtifacts
+            | AuxCleanTargetMode::SignedArtifacts
+    ) {
+        Some(Vec::with_capacity(target.len()))
+    } else {
+        None
+    };
+    for image in target.chunks_exact(image_bytes) {
+        let clean = clean_stroke_target(image, config.image_size)?;
+        if let Some(mask) = mask.as_mut() {
+            match config.aux_clean_target_mode {
+                AuxCleanTargetMode::WholeImage => {}
+                AuxCleanTargetMode::SuppressArtifacts => {
+                    for (&raw, &cleaned) in image.iter().zip(clean.iter()) {
+                        mask.push(u8::from(raw > 0 && cleaned == 0));
+                    }
+                }
+                AuxCleanTargetMode::StrictArtifacts => {
+                    mask.extend(strict_artifact_mask(image, config.image_size)?);
+                }
+                AuxCleanTargetMode::SignedArtifacts => {
+                    mask.extend(strict_artifact_mask(image, config.image_size)?);
+                }
+            }
+        }
+        aux.extend_from_slice(&clean);
+    }
+    Ok((Some(aux), mask))
+}
+
+fn strict_artifact_mask(
+    image: &[u8],
+    image_size: usize,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let image_bytes = checked_image_bytes(image_size)?;
+    if image.len() != image_bytes {
+        return Err(format!(
+            "strict artifact mask got {} bytes, expected {image_bytes}",
+            image.len()
+        )
+        .into());
+    }
+    let center = i64::try_from(image_size / 2)?;
+    let radius_margin = TARGET_CLEAN_RADIUS_MARGIN.min(image_size / 2);
+    let seal_radius = i64::try_from(image_size / 2 - radius_margin)?;
+    let seal_radius2 = seal_radius.saturating_mul(seal_radius);
+    let mut mask = vec![0_u8; image_bytes];
+    for y in 0..image_size {
+        for x in 0..image_size {
+            let index = pixel_index(image_size, x, y);
+            let value = image[index];
+            if value == 0 {
+                continue;
+            }
+            let near_border = x < TARGET_CLEAN_EDGE_CLEAR
+                || y < TARGET_CLEAN_EDGE_CLEAR
+                || x + TARGET_CLEAN_EDGE_CLEAR >= image_size
+                || y + TARGET_CLEAN_EDGE_CLEAR >= image_size;
+            let dx = i64::try_from(x)?.saturating_sub(center);
+            let dy = i64::try_from(y)?.saturating_sub(center);
+            let radius2 = dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy));
+            let outside_seal = radius2 > seal_radius2;
+            let neighbors = neighbor_ink_count(image, image_size, x, y);
+            let weak_unsupported = value <= INK_THRESHOLD && neighbors <= 3;
+            let mid_unsupported =
+                value > INK_THRESHOLD && value <= STRONG_INK_THRESHOLD && neighbors <= 1;
+            mask[index] =
+                u8::from(near_border || outside_seal || weak_unsupported || mid_unsupported);
+        }
+    }
+    Ok(mask)
+}
+
+fn clean_stroke_target(
+    image: &[u8],
+    image_size: usize,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let image_bytes = checked_image_bytes(image_size)?;
+    if image.len() != image_bytes {
+        return Err(format!(
+            "clean target got {} bytes, expected {image_bytes}",
+            image.len()
+        )
+        .into());
+    }
+    let center = i64::try_from(image_size / 2)?;
+    let radius_margin = TARGET_CLEAN_RADIUS_MARGIN.min(image_size / 2);
+    let seal_radius = i64::try_from(image_size / 2 - radius_margin)?;
+    let seal_radius2 = seal_radius.saturating_mul(seal_radius);
+    let mut out = vec![0_u8; image_bytes];
+    for y in 0..image_size {
+        for x in 0..image_size {
+            if x < TARGET_CLEAN_EDGE_CLEAR
+                || y < TARGET_CLEAN_EDGE_CLEAR
+                || x + TARGET_CLEAN_EDGE_CLEAR >= image_size
+                || y + TARGET_CLEAN_EDGE_CLEAR >= image_size
+            {
+                continue;
+            }
+            let dx = i64::try_from(x)?.saturating_sub(center);
+            let dy = i64::try_from(y)?.saturating_sub(center);
+            let radius2 = dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy));
+            if radius2 > seal_radius2 {
+                continue;
+            }
+            let index = pixel_index(image_size, x, y);
+            let value = image[index];
+            let neighbors = neighbor_ink_count(image, image_size, x, y);
+            out[index] = if value > STRONG_INK_THRESHOLD {
+                value
+            } else if value > INK_THRESHOLD && neighbors >= 2 {
+                value.saturating_sub(16)
+            } else if value > 40 && neighbors >= 4 {
+                value.saturating_sub(40)
+            } else {
+                0
+            };
+        }
+    }
+    Ok(out)
 }
 
 fn train_model(
@@ -456,6 +678,14 @@ fn train_layer(
             let condition = condition_index(config, row)?;
             let input = &layer_inputs[pair_index * image_bytes..(pair_index + 1) * image_bytes];
             let target = &train.target[pair_index * image_bytes..(pair_index + 1) * image_bytes];
+            let aux_target = train
+                .aux_target
+                .as_ref()
+                .map(|aux| &aux[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
+            let aux_mask = train
+                .aux_mask
+                .as_ref()
+                .map(|mask| &mask[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
             for y in 0..config.image_size {
                 for x in 0..config.image_size {
                     let index = pixel_index(config.image_size, x, y);
@@ -476,7 +706,13 @@ fn train_layer(
                         input[index],
                         &features,
                     );
-                    let error = i16::from(target[index]) - i16::from(predicted);
+                    let error = training_error(
+                        config,
+                        predicted,
+                        target[index],
+                        aux_target.map(|aux| aux[index]),
+                        aux_mask.map(|mask| mask[index]),
+                    );
                     raw_error = raw_error.saturating_add(abs_i16(error));
                     for channel in 0..features.len() {
                         weight_grads[condition][channel] = weight_grads[condition][channel]
@@ -534,6 +770,14 @@ fn tune_condition_blends(
         let condition = condition_index(config, row)?;
         let input = &layer_inputs[pair_index * image_bytes..(pair_index + 1) * image_bytes];
         let target = &train.target[pair_index * image_bytes..(pair_index + 1) * image_bytes];
+        let aux_target = train
+            .aux_target
+            .as_ref()
+            .map(|aux| &aux[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
+        let aux_mask = train
+            .aux_mask
+            .as_ref()
+            .map(|mask| &mask[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
         for y in 0..config.image_size {
             for x in 0..config.image_size {
                 let index = pixel_index(config.image_size, x, y);
@@ -557,8 +801,13 @@ fn tune_condition_blends(
                 for (candidate_index, &candidate) in candidates.iter().enumerate() {
                     let predicted = blend_pixel(input[index], raw, candidate);
                     let offset = condition * candidates.len() + candidate_index;
-                    errors[offset] =
-                        errors[offset].saturating_add(abs_diff_u8(predicted, target[index]));
+                    errors[offset] = errors[offset].saturating_add(training_pixel_loss(
+                        config,
+                        predicted,
+                        target[index],
+                        aux_target.map(|aux| aux[index]),
+                        aux_mask.map(|mask| mask[index]),
+                    ));
                 }
             }
         }
@@ -608,10 +857,16 @@ fn evaluate_split(
     let mut input_abs_error = 0_u64;
     let mut layer_abs_errors = vec![0_u64; model.layers.len()];
     let mut predicted_abs_error = 0_u64;
+    let mut input_aux_abs_error = 0_u64;
+    let mut predicted_aux_abs_error = 0_u64;
     let mut preview = Vec::new();
     for pair_index in 0..data.rows.len() {
         let input = &data.input[pair_index * image_bytes..(pair_index + 1) * image_bytes];
         let target = &data.target[pair_index * image_bytes..(pair_index + 1) * image_bytes];
+        let aux_target = data
+            .aux_target
+            .as_ref()
+            .map(|aux| &aux[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
         let mut prediction = input.to_vec();
         for (layer_index, layer) in model.layers.iter().enumerate() {
             prediction = predict_layer_image(config, layer, &data.rows[pair_index], &prediction)?;
@@ -625,6 +880,12 @@ fn evaluate_split(
                 input_abs_error.saturating_add(abs_diff_u8(input[index], target[index]));
             predicted_abs_error =
                 predicted_abs_error.saturating_add(abs_diff_u8(prediction[index], target[index]));
+            if let Some(aux_target) = aux_target {
+                input_aux_abs_error = input_aux_abs_error
+                    .saturating_add(abs_diff_u8(input[index], aux_target[index]));
+                predicted_aux_abs_error = predicted_aux_abs_error
+                    .saturating_add(abs_diff_u8(prediction[index], aux_target[index]));
+            }
         }
         if preview.len() < preview_pairs {
             preview.push((input.to_vec(), prediction, target.to_vec()));
@@ -648,9 +909,13 @@ fn evaluate_split(
         input_abs_error,
         layer_abs_errors,
         predicted_abs_error,
+        input_aux_abs_error,
+        predicted_aux_abs_error,
         input_mean_abs_q8: mean_q8(input_abs_error, pixel_count),
         layer_mean_abs_q8,
         predicted_mean_abs_q8: mean_q8(predicted_abs_error, pixel_count),
+        input_aux_mean_abs_q8: mean_q8(input_aux_abs_error, pixel_count),
+        predicted_aux_mean_abs_q8: mean_q8(predicted_aux_abs_error, pixel_count),
     })
 }
 
@@ -752,18 +1017,264 @@ fn conditioned_features(
         hidden_shift,
         &mut out[..image_channels],
     );
-    if out.len() <= HIDDEN_CHANNELS {
+    let mut offset = HIDDEN_CHANNELS;
+    if out.len() >= offset + POSITION_FEATURE_CHANNELS {
+        position_features(
+            image_size,
+            x,
+            y,
+            &mut out[offset..offset + POSITION_FEATURE_CHANNELS],
+        );
+        offset += POSITION_FEATURE_CHANNELS;
+    }
+    if out.len() < offset + TEXT_FEATURE_CHANNELS {
         return;
     }
-    let bin_x = x * TEXT_SIGNATURE_GRID / image_size;
-    let bin_y = y * TEXT_SIGNATURE_GRID / image_size;
-    let target =
-        i16::try_from(row.text_signature[bin_y * TEXT_SIGNATURE_GRID + bin_x]).unwrap_or(0);
     let input_center = i16::from(input[pixel_index(image_size, x, y)]);
-    out[HIDDEN_CHANNELS] = target.saturating_sub(input_center).clamp(-511, 511);
-    if out.len() > HIDDEN_CHANNELS + 1 {
-        out[HIDDEN_CHANNELS + 1] = target.saturating_sub(64).clamp(-511, 511);
+    text_signature_features(
+        &row.text_signature,
+        &row.text_signature_stats,
+        image_size,
+        x,
+        y,
+        input_center,
+        &mut out[offset..offset + TEXT_FEATURE_CHANNELS],
+    );
+}
+
+fn interpolated_text_signature(
+    signature: &[u16; TEXT_SIGNATURE_BINS],
+    image_size: usize,
+    x: usize,
+    y: usize,
+) -> i16 {
+    if image_size <= 1 {
+        return i16::try_from(signature[0].min(255)).unwrap_or(0);
     }
+    let grid_max = TEXT_SIGNATURE_GRID - 1;
+    let scale = 256_usize;
+    let sx = x.saturating_mul(grid_max).saturating_mul(scale) / (image_size - 1);
+    let sy = y.saturating_mul(grid_max).saturating_mul(scale) / (image_size - 1);
+    let x0 = (sx / scale).min(grid_max);
+    let y0 = (sy / scale).min(grid_max);
+    let x1 = (x0 + 1).min(grid_max);
+    let y1 = (y0 + 1).min(grid_max);
+    let wx = i64::try_from(sx % scale).unwrap_or(0);
+    let wy = i64::try_from(sy % scale).unwrap_or(0);
+    let ix = i64::try_from(scale).unwrap_or(256).saturating_sub(wx);
+    let iy = i64::try_from(scale).unwrap_or(256).saturating_sub(wy);
+    let at = |xx: usize, yy: usize| -> i64 {
+        i64::from(signature[yy * TEXT_SIGNATURE_GRID + xx].min(255))
+    };
+    let weighted = at(x0, y0)
+        .saturating_mul(ix)
+        .saturating_mul(iy)
+        .saturating_add(at(x1, y0).saturating_mul(wx).saturating_mul(iy))
+        .saturating_add(at(x0, y1).saturating_mul(ix).saturating_mul(wy))
+        .saturating_add(at(x1, y1).saturating_mul(wx).saturating_mul(wy));
+    i16::try_from((weighted + 32_768) >> 16).unwrap_or(0)
+}
+
+fn text_signature_features(
+    signature: &[u16; TEXT_SIGNATURE_BINS],
+    stats: &SignatureStats,
+    image_size: usize,
+    x: usize,
+    y: usize,
+    input_center: i16,
+    out: &mut [i16],
+) {
+    if out.len() < TEXT_FEATURE_CHANNELS {
+        return;
+    }
+    let step = (image_size / TEXT_SIGNATURE_GRID.max(1)).max(1);
+    let center = interpolated_text_signature(signature, image_size, x, y);
+    let left = interpolated_text_signature(signature, image_size, x.saturating_sub(step), y);
+    let right = interpolated_text_signature(
+        signature,
+        image_size,
+        (x + step).min(image_size.saturating_sub(1)),
+        y,
+    );
+    let up = interpolated_text_signature(signature, image_size, x, y.saturating_sub(step));
+    let down = interpolated_text_signature(
+        signature,
+        image_size,
+        x,
+        (y + step).min(image_size.saturating_sub(1)),
+    );
+    let up_left = interpolated_text_signature(
+        signature,
+        image_size,
+        x.saturating_sub(step),
+        y.saturating_sub(step),
+    );
+    let down_right = interpolated_text_signature(
+        signature,
+        image_size,
+        (x + step).min(image_size.saturating_sub(1)),
+        (y + step).min(image_size.saturating_sub(1)),
+    );
+    let neighbor_mean =
+        i16::try_from((i32::from(left) + i32::from(right) + i32::from(up) + i32::from(down)) / 4)
+            .unwrap_or(0);
+    let grid_x = signature_grid_coord(image_size, x);
+    let grid_y = signature_grid_coord(image_size, y);
+    let global_mean = stats.global_mean;
+    let row_mean = stats.row_means[grid_y];
+    let col_mean = stats.col_means[grid_x];
+    let horizontal_curve = left
+        .saturating_add(right)
+        .saturating_sub(center.saturating_mul(2));
+    let vertical_curve = up
+        .saturating_add(down)
+        .saturating_sub(center.saturating_mul(2));
+    out[0] = center.saturating_sub(input_center).clamp(-511, 511);
+    out[1] = center.saturating_sub(64).clamp(-511, 511);
+    out[2] = center.saturating_sub(32).clamp(-511, 511);
+    out[3] = center.saturating_sub(48).saturating_mul(4).clamp(-511, 511);
+    out[4] = right
+        .saturating_sub(left)
+        .saturating_mul(2)
+        .clamp(-511, 511);
+    out[5] = down.saturating_sub(up).saturating_mul(2).clamp(-511, 511);
+    out[6] = down_right
+        .saturating_sub(up_left)
+        .saturating_mul(2)
+        .clamp(-511, 511);
+    out[7] = center
+        .saturating_sub(neighbor_mean)
+        .saturating_mul(4)
+        .clamp(-511, 511);
+    out[8] = center
+        .saturating_sub(global_mean)
+        .saturating_mul(4)
+        .clamp(-511, 511);
+    out[9] = center
+        .saturating_sub(row_mean)
+        .saturating_mul(4)
+        .clamp(-511, 511);
+    out[10] = center
+        .saturating_sub(col_mean)
+        .saturating_mul(4)
+        .clamp(-511, 511);
+    out[11] = horizontal_curve.saturating_mul(4).clamp(-511, 511);
+    out[12] = vertical_curve.saturating_mul(4).clamp(-511, 511);
+    out[13] = if center >= 160 { 256 } else { -256 };
+    out[14] = if center <= 32 { -256 } else { 256 };
+    out[15] = center
+        .saturating_sub(input_center)
+        .saturating_add(center.saturating_sub(global_mean))
+        .saturating_mul(2)
+        .clamp(-511, 511);
+}
+
+fn signature_grid_coord(image_size: usize, value: usize) -> usize {
+    if image_size <= 1 {
+        return 0;
+    }
+    value
+        .saturating_mul(TEXT_SIGNATURE_GRID)
+        .checked_div(image_size)
+        .unwrap_or(0)
+        .min(TEXT_SIGNATURE_GRID - 1)
+}
+
+fn empty_signature_stats() -> SignatureStats {
+    SignatureStats {
+        global_mean: 0,
+        row_means: [0; TEXT_SIGNATURE_GRID],
+        col_means: [0; TEXT_SIGNATURE_GRID],
+    }
+}
+
+fn signature_stats(signature: &[u16; TEXT_SIGNATURE_BINS]) -> SignatureStats {
+    let global_mean = signature_global_mean(signature);
+    let mut row_means = [0_i16; TEXT_SIGNATURE_GRID];
+    let mut col_means = [0_i16; TEXT_SIGNATURE_GRID];
+    for row in 0..TEXT_SIGNATURE_GRID {
+        row_means[row] = signature_row_mean(signature, row);
+    }
+    for col in 0..TEXT_SIGNATURE_GRID {
+        col_means[col] = signature_col_mean(signature, col);
+    }
+    SignatureStats {
+        global_mean,
+        row_means,
+        col_means,
+    }
+}
+
+fn signature_global_mean(signature: &[u16; TEXT_SIGNATURE_BINS]) -> i16 {
+    let total: u32 = signature
+        .iter()
+        .map(|&value| u32::from(value.min(255)))
+        .sum();
+    i16::try_from(total / u32::try_from(TEXT_SIGNATURE_BINS).unwrap_or(1)).unwrap_or(0)
+}
+
+fn signature_row_mean(signature: &[u16; TEXT_SIGNATURE_BINS], row: usize) -> i16 {
+    let row = row.min(TEXT_SIGNATURE_GRID - 1);
+    let start = row * TEXT_SIGNATURE_GRID;
+    let total: u32 = signature[start..start + TEXT_SIGNATURE_GRID]
+        .iter()
+        .map(|&value| u32::from(value.min(255)))
+        .sum();
+    i16::try_from(total / u32::try_from(TEXT_SIGNATURE_GRID).unwrap_or(1)).unwrap_or(0)
+}
+
+fn signature_col_mean(signature: &[u16; TEXT_SIGNATURE_BINS], col: usize) -> i16 {
+    let col = col.min(TEXT_SIGNATURE_GRID - 1);
+    let mut total = 0_u32;
+    for row in 0..TEXT_SIGNATURE_GRID {
+        total = total.saturating_add(u32::from(
+            signature[row * TEXT_SIGNATURE_GRID + col].min(255),
+        ));
+    }
+    i16::try_from(total / u32::try_from(TEXT_SIGNATURE_GRID).unwrap_or(1)).unwrap_or(0)
+}
+
+fn position_features(image_size: usize, x: usize, y: usize, out: &mut [i16]) {
+    if out.len() < POSITION_FEATURE_CHANNELS || image_size == 0 {
+        return;
+    }
+    let size = i64::try_from(image_size).unwrap_or(1).max(1);
+    let dx = i64::try_from(x)
+        .unwrap_or(0)
+        .saturating_mul(2)
+        .saturating_add(1)
+        .saturating_sub(size);
+    let dy = i64::try_from(y)
+        .unwrap_or(0)
+        .saturating_mul(2)
+        .saturating_add(1)
+        .saturating_sub(size);
+    let radius = integer_sqrt_u64(
+        u64::try_from(dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy))).unwrap_or(0),
+    );
+    let radius_i64 = i64::try_from(radius).unwrap_or(i64::MAX);
+    let outer_radius = size.saturating_sub(18).max(1);
+    let inner_radius = size.saturating_sub(38).max(1);
+    let ring_width = (size / 12).max(6);
+
+    out[0] = clamp_i16(dx.saturating_mul(256) / size);
+    out[1] = clamp_i16(dy.saturating_mul(256) / size);
+    out[2] = clamp_i16(radius_i64.saturating_mul(384) / size - 192);
+    out[3] = clamp_i16(triangular_peak(radius_i64, outer_radius, ring_width));
+    out[4] = clamp_i16(triangular_peak(radius_i64, inner_radius, ring_width));
+    out[5] = if radius_i64 <= outer_radius {
+        192
+    } else {
+        -192
+    };
+}
+
+fn triangular_peak(value: i64, center: i64, width: i64) -> i64 {
+    let distance = abs_i64(value.saturating_sub(center));
+    if distance >= width {
+        return 0;
+    }
+    255 - distance.saturating_mul(255) / width.max(1)
 }
 
 fn predict_raw_pixel(
@@ -814,9 +1325,9 @@ fn condition_count(config: &Config) -> Result<usize, Box<dyn std::error::Error>>
 
 fn feature_count(config: &Config) -> usize {
     if config.text_index_path.is_some() {
-        HIDDEN_CHANNELS + TEXT_FEATURE_CHANNELS
+        HIDDEN_CHANNELS + POSITION_FEATURE_CHANNELS + TEXT_FEATURE_CHANNELS
     } else {
-        HIDDEN_CHANNELS
+        HIDDEN_CHANNELS + POSITION_FEATURE_CHANNELS
     }
 }
 
@@ -837,6 +1348,28 @@ fn condition_index(config: &Config, row: &PairRow) -> Result<usize, Box<dyn std:
 
 fn pixel_index(image_size: usize, x: usize, y: usize) -> usize {
     y * image_size + x
+}
+
+fn neighbor_ink_count(image: &[u8], image_size: usize, x: usize, y: usize) -> u8 {
+    let mut count = 0_u8;
+    for dy in 0..3 {
+        for dx in 0..3 {
+            if dx == 1 && dy == 1 {
+                continue;
+            }
+            let nx = x.checked_add(dx).and_then(|value| value.checked_sub(1));
+            let ny = y.checked_add(dy).and_then(|value| value.checked_sub(1));
+            if let (Some(nx), Some(ny)) = (nx, ny) {
+                if nx < image_size && ny < image_size {
+                    let value = image[pixel_index(image_size, nx, ny)];
+                    if value > INK_THRESHOLD {
+                        count = count.saturating_add(1);
+                    }
+                }
+            }
+        }
+    }
+    count
 }
 
 fn checked_image_bytes(image_size: usize) -> Result<usize, Box<dyn std::error::Error>> {
@@ -871,11 +1404,29 @@ fn image_signature(
     let mut signature = [0_u16; TEXT_SIGNATURE_BINS];
     for index in 0..TEXT_SIGNATURE_BINS {
         if counts[index] != 0 {
-            signature[index] =
+            let mean =
                 u16::try_from(sums[index].saturating_add(counts[index] / 2) / counts[index])?;
+            signature[index] = sharpen_signature_value(mean);
         }
     }
     Ok(signature)
+}
+
+fn sharpen_signature_value(value: u16) -> u16 {
+    if value <= LAYOUT_INK_FLOOR {
+        return 0;
+    }
+    if value >= LAYOUT_INK_CEILING {
+        return 255;
+    }
+    if value <= LAYOUT_INK_MIDPOINT {
+        return ((u32::from(value - LAYOUT_INK_FLOOR) * 96)
+            / u32::from(LAYOUT_INK_MIDPOINT - LAYOUT_INK_FLOOR).max(1)) as u16;
+    }
+    let strong = 96
+        + ((u32::from(value - LAYOUT_INK_MIDPOINT) * 159)
+            / u32::from(LAYOUT_INK_CEILING - LAYOUT_INK_MIDPOINT).max(1));
+    strong.min(255) as u16
 }
 
 fn train_pixel_count(config: &Config, data: &SplitData) -> Result<u64, Box<dyn std::error::Error>> {
@@ -895,12 +1446,122 @@ fn signed_round_shift(value: i64, shift: u8) -> i64 {
     }
 }
 
+fn integer_sqrt_u64(value: u64) -> u64 {
+    if value <= 1 {
+        return value;
+    }
+    let mut low = 1_u64;
+    let mut high = value.min(1_u64 << 32);
+    while low <= high {
+        let mid = low + ((high - low) / 2);
+        let square = u128::from(mid) * u128::from(mid);
+        if square == u128::from(value) {
+            return mid;
+        }
+        if square < u128::from(value) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+    high
+}
+
+fn clamp_i16(value: i64) -> i16 {
+    value.clamp(-511, 511) as i16
+}
+
+fn abs_i64(value: i64) -> i64 {
+    if value >= 0 {
+        value
+    } else {
+        value.saturating_neg()
+    }
+}
+
 fn abs_i16(value: i16) -> u64 {
     if value >= 0 {
         u64::from(value as u16)
     } else {
         u64::from(value.unsigned_abs())
     }
+}
+
+fn training_error(
+    config: &Config,
+    predicted: u8,
+    target: u8,
+    aux_target: Option<u8>,
+    aux_mask: Option<u8>,
+) -> i16 {
+    if config.aux_clean_target_mode == AuxCleanTargetMode::SignedArtifacts {
+        let target = signed_artifact_target(config, target, aux_target, aux_mask);
+        return (i32::from(target) - i32::from(predicted))
+            .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    }
+    let base = i32::from(target) - i32::from(predicted);
+    let aux = if aux_mask.is_some_and(|mask| mask == 0) {
+        0
+    } else {
+        aux_target
+            .map(|aux| {
+                let aux_error = i32::from(aux) - i32::from(predicted);
+                signed_round_shift(
+                    i64::from(aux_error).saturating_mul(i64::from(config.aux_clean_target_weight)),
+                    8,
+                ) as i32
+            })
+            .unwrap_or(0)
+    };
+    base.saturating_add(aux)
+        .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16
+}
+
+fn training_pixel_loss(
+    config: &Config,
+    predicted: u8,
+    target: u8,
+    aux_target: Option<u8>,
+    aux_mask: Option<u8>,
+) -> u64 {
+    if config.aux_clean_target_mode == AuxCleanTargetMode::SignedArtifacts {
+        return abs_diff_u8(
+            predicted,
+            signed_artifact_target(config, target, aux_target, aux_mask),
+        );
+    }
+    let base = abs_diff_u8(predicted, target);
+    let aux = if aux_mask.is_some_and(|mask| mask == 0) {
+        0
+    } else {
+        aux_target
+            .map(|aux| {
+                ((u128::from(abs_diff_u8(predicted, aux))
+                    * u128::from(config.aux_clean_target_weight))
+                    / 256_u128) as u64
+            })
+            .unwrap_or(0)
+    };
+    base.saturating_add(aux)
+}
+
+fn signed_artifact_target(
+    config: &Config,
+    target: u8,
+    aux_target: Option<u8>,
+    aux_mask: Option<u8>,
+) -> u8 {
+    if aux_mask.is_some_and(|mask| mask == 0) {
+        return target;
+    }
+    let Some(aux_target) = aux_target else {
+        return target;
+    };
+    let delta = i64::from(i32::from(aux_target) - i32::from(target))
+        .saturating_mul(i64::from(config.aux_clean_target_weight));
+    let shifted = signed_round_shift(delta, 8);
+    let target = i64::from(target).saturating_add(shifted).clamp(0, 255);
+    target as u8
 }
 
 fn abs_diff_u8(left: u8, right: u8) -> u64 {
@@ -1056,6 +1717,18 @@ fn write_trace(
         usize::from(config.learning_shift),
         true,
     );
+    number_field(
+        &mut out,
+        "aux_clean_target_weight",
+        usize::from(config.aux_clean_target_weight),
+        true,
+    );
+    json_field(
+        &mut out,
+        "aux_clean_target_mode",
+        config.aux_clean_target_mode.as_str(),
+        true,
+    );
     out.push_str("  \"layer_models\":[");
     for (layer_index, layer) in model.layers.iter().enumerate() {
         if layer_index != 0 {
@@ -1134,8 +1807,11 @@ fn metrics_field(out: &mut String, key: &str, metrics: &Metrics, comma: bool) {
     out.push_str(key);
     out.push_str("\":{");
     out.push_str(&format!(
-        "\"pair_count\":{},\"pixel_count\":{},\"input_abs_error\":{},",
-        metrics.pair_count, metrics.pixel_count, metrics.input_abs_error,
+        "\"pair_count\":{},\"pixel_count\":{},\"input_abs_error\":{},\"input_aux_abs_error\":{},",
+        metrics.pair_count,
+        metrics.pixel_count,
+        metrics.input_abs_error,
+        metrics.input_aux_abs_error,
     ));
     out.push_str("\"layer_abs_errors\":[");
     for (index, error) in metrics.layer_abs_errors.iter().enumerate() {
@@ -1146,8 +1822,11 @@ fn metrics_field(out: &mut String, key: &str, metrics: &Metrics, comma: bool) {
     }
     out.push_str("],");
     out.push_str(&format!(
-        "\"predicted_abs_error\":{},\"input_mean_abs_q8\":{},",
-        metrics.predicted_abs_error, metrics.input_mean_abs_q8,
+        "\"predicted_abs_error\":{},\"predicted_aux_abs_error\":{},\"input_mean_abs_q8\":{},\"input_aux_mean_abs_q8\":{},",
+        metrics.predicted_abs_error,
+        metrics.predicted_aux_abs_error,
+        metrics.input_mean_abs_q8,
+        metrics.input_aux_mean_abs_q8,
     ));
     out.push_str("\"layer_mean_abs_q8\":[");
     for (index, value) in metrics.layer_mean_abs_q8.iter().enumerate() {
@@ -1166,10 +1845,13 @@ fn metrics_field(out: &mut String, key: &str, metrics: &Metrics, comma: bool) {
         out.push('"');
     }
     out.push_str(&format!(
-        "],\"predicted_mean_abs_q8\":{},\"input_mean_abs\":\"{}\",\"predicted_mean_abs\":\"{}\"",
+        "],\"predicted_mean_abs_q8\":{},\"predicted_aux_mean_abs_q8\":{},\"input_mean_abs\":\"{}\",\"predicted_mean_abs\":\"{}\",\"input_aux_mean_abs\":\"{}\",\"predicted_aux_mean_abs\":\"{}\"",
         metrics.predicted_mean_abs_q8,
+        metrics.predicted_aux_mean_abs_q8,
         format_q8(metrics.input_mean_abs_q8),
         format_q8(metrics.predicted_mean_abs_q8),
+        format_q8(metrics.input_aux_mean_abs_q8),
+        format_q8(metrics.predicted_aux_mean_abs_q8),
     ));
     out.push('}');
     if comma {

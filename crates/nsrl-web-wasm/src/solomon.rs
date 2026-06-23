@@ -4,6 +4,7 @@ const SCHEMA: &str = "nsrl.web_solomon_sigil.v1";
 const MODEL_MAGIC_TCH: &[u8; 8] = b"NSRLTCH\n";
 const KERNEL: usize = 9;
 const HIDDEN_CHANNELS: usize = 8;
+const POSITION_FEATURE_CHANNELS: usize = 6;
 const HIDDEN_KERNELS: [[i8; KERNEL]; HIDDEN_CHANNELS] = [
     [1, 1, 1, 1, 0, 1, 1, 1, 1],
     [0, 1, 0, 1, 0, 1, 0, 1, 0],
@@ -25,6 +26,18 @@ const TEXT_WEIGHT: i64 = 96;
 const MAX_BROWSER_CANDIDATES: usize = 32;
 const MAX_BROWSER_PASSES: usize = 12;
 const MAX_BROWSER_CONDITIONS: usize = 64;
+const CORRUPTION_KINDS: [&str; 10] = [
+    "pixel-dropout",
+    "salt-pepper",
+    "block-mask",
+    "stroke-thin",
+    "stroke-thicken",
+    "line-drop",
+    "mixed-noise",
+    "coarse-erase",
+    "box-blur",
+    "noise-seed",
+];
 
 #[wasm_bindgen]
 pub struct SolomonSampler {
@@ -38,7 +51,7 @@ impl SolomonSampler {
     #[wasm_bindgen(constructor)]
     pub fn new(model_bytes: &[u8], text_index_tsv: &str) -> Result<SolomonSampler, JsValue> {
         let model = read_text_conditioned_model(model_bytes).map_err(js_error)?;
-        let active_conditions = active_conditions(&model);
+        let active_conditions = generation_conditions(&model);
         if active_conditions.is_empty() {
             return Err(JsValue::from_str(
                 "Solomon sampler model has no active conditions",
@@ -269,7 +282,7 @@ fn read_multichannel_model(cursor: &mut Cursor<'_>) -> Result<MultichannelModel,
     let hidden_shift = u8::try_from(cursor.read_u32()?).map_err(|error| error.to_string())?;
     let output_shift = u8::try_from(cursor.read_u32()?).map_err(|error| error.to_string())?;
     let hidden_channels = usize::try_from(cursor.read_u32()?).map_err(|error| error.to_string())?;
-    let max_channels = HIDDEN_KERNELS.len() + 2;
+    let max_channels = HIDDEN_KERNELS.len() + POSITION_FEATURE_CHANNELS + 2;
     if hidden_channels == 0 || hidden_channels > max_channels {
         return Err(format!(
             "unsupported Solomon hidden channel count: {hidden_channels}; max {max_channels}"
@@ -502,6 +515,36 @@ fn active_conditions(model: &MultichannelModel) -> Vec<usize> {
     conditions
 }
 
+fn generation_conditions(model: &MultichannelModel) -> Vec<usize> {
+    let conditions = active_conditions(model);
+    let Some(noise_kind) = CORRUPTION_KINDS
+        .iter()
+        .position(|&kind| kind == "noise-seed")
+    else {
+        return conditions;
+    };
+    if noise_kind >= model.corruption_count {
+        return conditions;
+    }
+    let noise_conditions: Vec<usize> = conditions
+        .iter()
+        .copied()
+        .filter(|condition| condition / model.timesteps == noise_kind)
+        .collect();
+    if noise_conditions.is_empty() {
+        conditions
+    } else {
+        let mut scheduled = noise_conditions;
+        scheduled.extend(
+            conditions
+                .iter()
+                .copied()
+                .filter(|condition| condition / model.timesteps != noise_kind),
+        );
+        scheduled
+    }
+}
+
 fn sample_candidate(
     model: &MultichannelModel,
     conditions: &[usize],
@@ -510,7 +553,7 @@ fn sample_candidate(
     passes: usize,
     target_signature: &[u16; SIGNATURE_BINS],
 ) -> Result<Candidate, String> {
-    let mut image = initial_seal_prior(model.image_size, source_index, seed)?;
+    let mut image = initial_noise(model.image_size, source_index, seed)?;
     for _ in 0..passes {
         for &condition in conditions {
             image = apply_model_condition(model, condition, &image, target_signature)?;
@@ -531,61 +574,20 @@ fn sample_candidate(
     })
 }
 
-fn initial_seal_prior(
-    image_size: usize,
-    sample_index: usize,
-    seed: &str,
-) -> Result<Vec<u8>, String> {
+fn initial_noise(image_size: usize, sample_index: usize, seed: &str) -> Result<Vec<u8>, String> {
     let image_bytes = checked_image_bytes(image_size)?;
-    let init_seed = hash_seed(&[seed, &sample_index.to_string(), "seal-prior"]);
+    let init_seed = hash_seed(&[seed, &sample_index.to_string(), "noise"]);
     let mut rng = Rng::new(init_seed);
     let mut image = vec![0_u8; image_bytes];
-    let center = i32::try_from(image_size / 2).map_err(|error| error.to_string())?;
-    let jitter_x = i32::try_from(rng.rand_bounded(9)).map_err(|error| error.to_string())? - 4;
-    let jitter_y = i32::try_from(rng.rand_bounded(9)).map_err(|error| error.to_string())? - 4;
-    let cx = center + jitter_x;
-    let cy = center + jitter_y;
-    let base_radius = i32::try_from(image_size / 2).map_err(|error| error.to_string())? - 13;
-    let outer =
-        base_radius + i32::try_from(rng.rand_bounded(7)).map_err(|error| error.to_string())? - 3;
-    draw_circle(&mut image, image_size, cx, cy, outer, 2, 210)?;
-    draw_circle(
-        &mut image,
-        image_size,
-        cx,
-        cy,
-        outer - 8 - i32::try_from(rng.rand_bounded(4)).map_err(|error| error.to_string())?,
-        1,
-        190,
-    )?;
-
-    let stroke_count =
-        5 + usize::try_from(rng.rand_bounded(5)).map_err(|error| error.to_string())?;
-    let span = outer - 8;
-    for _ in 0..stroke_count {
-        let x0 = cx + random_signed(&mut rng, span)?;
-        let y0 = cy + random_signed(&mut rng, span)?;
-        let x1 = cx + random_signed(&mut rng, span)?;
-        let y1 = cy + random_signed(&mut rng, span)?;
-        let thickness =
-            1 + i32::try_from(rng.rand_bounded(2)).map_err(|error| error.to_string())?;
-        draw_line(&mut image, image_size, x0, y0, x1, y1, thickness, 230)?;
-    }
-
-    for _ in 0..3 {
-        let arm = 12 + i32::try_from(rng.rand_bounded(18)).map_err(|error| error.to_string())?;
-        let x = cx + random_signed(&mut rng, span / 2)?;
-        let y = cy + random_signed(&mut rng, span / 2)?;
-        draw_line(&mut image, image_size, x - arm, y, x + arm, y, 1, 240)?;
-        draw_line(&mut image, image_size, x, y - arm, x, y + arm, 1, 240)?;
-    }
-
     for value in &mut image {
-        if *value > 0 && rng.chance(1, 18) {
-            *value = value.saturating_sub(80);
-        } else if *value == 0 && rng.chance(1, 96) {
-            *value = 160;
-        }
+        let roll = rng.rand_bounded(16);
+        *value = if roll == 0 {
+            255
+        } else if roll == 1 {
+            160
+        } else {
+            0
+        };
     }
     Ok(image)
 }
@@ -668,17 +670,99 @@ fn conditioned_features(
         hidden_shift,
         &mut out[..image_channels],
     );
-    if out.len() <= HIDDEN_CHANNELS {
+    let new_layout = out.len() >= HIDDEN_CHANNELS + POSITION_FEATURE_CHANNELS + 2;
+    let mut offset = HIDDEN_CHANNELS;
+    if new_layout {
+        position_features(
+            image_size,
+            x,
+            y,
+            &mut out[offset..offset + POSITION_FEATURE_CHANNELS],
+        );
+        offset += POSITION_FEATURE_CHANNELS;
+    }
+    if out.len() < offset + 2 {
         return;
     }
-    let bin_x = x * SIGNATURE_GRID / image_size;
-    let bin_y = y * SIGNATURE_GRID / image_size;
-    let target = i16::try_from(target_signature[bin_y * SIGNATURE_GRID + bin_x]).unwrap_or(0);
+    let target = interpolated_signature_value(target_signature, image_size, x, y);
     let input_center = i16::from(input[pixel_index(image_size, x, y)]);
-    out[HIDDEN_CHANNELS] = target.saturating_sub(input_center).clamp(-511, 511);
-    if out.len() > HIDDEN_CHANNELS + 1 {
-        out[HIDDEN_CHANNELS + 1] = target.saturating_sub(64).clamp(-511, 511);
+    out[offset] = target.saturating_sub(input_center).clamp(-511, 511);
+    out[offset + 1] = target.saturating_sub(64).clamp(-511, 511);
+}
+
+fn interpolated_signature_value(
+    signature: &[u16; SIGNATURE_BINS],
+    image_size: usize,
+    x: usize,
+    y: usize,
+) -> i16 {
+    if image_size <= 1 {
+        return i16::try_from(signature[0].min(255)).unwrap_or(0);
     }
+    let grid_max = SIGNATURE_GRID - 1;
+    let scale = 256_usize;
+    let sx = x.saturating_mul(grid_max).saturating_mul(scale) / (image_size - 1);
+    let sy = y.saturating_mul(grid_max).saturating_mul(scale) / (image_size - 1);
+    let x0 = (sx / scale).min(grid_max);
+    let y0 = (sy / scale).min(grid_max);
+    let x1 = (x0 + 1).min(grid_max);
+    let y1 = (y0 + 1).min(grid_max);
+    let wx = i64::try_from(sx % scale).unwrap_or(0);
+    let wy = i64::try_from(sy % scale).unwrap_or(0);
+    let ix = i64::try_from(scale).unwrap_or(256).saturating_sub(wx);
+    let iy = i64::try_from(scale).unwrap_or(256).saturating_sub(wy);
+    let at =
+        |xx: usize, yy: usize| -> i64 { i64::from(signature[yy * SIGNATURE_GRID + xx].min(255)) };
+    let weighted = at(x0, y0)
+        .saturating_mul(ix)
+        .saturating_mul(iy)
+        .saturating_add(at(x1, y0).saturating_mul(wx).saturating_mul(iy))
+        .saturating_add(at(x0, y1).saturating_mul(ix).saturating_mul(wy))
+        .saturating_add(at(x1, y1).saturating_mul(wx).saturating_mul(wy));
+    i16::try_from((weighted + 32_768) >> 16).unwrap_or(0)
+}
+
+fn position_features(image_size: usize, x: usize, y: usize, out: &mut [i16]) {
+    if out.len() < POSITION_FEATURE_CHANNELS || image_size == 0 {
+        return;
+    }
+    let size = i64::try_from(image_size).unwrap_or(1).max(1);
+    let dx = i64::try_from(x)
+        .unwrap_or(0)
+        .saturating_mul(2)
+        .saturating_add(1)
+        .saturating_sub(size);
+    let dy = i64::try_from(y)
+        .unwrap_or(0)
+        .saturating_mul(2)
+        .saturating_add(1)
+        .saturating_sub(size);
+    let radius = integer_sqrt_u64(
+        u64::try_from(dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy))).unwrap_or(0),
+    );
+    let radius_i64 = i64::try_from(radius).unwrap_or(i64::MAX);
+    let outer_radius = size.saturating_sub(18).max(1);
+    let inner_radius = size.saturating_sub(38).max(1);
+    let ring_width = (size / 12).max(6);
+
+    out[0] = clamp_i16(dx.saturating_mul(256) / size);
+    out[1] = clamp_i16(dy.saturating_mul(256) / size);
+    out[2] = clamp_i16(radius_i64.saturating_mul(384) / size - 192);
+    out[3] = clamp_i16(triangular_peak(radius_i64, outer_radius, ring_width));
+    out[4] = clamp_i16(triangular_peak(radius_i64, inner_radius, ring_width));
+    out[5] = if radius_i64 <= outer_radius {
+        192
+    } else {
+        -192
+    };
+}
+
+fn triangular_peak(value: i64, center: i64, width: i64) -> i64 {
+    let distance = abs_i64(value.saturating_sub(center));
+    if distance >= width {
+        return 0;
+    }
+    255 - distance.saturating_mul(255) / width.max(1)
 }
 
 fn hidden_features(
@@ -959,120 +1043,6 @@ fn text_signature_distance(
     best
 }
 
-fn draw_circle(
-    image: &mut [u8],
-    image_size: usize,
-    cx: i32,
-    cy: i32,
-    radius: i32,
-    thickness: i32,
-    value: u8,
-) -> Result<(), String> {
-    for offset in 0..thickness {
-        let r = radius.saturating_sub(offset);
-        if r <= 0 {
-            continue;
-        }
-        let mut x = r;
-        let mut y = 0_i32;
-        let mut error = 1_i32 - x;
-        while x >= y {
-            plot_circle_points(image, image_size, cx, cy, x, y, value)?;
-            y += 1;
-            if error < 0 {
-                error += 2 * y + 1;
-            } else {
-                x -= 1;
-                error += 2 * (y - x) + 1;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn plot_circle_points(
-    image: &mut [u8],
-    image_size: usize,
-    cx: i32,
-    cy: i32,
-    x: i32,
-    y: i32,
-    value: u8,
-) -> Result<(), String> {
-    for (px, py) in [
-        (cx + x, cy + y),
-        (cx + y, cy + x),
-        (cx - y, cy + x),
-        (cx - x, cy + y),
-        (cx - x, cy - y),
-        (cx - y, cy - x),
-        (cx + y, cy - x),
-        (cx + x, cy - y),
-    ] {
-        draw_point(image, image_size, px, py, 1, value)?;
-    }
-    Ok(())
-}
-
-fn draw_line(
-    image: &mut [u8],
-    image_size: usize,
-    mut x0: i32,
-    mut y0: i32,
-    x1: i32,
-    y1: i32,
-    thickness: i32,
-    value: u8,
-) -> Result<(), String> {
-    let dx = abs_i32(x1 - x0);
-    let sx = if x0 < x1 { 1 } else { -1 };
-    let dy = -abs_i32(y1 - y0);
-    let sy = if y0 < y1 { 1 } else { -1 };
-    let mut error = dx + dy;
-    loop {
-        draw_point(image, image_size, x0, y0, thickness, value)?;
-        if x0 == x1 && y0 == y1 {
-            break;
-        }
-        let doubled = error.saturating_mul(2);
-        if doubled >= dy {
-            error += dy;
-            x0 += sx;
-        }
-        if doubled <= dx {
-            error += dx;
-            y0 += sy;
-        }
-    }
-    Ok(())
-}
-
-fn draw_point(
-    image: &mut [u8],
-    image_size: usize,
-    x: i32,
-    y: i32,
-    thickness: i32,
-    value: u8,
-) -> Result<(), String> {
-    let radius = thickness.saturating_sub(1);
-    for yy in y - radius..=y + radius {
-        for xx in x - radius..=x + radius {
-            if xx < 0 || yy < 0 {
-                continue;
-            }
-            let ux = usize::try_from(xx).map_err(|error| error.to_string())?;
-            let uy = usize::try_from(yy).map_err(|error| error.to_string())?;
-            if ux >= image_size || uy >= image_size {
-                continue;
-            }
-            let index = pixel_index(image_size, ux, uy);
-            image[index] = image[index].max(value);
-        }
-    }
-    Ok(())
-}
-
 fn neighbor_ink_count(image: &[u8], image_size: usize, x: usize, y: usize) -> u8 {
     let mut count = 0_u8;
     for dy in 0..3 {
@@ -1148,12 +1118,6 @@ fn transform_coords(image_size: usize, x: usize, y: usize, variant: usize) -> (u
     }
 }
 
-fn random_signed(rng: &mut Rng, magnitude: i32) -> Result<i32, String> {
-    let span = u32::try_from(magnitude.saturating_mul(2).saturating_add(1))
-        .map_err(|error| error.to_string())?;
-    Ok(i32::try_from(rng.rand_bounded(span)).map_err(|error| error.to_string())? - magnitude)
-}
-
 fn signed_round_shift(value: i64, shift: u8) -> i64 {
     if shift == 0 {
         return value;
@@ -1164,6 +1128,31 @@ fn signed_round_shift(value: i64, shift: u8) -> i64 {
     } else {
         -((value.saturating_neg().saturating_add(rounding)) >> shift)
     }
+}
+
+fn integer_sqrt_u64(value: u64) -> u64 {
+    if value <= 1 {
+        return value;
+    }
+    let mut low = 1_u64;
+    let mut high = value.min(1_u64 << 32);
+    while low <= high {
+        let mid = low + ((high - low) / 2);
+        let square = u128::from(mid) * u128::from(mid);
+        if square == u128::from(value) {
+            return mid;
+        }
+        if square < u128::from(value) {
+            low = mid + 1;
+        } else {
+            high = mid - 1;
+        }
+    }
+    high
+}
+
+fn clamp_i16(value: i64) -> i16 {
+    value.clamp(-511, 511) as i16
 }
 
 fn pixel_index(image_size: usize, x: usize, y: usize) -> usize {
@@ -1231,18 +1220,6 @@ impl Rng {
                 return (value % bound) as u32;
             }
         }
-    }
-
-    fn chance(&mut self, numerator: u32, denominator: u32) -> bool {
-        self.rand_bounded(denominator) < numerator
-    }
-}
-
-fn abs_i32(value: i32) -> i32 {
-    if value >= 0 {
-        value
-    } else {
-        value.saturating_neg()
     }
 }
 

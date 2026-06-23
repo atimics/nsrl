@@ -12,7 +12,7 @@ const defaults = {
 
 function usage() {
   console.log(
-    "Usage: build-solomon-text-index.mjs [--html PATH] [--slices-manifest PATH] [--out-dir PATH]",
+    "Usage: build-solomon-text-index.mjs [--html PATH] [--slices-manifest PATH] [--out-dir PATH] [--signature-grid N]",
   );
 }
 
@@ -29,11 +29,20 @@ function parseArgs(argv) {
       config.slicesManifest = requireValue(argv, ++index, arg);
     } else if (arg === "--out-dir") {
       config.outDir = requireValue(argv, ++index, arg);
+    } else if (arg === "--signature-grid") {
+      config.signatureGrid = parsePositiveInteger(requireValue(argv, ++index, arg), arg);
     } else {
       throw new Error(`unknown option: ${arg}`);
     }
   }
   return config;
+}
+
+function parsePositiveInteger(value, flag) {
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    throw new Error(`${flag} requires a positive integer`);
+  }
+  return Number(value);
 }
 
 function requireValue(argv, index, flag) {
@@ -219,7 +228,7 @@ function main() {
     "label",
     "source_file",
     "ink_128_u8",
-    "signature_8x8",
+    `signature_${config.signatureGrid}x${config.signatureGrid}`,
     "text",
   ];
   const tsv = [

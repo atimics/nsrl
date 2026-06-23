@@ -209,8 +209,32 @@ pub fn attention_weight_v_i16_q15_checked(
     let seq_len = probabilities_q15.len();
 
     if fits_n_i16_products_in_i64(seq_len) {
-        // Fast path: wrapping arithmetic so LLVM can auto-vectorize the inner loop.
-        for (out_index, out) in output.iter_mut().enumerate() {
+        // Tile across output channels so each probability pass reads contiguous value lanes.
+        let mut out_index = 0_usize;
+        while out_index + 4 <= value_dim {
+            let mut acc0 = 0_i64;
+            let mut acc1 = 0_i64;
+            let mut acc2 = 0_i64;
+            let mut acc3 = 0_i64;
+            let mut row_offset = out_index;
+
+            for &probability in probabilities_q15.iter() {
+                let probability = i64::from(probability);
+                acc0 = acc0.wrapping_add(probability * i64::from(values[row_offset]));
+                acc1 = acc1.wrapping_add(probability * i64::from(values[row_offset + 1]));
+                acc2 = acc2.wrapping_add(probability * i64::from(values[row_offset + 2]));
+                acc3 = acc3.wrapping_add(probability * i64::from(values[row_offset + 3]));
+                row_offset += value_dim;
+            }
+
+            output[out_index] = saturate_i16(round_shift_rhu_i64(acc0, Q15_SHIFT));
+            output[out_index + 1] = saturate_i16(round_shift_rhu_i64(acc1, Q15_SHIFT));
+            output[out_index + 2] = saturate_i16(round_shift_rhu_i64(acc2, Q15_SHIFT));
+            output[out_index + 3] = saturate_i16(round_shift_rhu_i64(acc3, Q15_SHIFT));
+            out_index += 4;
+        }
+
+        while out_index < value_dim {
             let mut acc = 0_i64;
             let mut row_offset = out_index;
             for &probability in probabilities_q15.iter() {
@@ -218,7 +242,8 @@ pub fn attention_weight_v_i16_q15_checked(
                 acc = acc.wrapping_add(i64::from(probability) * i64::from(value));
                 row_offset += value_dim;
             }
-            *out = saturate_i16(round_shift_rhu_i64(acc, Q15_SHIFT));
+            output[out_index] = saturate_i16(round_shift_rhu_i64(acc, Q15_SHIFT));
+            out_index += 1;
         }
     } else {
         // Slow path: checked arithmetic for unusually large seq_len.
@@ -378,7 +403,34 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
             // Fast path: wrapping arithmetic safe because fits_n_i16_products_in_i64(seq_len).
             // seq_len is bounded by seq_len * d_model having been checked in validate_self_attention_shapes.
             debug_assert!(fits_n_i16_products_in_i64(seq_len));
-            for out_index in 0..head_dim {
+            let mut out_index = 0_usize;
+            while out_index + 4 <= head_dim {
+                let mut acc0 = 0_i64;
+                let mut acc1 = 0_i64;
+                let mut acc2 = 0_i64;
+                let mut acc3 = 0_i64;
+
+                for key_index in 0..effective_len {
+                    let probability = i64::from(workspace.probabilities_q15[key_index]);
+                    let value_index = key_index * d_model + base_v_offset + out_index;
+                    acc0 = acc0.wrapping_add(probability * i64::from(workspace.v[value_index]));
+                    acc1 = acc1.wrapping_add(probability * i64::from(workspace.v[value_index + 1]));
+                    acc2 = acc2.wrapping_add(probability * i64::from(workspace.v[value_index + 2]));
+                    acc3 = acc3.wrapping_add(probability * i64::from(workspace.v[value_index + 3]));
+                }
+
+                workspace.context[base_ctx_offset + out_index] =
+                    saturate_i16(round_shift_rhu_i64(acc0, Q15_SHIFT));
+                workspace.context[base_ctx_offset + out_index + 1] =
+                    saturate_i16(round_shift_rhu_i64(acc1, Q15_SHIFT));
+                workspace.context[base_ctx_offset + out_index + 2] =
+                    saturate_i16(round_shift_rhu_i64(acc2, Q15_SHIFT));
+                workspace.context[base_ctx_offset + out_index + 3] =
+                    saturate_i16(round_shift_rhu_i64(acc3, Q15_SHIFT));
+                out_index += 4;
+            }
+
+            while out_index < head_dim {
                 let mut acc = 0_i64;
 
                 for key_index in 0..effective_len {
@@ -390,6 +442,7 @@ pub fn self_attention_i16_q15_with_linear_kernel_checked(
 
                 workspace.context[base_ctx_offset + out_index] =
                     saturate_i16(round_shift_rhu_i64(acc, Q15_SHIFT));
+                out_index += 1;
             }
         }
     }

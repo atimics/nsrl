@@ -104,7 +104,8 @@ windows.
 ## Lexeme Language Evidence
 
 The strongest current text result is a source-grounded SimpleWiki topic
-composition over lexeme tokens. The selected run:
+composition over lexeme tokens. See `docs/simplewiki-grounded-hero.md` for the
+typed Rust scoreboard and replay gate. The selected run:
 
 ```text
 data/processed/simplewiki-expository-v1/topic-earth-curriculum-holo-sentence-stop-smoke-20260621/paragraph-bestof-earth3-lastprompt-grounded16-20260621
@@ -119,6 +120,9 @@ the earth is an ancient planet which has been changing the whole time since its 
 Trace facts:
 
 - schema: `nsrl.simplewiki_topic_paragraph_bestof.v1`
+- typed eval schema: `nsrl.simplewiki_grounded_eval.v1`
+- full replay row hash: `ba2028c5`
+- replay command: `scripts/check-simplewiki-grounded-replay.sh`
 - prompt: `the earth is an ancient planet`
 - paragraph sentences: 3
 - candidates per sentence: 16
@@ -126,10 +130,15 @@ Trace facts:
 - sentence-terminal stop: enabled
 - source exact span required: true
 - selected sentence source trigram per mille: 1000 for all selected sentences
+- BPT: 9.332 over 10,000 eval windows, versus 12.000 uniform baseline
+- repetition: 0 repeated bigrams, 0 repeated trigrams, max token run 1
 
 This proves the full system can produce coherent, traceable prose under a
-declared source-grounded authority. It does not prove that the core model alone
-has a durable internal topic representation.
+declared source-grounded authority with a bit-exact replay row. It does not yet
+prove clean-checkout reproducibility, because the model, topic tokens, vocab,
+and selected generation traces are still local ignored artifacts under
+`data/processed/...`. It also does not prove that the core model alone has a
+durable internal topic representation.
 
 ## Current Architectural Reading
 
@@ -189,8 +198,9 @@ quality.
 2. Implement integer-friendly gated linear attention / retention so linear
    states and future holographic memories can forget stale early-training
    bindings.
-3. Move source-grounded paragraph scoring out of shell/Perl into Rust so traces,
-   grounding checks, and candidate scoring are faster and schema-consistent.
+3. Package the SimpleWiki grounded hero fixture, or add a deterministic fetch
+   and build script, so `scripts/check-simplewiki-grounded-replay.sh` works from
+   a clean checkout instead of relying on local ignored artifacts.
 4. Add integer topic state or Merkle-hologram memory as an advisory bias, then
    compare generation with source grounding weakened or disabled.
 5. Scale the three sibling tracks past their current prototypes (see

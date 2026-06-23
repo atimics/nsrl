@@ -2,16 +2,23 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use nsrl_train::solomon_latent::{
+use nsrl_eval::{
+    EvalPartition, append_ledger, escape_tsv, json_escape, partition_by_gold_and_bucket,
+    read_gold_hashes, replay_check, stable_hash_bytes, stable_hex_u32, unix_timestamp,
+};
+
+#[allow(dead_code, unused_imports)]
+#[path = "../solomon_latent.rs"]
+mod solomon_latent;
+
+use solomon_latent::{
     DEFAULT_EVAL_PERMILLE, DEFAULT_PROMPT_SPLIT_SEED, LatentTextModel, PromptRecord,
-    SIGNATURE_BINS, TextIndexRow, default_gold_path, dot_i16, json_escape, latent_abs_error,
-    mean_q8, prompt_partition_bucket, read_gold_hashes, read_latent_model, read_prompt_records,
-    read_text_index_rows, signature_abs_error, stable_hash_bytes, stable_hex_u32, text_features,
+    SIGNATURE_BINS, TextIndexRow, default_gold_path, dot_i16, latent_abs_error, mean_q8,
+    prompt_partition_bucket, read_latent_model, read_prompt_records, read_text_index_rows,
+    signature_abs_error, text_features,
 };
 
 const SCHEMA: &str = "nsrl.solomon_eval_ledger.v1";
@@ -28,6 +35,8 @@ struct Config {
     split_seed: String,
     prompt_set_version: String,
     append_ledger: bool,
+    timestamp: Option<u64>,
+    expect_row_hash: Option<String>,
 }
 
 impl Default for Config {
@@ -36,7 +45,7 @@ impl Default for Config {
         Self {
             prompts_path: prompt_dir.join("prompts.jsonl"),
             text_index_path: PathBuf::from(
-                "data/processed/key-solomon-goetia-text-index-pg72679/solomon-spirit-text-signatures.tsv",
+                "data/processed/key-solomon-goetia-text-index-pg72679-16x16/solomon-spirit-text-signatures.tsv",
             ),
             model_path: prompt_dir.join("model.nsrllat"),
             ledger_path: prompt_dir.join("eval-ledger.jsonl"),
@@ -46,6 +55,8 @@ impl Default for Config {
             split_seed: String::from(DEFAULT_PROMPT_SPLIT_SEED),
             prompt_set_version: String::from("key-solomon-goetia-latent-v1"),
             append_ledger: true,
+            timestamp: None,
+            expect_row_hash: None,
         }
     }
 }
@@ -53,24 +64,7 @@ impl Default for Config {
 #[derive(Debug, Clone)]
 struct PartitionedPrompt {
     prompt: PromptRecord,
-    partition: Partition,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Partition {
-    Train,
-    Eval,
-    Gold,
-}
-
-impl Partition {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Train => "train",
-            Self::Eval => "eval",
-            Self::Gold => "gold",
-        }
-    }
+    partition: EvalPartition,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -78,6 +72,7 @@ struct Metrics {
     count: usize,
     top1: usize,
     top5: usize,
+    class_top1: usize,
     rank_total: u64,
     text_signature_abs: u64,
     text_image_latent_abs: u64,
@@ -88,8 +83,10 @@ struct FinalMetrics {
     count: usize,
     top1: usize,
     top5: usize,
+    class_top1: usize,
     top1_per_mille: usize,
     top5_per_mille: usize,
+    class_top1_per_mille: usize,
     mean_rank_q8: u64,
     text_signature_mae_q8: u64,
     text_image_latent_mae_q8: u64,
@@ -129,19 +126,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let eval_prompts: Vec<&PartitionedPrompt> = partitioned
         .iter()
-        .filter(|prompt| prompt.partition == Partition::Eval)
+        .filter(|prompt| prompt.partition == EvalPartition::Eval)
         .collect();
     let gold_prompts: Vec<&PartitionedPrompt> = partitioned
         .iter()
-        .filter(|prompt| prompt.partition == Partition::Gold)
+        .filter(|prompt| prompt.partition == EvalPartition::Gold)
         .collect();
     let eval_metrics = evaluate_prompts(&eval_prompts, &rows, &model)?;
     let gold_metrics = evaluate_prompts(&gold_prompts, &rows, &model)?;
     let train_count = partitioned
         .iter()
-        .filter(|prompt| prompt.partition == Partition::Train)
+        .filter(|prompt| prompt.partition == EvalPartition::Train)
         .count();
-    let timestamp = unix_timestamp()?;
+    let timestamp = match config.timestamp {
+        Some(timestamp) => timestamp,
+        None => unix_timestamp()?,
+    };
     let ledger_row = ledger_row(
         &config,
         timestamp,
@@ -150,6 +150,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         &eval_metrics,
         &gold_metrics,
     );
+    let replay = replay_check(&ledger_row, config.expect_row_hash.as_deref());
+    if !replay.passed {
+        return Err(format!(
+            "replay row hash mismatch: expected {}, actual {}",
+            replay.expected_hash.unwrap_or_else(|| "<none>".to_string()),
+            replay.actual_hash
+        )
+        .into());
+    }
     if config.append_ledger {
         append_ledger(&config.ledger_path, &ledger_row)?;
     }
@@ -159,7 +168,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn usage() {
     println!(
-        "Usage: nsrl-solomon-eval [--prompts PATH] [--text-index PATH] [--model PATH] [--ledger PATH] [--gold PATH] [--eval-permille N] [--split-seed TEXT] [--prompt-set-version TEXT] [--partition-out PATH|--no-partition] [--no-ledger]"
+        "Usage: nsrl-solomon-eval [--prompts PATH] [--text-index PATH] [--model PATH] [--ledger PATH] [--gold PATH] [--eval-permille N] [--split-seed TEXT] [--prompt-set-version TEXT] [--timestamp UNIX] [--expect-row-hash HASH] [--partition-out PATH|--no-partition] [--no-ledger]"
     );
 }
 
@@ -203,6 +212,13 @@ where
                 config.prompt_set_version =
                     args.next().ok_or("--prompt-set-version requires TEXT")?;
             }
+            "--timestamp" => {
+                config.timestamp = Some(args.next().ok_or("--timestamp requires UNIX")?.parse()?);
+            }
+            "--expect-row-hash" => {
+                config.expect_row_hash =
+                    Some(args.next().ok_or("--expect-row-hash requires HASH")?);
+            }
             "--partition-out" => {
                 config.partition_path = Some(PathBuf::from(
                     args.next().ok_or("--partition-out requires PATH")?,
@@ -229,13 +245,12 @@ fn partition_prompts(
     prompts
         .into_iter()
         .map(|prompt| {
-            let partition = if gold_hashes.contains(&prompt.prompt_hash) {
-                Partition::Gold
-            } else if prompt_partition_bucket(&prompt, split_seed) < eval_permille {
-                Partition::Eval
-            } else {
-                Partition::Train
-            };
+            let partition = partition_by_gold_and_bucket(
+                &prompt.prompt_hash,
+                prompt_partition_bucket(&prompt, split_seed),
+                gold_hashes,
+                eval_permille,
+            );
             PartitionedPrompt { prompt, partition }
         })
         .collect()
@@ -305,6 +320,15 @@ fn evaluate_prompts(
         let features = text_features(&prompt.prompt.text, model.text_feature_count);
         let text_latent = model.encode_text(&features)?;
         let text_prediction = model.decode_signature(&text_latent);
+        let class_hit = model
+            .predict_class(&features)
+            .and_then(|(class_index, _score)| {
+                model
+                    .class_head
+                    .as_ref()
+                    .and_then(|head| head.numbers.get(class_index).copied())
+            })
+            .is_some_and(|number| number == prompt.prompt.spirit_id);
         let positive_score = dot_i16(&text_latent, &image_latents[target_index]);
         let mut rank = 1_usize;
         for (candidate_index, image_latent) in image_latents.iter().enumerate() {
@@ -320,11 +344,11 @@ fn evaluate_prompts(
         }
         let text_abs = signature_abs_error(&text_prediction, &row.signature);
         let latent_abs = latent_abs_error(&text_latent, &image_latents[target_index]);
-        update_metrics(&mut all, rank, text_abs, latent_abs)?;
+        update_metrics(&mut all, rank, class_hit, text_abs, latent_abs)?;
         let tier = metrics_by_tier
             .entry(prompt.prompt.tier.clone())
             .or_default();
-        update_metrics(tier, rank, text_abs, latent_abs)?;
+        update_metrics(tier, rank, class_hit, text_abs, latent_abs)?;
     }
     let mut final_metrics = BTreeMap::new();
     final_metrics.insert("all".to_string(), finalize_metrics(&all, model.latent_dim)?);
@@ -337,6 +361,7 @@ fn evaluate_prompts(
 fn update_metrics(
     metrics: &mut Metrics,
     rank: usize,
+    class_hit: bool,
     text_abs: u64,
     latent_abs: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -346,6 +371,9 @@ fn update_metrics(
     }
     if rank <= 5 {
         metrics.top5 = metrics.top5.saturating_add(1);
+    }
+    if class_hit {
+        metrics.class_top1 = metrics.class_top1.saturating_add(1);
     }
     metrics.rank_total = metrics.rank_total.saturating_add(u64::try_from(rank)?);
     metrics.text_signature_abs = metrics.text_signature_abs.saturating_add(text_abs);
@@ -364,8 +392,10 @@ fn finalize_metrics(
         count,
         top1: metrics.top1,
         top5: metrics.top5,
+        class_top1: metrics.class_top1,
         top1_per_mille: per_mille(metrics.top1, count),
         top5_per_mille: per_mille(metrics.top5, count),
+        class_top1_per_mille: per_mille(metrics.class_top1, count),
         mean_rank_q8: mean_q8(metrics.rank_total, u64::try_from(count)?),
         text_signature_mae_q8: mean_q8(metrics.text_signature_abs, signature_count),
         text_image_latent_mae_q8: mean_q8(metrics.text_image_latent_abs, latent_count),
@@ -416,6 +446,12 @@ fn ledger_row(
         u64::try_from(train_count).unwrap_or(0),
         true,
     );
+    out.push_str("\"prior_eval\":");
+    metrics_object(&mut out, eval_metrics);
+    out.push(',');
+    out.push_str("\"prior_gold\":");
+    metrics_object(&mut out, gold_metrics);
+    out.push(',');
     out.push_str("\"retrieval_eval\":");
     metrics_object(&mut out, eval_metrics);
     out.push(',');
@@ -439,6 +475,12 @@ fn metrics_object(out: &mut String, metrics: &BTreeMap<String, FinalMetrics>) {
         number_pair(out, "top5", u64::try_from(metric.top5).unwrap_or(0), true);
         number_pair(
             out,
+            "class_top1",
+            u64::try_from(metric.class_top1).unwrap_or(0),
+            true,
+        );
+        number_pair(
+            out,
             "top1_per_mille",
             u64::try_from(metric.top1_per_mille).unwrap_or(0),
             true,
@@ -447,6 +489,12 @@ fn metrics_object(out: &mut String, metrics: &BTreeMap<String, FinalMetrics>) {
             out,
             "top5_per_mille",
             u64::try_from(metric.top5_per_mille).unwrap_or(0),
+            true,
+        );
+        number_pair(
+            out,
+            "class_top1_per_mille",
+            u64::try_from(metric.class_top1_per_mille).unwrap_or(0),
             true,
         );
         number_pair(out, "mean_rank_q8", metric.mean_rank_q8, true);
@@ -460,19 +508,6 @@ fn metrics_object(out: &mut String, metrics: &BTreeMap<String, FinalMetrics>) {
         out.push('}');
     }
     out.push('}');
-}
-
-fn append_ledger(path: &Path, row: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    writeln!(file, "{row}")?;
-    Ok(())
-}
-
-fn unix_timestamp() -> Result<u64, Box<dyn std::error::Error>> {
-    Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())
 }
 
 fn per_mille(count: usize, total: usize) -> usize {
@@ -501,12 +536,4 @@ fn number_pair(out: &mut String, key: &str, value: u64, comma: bool) {
     if comma {
         out.push(',');
     }
-}
-
-fn escape_tsv(value: &str) -> String {
-    value
-        .replace('\t', " ")
-        .replace(['\r', '\n'], " ")
-        .trim()
-        .to_string()
 }

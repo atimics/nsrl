@@ -181,6 +181,41 @@ class MentionReplyTests(unittest.TestCase):
         self.assertNotIn("@intruder", reply["text"])
         self.assertNotIn("@other_handle", reply["text"])
 
+    def test_test_generate_includes_public_sigil_metadata(self):
+        with (
+            mock.patch.object(
+                bot.BotConfig,
+                "from_env",
+                return_value=config(reply_engine="template", sigil_enabled=True),
+            ),
+            mock.patch.object(
+                bot,
+                "generate_solomon_sigil",
+                return_value={
+                    "schema": "nsrl.x_bot.solomon_sigil.v1",
+                    "seed": "abc123",
+                    "source_id": "diag-1",
+                    "png_path": "/tmp/sigil.png",
+                    "png_bytes": b"secret-bytes",
+                    "pgm_bytes": b"secret-pgm",
+                },
+            ) as generate_sigil,
+        ):
+            result = bot.lambda_handler(
+                {
+                    "test_generate": "@CrowleyBard what is the omen?",
+                    "username": "tester",
+                    "id": "diag-1",
+                },
+                None,
+            )
+        self.assertTrue(result["ok"])
+        self.assertIn("sigil", result)
+        self.assertEqual(result["sigil"]["seed"], "abc123")
+        self.assertNotIn("png_bytes", result["sigil"])
+        self.assertNotIn("pgm_bytes", result["sigil"])
+        generate_sigil.assert_called_once()
+
     def test_standalone_tweet_has_no_public_mentions(self):
         with mock.patch.object(
             bot,
@@ -444,6 +479,41 @@ class MentionReplyTests(unittest.TestCase):
         self.assertEqual(result["candidate_count"], str(bot.MAX_STANDALONE_CANDIDATES))
         self.assertEqual(generate.call_count, bot.MAX_STANDALONE_CANDIDATES)
 
+    def test_standalone_tweet_can_force_model_candidate(self):
+        with (
+            mock.patch.object(
+                bot.BotConfig,
+                "from_env",
+                return_value=config(reply_engine="nsrl-live"),
+            ),
+            mock.patch.object(
+                bot,
+                "generate_nsrl_reply_body",
+                side_effect=[
+                    ("morning light opens softly and the window finally answers", "base"),
+                    ("dead can sleep the sleep of love! so shall this song be made more terrible with fire", "base"),
+                ],
+            ) as generate,
+        ):
+            result = bot.lambda_handler(
+                {
+                    "post_tweet": True,
+                    "dry_run": True,
+                    "prompt": "the first omen today is",
+                    "id": "force-candidate",
+                    "candidate_count": 1,
+                    "select_candidate": 2,
+                    "min_score": 1,
+                },
+                None,
+            )
+        self.assertTrue(result["would_post"])
+        self.assertEqual(result["selected_candidate"], "2")
+        self.assertEqual(result["selection_mode"], "forced")
+        self.assertEqual(result["candidate_count"], "2")
+        self.assertEqual(generate.call_count, 2)
+        self.assertIn("dead can sleep the sleep of love", result["text"])
+
     def test_generation_failure_marks_mention_and_continues(self):
         self.state.set_last_seen_id("99", self.now)
         client = FakeClient(
@@ -501,6 +571,17 @@ class MentionReplyTests(unittest.TestCase):
         self.assertIn(b"IHDR", png)
         self.assertIn(b"IDAT", png)
 
+    def test_ink_sample_converts_to_raw_png(self):
+        png, width, height = bot.ink_bytes_to_png(
+            b"\x00\xff\x80\x40",
+            2,
+            2,
+        )
+        self.assertEqual((width, height), (2, 2))
+        self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(int.from_bytes(png[16:20], "big"), 2)
+        self.assertEqual(int.from_bytes(png[20:24], "big"), 2)
+
     def test_sigil_prefers_latent_model_when_present(self):
         sigil_bin = os.path.join(self.tmp.name, "nsrl-bitmap-sample")
         sigil_model = os.path.join(self.tmp.name, "model.nsrltch")
@@ -519,6 +600,8 @@ class MentionReplyTests(unittest.TestCase):
             os.makedirs(out_dir, exist_ok=True)
             with open(os.path.join(out_dir, "samples.pgm"), "wb") as handle:
                 handle.write(b"P5\n1 1\n255\n\x80")
+            with open(os.path.join(out_dir, "samples.ink2.u8"), "wb") as handle:
+                handle.write(b"\x00\xff\x80\x40")
             with open(os.path.join(out_dir, "trace.json"), "w", encoding="utf-8") as handle:
                 handle.write('{"latent_dim":32,"latent_text_features":512}')
 
@@ -540,8 +623,21 @@ class MentionReplyTests(unittest.TestCase):
         self.assertIn("--latent-model", commands[0])
         self.assertIn(latent_model, commands[0])
         self.assertNotIn("--text-index", commands[0])
+        self.assertIn("--init", commands[0])
+        self.assertIn("noise", commands[0])
+        forbidden_option_words = ("prior", "guidance", "cleanup")
+        self.assertFalse(
+            any(
+                option.startswith("--")
+                and any(word in option for word in forbidden_option_words)
+                for option in commands[0]
+            )
+        )
         self.assertEqual(sigil["prompt"], "speak from the bridge")
-        self.assertEqual((sigil["width"], sigil["height"]), (1, 1))
+        self.assertEqual((sigil["source_width"], sigil["source_height"]), (2, 2))
+        self.assertEqual((sigil["width"], sigil["height"]), (2, 2))
+        self.assertEqual(sigil["init_mode"], "noise")
+        self.assertEqual(sigil["render_style"], "raw")
 
     def test_dry_run_reply_includes_sigil_metadata_when_enabled(self):
         self.state.set_last_seen_id("99", self.now)

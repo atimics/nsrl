@@ -12,7 +12,7 @@ const defaults = {
   sizes: "",
   epochs: 24,
   latentDims: "64",
-  textFeatures: "512",
+  textFeatures: "8192",
   release: false,
   postImprovements: false,
   postLive: false,
@@ -174,6 +174,10 @@ function metric(metrics, key, field) {
   return metrics?.[key]?.[field] ?? 0;
 }
 
+function metricGroup(evalJson, primary, fallback) {
+  return evalJson[primary] ?? evalJson[fallback] ?? {};
+}
+
 function writeCurve(rows, outPath) {
   const header = [
     "prompt_rows",
@@ -184,13 +188,17 @@ function writeCurve(rows, outPath) {
     "eval_count",
     "eval_top1_per_mille",
     "eval_top5_per_mille",
+    "eval_class_top1_per_mille",
     "novel_count",
     "novel_top1_per_mille",
+    "novel_class_top1_per_mille",
     "cluster_count",
     "cluster_top1_per_mille",
+    "cluster_class_top1_per_mille",
     "gold_count",
     "gold_top1_per_mille",
     "gold_top5_per_mille",
+    "gold_class_top1_per_mille",
     "model_hash",
     "model_dir",
   ];
@@ -279,22 +287,36 @@ function main() {
           path.join(runDir, "eval.log"),
         );
         const evalJson = parseLastJsonLine(evalOutput, `eval ${runId}`);
+        const priorEval = metricGroup(evalJson, "prior_eval", "retrieval_eval");
+        const priorGold = metricGroup(evalJson, "prior_gold", "retrieval_gold");
         rows.push({
           prompt_rows: size,
           n_train_prompts: evalJson.n_train_prompts,
           latent_dim: latentDim,
           text_features: textFeatureCount,
           epochs: config.epochs,
-          eval_count: metric(evalJson.retrieval_eval, "all", "count"),
-          eval_top1_per_mille: metric(evalJson.retrieval_eval, "all", "top1_per_mille"),
-          eval_top5_per_mille: metric(evalJson.retrieval_eval, "all", "top5_per_mille"),
-          novel_count: metric(evalJson.retrieval_eval, "tier-novel-vocab", "count"),
-          novel_top1_per_mille: metric(evalJson.retrieval_eval, "tier-novel-vocab", "top1_per_mille"),
-          cluster_count: metric(evalJson.retrieval_eval, "tier-cluster-holdout", "count"),
-          cluster_top1_per_mille: metric(evalJson.retrieval_eval, "tier-cluster-holdout", "top1_per_mille"),
-          gold_count: metric(evalJson.retrieval_gold, "all", "count"),
-          gold_top1_per_mille: metric(evalJson.retrieval_gold, "all", "top1_per_mille"),
-          gold_top5_per_mille: metric(evalJson.retrieval_gold, "all", "top5_per_mille"),
+          eval_count: metric(priorEval, "all", "count"),
+          eval_top1_per_mille: metric(priorEval, "all", "top1_per_mille"),
+          eval_top5_per_mille: metric(priorEval, "all", "top5_per_mille"),
+          eval_class_top1_per_mille: metric(priorEval, "all", "class_top1_per_mille"),
+          novel_count: metric(priorEval, "tier-novel-vocab", "count"),
+          novel_top1_per_mille: metric(priorEval, "tier-novel-vocab", "top1_per_mille"),
+          novel_class_top1_per_mille: metric(
+            priorEval,
+            "tier-novel-vocab",
+            "class_top1_per_mille",
+          ),
+          cluster_count: metric(priorEval, "tier-cluster-holdout", "count"),
+          cluster_top1_per_mille: metric(priorEval, "tier-cluster-holdout", "top1_per_mille"),
+          cluster_class_top1_per_mille: metric(
+            priorEval,
+            "tier-cluster-holdout",
+            "class_top1_per_mille",
+          ),
+          gold_count: metric(priorGold, "all", "count"),
+          gold_top1_per_mille: metric(priorGold, "all", "top1_per_mille"),
+          gold_top5_per_mille: metric(priorGold, "all", "top5_per_mille"),
+          gold_class_top1_per_mille: metric(priorGold, "all", "class_top1_per_mille"),
           model_hash: evalJson.model_hash,
           model_dir: runDir,
         });
