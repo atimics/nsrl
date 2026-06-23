@@ -212,6 +212,40 @@ posts only the best candidate above `min_score`. Dry-run standalone responses
 include a `sigil` object with the Solomon seed, target row, trace path, and PNG
 size; live posts upload that PNG and attach the returned media id.
 
+The same endpoint also accepts precomposed text for deterministic checkpoint
+announcements. Live precomposed posts still require an explicit `id`, so retries
+are idempotent:
+
+```sh
+aws lambda invoke \
+  --region us-east-1 \
+  --function-name crowley-bard-mention-bot \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"post_tweet":true,"dry_run":true,"id":"solomon-checkpoint-eval-200","text":"Solomon checkpoint improved: eval top1 200/1000.\nTrain prompts 352; prompt rows 576; ld32 tf512 e12.\nNovel 208/1000, cluster 173/1000, gold 76/1000.\nModel 0ce31085. #NSRL"}' \
+  /tmp/crowley-bard-solomon-checkpoint.json
+```
+
+For Solomon eval curves, prefer the local watcher script. It reads the checked
+curve TSV, compares the selected metric against a git-ignored state file, and
+prepares an idempotent precomposed Lambda payload:
+
+```sh
+node scripts/post-solomon-improved-checkpoint.mjs \
+  --curve docs/solomon-eval-scaling-curve.tsv
+
+node scripts/post-solomon-improved-checkpoint.mjs \
+  --curve docs/solomon-eval-scaling-curve.tsv \
+  --invoke-lambda
+
+node scripts/post-solomon-improved-checkpoint.mjs \
+  --curve docs/solomon-eval-scaling-curve.tsv \
+  --live
+```
+
+The first command only prints the payload. The second invokes Lambda with
+`dry_run:true`. The third posts live through Lambda and records the new best in
+`data/processed/key-solomon-goetia-latent-v1/scaling-curve/x-post-state.json`.
+
 ## Context Adaptation
 
 The bot has two context limits:

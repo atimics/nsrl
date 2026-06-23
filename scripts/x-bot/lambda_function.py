@@ -1780,6 +1780,40 @@ def make_standalone_tweet(
     }
 
 
+def clean_precomposed_tweet_text(text: str, *, max_chars: int) -> str:
+    text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]+", " ", str(text))
+    lines = [
+        normalize_public_text(line)
+        for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
+    text = "\n".join(line for line in lines if line)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    if not text:
+        raise ReplyGenerationError("precomposed tweet text is empty")
+    if "@" in text:
+        raise ReplyGenerationError(
+            "precomposed tweet text must not contain public handles"
+        )
+    if "http" in text.lower():
+        raise ReplyGenerationError("precomposed tweet text must not contain URLs")
+    if len(text) > max_chars:
+        raise ReplyGenerationError(
+            f"precomposed tweet text is {len(text)} chars; max is {max_chars}"
+        )
+    return text
+
+
+def make_precomposed_standalone_tweet(
+    text: str, config: BotConfig
+) -> dict[str, Any]:
+    text = clean_precomposed_tweet_text(text, max_chars=config.max_reply_chars)
+    return {
+        "engine": "precomposed",
+        "text": text,
+        "quality_score": "manual",
+    }
+
+
 def standalone_prompt_from_event(event: dict[str, Any]) -> str | None:
     missing = object()
     value = event.get("post_tweet", missing)
@@ -1800,6 +1834,14 @@ def standalone_prompt_from_event(event: dict[str, Any]) -> str | None:
     if isinstance(prompt, str) and prompt.strip():
         return prompt.strip()
     return "the omen today is"
+
+
+def standalone_text_from_event(event: dict[str, Any]) -> str | None:
+    for key in ("text", "tweet_text", "status_text"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
 
 
 def standalone_post_from_state(item: dict[str, Any]) -> dict[str, Any]:
@@ -2127,13 +2169,20 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
             "post_tweet" in event or "standalone_tweet" in event
         )
         standalone_prompt = standalone_prompt_from_event(event)
-        if has_standalone_directive and standalone_prompt is None:
+        standalone_text = (
+            standalone_text_from_event(event) if standalone_prompt is not None else None
+        )
+        if (
+            has_standalone_directive
+            and standalone_text is None
+            and standalone_prompt is None
+        ):
             return {
                 "ok": True,
                 "dry_run": config.dry_run,
                 "skipped": "standalone_post_disabled",
             }
-        if standalone_prompt is not None:
+        if standalone_text is not None or standalone_prompt is not None:
             post_id = str(event.get("id") or "")
             store: StateStore | None = None
             if not config.dry_run:
@@ -2151,11 +2200,15 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
             elif not post_id:
                 post_id = uuid.uuid4().hex
             try:
-                tweet = make_standalone_tweet(
-                    standalone_prompt,
-                    config,
-                    tweet_id=post_id,
-                )
+                if standalone_text is not None:
+                    tweet = make_precomposed_standalone_tweet(standalone_text, config)
+                else:
+                    assert standalone_prompt is not None
+                    tweet = make_standalone_tweet(
+                        standalone_prompt,
+                        config,
+                        tweet_id=post_id,
+                    )
                 sigil = generate_solomon_sigil(
                     tweet["text"], source_id=post_id, config=config
                 )

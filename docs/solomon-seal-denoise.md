@@ -149,6 +149,33 @@ prompt pools underperform at 12 epochs, so the next curve should sweep epochs
 or learning shifts at 822 and 1040 train prompts rather than claiming monotonic
 data scaling from this first pass.
 
+Improved checkpoints can be announced through the existing X/Twitter Lambda
+without adding another credential path. By default this only prepares a dry-run
+payload:
+
+```sh
+node scripts/post-solomon-improved-checkpoint.mjs \
+  --curve docs/solomon-eval-scaling-curve.tsv
+```
+
+To have the scaling runner check after each completed eval row, add
+`--post-improvements`. Use `--post-invoke-lambda` for a Lambda dry run, or
+`--post-live` to publish and update the git-ignored checkpoint post state:
+
+```sh
+node scripts/run-solomon-eval-scaling-curve.mjs \
+  --prompts data/processed/key-solomon-goetia-latent-v1/prompts-expanded.jsonl \
+  --sizes 288,576,1152,1425 \
+  --latent-dims 32,64,128 \
+  --epochs 12 \
+  --report-out docs/solomon-eval-scaling-curve.tsv \
+  --post-live
+```
+
+The default posted metric is `eval_top1_per_mille`; pass `--post-metric
+novel_top1_per_mille` when the public criterion should be novel-vocab
+generalization instead.
+
 ### Grounded synthetic text variants
 
 `scripts/build-solomon-grounded-corpus.mjs` expands each of the 72 demon rows

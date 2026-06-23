@@ -234,7 +234,12 @@ class MentionReplyTests(unittest.TestCase):
             mock.patch.object(bot, "process_mentions") as process_mentions,
         ):
             result = bot.lambda_handler(
-                {"post_tweet": False, "dry_run": False, "prompt": "do not publish"},
+                {
+                    "post_tweet": False,
+                    "dry_run": False,
+                    "prompt": "do not publish",
+                    "text": "do not publish this precomposed text",
+                },
                 None,
             )
         self.assertTrue(result["ok"])
@@ -253,6 +258,84 @@ class MentionReplyTests(unittest.TestCase):
             )
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "missing_standalone_post_id")
+
+    def test_precomposed_standalone_dry_run_uses_supplied_text(self):
+        text = "Solomon checkpoint improved:\nEval top1 200/1000. #NSRL"
+        with (
+            mock.patch.object(
+                bot.BotConfig,
+                "from_env",
+                return_value=config(dry_run=True, reply_engine="nsrl-live"),
+            ),
+            mock.patch.object(bot, "generate_nsrl_reply_body") as generate,
+        ):
+            result = bot.lambda_handler(
+                {
+                    "post_tweet": True,
+                    "dry_run": True,
+                    "id": "solomon-checkpoint-eval-200",
+                    "text": text,
+                },
+                None,
+            )
+        self.assertTrue(result["would_post"])
+        self.assertEqual(result["engine"], "precomposed")
+        self.assertEqual(result["quality_score"], "manual")
+        self.assertEqual(result["text"], text)
+        generate.assert_not_called()
+
+    def test_precomposed_standalone_rejects_public_handles(self):
+        with mock.patch.object(
+            bot.BotConfig,
+            "from_env",
+            return_value=config(dry_run=True, reply_engine="nsrl-live"),
+        ):
+            result = bot.lambda_handler(
+                {
+                    "post_tweet": True,
+                    "dry_run": True,
+                    "id": "bad-checkpoint",
+                    "text": "Solomon checkpoint improved for @someone",
+                },
+                None,
+            )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "tweet_generation_error")
+        self.assertIn("public handles", result["detail"])
+
+    def test_live_precomposed_standalone_post_is_idempotent(self):
+        state = bot.FileStateStore(os.path.join(self.tmp.name, "precomposed.json"))
+        client = FakeClient([], [])
+        event = {
+            "post_tweet": True,
+            "dry_run": False,
+            "id": "solomon-checkpoint-eval-200",
+            "text": "Solomon checkpoint improved:\nEval top1 200/1000. #NSRL",
+        }
+        with (
+            mock.patch.object(
+                bot.BotConfig,
+                "from_env",
+                return_value=config(dry_run=False, reply_engine="nsrl-live"),
+            ),
+            mock.patch.object(bot, "make_state_store", return_value=state),
+            mock.patch.object(bot, "load_secret", return_value={
+                "consumer_key": "ck",
+                "consumer_secret": "cs",
+                "access_token": "at",
+                "access_token_secret": "ats",
+            }),
+            mock.patch.object(bot, "XOAuth1Client", return_value=client),
+            mock.patch.object(bot, "generate_nsrl_reply_body") as generate,
+        ):
+            first = bot.lambda_handler(event, None)
+            second = bot.lambda_handler(event, None)
+        self.assertTrue(first["posted"])
+        self.assertEqual(first["tweet"]["engine"], "precomposed")
+        self.assertEqual(client.tweets[0]["text"], event["text"])
+        self.assertTrue(second["duplicate"])
+        self.assertEqual(len(client.tweets), 1)
+        generate.assert_not_called()
 
     def test_live_standalone_post_is_idempotent(self):
         state = bot.FileStateStore(os.path.join(self.tmp.name, "standalone.json"))

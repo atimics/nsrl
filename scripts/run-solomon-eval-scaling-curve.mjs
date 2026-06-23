@@ -14,6 +14,15 @@ const defaults = {
   latentDims: "64",
   textFeatures: "512",
   release: false,
+  postImprovements: false,
+  postLive: false,
+  postInvokeLambda: false,
+  postAdvanceStateOnDryRun: false,
+  postMetric: "eval_top1_per_mille",
+  postState: "data/processed/key-solomon-goetia-latent-v1/scaling-curve/x-post-state.json",
+  postLambdaName: process.env.X_BOT_FUNCTION_NAME || "crowley-bard-mention-bot",
+  postRegion: process.env.AWS_REGION || "us-east-1",
+  postProfile: "",
 };
 
 function usage() {
@@ -22,6 +31,7 @@ function usage() {
       "Usage: run-solomon-eval-scaling-curve.mjs [--prompts PATH] [--gold PATH]",
       "       [--out-dir PATH] [--report-out PATH] [--sizes LIST|all]",
       "       [--epochs N] [--latent-dims LIST] [--text-features LIST] [--release]",
+      "       [--post-improvements] [--post-live] [--post-metric COLUMN]",
       "",
       "Trains/evals deterministic prompt-prefix subsets and writes curve.tsv with",
       "top1/top5 by n_train_prompts, prompt count, and model shape.",
@@ -54,6 +64,27 @@ function parseArgs(argv) {
       config.textFeatures = requireValue(argv, ++index, arg);
     } else if (arg === "--release") {
       config.release = true;
+    } else if (arg === "--post-improvements") {
+      config.postImprovements = true;
+    } else if (arg === "--post-live") {
+      config.postImprovements = true;
+      config.postLive = true;
+      config.postInvokeLambda = true;
+    } else if (arg === "--post-invoke-lambda") {
+      config.postImprovements = true;
+      config.postInvokeLambda = true;
+    } else if (arg === "--post-advance-state-on-dry-run") {
+      config.postAdvanceStateOnDryRun = true;
+    } else if (arg === "--post-metric") {
+      config.postMetric = requireValue(argv, ++index, arg);
+    } else if (arg === "--post-state") {
+      config.postState = requireValue(argv, ++index, arg);
+    } else if (arg === "--post-lambda-name") {
+      config.postLambdaName = requireValue(argv, ++index, arg);
+    } else if (arg === "--post-region") {
+      config.postRegion = requireValue(argv, ++index, arg);
+    } else if (arg === "--post-profile") {
+      config.postProfile = requireValue(argv, ++index, arg);
     } else {
       throw new Error(`unknown option: ${arg}`);
     }
@@ -170,6 +201,38 @@ function writeCurve(rows, outPath) {
   fs.writeFileSync(outPath, `${lines.join("\n")}\n`, "utf8");
 }
 
+function runCheckpointPost(config, curvePath) {
+  const args = [
+    "scripts/post-solomon-improved-checkpoint.mjs",
+    "--curve", curvePath,
+    "--state", config.postState,
+    "--metric", config.postMetric,
+    "--lambda-name", config.postLambdaName,
+    "--region", config.postRegion,
+  ];
+  if (config.postLive) {
+    args.push("--live");
+  } else if (config.postInvokeLambda) {
+    args.push("--invoke-lambda");
+  }
+  if (config.postAdvanceStateOnDryRun) {
+    args.push("--advance-state-on-dry-run");
+  }
+  if (config.postProfile) {
+    args.push("--profile", config.postProfile);
+  }
+  const result = spawnSync("node", args, { encoding: "utf8" });
+  if (result.stdout) {
+    process.stdout.write(result.stdout);
+  }
+  if (result.stderr) {
+    process.stderr.write(result.stderr);
+  }
+  if (result.status !== 0) {
+    throw new Error(`checkpoint post failed for ${curvePath}`);
+  }
+}
+
 function main() {
   const config = parseArgs(process.argv.slice(2));
   const promptLines = readPromptLines(config.prompts);
@@ -178,6 +241,7 @@ function main() {
   const textFeatures = parseList(config.textFeatures, "--text-features");
   fs.mkdirSync(config.outDir, { recursive: true });
   const ledgerPath = path.join(config.outDir, "eval-ledger.jsonl");
+  const curvePath = path.join(config.outDir, "curve.tsv");
   fs.writeFileSync(ledgerPath, "", "utf8");
   const rows = [];
   for (const size of sizes) {
@@ -234,16 +298,19 @@ function main() {
           model_hash: evalJson.model_hash,
           model_dir: runDir,
         });
-        writeCurve(rows, path.join(config.outDir, "curve.tsv"));
+        writeCurve(rows, curvePath);
         if (config.reportOut) {
           fs.mkdirSync(path.dirname(config.reportOut), { recursive: true });
           writeCurve(rows, config.reportOut);
+        }
+        if (config.postImprovements) {
+          runCheckpointPost(config, curvePath);
         }
         console.log(JSON.stringify(rows[rows.length - 1]));
       }
     }
   }
-  console.error(`wrote ${path.join(config.outDir, "curve.tsv")}`);
+  console.error(`wrote ${curvePath}`);
 }
 
 main();
