@@ -11,12 +11,15 @@ DEFAULT_MODEL_ROOT="$REPO_ROOT/data/processed/crowley-bard-aphorism-v2"
 DEFAULT_MODEL_PATH="$DEFAULT_MODEL_ROOT/experiments/v4096.seq8-mean-reduce-base15-lr25-o98304.nsrllm"
 DEFAULT_VOCAB_PATH="$DEFAULT_MODEL_ROOT/v4096.vocab.tsv"
 DEFAULT_TOKENS_PATH="$DEFAULT_MODEL_ROOT/v4096.tokens.u16"
-DEFAULT_SIGIL_MODEL_PATH="$REPO_ROOT/web/assets/solomon-model.nsrltch"
-DEFAULT_SIGIL_TEXT_INDEX_PATH="$REPO_ROOT/web/assets/solomon-spirit-text-signatures.tsv"
-# Best latent bridge by held-out novel-vocab retrieval (n576-ld128-tf8192-e12,
-# novel top1 291 per mille). Committed under web/assets so CI/cloud packaging
-# works without the git-ignored data/ tree.
-DEFAULT_SIGIL_LATENT_MODEL_PATH="$REPO_ROOT/web/assets/current-best.nsrllat"
+# 16x16 targetctx stack: the native sampler (no channel cap) runs the richer
+# 22-channel text-position-noise-s16-targetctx model with 8 text-conditioning
+# channels, producing interior seal detail instead of a bare ring. The browser
+# wasm (16-channel cap) keeps the smaller web/assets/solomon-model.nsrltch until
+# the wasm sampler is extended. Committed under web/assets/solomon-16x16 so
+# CI/cloud packaging works without the git-ignored data/ tree.
+DEFAULT_SIGIL_MODEL_PATH="$REPO_ROOT/web/assets/solomon-16x16/model.nsrltch"
+DEFAULT_SIGIL_TEXT_INDEX_PATH="$REPO_ROOT/web/assets/solomon-16x16/signatures.tsv"
+DEFAULT_SIGIL_LATENT_MODEL_PATH="$REPO_ROOT/web/assets/solomon-16x16/latent.nsrllat"
 MODEL_DIR="${X_BOT_MODEL_DIR:-}"
 MODEL_PATH="${X_BOT_MODEL_PATH:-${MODEL_DIR:+$MODEL_DIR/v4096.nsrllm}}"
 VOCAB_PATH="${X_BOT_VOCAB_PATH:-${MODEL_DIR:+$MODEL_DIR/v4096.vocab.tsv}}"
