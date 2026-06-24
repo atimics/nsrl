@@ -10,7 +10,10 @@ MODEL_ROOT="${WEB_CHAT_MODEL_ROOT:-data/processed/crowley-bard-aphorism-v2}"
 MODEL_PATH="${WEB_CHAT_MODEL_PATH:-$MODEL_ROOT/experiments/v4096.seq8-mean-reduce-base15-lr25-o98304.nsrllm}"
 VOCAB_PATH="${WEB_CHAT_VOCAB_PATH:-$MODEL_ROOT/v4096.vocab.tsv}"
 TOKENS_PATH="${WEB_CHAT_TOKENS_PATH:-$MODEL_ROOT/v4096.tokens.u16}"
-SOLOMON_MODEL_PATH="${WEB_CHAT_SOLOMON_MODEL_PATH:-data/processed/key-solomon-goetia-denoise-v1/text-multichannel-conv/model.nsrltch}"
+# Must be <=16 hidden channels to match the WASM sampler (8 fixed kernels + 6
+# position + 2 base). The denoise-v1 text-multichannel model has 30 channels and
+# the browser sampler washes it to blank; use the 16-channel position-noise model.
+SOLOMON_MODEL_PATH="${WEB_CHAT_SOLOMON_MODEL_PATH:-data/processed/key-solomon-goetia-denoise-v2-noise-position/text-position-noise-s16-conv/model.nsrltch}"
 SOLOMON_TEXT_INDEX_PATH="${WEB_CHAT_SOLOMON_TEXT_INDEX_PATH:-data/processed/key-solomon-goetia-text-index-pg72679/solomon-spirit-text-signatures.tsv}"
 
 cp "$MODEL_PATH" web/assets/model.nsrllm
