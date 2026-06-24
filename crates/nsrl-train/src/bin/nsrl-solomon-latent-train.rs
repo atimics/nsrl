@@ -12,7 +12,8 @@ use nsrl_train::solomon_latent::{
 
 const SCHEMA: &str = "nsrl.solomon_latent_trace.v1";
 const MODEL_MAGIC: &[u8; 8] = b"NSRLLAT1";
-const SIGNATURE_GRID: usize = 8;
+// Match the shared solomon_latent module's 16x16 signature grid (256 bins).
+const SIGNATURE_GRID: usize = 16;
 const SIGNATURE_BINS: usize = SIGNATURE_GRID * SIGNATURE_GRID;
 
 #[derive(Debug, Clone)]
