@@ -1,0 +1,13 @@
+prompt_rows	n_train_prompts	latent_dim	text_features	epochs	eval_count	eval_top1_per_mille	eval_top5_per_mille	novel_count	novel_top1_per_mille	cluster_count	cluster_top1_per_mille	gold_count	gold_top1_per_mille	gold_top5_per_mille	model_hash	model_dir
+288	115	32	512	12	29	34	275	12	0	17	58	144	250	506	c98fc237	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n288-ld32-tf512-e12
+288	115	64	512	12	29	0	241	12	0	17	0	144	104	326	ca117469	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n288-ld64-tf512-e12
+288	115	128	512	12	29	34	241	12	0	17	58	144	97	326	f67981cf	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n288-ld128-tf512-e12
+576	352	32	512	12	80	200	462	24	208	46	173	144	76	277	0ce31085	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n576-ld32-tf512-e12
+576	352	64	512	12	80	137	362	24	125	46	130	144	97	229	be26f0d7	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n576-ld64-tf512-e12
+576	352	128	512	12	80	187	362	24	166	46	195	144	83	222	57d13997	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n576-ld128-tf512-e12
+1152	822	32	512	12	186	86	231	61	49	100	90	144	62	222	65047fbd	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n1152-ld32-tf512-e12
+1152	822	64	512	12	186	64	215	61	49	100	50	144	76	256	a2a510ad	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n1152-ld64-tf512-e12
+1152	822	128	512	12	186	75	231	61	114	100	30	144	104	256	e8f9bf91	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n1152-ld128-tf512-e12
+1425	1040	32	512	12	241	66	240	76	39	130	76	144	41	222	d3ea03af	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n1425-ld32-tf512-e12
+1425	1040	64	512	12	241	49	244	76	39	130	61	144	62	243	134230e1	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n1425-ld64-tf512-e12
+1425	1040	128	512	12	241	49	219	76	78	130	46	144	97	284	4e63b0ad	data/processed/key-solomon-goetia-latent-v1/scaling-curve/n1425-ld128-tf512-e12

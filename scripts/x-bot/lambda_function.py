@@ -261,6 +261,7 @@ class BotConfig:
     sigil_enabled: bool
     sigil_bin: str
     sigil_model: str
+    sigil_latent_model: str
     sigil_text_index: str
     sigil_candidates: int
     sigil_passes: int
@@ -325,6 +326,10 @@ class BotConfig:
             ),
             sigil_model=os.getenv(
                 "X_SIGIL_MODEL", os.path.join(task_root, "solomon", "model.nsrltch")
+            ),
+            sigil_latent_model=os.getenv(
+                "X_SIGIL_LATENT_MODEL",
+                os.path.join(task_root, "solomon", "current-best.nsrllat"),
             ),
             sigil_text_index=os.getenv(
                 "X_SIGIL_TEXT_INDEX",
@@ -1324,9 +1329,15 @@ def generate_solomon_sigil(
 ) -> dict[str, Any] | None:
     if not config.sigil_enabled:
         return None
+    prompt = strip_public_mentions(text) or text
+    condition_mode = "text-index"
+    condition_args = ["--text-index", config.sigil_text_index]
+    if config.sigil_latent_model and os.path.exists(config.sigil_latent_model):
+        condition_mode = "latent-model"
+        condition_args = ["--latent-model", config.sigil_latent_model]
     missing = [
         path
-        for path in [config.sigil_bin, config.sigil_model, config.sigil_text_index]
+        for path in [config.sigil_bin, config.sigil_model, condition_args[1]]
         if not os.path.exists(path)
     ]
     if missing:
@@ -1337,36 +1348,44 @@ def generate_solomon_sigil(
     seed = stable_sigil_seed(source_id, text)
     out_dir = f"/tmp/solomon-sigil-{safe_file_stem(source_id)}"
     os.makedirs(out_dir, exist_ok=True)
-    for name in ["samples.pgm", "samples.ink128.u8", "trace.json", "sigil.png"]:
+    for name in os.listdir(out_dir):
+        if not (
+            name == "trace.json"
+            or name == "sigil.png"
+            or name == "samples.pgm"
+            or re.match(r"^samples\.ink\d+\.u8$", name)
+        ):
+            continue
         try:
             os.unlink(os.path.join(out_dir, name))
         except FileNotFoundError:
             pass
 
+    sampler_cmd = [
+        config.sigil_bin,
+        "--model",
+        config.sigil_model,
+        *condition_args,
+        "--prompt",
+        prompt,
+        "--seed",
+        seed,
+        "--out-dir",
+        out_dir,
+        "--samples",
+        "1",
+        "--candidate-multiplier",
+        str(config.sigil_candidates),
+        "--preview-columns",
+        "1",
+        "--init",
+        "noise",
+        "--passes",
+        str(config.sigil_passes),
+    ]
+
     run_checked_command(
-        [
-            config.sigil_bin,
-            "--model",
-            config.sigil_model,
-            "--text-index",
-            config.sigil_text_index,
-            "--prompt",
-            strip_public_mentions(text) or text,
-            "--seed",
-            seed,
-            "--out-dir",
-            out_dir,
-            "--samples",
-            "1",
-            "--candidate-multiplier",
-            str(config.sigil_candidates),
-            "--preview-columns",
-            "1",
-            "--init",
-            "seal-prior",
-            "--passes",
-            str(config.sigil_passes),
-        ],
+        sampler_cmd,
         timeout_seconds=config.sigil_timeout_seconds,
         label="Solomon sigil generation",
     )
@@ -1375,7 +1394,21 @@ def generate_solomon_sigil(
     png_path = os.path.join(out_dir, "sigil.png")
     with open(pgm_path, "rb") as handle:
         pgm_bytes = handle.read()
-    png_bytes, width, height = pgm_bytes_to_png(pgm_bytes)
+    ink_sample = read_first_ink_sample(out_dir)
+    source_width = 0
+    source_height = 0
+    if ink_sample is not None:
+        ink_path, source_width, source_height, ink_bytes = ink_sample
+        png_bytes, width, height = ink_bytes_to_png(
+            ink_bytes,
+            source_width,
+            source_height,
+        )
+    else:
+        ink_path = ""
+        png_bytes, width, height = pgm_bytes_to_png(pgm_bytes)
+        source_width = width
+        source_height = height
     with open(png_path, "wb") as handle:
         handle.write(png_bytes)
 
@@ -1390,13 +1423,20 @@ def generate_solomon_sigil(
         "schema": SIGIL_SCHEMA,
         "seed": seed,
         "source_id": source_id,
-        "prompt": strip_public_mentions(text) or text,
+        "prompt": prompt,
+        "condition": condition_mode,
+        "latent_model": config.sigil_latent_model if condition_mode == "latent-model" else "",
         "png_path": png_path,
         "pgm_path": pgm_path,
+        "ink_path": ink_path,
         "trace_path": os.path.join(out_dir, "trace.json"),
         "bytes": len(png_bytes),
         "width": width,
         "height": height,
+        "source_width": source_width,
+        "source_height": source_height,
+        "init_mode": "noise",
+        "render_style": "raw",
         "target_name": str(trace.get("text_target_name") or ""),
         "target_number": str(trace.get("text_target_number") or ""),
         "target_score": str(trace.get("text_target_score") or ""),
@@ -1405,8 +1445,49 @@ def generate_solomon_sigil(
     }
 
 
+def read_first_ink_sample(out_dir: str) -> tuple[str, int, int, bytes] | None:
+    for name in sorted(os.listdir(out_dir)):
+        match = re.fullmatch(r"samples\.ink(\d+)\.u8", name)
+        if not match:
+            continue
+        width = int(match.group(1))
+        if width <= 0:
+            continue
+        height = width
+        pixel_count = width * height
+        path = os.path.join(out_dir, name)
+        with open(path, "rb") as handle:
+            raw = handle.read(pixel_count)
+        if len(raw) != pixel_count:
+            continue
+        return path, width, height, raw
+    return None
+
+
+def ink_bytes_to_png(
+    ink: bytes,
+    width: int,
+    height: int,
+) -> tuple[bytes, int, int]:
+    expected = width * height
+    if len(ink) < expected:
+        raise ReplyGenerationError(
+            f"ink payload has {len(ink)} bytes, expected at least {expected}"
+        )
+    pixels = bytes(255 - value for value in ink[:expected])
+    return gray_pixels_to_png(pixels, width, height)
+
+
 def pgm_bytes_to_png(pgm: bytes) -> tuple[bytes, int, int]:
     width, height, pixels = parse_binary_pgm(pgm)
+    return gray_pixels_to_png(pixels, width, height)
+
+
+def gray_pixels_to_png(pixels: bytes, width: int, height: int) -> tuple[bytes, int, int]:
+    if len(pixels) != width * height:
+        raise ReplyGenerationError(
+            f"grayscale payload has {len(pixels)} bytes, expected {width * height}"
+        )
     raw = bytearray()
     row_len = width
     for row in range(height):
@@ -1708,7 +1789,11 @@ def make_reply(
 
 
 def make_standalone_tweet(
-    prompt: str, config: BotConfig, *, tweet_id: str
+    prompt: str,
+    config: BotConfig,
+    *,
+    tweet_id: str,
+    selected_candidate_index: int | None = None,
 ) -> dict[str, Any]:
     mention = {"id": tweet_id, "text": prompt, "author_id": "0"}
     engine = config.reply_engine.strip().lower()
@@ -1739,6 +1824,8 @@ def make_standalone_tweet(
     candidates: list[dict[str, Any]] = []
     generation_mode = "base"
     candidate_count = max(1, config.standalone_candidates)
+    if selected_candidate_index is not None:
+        candidate_count = max(candidate_count, selected_candidate_index)
     for candidate_index in range(candidate_count):
         candidate_mention = dict(mention)
         candidate_mention["id"] = f"{tweet_id}-{candidate_index + 1}"
@@ -1764,7 +1851,21 @@ def make_standalone_tweet(
                 "reasons": quality["reasons"],
             }
         )
-    best = max(candidates, key=lambda candidate: int(candidate.get("score") or 0))
+    if selected_candidate_index is not None:
+        matching = [
+            candidate
+            for candidate in candidates
+            if int(candidate.get("index") or 0) == selected_candidate_index
+        ]
+        if not matching:
+            raise ReplyGenerationError(
+                f"selected standalone candidate {selected_candidate_index} was not generated"
+            )
+        best = matching[0]
+        selection_mode = "forced"
+    else:
+        best = max(candidates, key=lambda candidate: int(candidate.get("score") or 0))
+        selection_mode = "best_score"
     if int(best.get("score") or 0) < config.public_tweet_min_score:
         raise ReplyGenerationError(
             f"best standalone tweet scored {best.get('score')} below "
@@ -1776,7 +1877,42 @@ def make_standalone_tweet(
         "quality_score": str(best["score"]),
         "candidate_count": str(candidate_count),
         "selected_candidate": str(best["index"]),
+        "selection_mode": selection_mode,
         "candidates": candidates,
+    }
+
+
+def clean_precomposed_tweet_text(text: str, *, max_chars: int) -> str:
+    text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]+", " ", str(text))
+    lines = [
+        normalize_public_text(line)
+        for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
+    text = "\n".join(line for line in lines if line)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    if not text:
+        raise ReplyGenerationError("precomposed tweet text is empty")
+    if "@" in text:
+        raise ReplyGenerationError(
+            "precomposed tweet text must not contain public handles"
+        )
+    if "http" in text.lower():
+        raise ReplyGenerationError("precomposed tweet text must not contain URLs")
+    if len(text) > max_chars:
+        raise ReplyGenerationError(
+            f"precomposed tweet text is {len(text)} chars; max is {max_chars}"
+        )
+    return text
+
+
+def make_precomposed_standalone_tweet(
+    text: str, config: BotConfig
+) -> dict[str, Any]:
+    text = clean_precomposed_tweet_text(text, max_chars=config.max_reply_chars)
+    return {
+        "engine": "precomposed",
+        "text": text,
+        "quality_score": "manual",
     }
 
 
@@ -1800,6 +1936,14 @@ def standalone_prompt_from_event(event: dict[str, Any]) -> str | None:
     if isinstance(prompt, str) and prompt.strip():
         return prompt.strip()
     return "the omen today is"
+
+
+def standalone_text_from_event(event: dict[str, Any]) -> str | None:
+    for key in ("text", "tweet_text", "status_text"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
 
 
 def standalone_post_from_state(item: dict[str, Any]) -> dict[str, Any]:
@@ -2123,17 +2267,34 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
                 minimum=1,
                 maximum=100,
             )
+        selected_candidate_index = None
+        if "select_candidate" in event:
+            selected_candidate_index = bounded_int(
+                event["select_candidate"],
+                default=0,
+                minimum=0,
+                maximum=MAX_STANDALONE_CANDIDATES,
+            )
+            if selected_candidate_index == 0:
+                selected_candidate_index = None
         has_standalone_directive = (
             "post_tweet" in event or "standalone_tweet" in event
         )
         standalone_prompt = standalone_prompt_from_event(event)
-        if has_standalone_directive and standalone_prompt is None:
+        standalone_text = (
+            standalone_text_from_event(event) if standalone_prompt is not None else None
+        )
+        if (
+            has_standalone_directive
+            and standalone_text is None
+            and standalone_prompt is None
+        ):
             return {
                 "ok": True,
                 "dry_run": config.dry_run,
                 "skipped": "standalone_post_disabled",
             }
-        if standalone_prompt is not None:
+        if standalone_text is not None or standalone_prompt is not None:
             post_id = str(event.get("id") or "")
             store: StateStore | None = None
             if not config.dry_run:
@@ -2151,11 +2312,16 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
             elif not post_id:
                 post_id = uuid.uuid4().hex
             try:
-                tweet = make_standalone_tweet(
-                    standalone_prompt,
-                    config,
-                    tweet_id=post_id,
-                )
+                if standalone_text is not None:
+                    tweet = make_precomposed_standalone_tweet(standalone_text, config)
+                else:
+                    assert standalone_prompt is not None
+                    tweet = make_standalone_tweet(
+                        standalone_prompt,
+                        config,
+                        tweet_id=post_id,
+                        selected_candidate_index=selected_candidate_index,
+                    )
                 sigil = generate_solomon_sigil(
                     tweet["text"], source_id=post_id, config=config
                 )
@@ -2226,6 +2392,13 @@ def lambda_handler(event: dict[str, Any] | None, context: Any) -> dict[str, Any]
                     strip_at(str(event.get("username") or "tester")),
                     config,
                 )
+                sigil = generate_solomon_sigil(
+                    reply["text"],
+                    source_id=str(mention["id"]),
+                    config=config,
+                )
+                if sigil is not None:
+                    reply["sigil"] = public_sigil_metadata(sigil)
                 return {"ok": True, "dry_run": True, **reply}
             except ReplyGenerationError as exc:
                 return {

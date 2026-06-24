@@ -3,8 +3,8 @@
 Scheduled Lambda for the fictional Crowley Bard demo account. It polls direct
 `@` mentions, generates one short contextual reply, and posts through X API v2
 using OAuth 1.0a user credentials. Every posted reply or standalone tweet is
-paired with a text-conditioned Solomon sigil image generated locally by the
-bundled integer sampler, uploaded to X media, and attached to the tweet.
+paired with a generated Solomon sigil image conditioned through the bundled
+latent bridge when available, uploaded to X media, and attached to the tweet.
 
 This handles public mentions, not Direct Messages.
 
@@ -31,7 +31,13 @@ The Lambda package also includes the Solomon sigil runtime:
 
 - sampler: `bin/nsrl-bitmap-sample`
 - model: `solomon/model.nsrltch`
+- locked latent bridge: `solomon/current-best.nsrllat`
 - text index: `solomon/solomon-spirit-text-signatures.tsv`
+
+`scripts/x-bot/package.sh` packages `current-best.nsrllat` from the current
+defensible Solomon checkpoint by default:
+`data/processed/key-solomon-goetia-latent-v1/scaling-curve/n576-ld32-tf512-e12/model.nsrllat`.
+If that file is absent, Lambda falls back to the text index path.
 
 ## Safety Defaults
 
@@ -48,6 +54,9 @@ The Lambda package also includes the Solomon sigil runtime:
   never written back to the base model bundle.
 - `X_SIGIL_ENABLED=true` by default. If Solomon generation or media upload
   fails, the bot skips the post instead of publishing text without a sigil.
+- `X_SIGIL_LATENT_MODEL=/var/task/solomon/current-best.nsrllat` by default.
+  The sampler uses this learned bridge when it is packaged, otherwise it falls
+  back to the deterministic text index.
 
 ## Secret
 
@@ -133,6 +142,7 @@ Optional repo variables:
 - `X_BOT_LAMBDA_MEMORY_MB`, default `1024`
 - `X_BOT_LAMBDA_TIMEOUT`, default `120`
 - `X_SIGIL_ENABLED`, default `true`
+- `X_SIGIL_LATENT_MODEL`, default `/var/task/solomon/current-best.nsrllat`
 - `X_SIGIL_CANDIDATES`, default `8`
 - `X_SIGIL_PASSES`, default `4`
 - `X_SIGIL_TIMEOUT_SECONDS`, default `60`
@@ -211,6 +221,41 @@ repetition, balanced content, punctuation, and complete-thought shape, then
 posts only the best candidate above `min_score`. Dry-run standalone responses
 include a `sigil` object with the Solomon seed, target row, trace path, and PNG
 size; live posts upload that PNG and attach the returned media id.
+
+For checkpoint announcements, use a standalone generated tweet. The public post
+comes from the model and carries the sigil image; exact metrics belong on the
+published dashboard instead of in the X thread. Live posts still require an
+explicit `id`, so retries are idempotent:
+
+```sh
+aws lambda invoke \
+  --region us-east-1 \
+  --function-name crowley-bard-mention-bot \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"post_tweet":true,"dry_run":true,"id":"solomon-checkpoint-eval-200","prompt":"Solomon checkpoint improved. Speak one compact omen about integer seals learning from held-out prompts."}' \
+  /tmp/crowley-bard-solomon-checkpoint.json
+```
+
+For Solomon eval curves, prefer the local watcher script. It reads the checked
+curve TSV, compares the selected metric against a git-ignored state file, and
+prepares an idempotent Lambda payload with a model-generation prompt only:
+
+```sh
+node scripts/post-solomon-improved-checkpoint.mjs \
+  --curve docs/solomon-eval-scaling-curve.tsv
+
+node scripts/post-solomon-improved-checkpoint.mjs \
+  --curve docs/solomon-eval-scaling-curve.tsv \
+  --invoke-lambda
+
+node scripts/post-solomon-improved-checkpoint.mjs \
+  --curve docs/solomon-eval-scaling-curve.tsv \
+  --live
+```
+
+The first command only prints the payload. The second invokes Lambda with
+`dry_run:true`. The third posts live through Lambda and records the new best in
+`data/processed/key-solomon-goetia-latent-v1/scaling-curve/x-post-state.json`.
 
 ## Context Adaptation
 

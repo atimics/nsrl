@@ -275,6 +275,8 @@ points are:
 - `scripts/run-simplewiki-topic-curriculum.sh` and
   `scripts/run-simplewiki-topic-paragraph.sh` — topic-specific curriculum and
   paragraph assembly experiments.
+- `scripts/check-simplewiki-grounded-replay.sh` — typed Rust scoreboard and
+  bit-exact replay gate for the current SimpleWiki grounded hero candidate.
 
 ## Current model quality
 
@@ -374,6 +376,7 @@ crates/
   nsrl-core/       no_std integer inference runtime (no unsafe except NEON module)
   nsrl-corpus/     tokenizer and corpus pipeline tools
   nsrl-demo/       forward trace and benchmark binaries
+  nsrl-eval/       shared split/gold/ledger/replay utilities
   nsrl-train-core/ no_std integer training kernels (shared by the trainer)
   nsrl-train/      integer training framework and generation CLI
   nsrl-sched/      integer-only swarm scheduling kernel (library)

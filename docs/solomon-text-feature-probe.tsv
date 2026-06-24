@@ -1,0 +1,2 @@
+prompt_rows	n_train_prompts	latent_dim	text_features	epochs	eval_count	eval_top1_per_mille	eval_top5_per_mille	novel_count	novel_top1_per_mille	cluster_count	cluster_top1_per_mille	gold_count	gold_top1_per_mille	gold_top5_per_mille	model_hash	model_dir
+576	352	32	8192	12	80	212	537	24	208	46	195	144	173	388	b801e8fd	data/processed/key-solomon-goetia-latent-v1/text-feature-probe/n576-ld32-tf8192-e12

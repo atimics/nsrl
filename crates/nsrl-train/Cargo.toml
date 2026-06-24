@@ -7,6 +7,11 @@ repository.workspace = true
 default-run = "nsrl-train"
 
 [dependencies]
-nsrl-core = { path = "../nsrl-core" }
+nsrl-core = { path = "../nsrl-core", optional = true }
 nsrl-corpus = { path = "../nsrl-corpus" }
-nsrl-train-core = { path = "../nsrl-train-core" }
+nsrl-eval = { path = "../nsrl-eval" }
+nsrl-train-core = { path = "../nsrl-train-core", optional = true }
+
+[features]
+default = ["core-runtime"]
+core-runtime = ["dep:nsrl-core", "dep:nsrl-train-core"]

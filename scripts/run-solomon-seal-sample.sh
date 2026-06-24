@@ -18,7 +18,7 @@ epochs="${EPOCHS:-8}"
 samples="${SAMPLES:-64}"
 candidate_multiplier="${CANDIDATE_MULTIPLIER:-4}"
 diversity_weight="${DIVERSITY_WEIGHT:-1}"
-init="${INIT:-seal-prior}"
+init="noise"
 
 manifest="data/processed/key-solomon-goetia-bitmaps-pg72679/slices/manifest.json"
 if [[ ! -f "$manifest" ]]; then

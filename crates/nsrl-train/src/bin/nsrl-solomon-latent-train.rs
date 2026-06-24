@@ -1,17 +1,26 @@
 #![deny(unsafe_code)]
 
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use nsrl_train::solomon_latent::{
+    DEFAULT_EVAL_PERMILLE, DEFAULT_PROMPT_SPLIT_SEED, default_gold_path, prompt_partition_bucket,
+    read_gold_hashes, read_prompt_records, read_text_index_rows,
+};
+
 const SCHEMA: &str = "nsrl.solomon_latent_trace.v1";
 const MODEL_MAGIC: &[u8; 8] = b"NSRLLAT1";
-const SIGNATURE_GRID: usize = 8;
+// Match the shared solomon_latent module's 16x16 signature grid (256 bins).
+const SIGNATURE_GRID: usize = 16;
 const SIGNATURE_BINS: usize = SIGNATURE_GRID * SIGNATURE_GRID;
 
 #[derive(Debug, Clone)]
 struct Config {
     text_index_path: PathBuf,
+    prompts_path: Option<PathBuf>,
+    gold_path: Option<PathBuf>,
     out_dir: PathBuf,
     model_out: PathBuf,
     epochs: usize,
@@ -29,6 +38,8 @@ struct Config {
     bias_learning_shift: u8,
     max_weight_delta: i16,
     max_bias_delta: i16,
+    eval_permille: usize,
+    split_seed: String,
     seed: String,
 }
 
@@ -39,6 +50,8 @@ impl Default for Config {
             text_index_path: PathBuf::from(
                 "data/processed/key-solomon-goetia-text-index-pg72679/solomon-spirit-text-signatures.tsv",
             ),
+            prompts_path: None,
+            gold_path: None,
             model_out: out_dir.join("model.nsrllat"),
             out_dir,
             epochs: 120,
@@ -56,6 +69,8 @@ impl Default for Config {
             bias_learning_shift: 5,
             max_weight_delta: 8,
             max_bias_delta: 16,
+            eval_permille: DEFAULT_EVAL_PERMILLE,
+            split_seed: String::from(DEFAULT_PROMPT_SPLIT_SEED),
             seed: String::from("solomon-latent-v1"),
         }
     }
@@ -67,6 +82,8 @@ struct Row {
     primary_name: String,
     aliases: String,
     slice_id: String,
+    variant_id: String,
+    source_lanes: String,
     text: String,
     signature: [u16; SIGNATURE_BINS],
     target_latent: Vec<i16>,
@@ -131,6 +148,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if config.max_weight_delta < 0 || config.max_bias_delta < 0 {
         return Err("max deltas must be non-negative".into());
     }
+    if config.eval_permille > 900 {
+        return Err("--eval-permille must be <= 900".into());
+    }
     fs::create_dir_all(&config.out_dir)?;
 
     let rows = read_rows(&config)?;
@@ -157,7 +177,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn usage() {
     println!(
-        "Usage: nsrl-solomon-latent-train [--text-index PATH] [--out-dir PATH] [--model-out PATH] [--epochs N] [--latent-dim N] [--text-features N] [--seed TEXT]"
+        "Usage: nsrl-solomon-latent-train [--text-index PATH] [--prompts PATH] [--gold PATH] [--eval-permille N] [--split-seed TEXT] [--out-dir PATH] [--model-out PATH] [--epochs N] [--latent-dim N] [--text-features N] [--seed TEXT]"
     );
 }
 
@@ -175,6 +195,19 @@ where
             "--text-index" => {
                 config.text_index_path =
                     PathBuf::from(args.next().ok_or("--text-index requires PATH")?);
+            }
+            "--prompts" => {
+                config.prompts_path =
+                    Some(PathBuf::from(args.next().ok_or("--prompts requires PATH")?));
+            }
+            "--gold" => {
+                config.gold_path = Some(PathBuf::from(args.next().ok_or("--gold requires PATH")?));
+            }
+            "--eval-permille" => {
+                config.eval_permille = args.next().ok_or("--eval-permille requires N")?.parse()?;
+            }
+            "--split-seed" => {
+                config.split_seed = args.next().ok_or("--split-seed requires TEXT")?;
             }
             "--out-dir" => {
                 config.out_dir = PathBuf::from(args.next().ok_or("--out-dir requires PATH")?);
@@ -270,6 +303,9 @@ where
 }
 
 fn read_rows(config: &Config) -> Result<Vec<Row>, Box<dyn std::error::Error>> {
+    if let Some(prompts_path) = &config.prompts_path {
+        return read_prompt_training_rows(config, prompts_path);
+    }
     let text = fs::read_to_string(&config.text_index_path)?;
     let mut rows = Vec::new();
     for (line_index, line) in text.lines().enumerate() {
@@ -297,11 +333,23 @@ fn read_rows(config: &Config) -> Result<Vec<Row>, Box<dyn std::error::Error>> {
             fields[2].replace('|', " "),
             fields[8]
         );
+        let variant_id = fields
+            .get(9)
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| (*value).to_string())
+            .unwrap_or_else(|| "canonical".to_string());
+        let source_lanes = fields
+            .get(10)
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| (*value).to_string())
+            .unwrap_or_else(|| "goetia".to_string());
         rows.push(Row {
             number: fields[0].parse()?,
             primary_name: fields[1].to_string(),
             aliases: fields[2].to_string(),
             slice_id: fields[3].to_string(),
+            variant_id,
+            source_lanes,
             text: fields[8].to_string(),
             signature,
             target_latent: signature_latent(
@@ -314,9 +362,72 @@ fn read_rows(config: &Config) -> Result<Vec<Row>, Box<dyn std::error::Error>> {
             image_features,
         });
     }
-    rows.sort_by(|left, right| left.number.cmp(&right.number));
+    rows.sort_by(|left, right| {
+        left.number
+            .cmp(&right.number)
+            .then_with(|| left.variant_id.cmp(&right.variant_id))
+    });
     if rows.is_empty() {
         return Err(format!("{} has no rows", config.text_index_path.display()).into());
+    }
+    Ok(rows)
+}
+
+fn read_prompt_training_rows(
+    config: &Config,
+    prompts_path: &Path,
+) -> Result<Vec<Row>, Box<dyn std::error::Error>> {
+    let base_rows = read_text_index_rows(&config.text_index_path)?;
+    let mut by_number = HashMap::new();
+    for row in base_rows {
+        by_number.entry(row.number).or_insert(row);
+    }
+    let prompts = read_prompt_records(prompts_path, &config.split_seed)?;
+    let gold_path = config
+        .gold_path
+        .clone()
+        .unwrap_or_else(|| default_gold_path(prompts_path));
+    let gold_hashes = read_gold_hashes(&gold_path)?;
+    let mut rows = Vec::new();
+    for prompt in prompts {
+        if gold_hashes.contains(&prompt.prompt_hash)
+            || prompt_partition_bucket(&prompt, &config.split_seed) < config.eval_permille
+        {
+            continue;
+        }
+        let base = by_number
+            .get(&prompt.spirit_id)
+            .ok_or_else(|| format!("prompt references missing spirit_id {}", prompt.spirit_id))?;
+        rows.push(Row {
+            number: base.number,
+            primary_name: base.primary_name.clone(),
+            aliases: base.aliases.clone(),
+            slice_id: base.slice_id.clone(),
+            variant_id: prompt.prompt_hash,
+            source_lanes: format!("{}:{}", prompt.source, prompt.tier),
+            text: prompt.text.clone(),
+            signature: base.signature,
+            target_latent: signature_latent(
+                &base.signature,
+                config.latent_dim,
+                &config.seed,
+                config.image_encoder_shift,
+            ),
+            text_features: text_features(&prompt.text, config.text_feature_count),
+            image_features: base.image_features,
+        });
+    }
+    rows.sort_by(|left, right| {
+        left.number
+            .cmp(&right.number)
+            .then_with(|| left.variant_id.cmp(&right.variant_id))
+    });
+    if rows.is_empty() {
+        return Err(format!(
+            "{} leaves no train prompts after gold/eval filtering",
+            prompts_path.display()
+        )
+        .into());
     }
     Ok(rows)
 }
@@ -377,13 +488,16 @@ impl LatentModel {
             }
         }
         let mut decoder_biases = [0_i16; SIGNATURE_BINS];
-        for bin in 0..SIGNATURE_BINS {
+        let target_indices = unique_target_indices(rows);
+        for (bin, bias) in decoder_biases.iter_mut().enumerate().take(SIGNATURE_BINS) {
             let mut total = 0_u64;
-            for row in rows {
+            for &row_index in &target_indices {
+                let row = &rows[row_index];
                 total = total.saturating_add(u64::from(row.signature[bin]));
             }
-            decoder_biases[bin] = i16::try_from(
-                (total + u64::try_from(rows.len())? / 2) / u64::try_from(rows.len())?,
+            *bias = i16::try_from(
+                (total + u64::try_from(target_indices.len())? / 2)
+                    / u64::try_from(target_indices.len())?,
             )?;
         }
         Ok(Self {
@@ -459,6 +573,26 @@ fn encode_latent(
     out
 }
 
+fn unique_target_indices(rows: &[Row]) -> Vec<usize> {
+    let mut indices = Vec::new();
+    let mut last_number = None;
+    for (index, row) in rows.iter().enumerate() {
+        if last_number != Some(row.number) {
+            indices.push(index);
+            last_number = Some(row.number);
+        }
+    }
+    indices
+}
+
+fn unique_target_count(rows: &[Row]) -> usize {
+    unique_target_indices(rows).len()
+}
+
+fn is_first_target_row(rows: &[Row], row_index: usize) -> bool {
+    row_index == 0 || rows[row_index - 1].number != rows[row_index].number
+}
+
 fn train_epoch(
     config: &Config,
     rows: &[Row],
@@ -470,24 +604,26 @@ fn train_epoch(
     let mut latent_abs = 0_u64;
     for row_index in 0..rows.len() {
         let row = &rows[row_index];
-        let image_latent = model.encode_image(&row.image_features);
-        let image_prediction = model.decode_signature(&image_latent);
-        image_abs =
-            image_abs.saturating_add(signature_abs_error(&image_prediction, &row.signature));
-        update_decoder(
-            config,
-            model,
-            &row.target_latent,
-            &row.signature,
-            &image_prediction,
-        );
-        update_decoder(
-            config,
-            model,
-            &image_latent,
-            &row.signature,
-            &image_prediction,
-        );
+        if is_first_target_row(rows, row_index) {
+            let image_latent = model.encode_image(&row.image_features);
+            let image_prediction = model.decode_signature(&image_latent);
+            image_abs =
+                image_abs.saturating_add(signature_abs_error(&image_prediction, &row.signature));
+            update_decoder(
+                config,
+                model,
+                &row.target_latent,
+                &row.signature,
+                &image_prediction,
+            );
+            update_decoder(
+                config,
+                model,
+                &image_latent,
+                &row.signature,
+                &image_prediction,
+            );
+        }
 
         let image_latent = model.encode_image(&row.image_features);
         let text_latent = model.encode_text(&row.text_features);
@@ -517,12 +653,14 @@ fn train_epoch(
         latent_abs = latent_abs.saturating_add(latent_abs_error(&image_latent, &text_latent));
         update_contrastive_rank(config, rows, model, row_index, epoch);
     }
-    let signature_count = u64::try_from(rows.len().saturating_mul(SIGNATURE_BINS))?;
+    let target_count = unique_target_count(rows);
+    let text_signature_count = u64::try_from(rows.len().saturating_mul(SIGNATURE_BINS))?;
+    let image_signature_count = u64::try_from(target_count.saturating_mul(SIGNATURE_BINS))?;
     let latent_count = u64::try_from(rows.len().saturating_mul(model.latent_dim))?;
     Ok(EpochTrace {
         epoch: epoch + 1,
-        text_signature_mae_q8: mean_q8(text_abs, signature_count),
-        image_signature_mae_q8: mean_q8(image_abs, signature_count),
+        text_signature_mae_q8: mean_q8(text_abs, text_signature_count),
+        image_signature_mae_q8: mean_q8(image_abs, image_signature_count),
         text_image_latent_mae_q8: mean_q8(latent_abs, latent_count),
     })
 }
@@ -616,8 +754,13 @@ fn update_contrastive_rank(
         let mut negative_index = row_index.saturating_add(1).saturating_add(
             (epoch.saturating_add(1)).saturating_mul(negative_offset.saturating_mul(17) + 7),
         ) % rows.len();
-        if negative_index == row_index {
+        let mut attempts = 0_usize;
+        while rows[negative_index].number == row.number && attempts < rows.len() {
             negative_index = (negative_index + 1) % rows.len();
+            attempts = attempts.saturating_add(1);
+        }
+        if rows[negative_index].number == row.number {
+            continue;
         }
         let negative = &rows[negative_index];
         let text_latent = model.encode_text(&row.text_features);
@@ -699,9 +842,10 @@ fn latent_gradients(
 }
 
 fn evaluate(rows: &[Row], model: &LatentModel) -> Result<EvalTrace, Box<dyn std::error::Error>> {
-    let mut image_latents = Vec::with_capacity(rows.len());
-    for row in rows {
-        image_latents.push(model.encode_image(&row.image_features));
+    let target_indices = unique_target_indices(rows);
+    let mut image_latents = Vec::with_capacity(target_indices.len());
+    for &row_index in &target_indices {
+        image_latents.push(model.encode_image(&rows[row_index].image_features));
     }
     let mut retrieval_top1 = 0_usize;
     let mut retrieval_top5 = 0_usize;
@@ -712,21 +856,30 @@ fn evaluate(rows: &[Row], model: &LatentModel) -> Result<EvalTrace, Box<dyn std:
     for (row_index, row) in rows.iter().enumerate() {
         let text_latent = model.encode_text(&row.text_features);
         let text_prediction = model.decode_signature(&text_latent);
-        let image_prediction = model.decode_signature(&image_latents[row_index]);
+        let target_latent_index = target_indices
+            .iter()
+            .position(|&target_index| rows[target_index].number == row.number)
+            .ok_or("missing image target for row")?;
+        let image_prediction = model.decode_signature(&image_latents[target_latent_index]);
         text_abs = text_abs.saturating_add(signature_abs_error(&text_prediction, &row.signature));
-        image_abs =
-            image_abs.saturating_add(signature_abs_error(&image_prediction, &row.signature));
-        latent_abs =
-            latent_abs.saturating_add(latent_abs_error(&text_latent, &image_latents[row_index]));
-        let positive_score = dot_i16(&text_latent, &image_latents[row_index]);
+        if is_first_target_row(rows, row_index) {
+            image_abs =
+                image_abs.saturating_add(signature_abs_error(&image_prediction, &row.signature));
+        }
+        latent_abs = latent_abs.saturating_add(latent_abs_error(
+            &text_latent,
+            &image_latents[target_latent_index],
+        ));
+        let positive_score = dot_i16(&text_latent, &image_latents[target_latent_index]);
         let mut rank = 1_usize;
         for (candidate_index, image_latent) in image_latents.iter().enumerate() {
-            if candidate_index == row_index {
+            let candidate_row = &rows[target_indices[candidate_index]];
+            if candidate_row.number == row.number {
                 continue;
             }
             let score = dot_i16(&text_latent, image_latent);
             if score > positive_score
-                || (score == positive_score && rows[candidate_index].number < row.number)
+                || (score == positive_score && candidate_row.number < row.number)
             {
                 rank = rank.saturating_add(1);
             }
@@ -740,7 +893,9 @@ fn evaluate(rows: &[Row], model: &LatentModel) -> Result<EvalTrace, Box<dyn std:
         rank_total = rank_total.saturating_add(u64::try_from(rank)?);
     }
     let row_count = rows.len();
-    let signature_count = u64::try_from(row_count.saturating_mul(SIGNATURE_BINS))?;
+    let target_count = target_indices.len();
+    let text_signature_count = u64::try_from(row_count.saturating_mul(SIGNATURE_BINS))?;
+    let image_signature_count = u64::try_from(target_count.saturating_mul(SIGNATURE_BINS))?;
     let latent_count = u64::try_from(row_count.saturating_mul(model.latent_dim))?;
     Ok(EvalTrace {
         retrieval_top1,
@@ -748,8 +903,8 @@ fn evaluate(rows: &[Row], model: &LatentModel) -> Result<EvalTrace, Box<dyn std:
         retrieval_top1_per_mille: retrieval_top1.saturating_mul(1000) / row_count,
         retrieval_top5_per_mille: retrieval_top5.saturating_mul(1000) / row_count,
         mean_rank_q8: mean_q8(rank_total, u64::try_from(row_count)?),
-        text_signature_mae_q8: mean_q8(text_abs, signature_count),
-        image_signature_mae_q8: mean_q8(image_abs, signature_count),
+        text_signature_mae_q8: mean_q8(text_abs, text_signature_count),
+        image_signature_mae_q8: mean_q8(image_abs, image_signature_count),
         text_image_latent_mae_q8: mean_q8(latent_abs, latent_count),
     })
 }
@@ -826,7 +981,23 @@ fn write_trace(
         true,
     );
     json_field(&mut out, "seed", &config.seed, true);
+    json_field(&mut out, "split_seed", &config.split_seed, true);
+    if let Some(prompts_path) = &config.prompts_path {
+        json_field(
+            &mut out,
+            "prompts",
+            &prompts_path.display().to_string(),
+            true,
+        );
+        let gold_path = config
+            .gold_path
+            .clone()
+            .unwrap_or_else(|| default_gold_path(prompts_path));
+        json_field(&mut out, "gold", &gold_path.display().to_string(), true);
+    }
+    number_field(&mut out, "eval_permille", config.eval_permille, true);
     number_field(&mut out, "rows", rows.len(), true);
+    number_field(&mut out, "image_targets", unique_target_count(rows), true);
     number_field(&mut out, "latent_dim", model.latent_dim, true);
     number_field(
         &mut out,
@@ -880,10 +1051,12 @@ fn write_trace(
             out.push(',');
         }
         out.push_str(&format!(
-            "{{\"number\":{},\"name\":\"{}\",\"slice_id\":\"{}\",\"text_bytes\":{},\"alias_bytes\":{}}}",
+            "{{\"number\":{},\"name\":\"{}\",\"slice_id\":\"{}\",\"variant_id\":\"{}\",\"source_lanes\":\"{}\",\"text_bytes\":{},\"alias_bytes\":{}}}",
             row.number,
             json_escape(&row.primary_name),
             json_escape(&row.slice_id),
+            json_escape(&row.variant_id),
+            json_escape(&row.source_lanes),
             row.text.len(),
             row.aliases.len(),
         ));

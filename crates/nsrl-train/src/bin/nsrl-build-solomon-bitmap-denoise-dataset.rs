@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const SCHEMA: &str = "nsrl.bitmap_denoise_dataset.v1";
 const CLEAN_SCHEMA: &str = "nsrl.bitmap_clean_sample.v1";
 const PAIR_SCHEMA: &str = "nsrl.bitmap_denoise_pair.v1";
-const CORRUPTION_KINDS: [&str; 9] = [
+const CORRUPTION_KINDS: [&str; 10] = [
     "pixel-dropout",
     "salt-pepper",
     "block-mask",
@@ -19,7 +19,12 @@ const CORRUPTION_KINDS: [&str; 9] = [
     "mixed-noise",
     "coarse-erase",
     "box-blur",
+    "noise-seed",
 ];
+const INK_THRESHOLD: u8 = 64;
+const STRONG_INK_THRESHOLD: u8 = 160;
+const TARGET_CLEAN_EDGE_CLEAR: usize = 3;
+const TARGET_CLEAN_RADIUS_MARGIN: usize = 2;
 const CLEAN_AUGMENTATIONS: [&str; 8] = [
     "identity",
     "rot90",
@@ -47,6 +52,8 @@ struct Config {
     out_dir: PathBuf,
     kinds: Vec<String>,
     clean_augmentations: Vec<String>,
+    target_cleaning: TargetCleaning,
+    target_cleaning_strength: u16,
     image_size: usize,
     corruptions_per_image: usize,
     timesteps: usize,
@@ -67,12 +74,43 @@ impl Default for Config {
                 .iter()
                 .map(|augmentation| (*augmentation).to_string())
                 .collect(),
+            target_cleaning: TargetCleaning::Raw,
+            target_cleaning_strength: u16::from(u8::MAX) + 1,
             image_size: 128,
             corruptions_per_image: 8,
             timesteps: 8,
             eval_ratio_permille: 180,
             seed: "solomon-denoise-v1".to_string(),
             preview_pairs: 96,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TargetCleaning {
+    Raw,
+    SealWindow,
+    SealStrokes,
+}
+
+impl TargetCleaning {
+    fn parse(value: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        match value {
+            "raw" => Ok(Self::Raw),
+            "seal-window" => Ok(Self::SealWindow),
+            "seal-strokes" => Ok(Self::SealStrokes),
+            _ => Err(format!(
+                "unknown target cleaning: {value}; expected raw, seal-window, or seal-strokes"
+            )
+            .into()),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Raw => "raw",
+            Self::SealWindow => "seal-window",
+            Self::SealStrokes => "seal-strokes",
         }
     }
 }
@@ -143,6 +181,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if config.eval_ratio_permille > 900 {
         return Err("--eval-ratio-permille must be <= 900".into());
     }
+    if config.target_cleaning_strength > u16::from(u8::MAX) + 1 {
+        return Err("--target-cleaning-strength must be <= 256".into());
+    }
 
     let input_manifest_path = absolutize(&config.input_manifest)?;
     let out_dir = absolutize(&config.out_dir)?;
@@ -169,6 +210,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )
             .into());
         }
+        let clean = clean_target_image(
+            &clean,
+            config.image_size,
+            config.target_cleaning,
+            config.target_cleaning_strength,
+        )?;
         let split_score = sha256(&join_seed_parts(&[&config.seed, "split", &row.id]));
         selected.push(SelectedSlice {
             row,
@@ -226,7 +273,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn usage() {
     println!(
-        "Usage: nsrl-build-solomon-bitmap-denoise-dataset [--input-manifest PATH] [--out-dir PATH] [--kinds LIST] [--clean-augmentations LIST] [--image-size N] [--corruptions-per-image N] [--timesteps N] [--eval-ratio-permille N] [--seed TEXT] [--preview-pairs N]"
+        "Usage: nsrl-build-solomon-bitmap-denoise-dataset [--input-manifest PATH] [--out-dir PATH] [--kinds LIST] [--clean-augmentations LIST] [--target-cleaning raw|seal-window|seal-strokes] [--target-cleaning-strength N<=256] [--image-size N] [--corruptions-per-image N] [--timesteps N] [--eval-ratio-permille N] [--seed TEXT] [--preview-pairs N]"
     );
 }
 
@@ -254,6 +301,16 @@ where
             "--clean-augmentations" => {
                 config.clean_augmentations =
                     split_list(&args.next().ok_or("--clean-augmentations requires LIST")?);
+            }
+            "--target-cleaning" => {
+                config.target_cleaning =
+                    TargetCleaning::parse(&args.next().ok_or("--target-cleaning requires MODE")?)?;
+            }
+            "--target-cleaning-strength" => {
+                config.target_cleaning_strength = args
+                    .next()
+                    .ok_or("--target-cleaning-strength requires N")?
+                    .parse()?;
             }
             "--image-size" => {
                 config.image_size = parse_positive(&args.next().ok_or("--image-size requires N")?)?;
@@ -571,6 +628,14 @@ fn write_manifest(
         out.push('"');
     }
     out.push_str("],\n");
+    out.push_str(&format!(
+        "  \"target_cleaning\":\"{}\",\n",
+        config.target_cleaning.as_str()
+    ));
+    out.push_str(&format!(
+        "  \"target_cleaning_strength\":{},\n",
+        config.target_cleaning_strength
+    ));
     out.push_str("  \"corruption_kinds\":[");
     for (index, kind) in CORRUPTION_KINDS.iter().enumerate() {
         if index != 0 {
@@ -636,6 +701,76 @@ fn transform_clean_image(
             let (sx, sy) = transform_coords(image_size, x, y, augmentation)?;
             out[pixel_index(image_size, x, y)] = input[pixel_index(image_size, sx, sy)];
         }
+    }
+    Ok(out)
+}
+
+fn clean_target_image(
+    image: &[u8],
+    image_size: usize,
+    cleaning: TargetCleaning,
+    strength: u16,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    if cleaning == TargetCleaning::Raw || strength == 0 {
+        return Ok(image.to_vec());
+    }
+    let image_bytes = checked_image_bytes(image_size)?;
+    if image.len() != image_bytes {
+        return Err(format!(
+            "target cleaning got {} bytes, expected {image_bytes}",
+            image.len()
+        )
+        .into());
+    }
+    let center = i64::try_from(image_size / 2)?;
+    let radius_margin = TARGET_CLEAN_RADIUS_MARGIN.min(image_size / 2);
+    let seal_radius = i64::try_from(image_size / 2 - radius_margin)?;
+    let seal_radius2 = seal_radius.saturating_mul(seal_radius);
+    let mut out = vec![0_u8; image_bytes];
+    for y in 0..image_size {
+        for x in 0..image_size {
+            if x < TARGET_CLEAN_EDGE_CLEAR
+                || y < TARGET_CLEAN_EDGE_CLEAR
+                || x + TARGET_CLEAN_EDGE_CLEAR >= image_size
+                || y + TARGET_CLEAN_EDGE_CLEAR >= image_size
+            {
+                continue;
+            }
+            let dx = i64::try_from(x)?.saturating_sub(center);
+            let dy = i64::try_from(y)?.saturating_sub(center);
+            let radius2 = dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy));
+            if radius2 > seal_radius2 {
+                continue;
+            }
+            let index = pixel_index(image_size, x, y);
+            let value = image[index];
+            if cleaning == TargetCleaning::SealWindow {
+                out[index] = value;
+                continue;
+            }
+            let neighbors = neighbor_ink_count(image, image_size, image_size, x, y);
+            out[index] = if value > STRONG_INK_THRESHOLD {
+                value
+            } else if value > INK_THRESHOLD && neighbors >= 2 {
+                value.saturating_sub(16)
+            } else if value > 40 && neighbors >= 4 {
+                value.saturating_sub(40)
+            } else {
+                0
+            };
+        }
+    }
+    if strength >= u16::from(u8::MAX) + 1 {
+        return Ok(out);
+    }
+    let keep = (u16::from(u8::MAX) + 1).saturating_sub(strength);
+    for (target, &raw) in out.iter_mut().zip(image.iter()) {
+        let blended = u16::from(raw)
+            .saturating_mul(keep)
+            .saturating_add(u16::from(*target).saturating_mul(strength))
+            .saturating_add(128)
+            / 256;
+        *target = u8::try_from(blended.min(u16::from(u8::MAX)))?;
     }
     Ok(out)
 }
@@ -815,8 +950,24 @@ fn corrupt_image(
         "box-blur" => Ok(box_blur_corruption(
             clean, width, height, timestep, timesteps, &mut rng,
         )),
+        "noise-seed" => Ok(noise_seed(width, height, &mut rng)),
         _ => Err(format!("unknown corruption kind: {corruption}").into()),
     }
+}
+
+fn noise_seed(width: usize, height: usize, rng: &mut Rng) -> Vec<u8> {
+    let mut out = vec![0_u8; width.saturating_mul(height)];
+    for value in &mut out {
+        let roll = rng.rand_bounded(16);
+        *value = if roll == 0 {
+            255
+        } else if roll == 1 {
+            160
+        } else {
+            0
+        };
+    }
+    out
 }
 
 fn pixel_dropout(clean: &[u8], timestep: usize, timesteps: usize, rng: &mut Rng) -> Vec<u8> {

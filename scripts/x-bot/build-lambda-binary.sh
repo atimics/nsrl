@@ -24,17 +24,18 @@ docker run --rm \
       curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
       . "$HOME/.cargo/env"
     fi
+    export CARGO_TARGET_DIR=/tmp/nsrl-lambda-target
     cargo build --release \
       --package nsrl-train --bin nsrl-train \
       --package nsrl-train --bin nsrl-bitmap-sample \
       --package nsrl-corpus --bin nsrl-corpus
-    strip target/release/nsrl-train || true
-    strip target/release/nsrl-bitmap-sample || true
-    strip target/release/nsrl-corpus || true
+    strip "$CARGO_TARGET_DIR/release/nsrl-train" || true
+    strip "$CARGO_TARGET_DIR/release/nsrl-bitmap-sample" || true
+    strip "$CARGO_TARGET_DIR/release/nsrl-corpus" || true
+    cp "$CARGO_TARGET_DIR/release/nsrl-train" scripts/x-bot/build/bin/nsrl-train
+    cp "$CARGO_TARGET_DIR/release/nsrl-bitmap-sample" scripts/x-bot/build/bin/nsrl-bitmap-sample
+    cp "$CARGO_TARGET_DIR/release/nsrl-corpus" scripts/x-bot/build/bin/nsrl-corpus
   '
 
-cp "$REPO_ROOT/target/release/nsrl-train" "$TRAIN_OUT"
-cp "$REPO_ROOT/target/release/nsrl-corpus" "$CORPUS_OUT"
-cp "$REPO_ROOT/target/release/nsrl-bitmap-sample" "$SIGIL_OUT"
 chmod +x "$TRAIN_OUT" "$CORPUS_OUT" "$SIGIL_OUT"
 file "$TRAIN_OUT" "$CORPUS_OUT" "$SIGIL_OUT"

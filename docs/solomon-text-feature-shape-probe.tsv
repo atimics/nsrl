@@ -1,0 +1,7 @@
+prompt_rows	n_train_prompts	latent_dim	text_features	epochs	eval_count	eval_top1_per_mille	eval_top5_per_mille	novel_count	novel_top1_per_mille	cluster_count	cluster_top1_per_mille	gold_count	gold_top1_per_mille	gold_top5_per_mille	model_hash	model_dir
+576	352	32	2048	12	80	225	537	24	208	46	217	144	166	416	04993d13	data/processed/key-solomon-goetia-latent-v1/text-feature-shape-probe/n576-ld32-tf2048-e12
+576	352	32	8192	12	80	212	537	24	208	46	195	144	173	388	b801e8fd	data/processed/key-solomon-goetia-latent-v1/text-feature-shape-probe/n576-ld32-tf8192-e12
+576	352	64	2048	12	80	187	487	24	125	46	195	144	159	333	127e2a41	data/processed/key-solomon-goetia-latent-v1/text-feature-shape-probe/n576-ld64-tf2048-e12
+576	352	64	8192	12	80	175	437	24	166	46	195	144	152	319	5e6dfa75	data/processed/key-solomon-goetia-latent-v1/text-feature-shape-probe/n576-ld64-tf8192-e12
+576	352	128	2048	12	80	137	437	24	166	46	108	144	145	326	d1b4e7ed	data/processed/key-solomon-goetia-latent-v1/text-feature-shape-probe/n576-ld128-tf2048-e12
+576	352	128	8192	12	80	237	462	24	291	46	195	144	138	277	4fcc02bd	data/processed/key-solomon-goetia-latent-v1/text-feature-shape-probe/n576-ld128-tf8192-e12
