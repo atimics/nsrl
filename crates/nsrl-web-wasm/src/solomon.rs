@@ -15,8 +15,17 @@ const HIDDEN_KERNELS: [[i8; KERNEL]; HIDDEN_CHANNELS] = [
     [0, 1, 2, -1, 0, 1, -2, -1, 0],
     [-1, 2, -1, 2, 0, 2, -1, 2, -1],
 ];
+// 8x8 grid used only for the browser candidate-scoring heuristic
+// (sample_signature / text_signature_distance). This is independent of the
+// model and does not affect conditioning.
 const SIGNATURE_GRID: usize = 8;
 const SIGNATURE_BINS: usize = SIGNATURE_GRID * SIGNATURE_GRID;
+// 16x16 grid used for the model's text-conditioning features. These must match
+// the native trainer/sampler (nsrl-bitmap-multichannel-denoise /
+// nsrl-bitmap-sample) byte-for-byte or the learned weights produce garbage.
+const TEXT_FEATURE_CHANNELS: usize = 16;
+const TEXT_SIGNATURE_GRID: usize = 16;
+const TEXT_SIGNATURE_BINS: usize = TEXT_SIGNATURE_GRID * TEXT_SIGNATURE_GRID;
 const QUALITY_RING_BUCKETS: usize = 32;
 const QUALITY_BUCKET_STEPS: i64 = 4;
 const INK_THRESHOLD: u8 = 64;
@@ -126,6 +135,12 @@ impl SolomonSampler {
         let used_condition_count = condition_limit.min(self.active_conditions.len());
         let active_conditions = &self.active_conditions[..used_condition_count];
         let target = select_text_target(prompt, &self.targets).map_err(js_error)?;
+        let conditioning = build_text_conditioning(
+            &target.text_signature,
+            &target.text_stats,
+            self.model.image_size,
+        )
+        .map_err(js_error)?;
         let mut best: Option<Candidate> = None;
         for source_index in 0..candidate_multiplier {
             let candidate = sample_candidate(
@@ -134,7 +149,8 @@ impl SolomonSampler {
                 source_index,
                 seed,
                 passes,
-                &target.signature,
+                &conditioning,
+                &target.score_signature,
             )
             .map_err(js_error)?;
             let replace = best
@@ -237,8 +253,30 @@ struct TextTarget {
     name: String,
     aliases: String,
     row_text: String,
-    signature: [u16; SIGNATURE_BINS],
+    // 16x16 signature fed to the model's text-conditioning features.
+    text_signature: [u16; TEXT_SIGNATURE_BINS],
+    text_stats: SignatureStats,
+    // 8x8 downsample used only by the browser candidate-scoring heuristic.
+    score_signature: [u16; SIGNATURE_BINS],
     score: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SignatureStats {
+    global_mean: i16,
+    row_means: [i16; TEXT_SIGNATURE_GRID],
+    col_means: [i16; TEXT_SIGNATURE_GRID],
+}
+
+/// Per-pixel text-feature cache for one target signature. Channels 1..=14 depend
+/// only on the target signature and pixel position, so they are computed once
+/// per sample; channels 0 and 15 depend on the live (denoising) pixel value and
+/// are recomputed per pixel from `centers` and `global_mean`.
+#[derive(Debug)]
+struct TextConditioning {
+    static_features: Vec<[i16; TEXT_FEATURE_CHANNELS]>,
+    centers: Vec<i16>,
+    global_mean: i16,
 }
 
 #[derive(Debug, Clone)]
@@ -282,7 +320,7 @@ fn read_multichannel_model(cursor: &mut Cursor<'_>) -> Result<MultichannelModel,
     let hidden_shift = u8::try_from(cursor.read_u32()?).map_err(|error| error.to_string())?;
     let output_shift = u8::try_from(cursor.read_u32()?).map_err(|error| error.to_string())?;
     let hidden_channels = usize::try_from(cursor.read_u32()?).map_err(|error| error.to_string())?;
-    let max_channels = HIDDEN_KERNELS.len() + POSITION_FEATURE_CHANNELS + 2;
+    let max_channels = HIDDEN_KERNELS.len() + POSITION_FEATURE_CHANNELS + TEXT_FEATURE_CHANNELS;
     if hidden_channels == 0 || hidden_channels > max_channels {
         return Err(format!(
             "unsupported Solomon hidden channel count: {hidden_channels}; max {max_channels}"
@@ -369,6 +407,7 @@ fn read_text_targets(text: &str) -> Result<Vec<TextTarget>, String> {
                 fields.len()
             ));
         }
+        let text_signature = parse_text_signature(fields[7], line_index + 1)?;
         targets.push(TextTarget {
             number: fields[0]
                 .parse()
@@ -376,7 +415,9 @@ fn read_text_targets(text: &str) -> Result<Vec<TextTarget>, String> {
             name: fields[1].to_string(),
             aliases: fields[2].to_string(),
             row_text: fields[8].to_string(),
-            signature: parse_text_signature(fields[7], line_index + 1)?,
+            text_stats: signature_stats(&text_signature),
+            score_signature: downsample_text_signature(&text_signature),
+            text_signature,
             score: 0,
         });
     }
@@ -387,12 +428,15 @@ fn read_text_targets(text: &str) -> Result<Vec<TextTarget>, String> {
     Ok(targets)
 }
 
-fn parse_text_signature(text: &str, line_number: usize) -> Result<[u16; SIGNATURE_BINS], String> {
-    let mut signature = [0_u16; SIGNATURE_BINS];
+fn parse_text_signature(
+    text: &str,
+    line_number: usize,
+) -> Result<[u16; TEXT_SIGNATURE_BINS], String> {
+    let mut signature = [0_u16; TEXT_SIGNATURE_BINS];
     let parts: Vec<&str> = text.split(',').collect();
-    if parts.len() != SIGNATURE_BINS {
+    if parts.len() != TEXT_SIGNATURE_BINS {
         return Err(format!(
-            "Solomon text index line {line_number} has {} signature bins, expected {SIGNATURE_BINS}",
+            "Solomon text index line {line_number} has {} signature bins, expected {TEXT_SIGNATURE_BINS}",
             parts.len()
         ));
     }
@@ -402,6 +446,30 @@ fn parse_text_signature(text: &str, line_number: usize) -> Result<[u16; SIGNATUR
             .map_err(|error: std::num::ParseIntError| error.to_string())?;
     }
     Ok(signature)
+}
+
+/// Average each 2x2 block of the 16x16 signature down to the 8x8 grid used by
+/// the browser candidate-scoring heuristic.
+fn downsample_text_signature(signature: &[u16; TEXT_SIGNATURE_BINS]) -> [u16; SIGNATURE_BINS] {
+    let mut out = [0_u16; SIGNATURE_BINS];
+    let ratio = TEXT_SIGNATURE_GRID / SIGNATURE_GRID;
+    for gy in 0..SIGNATURE_GRID {
+        for gx in 0..SIGNATURE_GRID {
+            let mut sum = 0_u32;
+            let mut count = 0_u32;
+            for dy in 0..ratio {
+                for dx in 0..ratio {
+                    let sx = gx * ratio + dx;
+                    let sy = gy * ratio + dy;
+                    sum = sum.saturating_add(u32::from(signature[sy * TEXT_SIGNATURE_GRID + sx]));
+                    count += 1;
+                }
+            }
+            out[gy * SIGNATURE_GRID + gx] =
+                u16::try_from(sum / count.max(1)).unwrap_or(u16::MAX);
+        }
+    }
+    out
 }
 
 fn select_text_target(prompt: &str, targets: &[TextTarget]) -> Result<TextTarget, String> {
@@ -551,17 +619,18 @@ fn sample_candidate(
     source_index: usize,
     seed: &str,
     passes: usize,
-    target_signature: &[u16; SIGNATURE_BINS],
+    conditioning: &TextConditioning,
+    score_signature: &[u16; SIGNATURE_BINS],
 ) -> Result<Candidate, String> {
     let mut image = initial_noise(model.image_size, source_index, seed)?;
     for _ in 0..passes {
         for &condition in conditions {
-            image = apply_model_condition(model, condition, &image, target_signature)?;
+            image = apply_model_condition(model, condition, &image, conditioning)?;
         }
     }
     let quality = score_sample(&image, model.image_size)?;
     let signature = sample_signature(&image, model.image_size)?;
-    let text_distance = text_signature_distance(&signature, target_signature);
+    let text_distance = text_signature_distance(&signature, score_signature);
     let score = quality
         .total_score
         .saturating_sub(text_distance.saturating_mul(TEXT_WEIGHT));
@@ -596,12 +665,12 @@ fn apply_model_condition(
     model: &MultichannelModel,
     condition: usize,
     input: &[u8],
-    target_signature: &[u16; SIGNATURE_BINS],
+    conditioning: &TextConditioning,
 ) -> Result<Vec<u8>, String> {
     let mut image = input.to_vec();
     for layer in &model.layers {
         image =
-            apply_multichannel_layer_condition(model, layer, condition, &image, target_signature)?;
+            apply_multichannel_layer_condition(model, layer, condition, &image, conditioning)?;
     }
     Ok(image)
 }
@@ -611,7 +680,7 @@ fn apply_multichannel_layer_condition(
     layer: &MultichannelLayer,
     condition: usize,
     input: &[u8],
-    target_signature: &[u16; SIGNATURE_BINS],
+    conditioning: &TextConditioning,
 ) -> Result<Vec<u8>, String> {
     let image_bytes = checked_image_bytes(model.image_size)?;
     if input.len() != image_bytes {
@@ -635,8 +704,9 @@ fn apply_multichannel_layer_condition(
                 model.image_size,
                 x,
                 y,
+                index,
                 model.hidden_shift,
-                target_signature,
+                conditioning,
                 &mut features,
             );
             let raw = predict_multichannel_raw_pixel(
@@ -657,8 +727,9 @@ fn conditioned_features(
     image_size: usize,
     x: usize,
     y: usize,
+    pixel: usize,
     hidden_shift: u8,
-    target_signature: &[u16; SIGNATURE_BINS],
+    conditioning: &TextConditioning,
     out: &mut [i16],
 ) {
     let image_channels = out.len().min(HIDDEN_CHANNELS);
@@ -670,9 +741,8 @@ fn conditioned_features(
         hidden_shift,
         &mut out[..image_channels],
     );
-    let new_layout = out.len() >= HIDDEN_CHANNELS + POSITION_FEATURE_CHANNELS + 2;
     let mut offset = HIDDEN_CHANNELS;
-    if new_layout {
+    if out.len() >= offset + POSITION_FEATURE_CHANNELS {
         position_features(
             image_size,
             x,
@@ -681,17 +751,56 @@ fn conditioned_features(
         );
         offset += POSITION_FEATURE_CHANNELS;
     }
-    if out.len() < offset + 2 {
+    if out.len() < offset + TEXT_FEATURE_CHANNELS {
         return;
     }
-    let target = interpolated_signature_value(target_signature, image_size, x, y);
-    let input_center = i16::from(input[pixel_index(image_size, x, y)]);
-    out[offset] = target.saturating_sub(input_center).clamp(-511, 511);
-    out[offset + 1] = target.saturating_sub(64).clamp(-511, 511);
+    let (Some(static_features), Some(&center)) = (
+        conditioning.static_features.get(pixel),
+        conditioning.centers.get(pixel),
+    ) else {
+        return;
+    };
+    let input_center = i16::from(input[pixel]);
+    let text = &mut out[offset..offset + TEXT_FEATURE_CHANNELS];
+    text.copy_from_slice(static_features);
+    // Channels 0 and 15 depend on the live (denoising) pixel value; the rest are
+    // cached. Mirrors nsrl-bitmap-sample::conditioned_features.
+    text[0] = center.saturating_sub(input_center).clamp(-511, 511);
+    text[15] = center
+        .saturating_sub(input_center)
+        .saturating_add(center.saturating_sub(conditioning.global_mean))
+        .saturating_mul(2)
+        .clamp(-511, 511);
 }
 
-fn interpolated_signature_value(
-    signature: &[u16; SIGNATURE_BINS],
+/// Precompute the per-pixel text features that do not depend on the evolving
+/// image. Channels 0 and 15 are filled with `input_center = 0` and recomputed
+/// per pixel at use time. Mirrors nsrl-bitmap-sample::build_feature_cache.
+fn build_text_conditioning(
+    signature: &[u16; TEXT_SIGNATURE_BINS],
+    stats: &SignatureStats,
+    image_size: usize,
+) -> Result<TextConditioning, String> {
+    let image_bytes = checked_image_bytes(image_size)?;
+    let mut centers = Vec::with_capacity(image_bytes);
+    let mut static_features = Vec::with_capacity(image_bytes);
+    for y in 0..image_size {
+        for x in 0..image_size {
+            centers.push(interpolated_text_signature(signature, image_size, x, y));
+            let mut features = [0_i16; TEXT_FEATURE_CHANNELS];
+            text_signature_features(signature, stats, image_size, x, y, 0, &mut features);
+            static_features.push(features);
+        }
+    }
+    Ok(TextConditioning {
+        static_features,
+        centers,
+        global_mean: stats.global_mean,
+    })
+}
+
+fn interpolated_text_signature(
+    signature: &[u16; TEXT_SIGNATURE_BINS],
     image_size: usize,
     x: usize,
     y: usize,
@@ -699,7 +808,7 @@ fn interpolated_signature_value(
     if image_size <= 1 {
         return i16::try_from(signature[0].min(255)).unwrap_or(0);
     }
-    let grid_max = SIGNATURE_GRID - 1;
+    let grid_max = TEXT_SIGNATURE_GRID - 1;
     let scale = 256_usize;
     let sx = x.saturating_mul(grid_max).saturating_mul(scale) / (image_size - 1);
     let sy = y.saturating_mul(grid_max).saturating_mul(scale) / (image_size - 1);
@@ -711,8 +820,9 @@ fn interpolated_signature_value(
     let wy = i64::try_from(sy % scale).unwrap_or(0);
     let ix = i64::try_from(scale).unwrap_or(256).saturating_sub(wx);
     let iy = i64::try_from(scale).unwrap_or(256).saturating_sub(wy);
-    let at =
-        |xx: usize, yy: usize| -> i64 { i64::from(signature[yy * SIGNATURE_GRID + xx].min(255)) };
+    let at = |xx: usize, yy: usize| -> i64 {
+        i64::from(signature[yy * TEXT_SIGNATURE_GRID + xx].min(255))
+    };
     let weighted = at(x0, y0)
         .saturating_mul(ix)
         .saturating_mul(iy)
@@ -720,6 +830,158 @@ fn interpolated_signature_value(
         .saturating_add(at(x0, y1).saturating_mul(ix).saturating_mul(wy))
         .saturating_add(at(x1, y1).saturating_mul(wx).saturating_mul(wy));
     i16::try_from((weighted + 32_768) >> 16).unwrap_or(0)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn text_signature_features(
+    signature: &[u16; TEXT_SIGNATURE_BINS],
+    stats: &SignatureStats,
+    image_size: usize,
+    x: usize,
+    y: usize,
+    input_center: i16,
+    out: &mut [i16],
+) {
+    if out.len() < TEXT_FEATURE_CHANNELS {
+        return;
+    }
+    let step = (image_size / TEXT_SIGNATURE_GRID.max(1)).max(1);
+    let center = interpolated_text_signature(signature, image_size, x, y);
+    let left = interpolated_text_signature(signature, image_size, x.saturating_sub(step), y);
+    let right = interpolated_text_signature(
+        signature,
+        image_size,
+        (x + step).min(image_size.saturating_sub(1)),
+        y,
+    );
+    let up = interpolated_text_signature(signature, image_size, x, y.saturating_sub(step));
+    let down = interpolated_text_signature(
+        signature,
+        image_size,
+        x,
+        (y + step).min(image_size.saturating_sub(1)),
+    );
+    let up_left = interpolated_text_signature(
+        signature,
+        image_size,
+        x.saturating_sub(step),
+        y.saturating_sub(step),
+    );
+    let down_right = interpolated_text_signature(
+        signature,
+        image_size,
+        (x + step).min(image_size.saturating_sub(1)),
+        (y + step).min(image_size.saturating_sub(1)),
+    );
+    let neighbor_mean =
+        i16::try_from((i32::from(left) + i32::from(right) + i32::from(up) + i32::from(down)) / 4)
+            .unwrap_or(0);
+    let grid_x = signature_grid_coord(image_size, x);
+    let grid_y = signature_grid_coord(image_size, y);
+    let global_mean = stats.global_mean;
+    let row_mean = stats.row_means[grid_y];
+    let col_mean = stats.col_means[grid_x];
+    let horizontal_curve = left
+        .saturating_add(right)
+        .saturating_sub(center.saturating_mul(2));
+    let vertical_curve = up
+        .saturating_add(down)
+        .saturating_sub(center.saturating_mul(2));
+    out[0] = center.saturating_sub(input_center).clamp(-511, 511);
+    out[1] = center.saturating_sub(64).clamp(-511, 511);
+    out[2] = center.saturating_sub(32).clamp(-511, 511);
+    out[3] = center.saturating_sub(48).saturating_mul(4).clamp(-511, 511);
+    out[4] = right
+        .saturating_sub(left)
+        .saturating_mul(2)
+        .clamp(-511, 511);
+    out[5] = down.saturating_sub(up).saturating_mul(2).clamp(-511, 511);
+    out[6] = down_right
+        .saturating_sub(up_left)
+        .saturating_mul(2)
+        .clamp(-511, 511);
+    out[7] = center
+        .saturating_sub(neighbor_mean)
+        .saturating_mul(4)
+        .clamp(-511, 511);
+    out[8] = center
+        .saturating_sub(global_mean)
+        .saturating_mul(4)
+        .clamp(-511, 511);
+    out[9] = center
+        .saturating_sub(row_mean)
+        .saturating_mul(4)
+        .clamp(-511, 511);
+    out[10] = center
+        .saturating_sub(col_mean)
+        .saturating_mul(4)
+        .clamp(-511, 511);
+    out[11] = horizontal_curve.saturating_mul(4).clamp(-511, 511);
+    out[12] = vertical_curve.saturating_mul(4).clamp(-511, 511);
+    out[13] = if center >= 160 { 256 } else { -256 };
+    out[14] = if center <= 32 { -256 } else { 256 };
+    out[15] = center
+        .saturating_sub(input_center)
+        .saturating_add(center.saturating_sub(global_mean))
+        .saturating_mul(2)
+        .clamp(-511, 511);
+}
+
+fn signature_grid_coord(image_size: usize, value: usize) -> usize {
+    if image_size <= 1 {
+        return 0;
+    }
+    value
+        .saturating_mul(TEXT_SIGNATURE_GRID)
+        .checked_div(image_size)
+        .unwrap_or(0)
+        .min(TEXT_SIGNATURE_GRID - 1)
+}
+
+fn signature_stats(signature: &[u16; TEXT_SIGNATURE_BINS]) -> SignatureStats {
+    let global_mean = signature_global_mean(signature);
+    let mut row_means = [0_i16; TEXT_SIGNATURE_GRID];
+    let mut col_means = [0_i16; TEXT_SIGNATURE_GRID];
+    for row in 0..TEXT_SIGNATURE_GRID {
+        row_means[row] = signature_row_mean(signature, row);
+    }
+    for col in 0..TEXT_SIGNATURE_GRID {
+        col_means[col] = signature_col_mean(signature, col);
+    }
+    SignatureStats {
+        global_mean,
+        row_means,
+        col_means,
+    }
+}
+
+fn signature_global_mean(signature: &[u16; TEXT_SIGNATURE_BINS]) -> i16 {
+    let total: u32 = signature
+        .iter()
+        .map(|&value| u32::from(value.min(255)))
+        .sum();
+    i16::try_from(total / u32::try_from(TEXT_SIGNATURE_BINS).unwrap_or(1)).unwrap_or(0)
+}
+
+fn signature_row_mean(signature: &[u16; TEXT_SIGNATURE_BINS], row: usize) -> i16 {
+    let row = row.min(TEXT_SIGNATURE_GRID - 1);
+    let start = row * TEXT_SIGNATURE_GRID;
+    let total: u32 = signature[start..start + TEXT_SIGNATURE_GRID]
+        .iter()
+        .map(|&value| u32::from(value.min(255)))
+        .sum();
+    i16::try_from(total / u32::try_from(TEXT_SIGNATURE_GRID).unwrap_or(1)).unwrap_or(0)
+}
+
+fn signature_col_mean(signature: &[u16; TEXT_SIGNATURE_BINS], col: usize) -> i16 {
+    let col = col.min(TEXT_SIGNATURE_GRID - 1);
+    let mut total = 0_u32;
+    for row in 0..TEXT_SIGNATURE_GRID {
+        total = total.saturating_add(u32::from(
+            signature[row * TEXT_SIGNATURE_GRID + col].min(255),
+        ));
+    }
+    i16::try_from(total / u32::try_from(TEXT_SIGNATURE_GRID).unwrap_or(1)).unwrap_or(0)
 }
 
 fn position_features(image_size: usize, x: usize, y: usize, out: &mut [i16]) {
@@ -1264,4 +1526,81 @@ fn json_escape(value: &str) -> String {
 
 fn js_error(error: String) -> JsValue {
     JsValue::from_str(&error)
+}
+
+#[cfg(test)]
+mod parity_tests {
+    use super::*;
+
+    fn load() -> (MultichannelModel, Vec<TextTarget>) {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let model_bytes =
+            std::fs::read(format!("{root}/../../web/assets/solomon-model.nsrltch")).unwrap();
+        let model = read_text_conditioned_model(&model_bytes).unwrap();
+        let tsv = std::fs::read_to_string(format!(
+            "{root}/../../web/assets/solomon-spirit-text-signatures.tsv"
+        ))
+        .unwrap();
+        let targets = read_text_targets(&tsv).unwrap();
+        (model, targets)
+    }
+
+    #[test]
+    fn loads_30_channel_model_and_256_bin_signatures() {
+        let (model, targets) = load();
+        assert_eq!(
+            model.hidden_channels,
+            HIDDEN_CHANNELS + POSITION_FEATURE_CHANNELS + TEXT_FEATURE_CHANNELS,
+            "expected 30-channel model"
+        );
+        assert!(!targets.is_empty());
+        // 256-bin signature parsed in full; 8x8 downsample populated for scoring.
+        assert!(targets[0].text_signature.iter().any(|&v| v > 0));
+        assert!(targets[0].score_signature.iter().any(|&v| v > 0));
+    }
+
+    #[test]
+    fn renders_nonblank_text_conditioned_sigil() {
+        let (model, targets) = load();
+        let conditions = generation_conditions(&model);
+        assert!(!conditions.is_empty());
+        let target = &targets[0];
+        let conditioning = build_text_conditioning(
+            &target.text_signature,
+            &target.text_stats,
+            model.image_size,
+        )
+        .unwrap();
+        let candidate =
+            sample_candidate(&model, &conditions, 0, "parity-seed", 4, &conditioning, &target.score_signature)
+                .unwrap();
+        let ink = candidate.image.iter().filter(|&&v| v > INK_THRESHOLD).count();
+        // Not blank (the regression we are guarding against) and not fully saturated.
+        assert!(ink > 50, "sigil has too little ink: {ink}");
+        assert!(
+            ink < candidate.image.len() * 9 / 10,
+            "sigil is over-saturated: {ink}"
+        );
+    }
+
+    #[test]
+    fn different_targets_produce_different_sigils() {
+        let (model, targets) = load();
+        let conditions = generation_conditions(&model);
+        let render = |target: &TextTarget| {
+            let conditioning =
+                build_text_conditioning(&target.text_signature, &target.text_stats, model.image_size)
+                    .unwrap();
+            sample_candidate(&model, &conditions, 0, "parity-seed", 4, &conditioning, &target.score_signature)
+                .unwrap()
+                .image
+        };
+        let a = render(&targets[0]);
+        let b = render(&targets[targets.len() / 2]);
+        let differing = a.iter().zip(b.iter()).filter(|(x, y)| x != y).count();
+        assert!(
+            differing > 100,
+            "text conditioning had no effect: {differing} differing pixels"
+        );
+    }
 }
