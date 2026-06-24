@@ -4,8 +4,8 @@ const ASSETS = {
   model: "./assets/model.nsrllm",
   vocab: "./assets/v4096.vocab.tsv",
   tokens: "./assets/v4096.tokens.u16",
-  solomonModel: "./assets/solomon-model.nsrltch?v=2-16ch",
-  solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv?v=2-16ch",
+  solomonModel: "./assets/solomon-model.nsrltch?v=3-30ch",
+  solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv?v=3-30ch",
 };
 const SIGIL_CANDIDATES = 4;
 const SIGIL_PASSES = 3;
