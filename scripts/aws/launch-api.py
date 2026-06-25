@@ -195,8 +195,9 @@ export AWS_REGION={shlex.quote(env.get("AWS_REGION", "us-east-1"))}
 export AWS_DEFAULT_REGION={shlex.quote(env.get("AWS_DEFAULT_REGION", env.get("AWS_REGION", "us-east-1")))}
 export HOME=/root
 
-dnf update -y --allowerasing
-dnf install -y --allowerasing awscli git gzip make gcc gcc-c++ openssl-devel pkgconf-pkg-config python3 tar
+# Skip the full `dnf update` (re-patching the whole OS adds minutes per launch);
+# install only the toolchain we need.
+dnf install -y --allowerasing awscli git gzip make gcc gcc-c++ openssl-devel pkgconf-pkg-config python3 tar zstd
 
 mkdir -p /opt/nsrl /mnt/nsrl/tokens /mnt/nsrl/aws-runs
 cd /opt
@@ -451,6 +452,12 @@ class Launcher:
             launch_args.extend(["--security-group-ids", *self.security_group_ids.split(",")])
         if self.key_name:
             launch_args.extend(["--key-name", self.key_name])
+        # Spot is ~70% cheaper; runs checkpoint to S3 (NSRL_SYNC_SECONDS) and can
+        # resume, so interruptions are tolerable. Opt-in via NSRL_USE_SPOT=1.
+        if os.environ.get("NSRL_USE_SPOT", "").strip().lower() in ("1", "true", "yes"):
+            launch_args.extend(
+                ["--instance-market-options", "MarketType=spot,SpotOptions={SpotInstanceType=one-time}"]
+            )
 
         instance_id = run_command(launch_args, cwd=self.repo)
         normalized["instance_id"] = instance_id
