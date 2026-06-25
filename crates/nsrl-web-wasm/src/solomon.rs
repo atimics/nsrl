@@ -1603,4 +1603,50 @@ mod parity_tests {
             "text conditioning had no effect: {differing} differing pixels"
         );
     }
+
+    fn load_model_at(path: &str) -> MultichannelModel {
+        read_text_conditioned_model(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    // Blur proxy: fraction of pixels in the mid-gray band [INK_THRESHOLD, STRONG_INK_THRESHOLD].
+    // Lower = crisper (more pixels snapped to paper/ink extremes).
+    fn blur_fraction(image: &[u8]) -> f64 {
+        let mid = image
+            .iter()
+            .filter(|&&v| v > INK_THRESHOLD && v <= STRONG_INK_THRESHOLD)
+            .count();
+        mid as f64 / image.len() as f64
+    }
+
+    #[test]
+    #[ignore] // run explicitly: compares deployed vs scaled seal crispness
+    fn compare_scaled_seal_crispness() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let tsv = std::fs::read_to_string(format!(
+            "{root}/../../web/assets/solomon-spirit-text-signatures.tsv"
+        ))
+        .unwrap();
+        let targets = read_text_targets(&tsv).unwrap();
+        let target = &targets[0];
+        let render = |model: &MultichannelModel| {
+            let cond =
+                build_text_conditioning(&target.text_signature, &target.text_stats, model.image_size)
+                    .unwrap();
+            let conditions = generation_conditions(model);
+            sample_candidate(model, &conditions, 0, "crisp-cmp", 4, &cond, &target.score_signature)
+                .unwrap()
+                .image
+        };
+        let deployed = load_model_at(&format!("{root}/../../web/assets/solomon-model.nsrltch"));
+        let scaled = load_model_at("/tmp/solomon-seal-scaled/model.nsrltch");
+        let bd = blur_fraction(&render(&deployed));
+        let bs = blur_fraction(&render(&scaled));
+        println!("DEPLOYED layers={} blur_fraction={bd:.4}", deployed.layers.len());
+        println!("SCALED   layers={} blur_fraction={bs:.4}", scaled.layers.len());
+        println!(
+            "VERDICT: scaled is {} ({:.1}% blur change)",
+            if bs < bd { "CRISPER" } else { "NOT crisper" },
+            (bs - bd) / bd * 100.0
+        );
+    }
 }
