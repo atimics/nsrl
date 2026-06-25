@@ -20,9 +20,13 @@ use nsrl_core::{
 };
 
 pub const BYTE_VOCAB: usize = 256;
-pub const MINI_TRANSFORMER_D_MODEL: usize = 32;
-pub const MINI_TRANSFORMER_HEADS: usize = 2;
-pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 64;
+// Integer-transformer scale-up (Fork B). Widened from d_model=32/heads=2/
+// hidden=64 to roughly 3x parameters. d_model must stay divisible by heads
+// (64 / 4 = 16 per-head dim). FixedScale arrays below are uniform, so they
+// resize automatically with these constants; no per-dimension retuning needed.
+pub const MINI_TRANSFORMER_D_MODEL: usize = 64;
+pub const MINI_TRANSFORMER_HEADS: usize = 4;
+pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 256;
 pub const MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT: u8 = 1;
 
 pub const MINI_TRANSFORMER_D_MODEL_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] = [FixedScale {

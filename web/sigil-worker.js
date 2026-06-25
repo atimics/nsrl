@@ -1,8 +1,8 @@
 import init, { SolomonSampler } from "./pkg/nsrl_web_wasm.js";
 
 const ASSETS = {
-  solomonModel: "./assets/solomon-model.nsrltch?v=3-30ch",
-  solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv?v=3-30ch",
+  solomonModel: "./assets/solomon-model.nsrltch?v=4-seal-scaled",
+  solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv?v=4-seal-scaled",
 };
 
 let samplerPromise = null;
