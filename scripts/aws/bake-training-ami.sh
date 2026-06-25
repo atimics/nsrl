@@ -15,7 +15,6 @@
 set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
-PROFILE_ARGS=(); [[ -n "${AWS_PROFILE:-}" ]] && PROFILE_ARGS=(--profile "$AWS_PROFILE")
 S3_URI="${NSRL_S3_URI:-s3://nsrl-training-022118847419-us-east-1/wikibard}"
 ARTIFACT="${NSRL_ARTIFACT_S3_URI:-${S3_URI}/artifacts/nsrl-working-trace-summary.tar.gz}"
 IAM_PROFILE="${NSRL_IAM_INSTANCE_PROFILE:-NSRLTrainingEc2InstanceProfile}"
@@ -23,7 +22,13 @@ INSTANCE_TYPE="${NSRL_BAKE_INSTANCE_TYPE:-c8g.4xlarge}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DONE_MARKER="${S3_URI}/cache/ami-bake-done-${STAMP}"
 
-aws() { command aws "${PROFILE_ARGS[@]}" --region "$REGION" "$@"; }
+aws() {
+  if [[ -n "${AWS_PROFILE:-}" ]]; then
+    command aws --profile "$AWS_PROFILE" --region "$REGION" "$@"
+  else
+    command aws --region "$REGION" "$@"
+  fi
+}
 
 echo "[bake] resolving latest AL2023 arm64 AMI..."
 BASE_AMI="$(aws ec2 describe-images --owners amazon \
