@@ -5,6 +5,7 @@
 extern crate std;
 
 pub mod attention;
+pub mod calibration;
 pub mod linear;
 pub mod lut;
 pub mod mlp;
@@ -20,12 +21,17 @@ pub use attention::{
     attention_residual_block_i16_q15_checked,
     attention_residual_block_i16_q15_with_linear_kernel_checked, attention_row_i16_q15_checked,
     attention_weight_v_i16_q15_checked, base2_exp_neg_q15, base2_softmax_i32_q15,
-    clear_linear_attention_state_checked, is_power_of_four, linear_attention_i16_q15_checked,
+    clear_linear_attention_state_checked, decay_linear_attention_state_i16_checked,
+    is_power_of_four, linear_attention_i16_q15_checked,
     linear_attention_i16_q15_with_linear_kernel_checked, linear_attention_state_lengths,
     linear_attention_step_i16_q15_checked,
     linear_attention_step_i16_q15_with_linear_kernel_checked,
+    linear_attention_step_with_decay_i16_q15_checked,
+    linear_attention_step_with_decay_i16_q15_with_linear_kernel_checked,
     linear_attention_ttt_delta_state_i16_q15_checked, linear_attention_ttt_step_i16_q15_checked,
     linear_attention_ttt_step_i16_q15_with_linear_kernel_checked,
+    linear_attention_with_decay_i16_q15_checked,
+    linear_attention_with_decay_i16_q15_with_linear_kernel_checked,
     prenorm_attention_residual_block_i16_q15_checked,
     prenorm_attention_residual_block_i16_q15_with_linear_kernel_checked, reciprocal_sum_q31,
     self_attention_i16_q15_checked, self_attention_i16_q15_with_linear_kernel_checked,
@@ -41,6 +47,10 @@ pub use linear::{
     linear_backward_weight_update_prescaled_i32_i8_checked, linear_i16_i8_i16_per_channel_checked,
     linear_i16_i8_i16_per_channel_generic_checked,
     linear_i16_i8_i16_per_channel_with_kernel_checked, linear_i16_ternary_i16_per_channel_checked,
+};
+pub use calibration::{
+    MAGNITUDE_BUCKETS, MagnitudeHistogram, bit_length_u64, calibrate_fixed_scale,
+    solve_fixed_scale_ratio,
 };
 pub use lut::{
     EXP2_NEG_FRAC_LUT_8BIT_LEN, NormalizedMantissa, RECIP_LUT_8BIT_Q31_LEN,

@@ -59,6 +59,12 @@ pub fn round_shift_rhu_i64(value: i64, right_shift: u8) -> i64 {
 pub fn requantize_i32_to_i16(accumulator: i32, scale: FixedScale) -> i16 {
     debug_assert!(scale.multiplier >= 0);
 
+    // Identity scale (the common RESIDUAL_Q15_SCALE) is a no-op apart from
+    // saturation; skip the widening multiply and rounding shift entirely.
+    if scale.multiplier == 1 && scale.right_shift == 0 {
+        return saturate_i16(i64::from(accumulator));
+    }
+
     let wide = i64::from(accumulator) * i64::from(scale.multiplier);
     saturate_i16(round_shift_rhu_i64(wide, scale.right_shift))
 }
