@@ -465,8 +465,7 @@ fn downsample_text_signature(signature: &[u16; TEXT_SIGNATURE_BINS]) -> [u16; SI
                     count += 1;
                 }
             }
-            out[gy * SIGNATURE_GRID + gx] =
-                u16::try_from(sum / count.max(1)).unwrap_or(u16::MAX);
+            out[gy * SIGNATURE_GRID + gx] = u16::try_from(sum / count.max(1)).unwrap_or(u16::MAX);
         }
     }
     out
@@ -669,8 +668,7 @@ fn apply_model_condition(
 ) -> Result<Vec<u8>, String> {
     let mut image = input.to_vec();
     for layer in &model.layers {
-        image =
-            apply_multichannel_layer_condition(model, layer, condition, &image, conditioning)?;
+        image = apply_multichannel_layer_condition(model, layer, condition, &image, conditioning)?;
     }
     Ok(image)
 }
@@ -1565,16 +1563,24 @@ mod parity_tests {
         let conditions = generation_conditions(&model);
         assert!(!conditions.is_empty());
         let target = &targets[0];
-        let conditioning = build_text_conditioning(
-            &target.text_signature,
-            &target.text_stats,
-            model.image_size,
+        let conditioning =
+            build_text_conditioning(&target.text_signature, &target.text_stats, model.image_size)
+                .unwrap();
+        let candidate = sample_candidate(
+            &model,
+            &conditions,
+            0,
+            "parity-seed",
+            4,
+            &conditioning,
+            &target.score_signature,
         )
         .unwrap();
-        let candidate =
-            sample_candidate(&model, &conditions, 0, "parity-seed", 4, &conditioning, &target.score_signature)
-                .unwrap();
-        let ink = candidate.image.iter().filter(|&&v| v > INK_THRESHOLD).count();
+        let ink = candidate
+            .image
+            .iter()
+            .filter(|&&v| v > INK_THRESHOLD)
+            .count();
         // Not blank (the regression we are guarding against) and not fully saturated.
         assert!(ink > 50, "sigil has too little ink: {ink}");
         assert!(
@@ -1588,12 +1594,23 @@ mod parity_tests {
         let (model, targets) = load();
         let conditions = generation_conditions(&model);
         let render = |target: &TextTarget| {
-            let conditioning =
-                build_text_conditioning(&target.text_signature, &target.text_stats, model.image_size)
-                    .unwrap();
-            sample_candidate(&model, &conditions, 0, "parity-seed", 4, &conditioning, &target.score_signature)
-                .unwrap()
-                .image
+            let conditioning = build_text_conditioning(
+                &target.text_signature,
+                &target.text_stats,
+                model.image_size,
+            )
+            .unwrap();
+            sample_candidate(
+                &model,
+                &conditions,
+                0,
+                "parity-seed",
+                4,
+                &conditioning,
+                &target.score_signature,
+            )
+            .unwrap()
+            .image
         };
         let a = render(&targets[0]);
         let b = render(&targets[targets.len() / 2]);
@@ -1608,14 +1625,18 @@ mod parity_tests {
         read_text_conditioned_model(&std::fs::read(path).unwrap()).unwrap()
     }
 
-    // Blur proxy: fraction of pixels in the mid-gray band [INK_THRESHOLD, STRONG_INK_THRESHOLD].
-    // Lower = crisper (more pixels snapped to paper/ink extremes).
-    fn blur_fraction(image: &[u8]) -> f64 {
+    // Blur proxy: pixels-per-thousand in the mid-gray band [INK_THRESHOLD, STRONG_INK_THRESHOLD].
+    // Lower = crisper (more pixels snapped to paper/ink extremes). Integer permille
+    // keeps this in the no-float contract enforced by check-no-floats.sh.
+    fn blur_permille(image: &[u8]) -> u64 {
+        if image.is_empty() {
+            return 0;
+        }
         let mid = image
             .iter()
             .filter(|&&v| v > INK_THRESHOLD && v <= STRONG_INK_THRESHOLD)
-            .count();
-        mid as f64 / image.len() as f64
+            .count() as u64;
+        mid.saturating_mul(1000) / image.len() as u64
     }
 
     #[test]
@@ -1629,24 +1650,38 @@ mod parity_tests {
         let targets = read_text_targets(&tsv).unwrap();
         let target = &targets[0];
         let render = |model: &MultichannelModel| {
-            let cond =
-                build_text_conditioning(&target.text_signature, &target.text_stats, model.image_size)
-                    .unwrap();
+            let cond = build_text_conditioning(
+                &target.text_signature,
+                &target.text_stats,
+                model.image_size,
+            )
+            .unwrap();
             let conditions = generation_conditions(model);
-            sample_candidate(model, &conditions, 0, "crisp-cmp", 4, &cond, &target.score_signature)
-                .unwrap()
-                .image
+            sample_candidate(
+                model,
+                &conditions,
+                0,
+                "crisp-cmp",
+                4,
+                &cond,
+                &target.score_signature,
+            )
+            .unwrap()
+            .image
         };
         let deployed = load_model_at(&format!("{root}/../../web/assets/solomon-model.nsrltch"));
         let scaled = load_model_at("/tmp/solomon-seal-scaled/model.nsrltch");
-        let bd = blur_fraction(&render(&deployed));
-        let bs = blur_fraction(&render(&scaled));
-        println!("DEPLOYED layers={} blur_fraction={bd:.4}", deployed.layers.len());
-        println!("SCALED   layers={} blur_fraction={bs:.4}", scaled.layers.len());
+        let bd = blur_permille(&render(&deployed));
+        let bs = blur_permille(&render(&scaled));
         println!(
-            "VERDICT: scaled is {} ({:.1}% blur change)",
+            "DEPLOYED layers={} blur_permille={bd}",
+            deployed.layers.len()
+        );
+        println!("SCALED   layers={} blur_permille={bs}", scaled.layers.len());
+        let delta = bs as i64 - bd as i64;
+        println!(
+            "VERDICT: scaled is {} ({delta:+} permille blur change)",
             if bs < bd { "CRISPER" } else { "NOT crisper" },
-            (bs - bd) / bd * 100.0
         );
     }
 }

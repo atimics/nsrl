@@ -11,13 +11,12 @@ use nsrl_core::{
     GatedMlpWeightUpdateParams, GatedMlpWeightUpdateWorkspace, GatedMlpWorkspace,
     LinearAttentionWorkspace, LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
     LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
-    LinearWeightUpdateStats, MAX_RIGHT_SHIFT, MagnitudeHistogram, Q15_SHIFT, SelfAttentionI16Params,
-    base2_softmax_i32_q15, calibrate_fixed_scale, dot_i8_i16_i32_checked,
-    gated_mlp_backward_input_i16_q15_checked,
-    gated_mlp_backward_weight_update_i8_checked, gated_mlp_i16_q15_checked,
-    linear_attention_i16_q15_checked, linear_backward_input_i16_i8_i16_per_channel_checked,
-    linear_backward_weight_update_i8_checked, requantize_i32_to_i16, round_shift_rhu_i64,
-    saturate_i8, saturate_i16,
+    LinearWeightUpdateStats, MAX_RIGHT_SHIFT, MagnitudeHistogram, Q15_SHIFT,
+    SelfAttentionI16Params, base2_softmax_i32_q15, calibrate_fixed_scale, dot_i8_i16_i32_checked,
+    gated_mlp_backward_input_i16_q15_checked, gated_mlp_backward_weight_update_i8_checked,
+    gated_mlp_i16_q15_checked, linear_attention_i16_q15_checked,
+    linear_backward_input_i16_i8_i16_per_channel_checked, linear_backward_weight_update_i8_checked,
+    requantize_i32_to_i16, round_shift_rhu_i64, saturate_i8, saturate_i16,
 };
 
 pub const BYTE_VOCAB: usize = 256;
@@ -392,8 +391,13 @@ pub fn mini_transformer_linear_nope_train_step(
     validate_model_shapes(model, config.seq_len)?;
     validate_workspace_shapes(workspace, config.seq_len)?;
 
-    let forward_before_residual_saturation_count =
-        mini_transformer_forward_linear_nope(model, context, config.seq_len, config.output_scale, workspace)?;
+    let forward_before_residual_saturation_count = mini_transformer_forward_linear_nope(
+        model,
+        context,
+        config.seq_len,
+        config.output_scale,
+        workspace,
+    )?;
     let predicted_before = byte_argmax_i32(workspace.logits_q8)?;
 
     byte_softmax_gradient_q15(
@@ -521,8 +525,13 @@ pub fn mini_transformer_linear_nope_train_step(
         config.embedding_learning_rate_shift,
     )?;
 
-    let forward_after_residual_saturation_count =
-        mini_transformer_forward_linear_nope(model, context, config.seq_len, config.output_scale, workspace)?;
+    let forward_after_residual_saturation_count = mini_transformer_forward_linear_nope(
+        model,
+        context,
+        config.seq_len,
+        config.output_scale,
+        workspace,
+    )?;
     let predicted_after = byte_argmax_i32(workspace.logits_q8)?;
     let residual_saturation_count = gradient_residual_saturation
         .saturating_add(embedding_gradient_saturation)
@@ -881,8 +890,9 @@ fn mini_transformer_output_row_for(
 // checkpoints, where forward and backward stay consistent.
 // ---------------------------------------------------------------------------
 
-/// Default coverage for output-scale calibration: keep 99.9% of accumulators in
-/// range, allowing the rarest 0.1% to clip rather than crushing the whole scale.
+/// Default coverage for output-scale calibration: keep 999 in 1000 accumulators
+/// in range, allowing the rarest 1 in 1000 to clip rather than crushing the
+/// whole scale.
 pub const OUTPUT_CALIBRATION_COVERAGE_NUM: u64 = 999;
 pub const OUTPUT_CALIBRATION_COVERAGE_DEN: u64 = 1000;
 
@@ -1860,7 +1870,7 @@ mod tests {
             before.clipped,
             after.clipped,
         );
-        // At 99.9% coverage over 1024 accumulators, at most ~1 may still clip.
+        // At 999-in-1000 coverage over 1024 accumulators, at most ~1 may still clip.
         assert!(after.clipped <= 2, "after clipped = {}", after.clipped);
     }
 }

@@ -112,7 +112,11 @@ pub fn attention_dot_q_k_i16_i32_checked(query: &[i16], key: &[i16]) -> Option<i
 ///
 /// Callers must pass `query.len() == key.len()`; the zip stops at the shorter slice.
 #[inline]
-fn attention_dot_q_k_i16_i32_with_shift(query: &[i16], key: &[i16], scale_shift: u8) -> Option<i32> {
+fn attention_dot_q_k_i16_i32_with_shift(
+    query: &[i16],
+    key: &[i16],
+    scale_shift: u8,
+) -> Option<i32> {
     let acc = if fits_n_i16_products_in_i64(query.len()) {
         // Fast path: wrapping arithmetic so LLVM can auto-vectorize this loop.
         let mut acc = 0_i64;
@@ -518,7 +522,7 @@ pub fn linear_attention_i16_q15_with_linear_kernel_checked(
 ///
 /// `decay` is the per-token factor γ applied to S and K_s before each token is
 /// folded in (see [`decay_linear_attention_state_i16_checked`]). γ < 1 biases the
-/// effective receptive field toward recent tokens; γ = 1.0 (`RESIDUAL_Q15_SCALE`)
+/// effective receptive field toward recent tokens; γ = 1 (`RESIDUAL_Q15_SCALE`)
 /// reproduces the undecayed accumulation exactly. Decay is most meaningful with
 /// `params.causal = true` or the streaming step API.
 pub fn linear_attention_with_decay_i16_q15_checked(
@@ -546,7 +550,14 @@ pub fn linear_attention_with_decay_i16_q15_with_linear_kernel_checked(
     output: &mut [i16],
     linear_kernel: LinearKernel,
 ) -> Option<()> {
-    linear_attention_i16_q15_decay_kernel_impl(input, params, decay, workspace, output, linear_kernel)
+    linear_attention_i16_q15_decay_kernel_impl(
+        input,
+        params,
+        decay,
+        workspace,
+        output,
+        linear_kernel,
+    )
 }
 
 fn linear_attention_i16_q15_decay_kernel_impl(
@@ -746,7 +757,7 @@ pub fn linear_attention_step_i16_q15_with_linear_kernel_checked(
 /// One streaming linear-attention step with an exponential decay (forget) gate.
 ///
 /// The persistent `state` is decayed by γ (`decay`) before this token folds in,
-/// giving O(1) recurrent attention with a bounded effective context. γ = 1.0
+/// giving O(1) recurrent attention with a bounded effective context. γ = 1
 /// (`RESIDUAL_Q15_SCALE`) matches [`linear_attention_step_i16_q15_checked`] exactly.
 pub fn linear_attention_step_with_decay_i16_q15_checked(
     input_row: &[i16],
@@ -1044,7 +1055,7 @@ fn linear_attention_phi_i16_u32(value: i16) -> u32 {
 /// K_s keeps the projection `output = (φ(Q)·S) / (φ(Q)·K_s)` a valid normalized
 /// average — older contributions simply receive geometrically smaller weight.
 ///
-/// A decay of exactly 1.0 (`RESIDUAL_Q15_SCALE`, i.e. `{multiplier: 1, right_shift: 0}`)
+/// A decay of exactly 1 (`RESIDUAL_Q15_SCALE`, i.e. `{multiplier: 1, right_shift: 0}`)
 /// is a no-op and returns immediately without touching the state.
 pub fn decay_linear_attention_state_i16_checked(
     state_kv: &mut [i64],
@@ -1061,7 +1072,7 @@ pub fn decay_linear_attention_state_i16_checked(
         return None;
     }
 
-    // Identity decay (γ = 1.0): nothing to do, and the existing no-decay paths
+    // Identity decay (γ = 1): nothing to do, and the existing no-decay paths
     // pay zero cost for threading this through.
     if decay.multiplier == 1 && decay.right_shift == 0 {
         return Some(());
@@ -2362,14 +2373,15 @@ mod tests {
         // head_dim = 2 → state_kv has 4 entries, key_sums has 2.
         let mut state_kv = [4_i64, 5, -6, 7];
         let mut key_sums = [10_i64, -3];
-        // γ = 0.5 → {multiplier: 1, right_shift: 1}; RhU(x, 1) = (x + 1) >> 1.
+        // γ = 1/2 → {multiplier: 1, right_shift: 1}; RhU(x, 1) = (x + 1) >> 1.
         let half = FixedScale {
             multiplier: 1,
             right_shift: 1,
         };
 
         assert!(
-            decay_linear_attention_state_i16_checked(&mut state_kv, &mut key_sums, 2, half).is_some()
+            decay_linear_attention_state_i16_checked(&mut state_kv, &mut key_sums, 2, half)
+                .is_some()
         );
         assert_eq!(state_kv, [2, 3, -3, 4]);
         assert_eq!(key_sums, [5, -1]);
@@ -2380,7 +2392,7 @@ mod tests {
         let mut state_kv = [9_i64, -9, 9, -9];
         let mut key_sums = [123_i64, -456];
 
-        // γ = 1.0 leaves the state untouched.
+        // γ = 1 leaves the state untouched.
         assert!(
             decay_linear_attention_state_i16_checked(
                 &mut state_kv,

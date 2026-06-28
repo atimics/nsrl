@@ -6426,8 +6426,7 @@ fn run_lexeme_softmax_training_with_initial_weights_and_quality(
         None
     };
 
-    let use_parallel_map_reduce =
-        use_batch_accumulation && config.map_reduce_workers > 1;
+    let use_parallel_map_reduce = use_batch_accumulation && config.map_reduce_workers > 1;
 
     for epoch in 0..config.epochs {
         if use_parallel_map_reduce {
@@ -6506,8 +6505,7 @@ fn run_lexeme_softmax_training_with_initial_weights_and_quality(
                             embedding_gradient,
                             &mut embedding_model.embeddings,
                             config.learning_rate,
-                            embedding_batch_learning_rate_shift
-                                .ok_or(TrainError::InvalidConfig)?,
+                            embedding_batch_learning_rate_shift.ok_or(TrainError::InvalidConfig)?,
                             config.max_embedding_delta,
                         )?
                     } else {
@@ -6530,26 +6528,23 @@ fn run_lexeme_softmax_training_with_initial_weights_and_quality(
                             weight_delta_l1.saturating_add(hidden_update.weight_delta_l1);
                     }
                     updates = updates.saturating_add(1);
-                    gradient_saturation_count = gradient_saturation_count
-                        .saturating_add(update.gradient_saturation_count);
+                    gradient_saturation_count =
+                        gradient_saturation_count.saturating_add(update.gradient_saturation_count);
                     embedding_saturation_count = embedding_saturation_count
                         .saturating_add(embedding_update.gradient_saturation_count);
-                    zero_delta_count =
-                        zero_delta_count.saturating_add(update.zero_delta_count);
+                    zero_delta_count = zero_delta_count.saturating_add(update.zero_delta_count);
                     embedding_zero_delta_count = embedding_zero_delta_count
                         .saturating_add(embedding_update.zero_delta_count);
                     weight_delta_l1 = weight_delta_l1.saturating_add(update.weight_delta_l1);
-                    embedding_delta_l1 = embedding_delta_l1
-                        .saturating_add(embedding_update.weight_delta_l1);
+                    embedding_delta_l1 =
+                        embedding_delta_l1.saturating_add(embedding_update.weight_delta_l1);
 
                     if steps.len() < 16 && !batch_result.steps.is_empty() {
                         let last_step = batch_result.steps.last().unwrap();
-                        let trace_window_start =
-                            starts[batch_end_index.saturating_sub(1)];
+                        let trace_window_start = starts[batch_end_index.saturating_sub(1)];
                         let after_forward = lexeme_head_forward_for_training_q15(
                             &embedding_model,
-                            &tokens[trace_window_start
-                                ..trace_window_start + config.seq_len],
+                            &tokens[trace_window_start..trace_window_start + config.seq_len],
                             config.context_features,
                             &hidden_weights,
                             config.hidden_dim,
@@ -6566,8 +6561,7 @@ fn run_lexeme_softmax_training_with_initial_weights_and_quality(
                         )?;
                         let weight_hash_after = hash_i8_slice(&output_weights);
                         let embedding_hash_after = embedding_model.embedding_hash();
-                        let predicted_token_after =
-                            lexeme_argmax_i32(&after_row.logits_q8);
+                        let predicted_token_after = lexeme_argmax_i32(&after_row.logits_q8);
                         steps.push(LexemeSoftmaxTrainingStepTrace {
                             update_index: updates,
                             epoch,
@@ -6576,31 +6570,23 @@ fn run_lexeme_softmax_training_with_initial_weights_and_quality(
                             target_token: last_step.target_token,
                             predicted_token_before: last_step.predicted_token_before,
                             predicted_token_after,
-                            target_probability_before_q15:
-                                last_step.target_probability_before_q15,
+                            target_probability_before_q15: last_step.target_probability_before_q15,
                             target_probability_after_q15: after_row.probabilities_q15
                                 [usize::from(last_step.target_token)],
-                            target_frequency_weight_q15:
-                                last_step.target_frequency_weight_q15,
-                            target_quality_weight_q15:
-                                last_step.target_quality_weight_q15,
-                            context_quality_weight_q15:
-                                last_step.context_quality_weight_q15,
-                            target_update_weight_q15:
-                                last_step.target_update_weight_q15,
+                            target_frequency_weight_q15: last_step.target_frequency_weight_q15,
+                            target_quality_weight_q15: last_step.target_quality_weight_q15,
+                            context_quality_weight_q15: last_step.context_quality_weight_q15,
+                            target_update_weight_q15: last_step.target_update_weight_q15,
                             learning_rate_shift,
-                            embedding_learning_rate_shift:
-                                config.embedding_learning_rate_shift,
+                            embedding_learning_rate_shift: config.embedding_learning_rate_shift,
                             embedding_hash_before: last_step.embedding_hash_before,
                             embedding_hash_after,
                             weight_hash_before: last_step.weight_hash_before,
                             weight_hash_after,
                             gradient_saturation_count: update.gradient_saturation_count,
-                            embedding_saturation_count:
-                                embedding_update.gradient_saturation_count,
+                            embedding_saturation_count: embedding_update.gradient_saturation_count,
                             zero_delta_count: update.zero_delta_count,
-                            embedding_zero_delta_count:
-                                embedding_update.zero_delta_count,
+                            embedding_zero_delta_count: embedding_update.zero_delta_count,
                             weight_delta_l1: update.weight_delta_l1,
                             embedding_delta_l1: embedding_update.weight_delta_l1,
                         });
@@ -23872,14 +23858,13 @@ impl LexemeSoftmaxOutputHeadGradientI64 {
         {
             return Err(TrainError::InvalidConfig);
         }
-        self.sample_count = self.sample_count.checked_add(source.sample_count).ok_or(
-            TrainError::CoreRejected("lexeme_head_gradient_merge_sample_count"),
-        )?;
-        for (target, source) in self
-            .accumulators
-            .iter_mut()
-            .zip(source.accumulators.iter())
-        {
+        self.sample_count =
+            self.sample_count
+                .checked_add(source.sample_count)
+                .ok_or(TrainError::CoreRejected(
+                    "lexeme_head_gradient_merge_sample_count",
+                ))?;
+        for (target, source) in self.accumulators.iter_mut().zip(source.accumulators.iter()) {
             *target = target.checked_add(*source).ok_or(TrainError::CoreRejected(
                 "lexeme_head_gradient_merge_accumulator",
             ))?;
@@ -24173,14 +24158,13 @@ impl LexemeSoftmaxEmbeddingGradientI64 {
         {
             return Err(TrainError::InvalidConfig);
         }
-        self.sample_count = self.sample_count.checked_add(source.sample_count).ok_or(
-            TrainError::CoreRejected("lexeme_embedding_gradient_merge_sample_count"),
-        )?;
-        for (target, source) in self
-            .accumulators
-            .iter_mut()
-            .zip(source.accumulators.iter())
-        {
+        self.sample_count =
+            self.sample_count
+                .checked_add(source.sample_count)
+                .ok_or(TrainError::CoreRejected(
+                    "lexeme_embedding_gradient_merge_sample_count",
+                ))?;
+        for (target, source) in self.accumulators.iter_mut().zip(source.accumulators.iter()) {
             *target = target.checked_add(*source).ok_or(TrainError::CoreRejected(
                 "lexeme_embedding_gradient_merge_accumulator",
             ))?;
@@ -24264,9 +24248,10 @@ fn lexeme_softmax_merge_batch_result(
     target: &mut LexemeSoftmaxBatchResult,
     source: LexemeSoftmaxBatchResult,
 ) -> Result<(), TrainError> {
-    if let (Some(target_grad), Some(source_grad)) =
-        (target.output_head_gradient.as_mut(), source.output_head_gradient.as_ref())
-    {
+    if let (Some(target_grad), Some(source_grad)) = (
+        target.output_head_gradient.as_mut(),
+        source.output_head_gradient.as_ref(),
+    ) {
         target_grad.merge(source_grad)?;
     }
     if let (Some(target_grad), Some(source_grad)) = (
@@ -24349,8 +24334,7 @@ fn lexeme_softmax_accumulate_window(
     )?;
     let predicted_token_before = lexeme_argmax_i32(&row.logits_q8);
     let gradient_q15 = lexeme_softmax_gradient_q15(&row.probabilities_q15, target_token);
-    let target_frequency_weight_q15 =
-        target_frequency_weights_q15[usize::from(target_token)];
+    let target_frequency_weight_q15 = target_frequency_weights_q15[usize::from(target_token)];
     let target_quality_weight_q15 = quality_weights_q15[usize::from(target_token)];
     let context_quality_weight_q15 = lexeme_context_quality_weight_q15(
         &tokens[start..start + config.seq_len],
@@ -24360,8 +24344,7 @@ fn lexeme_softmax_accumulate_window(
         lexeme_combine_q15_weights(target_frequency_weight_q15, target_quality_weight_q15),
         context_quality_weight_q15,
     );
-    let weighted_gradient_q15 =
-        lexeme_scale_gradient_q15(&gradient_q15, target_update_weight_q15);
+    let weighted_gradient_q15 = lexeme_scale_gradient_q15(&gradient_q15, target_update_weight_q15);
     let grad_output_q15 = lexeme_gradient_i32_to_i16(&weighted_gradient_q15);
     if config.hidden_dim > 0 || config.train_embeddings {
         lexeme_backward_head_features_q15(
@@ -24384,8 +24367,7 @@ fn lexeme_softmax_accumulate_window(
         }
         let hidden_grad_start = match head_layout {
             LexemeSoftmaxHeadLayout::HiddenBottleneck => 0,
-            LexemeSoftmaxHeadLayout::ResidualHidden
-            | LexemeSoftmaxHeadLayout::ResidualAdapter => {
+            LexemeSoftmaxHeadLayout::ResidualHidden | LexemeSoftmaxHeadLayout::ResidualAdapter => {
                 if config.train_embeddings {
                     grad_features_q15.copy_from_slice(&grad_head_features_q15[..d_model]);
                 }
@@ -24394,8 +24376,7 @@ fn lexeme_softmax_accumulate_window(
             LexemeSoftmaxHeadLayout::Linear => return Err(TrainError::InvalidConfig),
         };
         for hidden_index in 0..config.hidden_dim {
-            let derivative =
-                lexeme_hard_silu_derivative_q15(forward.hidden_pre_q15[hidden_index]);
+            let derivative = lexeme_hard_silu_derivative_q15(forward.hidden_pre_q15[hidden_index]);
             grad_hidden_pre_q15[hidden_index] = saturate_i16(round_shift_rhu_i64(
                 i64::from(grad_head_features_q15[hidden_grad_start + hidden_index])
                     * i64::from(derivative),
@@ -24420,8 +24401,7 @@ fn lexeme_softmax_accumulate_window(
             .ok_or(TrainError::CoreRejected("lexeme_softmax_backward_hidden"))?;
             if matches!(
                 head_layout,
-                LexemeSoftmaxHeadLayout::ResidualHidden
-                    | LexemeSoftmaxHeadLayout::ResidualAdapter
+                LexemeSoftmaxHeadLayout::ResidualHidden | LexemeSoftmaxHeadLayout::ResidualAdapter
             ) {
                 for feature_index in 0..d_model {
                     grad_features_q15[feature_index] = saturate_i16(
@@ -24469,10 +24449,8 @@ fn lexeme_softmax_accumulate_window(
         let update_index = updates_before_batch
             .saturating_add(window_index)
             .saturating_add(1);
-        let learning_rate_shift = lexeme_softmax_learning_rate_shift_for_update(
-            config,
-            update_index.saturating_sub(1),
-        );
+        let learning_rate_shift =
+            lexeme_softmax_learning_rate_shift_for_update(config, update_index.saturating_sub(1));
         steps.push(LexemeSoftmaxTrainingStepTrace {
             update_index,
             epoch,
@@ -27554,8 +27532,8 @@ mod tests {
     #[test]
     fn lexeme_softmax_parallel_map_reduce_matches_serial() {
         let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256,
-            300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256,
+            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300, 257, 301, 256,
+            300, 257, 302, 256, 300, 257, 301, 256,
         ]);
         let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
         let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
@@ -27607,18 +27585,15 @@ mod tests {
 
         // The final model weights and embeddings must be bit-identical.
         assert_eq!(
-            serial_run.model.output_weights,
-            parallel_run.model.output_weights,
+            serial_run.model.output_weights, parallel_run.model.output_weights,
             "output weights differ between serial and parallel"
         );
         assert_eq!(
-            serial_run.model.embeddings,
-            parallel_run.model.embeddings,
+            serial_run.model.embeddings, parallel_run.model.embeddings,
             "embeddings differ between serial and parallel"
         );
         assert_eq!(
-            serial_run.model.hidden_weights,
-            parallel_run.model.hidden_weights,
+            serial_run.model.hidden_weights, parallel_run.model.hidden_weights,
             "hidden weights differ between serial and parallel"
         );
 
@@ -27649,8 +27624,8 @@ mod tests {
     #[test]
     fn lexeme_softmax_parallel_map_reduce_matches_serial_hidden_head() {
         let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256,
-            300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256,
+            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300, 257, 301, 256,
+            300, 257, 302, 256, 300, 257, 301, 256,
         ]);
         let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
 
@@ -27700,13 +27675,11 @@ mod tests {
         .expect("parallel hidden train");
 
         assert_eq!(
-            serial_run.model.output_weights,
-            parallel_run.model.output_weights,
+            serial_run.model.output_weights, parallel_run.model.output_weights,
             "output weights differ"
         );
         assert_eq!(
-            serial_run.model.hidden_weights,
-            parallel_run.model.hidden_weights,
+            serial_run.model.hidden_weights, parallel_run.model.hidden_weights,
             "hidden weights differ"
         );
         assert_eq!(serial_run.trace.updates, parallel_run.trace.updates);

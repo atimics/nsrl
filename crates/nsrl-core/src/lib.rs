@@ -38,6 +38,10 @@ pub use attention::{
     sqrt_power_of_four_shift,
 };
 
+pub use calibration::{
+    MAGNITUDE_BUCKETS, MagnitudeHistogram, bit_length_u64, calibrate_fixed_scale,
+    solve_fixed_scale_ratio,
+};
 pub use linear::{
     LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
     LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
@@ -47,10 +51,6 @@ pub use linear::{
     linear_backward_weight_update_prescaled_i32_i8_checked, linear_i16_i8_i16_per_channel_checked,
     linear_i16_i8_i16_per_channel_generic_checked,
     linear_i16_i8_i16_per_channel_with_kernel_checked, linear_i16_ternary_i16_per_channel_checked,
-};
-pub use calibration::{
-    MAGNITUDE_BUCKETS, MagnitudeHistogram, bit_length_u64, calibrate_fixed_scale,
-    solve_fixed_scale_ratio,
 };
 pub use lut::{
     EXP2_NEG_FRAC_LUT_8BIT_LEN, NormalizedMantissa, RECIP_LUT_8BIT_Q31_LEN,

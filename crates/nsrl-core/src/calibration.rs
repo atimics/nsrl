@@ -133,7 +133,11 @@ impl MagnitudeHistogram {
             if cumulative >= target {
                 // Upper edge of this bucket: bucket 0 (zeros) covers magnitude 0;
                 // bucket b covers up to 2^b - 1, so the conservative bound is 2^b.
-                return Some(if bucket == 0 { 0 } else { 1_u64 << (bucket - 1) << 1 });
+                return Some(if bucket == 0 {
+                    0
+                } else {
+                    1_u64 << (bucket - 1) << 1
+                });
             }
         }
 
@@ -332,7 +336,7 @@ mod tests {
         // An accumulator that peaks around 1_000_000 should requantize to ~32767.
         let scale = solve_fixed_scale_ratio(32767, 1_000_000).expect("scale");
         let mapped = requantize_i32_to_i16(1_000_000, scale);
-        // Within 0.1% of the target output magnitude.
+        // Within ~1 part in 1000 of the target output magnitude.
         assert!((mapped as i32 - 32767).abs() <= 33, "mapped = {mapped}");
         // And a value inside the range never overflows i16.
         let _ = requantize_i32_to_i16(999_999, scale);
@@ -350,7 +354,7 @@ mod tests {
 
         let scale = calibrate_fixed_scale(&hist, i16::MAX as u64, 999, 1000).expect("calibrated");
 
-        // The 99.9% coverage bound (~2^16) maps comfortably inside i16 range, while
+        // The 999-in-1000 coverage bound (~2^16) maps comfortably inside i16 range, while
         // the rare 5M outlier is allowed to saturate rather than crushing the scale.
         let bound = hist.coverage_magnitude(999, 1000).expect("bound");
         let mapped_bound = requantize_i32_to_i16(bound as i32, scale);
