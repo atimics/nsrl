@@ -120,9 +120,19 @@ const GATED_MLP_BACKWARD_SCALED_WORKSPACE_DIM: usize =
     } else {
         GATED_MLP_BACKWARD_HIDDEN_DIM
     };
-pub const MINI_TRANSFORMER_D_MODEL: usize = 32;
-pub const MINI_TRANSFORMER_HEADS: usize = 2;
-pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 64;
+// Single source of truth: the transformer dims, scale tables, and embedding
+// grad fan-in shift are defined once in nsrl-train-core and re-exported here, so
+// the host model and the no_std core can never drift. (A past drift silently
+// zeroed mini-transformer training via InvalidShape; see the nsrl-train-core
+// MINI_TRANSFORMER_D_MODEL doc comment.)
+pub use nsrl_train_core::{
+    MINI_TRANSFORMER_D_MODEL, MINI_TRANSFORMER_HEADS, MINI_TRANSFORMER_HIDDEN_DIM,
+};
+use nsrl_train_core::{
+    MINI_TRANSFORMER_D_MODEL_SCALES, MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT,
+    MINI_TRANSFORMER_HIDDEN_SCALES, MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES,
+    MINI_TRANSFORMER_OUTPUT_SCALES,
+};
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -196,7 +206,6 @@ const MAX_CORPUS_PRIOR_ORDER: u8 = 3;
 const MAX_LEXEME_MEMORY_CONTEXT_ORDER: u8 = 12;
 const DEFAULT_LEXEME_MEMORY_LOGIT_SHIFT: u8 = 5;
 const MAX_INITIAL_NGRAM_CAPACITY: usize = 1 << 20;
-const MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT: u8 = 1;
 const MINI_TRANSFORMER_ROLLBACK_HISTORY_LIMIT: usize = 8;
 const PARALLEL_EVAL_MIN_ITEMS: usize = 512;
 const PARALLEL_EVAL_MIN_ITEMS_PER_THREAD: usize = 128;
@@ -217,25 +226,6 @@ const BYTE_EMBED_GRAD_FEATURE_SCALES: [FixedScale; BYTE_EMBED_D_MODEL] = [FixedS
     multiplier: 1,
     right_shift: 8,
 }; BYTE_EMBED_D_MODEL];
-const MINI_TRANSFORMER_D_MODEL_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] = [FixedScale {
-    multiplier: 1,
-    right_shift: 0,
-};
-    MINI_TRANSFORMER_D_MODEL];
-const MINI_TRANSFORMER_HIDDEN_SCALES: [FixedScale; MINI_TRANSFORMER_HIDDEN_DIM] = [FixedScale {
-    multiplier: 1,
-    right_shift: 0,
-};
-    MINI_TRANSFORMER_HIDDEN_DIM];
-const MINI_TRANSFORMER_OUTPUT_SCALES: [FixedScale; BYTE_VOCAB] = [FixedScale {
-    multiplier: 1,
-    right_shift: 8,
-}; BYTE_VOCAB];
-const MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] =
-    [FixedScale {
-        multiplier: 1,
-        right_shift: 0,
-    }; MINI_TRANSFORMER_D_MODEL];
 const LINEAR_BACKWARD_INPUT_Q15: [i16; LINEAR_BACKWARD_INPUT_DIM] = [4096, -2048, 1024, -512];
 const LINEAR_BACKWARD_GRAD_OUTPUT_Q15: [i16; LINEAR_BACKWARD_OUTPUT_DIM] = [8192, -4096, 2048];
 const LINEAR_BACKWARD_INITIAL_WEIGHTS: [i8; LINEAR_BACKWARD_INPUT_DIM
