@@ -464,7 +464,23 @@ mod neon {
     /// `weights` is 4 × input_dim bytes, row-major.
     ///
     /// # Safety
-    /// The true mathematical dot product for each row must fit in i32.
+    /// The caller must uphold all of the following; they are guaranteed by
+    /// `linear_i16_i8_i16_per_channel_neon_checked`, the only caller:
+    /// * `input.len() >= input_dim`. The vector loop reads `input_dim` i16 lanes
+    ///   via `vld1q_s16` in 8-lane blocks (`i + 8 <= input_dim`) and the scalar
+    ///   tail reads the remainder, so every `acts_ptr.add(i)` for `i < input_dim`
+    ///   must be in bounds.
+    /// * `weights.len() >= 4 * input_dim`, laid out row-major as four contiguous
+    ///   `input_dim`-length rows. Rows are addressed as `w0 = weights`,
+    ///   `w1 = w0 + input_dim`, `w2 = w1 + input_dim`, `w3 = w2 + input_dim`, and
+    ///   each is read for `i < input_dim`, so `w3.add(input_dim - 1)` must be valid.
+    /// * The true mathematical dot product for each of the four rows (including its
+    ///   bias) must fit in `i32`. NEON accumulation is wrapping, so this is what
+    ///   makes the result exact — verify with `dot_fits_i32_with_sum` beforehand.
+    ///
+    /// Slices need no special alignment: every load uses the unaligned NEON
+    /// variants (`vld1q_s16` / `vld1_s8`). `target_arch = "aarch64"` guarantees the
+    /// NEON instructions used here are available (they are part of the baseline ISA).
     #[cfg(target_arch = "aarch64")]
     #[inline]
     unsafe fn linear_dot4_neon(

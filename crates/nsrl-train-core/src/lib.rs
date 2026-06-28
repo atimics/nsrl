@@ -11,22 +11,32 @@ use nsrl_core::{
     GatedMlpWeightUpdateParams, GatedMlpWeightUpdateWorkspace, GatedMlpWorkspace,
     LinearAttentionWorkspace, LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
     LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
-    LinearWeightUpdateStats, MAX_RIGHT_SHIFT, Q15_SHIFT, SelfAttentionI16Params,
-    base2_softmax_i32_q15, dot_i8_i16_i32_checked, gated_mlp_backward_input_i16_q15_checked,
-    gated_mlp_backward_weight_update_i8_checked, gated_mlp_i16_q15_checked,
-    linear_attention_i16_q15_checked, linear_backward_input_i16_i8_i16_per_channel_checked,
-    linear_backward_weight_update_i8_checked, requantize_i32_to_i16, round_shift_rhu_i64,
-    saturate_i8, saturate_i16,
+    LinearWeightUpdateStats, MAX_RIGHT_SHIFT, MagnitudeHistogram, Q15_SHIFT,
+    SelfAttentionI16Params, base2_softmax_i32_q15, calibrate_fixed_scale, dot_i8_i16_i32_checked,
+    gated_mlp_backward_input_i16_q15_checked, gated_mlp_backward_weight_update_i8_checked,
+    gated_mlp_i16_q15_checked, linear_attention_i16_q15_checked,
+    linear_backward_input_i16_i8_i16_per_channel_checked, linear_backward_weight_update_i8_checked,
+    requantize_i32_to_i16, round_shift_rhu_i64, saturate_i8, saturate_i16,
 };
 
 pub const BYTE_VOCAB: usize = 256;
-// Integer-transformer scale-up (Fork B). Widened from d_model=32/heads=2/
-// hidden=64 to roughly 3x parameters. d_model must stay divisible by heads
-// (64 / 4 = 16 per-head dim). FixedScale arrays below are uniform, so they
-// resize automatically with these constants; no per-dimension retuning needed.
-pub const MINI_TRANSFORMER_D_MODEL: usize = 64;
-pub const MINI_TRANSFORMER_HEADS: usize = 4;
-pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 256;
+// These MUST match the host `MiniTransformerMlpModel` dimensions in the
+// `nsrl-train` crate (`MINI_TRANSFORMER_D_MODEL`/`_HEADS`/`_HIDDEN_DIM`). The
+// host model is the reference "std" implementation; this no_std core is
+// validated against it bit-for-bit by the parity tests in `nsrl-train`
+// (`mini_transformer_train_core_linear_nope_step_matches_std_single_window`).
+// `mini_transformer_*_train_step` rejects mismatched models with
+// `InvalidShape`, which silently zeroes out training, so the two definitions
+// must move together. d_model must stay divisible by heads, with a per-head
+// dim that is a power of four (32 / 2 = 16). FixedScale arrays below are
+// uniform, so they resize automatically with these constants.
+//
+// Fork B (the d_model=64/heads=4/hidden=256 scale-up) was applied here only
+// and broke that contract; scaling up for real means widening the host model
+// in lockstep and re-baking its byte-stable trace fixtures.
+pub const MINI_TRANSFORMER_D_MODEL: usize = 32;
+pub const MINI_TRANSFORMER_HEADS: usize = 2;
+pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 64;
 pub const MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT: u8 = 1;
 
 pub const MINI_TRANSFORMER_D_MODEL_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] = [FixedScale {
@@ -49,6 +59,11 @@ pub const MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES: [FixedScale; MINI_TRANSFORM
         right_shift: 0,
     }; MINI_TRANSFORMER_D_MODEL];
 
+/// Default output (logit) requantization scale — the value baked into
+/// [`MINI_TRANSFORMER_OUTPUT_SCALES`]. Dynamic calibration replaces this at
+/// checkpoint boundaries via [`MiniTransformerStepConfig::output_scale`].
+pub const MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE: FixedScale = MINI_TRANSFORMER_OUTPUT_SCALES[0];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrainCoreError {
     InvalidConfig,
@@ -66,6 +81,11 @@ pub struct MiniTransformerStepConfig {
     pub attention_learning_rate_shift: u8,
     pub attention_q_learning_rate_shift: u8,
     pub attention_qk_learning_rate_shift: u8,
+    /// Uniform requantization scale for the output (logit) projection. Read by both
+    /// the forward requantize and the backward gradient prescale so the two stay
+    /// consistent. Set to [`MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE`] for the baked-in
+    /// behavior, or to a value from [`OutputLogitCalibration::recommend_scale`].
+    pub output_scale: FixedScale,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -371,8 +391,13 @@ pub fn mini_transformer_linear_nope_train_step(
     validate_model_shapes(model, config.seq_len)?;
     validate_workspace_shapes(workspace, config.seq_len)?;
 
-    let forward_before_residual_saturation_count =
-        mini_transformer_forward_linear_nope(model, context, config.seq_len, workspace)?;
+    let forward_before_residual_saturation_count = mini_transformer_forward_linear_nope(
+        model,
+        context,
+        config.seq_len,
+        config.output_scale,
+        workspace,
+    )?;
     let predicted_before = byte_argmax_i32(workspace.logits_q8)?;
 
     byte_softmax_gradient_q15(
@@ -500,8 +525,13 @@ pub fn mini_transformer_linear_nope_train_step(
         config.embedding_learning_rate_shift,
     )?;
 
-    let forward_after_residual_saturation_count =
-        mini_transformer_forward_linear_nope(model, context, config.seq_len, workspace)?;
+    let forward_after_residual_saturation_count = mini_transformer_forward_linear_nope(
+        model,
+        context,
+        config.seq_len,
+        config.output_scale,
+        workspace,
+    )?;
     let predicted_after = byte_argmax_i32(workspace.logits_q8)?;
     let residual_saturation_count = gradient_residual_saturation
         .saturating_add(embedding_gradient_saturation)
@@ -533,6 +563,8 @@ fn validate_config(config: MiniTransformerStepConfig) -> Result<(), TrainCoreErr
         || config.attention_learning_rate_shift > MAX_RIGHT_SHIFT
         || config.attention_q_learning_rate_shift > MAX_RIGHT_SHIFT
         || config.attention_qk_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.output_scale.multiplier < 0
+        || config.output_scale.right_shift > MAX_RIGHT_SHIFT
     {
         return Err(TrainCoreError::InvalidConfig);
     }
@@ -646,6 +678,7 @@ fn mini_transformer_forward_linear_nope(
     model: &MiniTransformerModelSlicesMut<'_>,
     context: &[u8],
     seq_len: usize,
+    output_scale: FixedScale,
     workspace: &mut MiniTransformerStepWorkspace<'_>,
 ) -> Result<usize, TrainCoreError> {
     if context.len() != seq_len {
@@ -713,6 +746,7 @@ fn mini_transformer_forward_linear_nope(
     mini_transformer_output_row_for(
         model.output_weights,
         &workspace.block_output[last_start..last_end],
+        output_scale,
         workspace.logits_q8,
         workspace.probabilities_q15,
     )?;
@@ -815,6 +849,7 @@ fn mini_transformer_mlp_params<'a>(
 fn mini_transformer_output_row_for(
     output_weights: &[i8],
     features: &[i16],
+    output_scale: FixedScale,
     logits_q8: &mut [i32],
     probabilities_q15: &mut [i16],
 ) -> Result<(), TrainCoreError> {
@@ -832,14 +867,125 @@ fn mini_transformer_output_row_for(
             features,
         )
         .ok_or(TrainCoreError::CoreRejected)?;
-        *logit = i32::from(requantize_i32_to_i16(
-            acc,
-            MINI_TRANSFORMER_OUTPUT_SCALES[class_id],
-        ));
+        *logit = i32::from(requantize_i32_to_i16(acc, output_scale));
     }
     base2_softmax_i32_q15(logits_q8, probabilities_q15)
         .map(|_| ())
         .ok_or(TrainCoreError::CoreRejected)
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic fixed-point calibration for the output (logit) projection.
+//
+// The output scale is the only non-identity requantization scale in the model
+// (`MINI_TRANSFORMER_OUTPUT_SCALES`, currently {1, >>8}) and the one whose ideal
+// value tracks the data distribution. These helpers observe the *real* forward
+// logit accumulators, measure how many saturate i16 under the scale in force, and
+// recommend a replacement scale — the decision a DFP controller applies at a
+// checkpoint boundary.
+//
+// Note: the output scale also prescales gradients in the backward pass
+// (`forward_scales` at the output weight update), so it is intentionally NOT
+// mutated mid-batch here; recalibration belongs between training runs / at
+// checkpoints, where forward and backward stay consistent.
+// ---------------------------------------------------------------------------
+
+/// Default coverage for output-scale calibration: keep 999 in 1000 accumulators
+/// in range, allowing the rarest 1 in 1000 to clip rather than crushing the
+/// whole scale.
+pub const OUTPUT_CALIBRATION_COVERAGE_NUM: u64 = 999;
+pub const OUTPUT_CALIBRATION_COVERAGE_DEN: u64 = 1000;
+
+/// Observed statistics for the output (logit) projection accumulators.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutputLogitCalibration {
+    /// Magnitude distribution of raw i32 logit accumulators (pre-requantization).
+    pub histogram: MagnitudeHistogram,
+    /// Accumulators that saturated i16 under the scale in force during observation.
+    pub clipped: u64,
+    /// Total accumulators observed.
+    pub total: u64,
+}
+
+impl Default for OutputLogitCalibration {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OutputLogitCalibration {
+    pub const fn new() -> Self {
+        Self {
+            histogram: MagnitudeHistogram::new(),
+            clipped: 0,
+            total: 0,
+        }
+    }
+
+    /// Clip rate as `(clipped, total)`. Division is left to the caller so this
+    /// stays integer-only; a DFP controller compares this against a threshold.
+    pub fn clip_fraction(&self) -> (u64, u64) {
+        (self.clipped, self.total)
+    }
+
+    /// Recommends an output `FixedScale` mapping the covered accumulator range into
+    /// the i16 output range. `None` if nothing has been observed.
+    pub fn recommend_scale(&self) -> Option<FixedScale> {
+        calibrate_fixed_scale(
+            &self.histogram,
+            i16::MAX as u64,
+            OUTPUT_CALIBRATION_COVERAGE_NUM,
+            OUTPUT_CALIBRATION_COVERAGE_DEN,
+        )
+    }
+}
+
+/// Recomputes the raw i32 logit accumulators for a batch of feature rows exactly
+/// as [`mini_transformer_output_row_for`] does, recording their magnitude
+/// distribution and how many would saturate i16 under `current_scale`.
+///
+/// `features` must be a whole number of [`MINI_TRANSFORMER_D_MODEL`]-length rows
+/// (the pre-output hidden states captured during an eval/checkpoint forward pass).
+pub fn mini_transformer_observe_output_logits(
+    output_weights: &[i8],
+    features: &[i16],
+    current_scale: FixedScale,
+    calibration: &mut OutputLogitCalibration,
+) -> Result<(), TrainCoreError> {
+    if output_weights.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
+        || features.is_empty()
+        || features.len() % MINI_TRANSFORMER_D_MODEL != 0
+        || current_scale.multiplier < 0
+        || current_scale.right_shift > MAX_RIGHT_SHIFT
+    {
+        return Err(TrainCoreError::InvalidShape);
+    }
+
+    let rows = features.len() / MINI_TRANSFORMER_D_MODEL;
+    for row in 0..rows {
+        let feature_row =
+            &features[row * MINI_TRANSFORMER_D_MODEL..(row + 1) * MINI_TRANSFORMER_D_MODEL];
+        for class_id in 0..BYTE_VOCAB {
+            let row_start = class_id * MINI_TRANSFORMER_D_MODEL;
+            let acc = dot_i8_i16_i32_checked(
+                &output_weights[row_start..row_start + MINI_TRANSFORMER_D_MODEL],
+                feature_row,
+            )
+            .ok_or(TrainCoreError::CoreRejected)?;
+
+            calibration.histogram.observe_i64(i64::from(acc));
+
+            // Exact saturation check under the scale currently in force.
+            let wide = i64::from(acc) * i64::from(current_scale.multiplier);
+            let scaled = round_shift_rhu_i64(wide, current_scale.right_shift);
+            if scaled > i64::from(i16::MAX) || scaled < i64::from(i16::MIN) {
+                calibration.clipped = calibration.clipped.saturating_add(1);
+            }
+            calibration.total = calibration.total.saturating_add(1);
+        }
+    }
+
+    Ok(())
 }
 
 fn byte_softmax_gradient_q15(
@@ -1537,6 +1683,7 @@ mod tests {
             MiniTransformerStepConfig {
                 seq_len: 4,
                 learning_rate: 1,
+                output_scale: MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE,
                 output_learning_rate_shift: 18,
                 mlp_learning_rate_shift: 17,
                 embedding_learning_rate_shift: 13,
@@ -1617,5 +1764,113 @@ mod tests {
         assert_eq!(second.zero_delta_count, 0);
         assert_eq!(second.weight_delta_l1, 1);
         assert_eq!(gradient.residuals, [-2]);
+    }
+
+    #[test]
+    fn observe_output_logits_counts_every_accumulator() {
+        let output_weights = vec![1_i8; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
+        let features = vec![10_i16; MINI_TRANSFORMER_D_MODEL]; // one row
+        let scale = FixedScale {
+            multiplier: 1,
+            right_shift: 8,
+        };
+
+        let mut calibration = OutputLogitCalibration::new();
+        mini_transformer_observe_output_logits(&output_weights, &features, scale, &mut calibration)
+            .expect("observe");
+
+        // One accumulator per class.
+        assert_eq!(calibration.total, BYTE_VOCAB as u64);
+        assert_eq!(calibration.histogram.total(), BYTE_VOCAB as u64);
+        // acc = d_model × weight(1) × feature(10); (acc + 128) >> 8 stays well
+        // within i16, so nothing clips.
+        let expected_acc = (MINI_TRANSFORMER_D_MODEL as u64) * 10;
+        assert_eq!(calibration.clipped, 0);
+        assert_eq!(calibration.histogram.max_abs(), expected_acc);
+    }
+
+    #[test]
+    fn observe_output_logits_rejects_bad_shapes() {
+        let output_weights = vec![0_i8; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
+        let scale = FixedScale {
+            multiplier: 1,
+            right_shift: 0,
+        };
+        let mut calibration = OutputLogitCalibration::new();
+
+        // Wrong output-weight length.
+        assert_eq!(
+            mini_transformer_observe_output_logits(
+                &[0_i8; 10],
+                &vec![0_i16; MINI_TRANSFORMER_D_MODEL],
+                scale,
+                &mut calibration,
+            ),
+            Err(TrainCoreError::InvalidShape)
+        );
+        // Features not a whole number of rows.
+        assert_eq!(
+            mini_transformer_observe_output_logits(
+                &output_weights,
+                &vec![0_i16; MINI_TRANSFORMER_D_MODEL + 1],
+                scale,
+                &mut calibration,
+            ),
+            Err(TrainCoreError::InvalidShape)
+        );
+        // Empty features.
+        assert_eq!(
+            mini_transformer_observe_output_logits(&output_weights, &[], scale, &mut calibration),
+            Err(TrainCoreError::InvalidShape)
+        );
+    }
+
+    #[test]
+    fn output_calibration_recommends_scale_that_reduces_clipping() {
+        // Output weights that don't cancel out, so accumulators are large.
+        let mut output_weights = vec![0_i8; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
+        for (index, weight) in output_weights.iter_mut().enumerate() {
+            *weight = (index % 7) as i8; // 0..=6, mean 3 — no sign cancellation
+        }
+        // Four feature rows of growing magnitude to spread the histogram.
+        let mut features = vec![0_i16; 4 * MINI_TRANSFORMER_D_MODEL];
+        for row in 0..4 {
+            let magnitude = 4_000_i16 * (row as i16 + 1);
+            for slot in features
+                [row * MINI_TRANSFORMER_D_MODEL..(row + 1) * MINI_TRANSFORMER_D_MODEL]
+                .iter_mut()
+            {
+                *slot = magnitude;
+            }
+        }
+
+        // Identity scale leaves the multi-million accumulators far outside i16.
+        let identity = FixedScale {
+            multiplier: 1,
+            right_shift: 0,
+        };
+        let mut before = OutputLogitCalibration::new();
+        mini_transformer_observe_output_logits(&output_weights, &features, identity, &mut before)
+            .expect("observe before");
+        assert!(
+            before.clipped > 0,
+            "identity scale should clip large accumulators: {:?}",
+            before.clip_fraction()
+        );
+
+        // Recommend a scale from the observed distribution and re-measure.
+        let recommended = before.recommend_scale().expect("recommended scale");
+        let mut after = OutputLogitCalibration::new();
+        mini_transformer_observe_output_logits(&output_weights, &features, recommended, &mut after)
+            .expect("observe after");
+
+        assert!(
+            after.clipped < before.clipped,
+            "recalibration must reduce clipping: before={} after={}",
+            before.clipped,
+            after.clipped,
+        );
+        // At 999-in-1000 coverage over 1024 accumulators, at most ~1 may still clip.
+        assert!(after.clipped <= 2, "after clipped = {}", after.clipped);
     }
 }

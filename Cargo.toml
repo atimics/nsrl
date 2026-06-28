@@ -15,3 +15,14 @@ resolver = "3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://example.invalid/nsrl"
+
+# Compute-bound integer kernels live or die on autovectorization and cross-crate
+# inlining. Default release codegen (16 units, no LTO) leaves that on the floor.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+# Benchmarks must reflect the same codegen as release builds.
+[profile.bench]
+lto = "fat"
+codegen-units = 1

@@ -677,65 +677,65 @@ fn train_layer(
         // grads are summed deterministically (sums stay far below i64::MAX, so
         // saturating_add never saturates -> addition is associative -> the
         // parallel result is bit-identical to the serial path).
-        let accumulate =
-            |start: usize, end: usize| -> Result<(Vec<Vec<i64>>, Vec<i64>, u64), String> {
-                let mut weight_grads = vec![vec![0_i64; feature_dim]; condition_count];
-                let mut bias_grads = vec![0_i64; condition_count];
-                let mut raw_error = 0_u64;
-                for pair_index in start..end {
-                    let row = &train.rows[pair_index];
-                    let condition = condition_index(config, row).map_err(|e| e.to_string())?;
-                    let input =
-                        &layer_inputs[pair_index * image_bytes..(pair_index + 1) * image_bytes];
-                    let target =
-                        &train.target[pair_index * image_bytes..(pair_index + 1) * image_bytes];
-                    let aux_target = train
-                        .aux_target
-                        .as_ref()
-                        .map(|aux| &aux[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
-                    let aux_mask = train
-                        .aux_mask
-                        .as_ref()
-                        .map(|mask| &mask[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
-                    for y in 0..config.image_size {
-                        for x in 0..config.image_size {
-                            let index = pixel_index(config.image_size, x, y);
-                            let mut features = vec![0_i16; feature_dim];
-                            conditioned_features(
-                                input,
-                                config.image_size,
-                                x,
-                                y,
-                                config.hidden_shift,
-                                row,
-                                &mut features,
-                            );
-                            let predicted = predict_raw_pixel(
-                                &layer,
-                                config.output_shift,
-                                condition,
-                                input[index],
-                                &features,
-                            );
-                            let error = training_error(
-                                config,
-                                predicted,
-                                target[index],
-                                aux_target.map(|aux| aux[index]),
-                                aux_mask.map(|mask| mask[index]),
-                            );
-                            raw_error = raw_error.saturating_add(abs_i16(error));
-                            for channel in 0..features.len() {
-                                weight_grads[condition][channel] = weight_grads[condition][channel]
-                                    .saturating_add(i64::from(error) * i64::from(features[channel]));
-                            }
-                            bias_grads[condition] =
-                                bias_grads[condition].saturating_add(i64::from(error));
+        let accumulate = |start: usize,
+                          end: usize|
+         -> Result<(Vec<Vec<i64>>, Vec<i64>, u64), String> {
+            let mut weight_grads = vec![vec![0_i64; feature_dim]; condition_count];
+            let mut bias_grads = vec![0_i64; condition_count];
+            let mut raw_error = 0_u64;
+            for pair_index in start..end {
+                let row = &train.rows[pair_index];
+                let condition = condition_index(config, row).map_err(|e| e.to_string())?;
+                let input = &layer_inputs[pair_index * image_bytes..(pair_index + 1) * image_bytes];
+                let target =
+                    &train.target[pair_index * image_bytes..(pair_index + 1) * image_bytes];
+                let aux_target = train
+                    .aux_target
+                    .as_ref()
+                    .map(|aux| &aux[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
+                let aux_mask = train
+                    .aux_mask
+                    .as_ref()
+                    .map(|mask| &mask[pair_index * image_bytes..(pair_index + 1) * image_bytes]);
+                for y in 0..config.image_size {
+                    for x in 0..config.image_size {
+                        let index = pixel_index(config.image_size, x, y);
+                        let mut features = vec![0_i16; feature_dim];
+                        conditioned_features(
+                            input,
+                            config.image_size,
+                            x,
+                            y,
+                            config.hidden_shift,
+                            row,
+                            &mut features,
+                        );
+                        let predicted = predict_raw_pixel(
+                            &layer,
+                            config.output_shift,
+                            condition,
+                            input[index],
+                            &features,
+                        );
+                        let error = training_error(
+                            config,
+                            predicted,
+                            target[index],
+                            aux_target.map(|aux| aux[index]),
+                            aux_mask.map(|mask| mask[index]),
+                        );
+                        raw_error = raw_error.saturating_add(abs_i16(error));
+                        for channel in 0..features.len() {
+                            weight_grads[condition][channel] = weight_grads[condition][channel]
+                                .saturating_add(i64::from(error) * i64::from(features[channel]));
                         }
+                        bias_grads[condition] =
+                            bias_grads[condition].saturating_add(i64::from(error));
                     }
                 }
-                Ok((weight_grads, bias_grads, raw_error))
-            };
+            }
+            Ok((weight_grads, bias_grads, raw_error))
+        };
         let worker_count = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1)
@@ -767,7 +767,8 @@ fn train_layer(
                                 weight_grads[condition][channel] = weight_grads[condition][channel]
                                     .saturating_add(w[condition][channel]);
                             }
-                            bias_grads[condition] = bias_grads[condition].saturating_add(b[condition]);
+                            bias_grads[condition] =
+                                bias_grads[condition].saturating_add(b[condition]);
                         }
                         raw_error = raw_error.saturating_add(r);
                     }

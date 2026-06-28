@@ -18,3 +18,10 @@ scripts/x-bot/.secrets/
 scripts/x-bot/build/
 qemu_rustc_*.core
 /-
+
+# macOS finder metadata
+.DS_Store
+# iCloud/cloud-sync conflict duplicates (e.g. "model 2.nsrltch")
+* 2.*
+# Ad-hoc full-source dumps
+/all-rust-code.txt
