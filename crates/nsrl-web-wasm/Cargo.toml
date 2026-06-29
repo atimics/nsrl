@@ -12,7 +12,4 @@ crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [dependencies]
-console_error_panic_hook = "0.1"
-nsrl-corpus = { path = "../nsrl-corpus" }
-nsrl-train = { path = "../nsrl-train" }
 wasm-bindgen = "0.2"

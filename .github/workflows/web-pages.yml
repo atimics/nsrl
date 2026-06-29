@@ -1,4 +1,4 @@
-name: Deploy Web Chat
+name: Deploy Solomon Web Sampler
 
 on:
   workflow_dispatch:
@@ -9,9 +9,7 @@ on:
     paths:
       - ".github/workflows/web-pages.yml"
       - "web/**"
-      - "scripts/build-web-chat.sh"
       - "crates/nsrl-web-wasm/**"
-      - "crates/nsrl-core/**"
       - "Cargo.toml"
       - "Cargo.lock"
 
@@ -48,7 +46,7 @@ jobs:
         with:
           version: latest
 
-      - name: Build WASM (latest Solomon sampler + chat)
+      - name: Build WASM (Solomon sampler)
         run: |
           wasm-pack build crates/nsrl-web-wasm --release --target web --out-dir ../../web/pkg
           rm -f web/pkg/.gitignore
@@ -58,7 +56,7 @@ jobs:
         with:
           enablement: true
 
-      - name: Upload static web chat
+      - name: Upload static Solomon sampler
         uses: actions/upload-pages-artifact@v3
         with:
           path: web

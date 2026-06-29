@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Bake a reusable NSRL training AMI so launches skip the cold build.
+# Bake a reusable NSRL Solomon training AMI so launches skip the cold build.
 #
 # Launches one c8g instance that installs the toolchain, extracts the repo
-# tarball, and runs a full `cargo build --release` (warming target/ + the cargo
-# registry). It then snapshots the instance into an AMI. Subsequent training
-# launches set NSRL_AMI_ID=<this> so their `cargo build` is *incremental*
-# (seconds) instead of cold (minutes), and the OS packages are pre-installed.
+# tarball, and warms the release build for the Solomon data/train/eval/sample
+# binaries. It then snapshots the instance into an AMI. Subsequent Solomon runs
+# set NSRL_AMI_ID=<this> so their `cargo build` is incremental rather than cold.
 #
 # Cost: one ~10-15 min c8g.4xlarge build (~$0.15). Re-bake when deps change.
 #
@@ -15,7 +14,7 @@
 set -euo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
-S3_URI="${NSRL_S3_URI:-s3://nsrl-training-022118847419-us-east-1/wikibard}"
+S3_URI="${NSRL_S3_URI:-s3://nsrl-training-022118847419-us-east-1/solomon}"
 ARTIFACT="${NSRL_ARTIFACT_S3_URI:-${S3_URI}/artifacts/nsrl-working-trace-summary.tar.gz}"
 IAM_PROFILE="${NSRL_IAM_INSTANCE_PROFILE:-NSRLTrainingEc2InstanceProfile}"
 INSTANCE_TYPE="${NSRL_BAKE_INSTANCE_TYPE:-c8g.4xlarge}"
@@ -50,8 +49,13 @@ curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 source /root/.cargo/env
 cd /opt/nsrl
 RUSTFLAGS='-C target-cpu=native' cargo build --release -p nsrl-train \
-  --bin nsrl-train --bin nsrl-bitmap-sample --bin nsrl-bitmap-multichannel-denoise
-cargo build --release -p nsrl-corpus --bin nsrl-corpus || true
+  --bin nsrl-build-solomon-bitmap-denoise-dataset \
+  --bin nsrl-bitmap-multichannel-denoise \
+  --bin nsrl-bitmap-sample \
+  --bin nsrl-solomon-latent-train \
+  --bin nsrl-solomon-eval \
+  --bin nsrl-solomon-multimodal \
+  --bin nsrl-solomon-attention
 aws s3 cp /var/log/nsrl-bake.log ${DONE_MARKER}
 EOF
 )"

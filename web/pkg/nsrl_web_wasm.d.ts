@@ -1,17 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export class NsrlChat {
-    free(): void;
-    [Symbol.dispose](): void;
-    adapt_and_reply(history: string, latest_message: string, max_new_tokens: number, sample_seed: number, top_k: number, fine_tune_max_windows: number): string;
-    export_model(): Uint8Array;
-    import_model(model_bytes: Uint8Array): void;
-    model_card(): string;
-    constructor(model_bytes: Uint8Array, vocab_tsv: string, token_bytes: Uint8Array);
-    reply(prompt: string, max_new_tokens: number, sample_seed: number, top_k: number): string;
-}
-
 export class SolomonSample {
     private constructor();
     free(): void;
@@ -45,17 +34,10 @@ export interface InitOutput {
     readonly solomonsampler_new: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly solomonsampler_sample: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
     readonly solomonsampler_sample_fast: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
-    readonly __wbg_nsrlchat_free: (a: number, b: number) => void;
-    readonly nsrlchat_adapt_and_reply: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number, number];
-    readonly nsrlchat_export_model: (a: number) => [number, number, number, number];
-    readonly nsrlchat_import_model: (a: number, b: number, c: number) => [number, number];
-    readonly nsrlchat_model_card: (a: number) => [number, number];
-    readonly nsrlchat_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
-    readonly nsrlchat_reply: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }

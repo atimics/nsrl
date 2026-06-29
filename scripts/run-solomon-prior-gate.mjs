@@ -8,7 +8,7 @@ const DEFAULT_TEXT_INDEX =
 const DEFAULT_PROMPTS =
   "data/processed/key-solomon-goetia-latent-v1/scaling-curve/prompts-1425.jsonl";
 const DEFAULT_OUT_DIR =
-  "scripts/x-bot/build/solomon-prior-gate-hard-classifier";
+  "data/processed/key-solomon-goetia-latent-v1/prior-gate-hard-classifier";
 const GRID = 16;
 const BINS = GRID * GRID;
 const FEATURE_COUNT = 8192;

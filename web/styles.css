@@ -1,14 +1,13 @@
 :root {
   color-scheme: dark;
-  --bg: #10100e;
-  --panel: #181814;
-  --panel-2: #202018;
+  --bg: #0d1012;
+  --panel: #15191b;
+  --panel-2: #1c2225;
   --ink: #f5f0df;
-  --muted: #b8b19e;
-  --line: #403d32;
-  --brass: #c49b4f;
-  --wine: #7c2839;
-  --teal: #27706d;
+  --muted: #aeb8b4;
+  --line: #354044;
+  --brass: #d0a24d;
+  --teal: #38a59d;
   --shadow: 0 20px 80px rgba(0, 0, 0, 0.42);
 }
 
@@ -19,9 +18,7 @@
 body {
   margin: 0;
   min-height: 100dvh;
-  background:
-    radial-gradient(circle at 18% 12%, rgba(124, 40, 57, 0.28), transparent 32rem),
-    linear-gradient(140deg, #10100e 0%, #1d1718 46%, #132322 100%);
+  background: linear-gradient(150deg, #0d1012 0%, #161d20 48%, #112624 100%);
   color: var(--ink);
   font-family:
     ui-sans-serif,
@@ -48,7 +45,7 @@ input {
   width: min(980px, 100%);
   min-height: min(820px, calc(100dvh - 56px));
   display: grid;
-  grid-template-rows: auto auto 1fr auto auto;
+  grid-template-rows: auto 1fr auto auto;
   overflow: hidden;
   border: 1px solid rgba(245, 240, 223, 0.16);
   border-radius: 8px;
@@ -56,41 +53,15 @@ input {
   box-shadow: var(--shadow);
 }
 
-.portrait-wrap {
-  position: relative;
-  min-height: 188px;
-  background: #14120f;
-  border-bottom: 1px solid var(--line);
-}
-
-.banner {
-  width: 100%;
-  height: 230px;
-  object-fit: cover;
-  display: block;
-}
-
-.portrait {
-  position: absolute;
-  left: 28px;
-  bottom: -48px;
-  width: 112px;
-  height: 112px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid rgba(245, 240, 223, 0.34);
-  background: #090807;
-}
-
 .hud {
-  min-height: 116px;
+  min-height: 112px;
   display: flex;
   justify-content: space-between;
   gap: 20px;
   align-items: end;
-  padding: 60px 28px 20px 160px;
+  padding: 32px 28px 22px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(90deg, rgba(196, 155, 79, 0.12), rgba(39, 112, 109, 0.08));
+  background: linear-gradient(90deg, rgba(56, 165, 157, 0.16), rgba(208, 162, 77, 0.1));
 }
 
 .eyebrow {
@@ -131,19 +102,18 @@ h1 {
 
 .oracle {
   display: grid;
-  grid-template-columns: 192px minmax(0, 1fr);
-  gap: 28px;
+  grid-template-columns: minmax(220px, 384px) minmax(0, 1fr);
+  gap: 32px;
   align-items: center;
-  min-height: 290px;
+  min-height: 420px;
   padding: 32px;
-  background:
-    linear-gradient(rgba(16, 16, 14, 0.82), rgba(16, 16, 14, 0.82)),
-    url("./assets/crowley-bard-pfp.png") center / 320px auto no-repeat;
+  background: var(--bg);
 }
 
 .sigil-canvas {
-  width: 192px;
-  height: 192px;
+  width: min(384px, 100%);
+  height: auto;
+  aspect-ratio: 1;
   border: 1px solid rgba(245, 240, 223, 0.24);
   border-radius: 8px;
   background: #efe8d2;
@@ -190,7 +160,7 @@ h1 {
   color: #8f8978;
 }
 
-#sendButton {
+#sampleButton {
   width: 96px;
   height: 52px;
   border: 0;
@@ -201,7 +171,7 @@ h1 {
   cursor: pointer;
 }
 
-#sendButton:disabled,
+#sampleButton:disabled,
 #promptInput:disabled {
   cursor: wait;
   opacity: 0.62;
@@ -209,7 +179,7 @@ h1 {
 
 .controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   padding: 0 20px 18px;
@@ -219,7 +189,7 @@ h1 {
 .controls label {
   min-width: 0;
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 76px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
   color: var(--muted);
@@ -247,22 +217,11 @@ h1 {
     border-radius: 0;
   }
 
-  .banner {
-    height: 170px;
-  }
-
-  .portrait {
-    left: 18px;
-    bottom: -36px;
-    width: 84px;
-    height: 84px;
-  }
-
   .hud {
     min-height: 132px;
     display: grid;
     align-items: end;
-    padding: 48px 18px 18px;
+    padding: 24px 18px 18px;
   }
 
   .meters {
@@ -295,7 +254,7 @@ h1 {
     padding: 14px;
   }
 
-  #sendButton {
+  #sampleButton {
     width: 100%;
   }
 

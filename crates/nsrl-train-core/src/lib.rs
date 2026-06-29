@@ -400,7 +400,7 @@ pub fn mini_transformer_linear_nope_train_step(
     )?;
     let predicted_before = byte_argmax_i32(workspace.logits_q8)?;
 
-    byte_softmax_gradient_q15(
+    byte_vocab_softmax_gradient_q15(
         target,
         workspace.probabilities_q15,
         workspace.grad_output_q15,
@@ -988,7 +988,7 @@ pub fn mini_transformer_observe_output_logits(
     Ok(())
 }
 
-fn byte_softmax_gradient_q15(
+fn byte_vocab_softmax_gradient_q15(
     target: u8,
     probabilities_q15: &[i16],
     grad_output_q15: &mut [i16],

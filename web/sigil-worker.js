@@ -1,6 +1,8 @@
 import init, { SolomonSampler } from "./pkg/nsrl_web_wasm.js";
+import { SolomonMultimodalSampler } from "./multimodal-sampler.js";
 
 const ASSETS = {
+  solomonMultimodalModel: "./assets/solomon-multimodal.nsrlmod?v=1",
   solomonModel: "./assets/solomon-model.nsrltch?v=4-seal-scaled",
   solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv?v=4-seal-scaled",
 };
@@ -25,7 +27,7 @@ self.addEventListener("message", (event) => {
 
 async function sampleSigil(message) {
   const job = Number(message.id || 0);
-  const sampler = await getSampler();
+  const loaded = await getSampler();
   if (job !== latestJob) {
     return;
   }
@@ -34,7 +36,29 @@ async function sampleSigil(message) {
   try {
     const text = String(message.text || "");
     const seed = sigilSeed(text, String(message.salt || ""));
-    sample = sampler.sample_fast(
+    if (loaded.kind === "multimodal") {
+      const result = loaded.sampler.sample(text, {
+        seed: hashText(seed),
+        topK: Math.max(1, Number(message.candidates || 4)),
+      });
+      if (job !== latestJob) {
+        return;
+      }
+      self.postMessage(
+        {
+          type: "sample",
+          id: job,
+          width: result.width,
+          height: result.height,
+          rgba: result.rgba.buffer,
+          metadata: result.metadata,
+          generatedText: result.text,
+        },
+        [result.rgba.buffer],
+      );
+      return;
+    }
+    sample = loaded.sampler.sample_fast(
       text,
       seed,
       Number(message.candidates || 4),
@@ -64,12 +88,22 @@ async function sampleSigil(message) {
 async function getSampler() {
   if (!samplerPromise) {
     samplerPromise = (async () => {
+      const multimodalBytes = await fetchOptionalBytes(ASSETS.solomonMultimodalModel);
+      if (multimodalBytes) {
+        return {
+          kind: "multimodal",
+          sampler: new SolomonMultimodalSampler(multimodalBytes),
+        };
+      }
       await init();
       const [modelBytes, textIndex] = await Promise.all([
         fetchBytes(ASSETS.solomonModel),
         fetchText(ASSETS.solomonTextIndex),
       ]);
-      return new SolomonSampler(modelBytes, textIndex);
+      return {
+        kind: "denoiser",
+        sampler: new SolomonSampler(modelBytes, textIndex),
+      };
     })();
   }
   return samplerPromise;
@@ -79,6 +113,14 @@ async function fetchBytes(url) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Could not load ${url}`);
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function fetchOptionalBytes(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    return null;
   }
   return new Uint8Array(await response.arrayBuffer());
 }

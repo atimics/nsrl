@@ -9,34 +9,30 @@ use std::path::PathBuf;
 use nsrl_corpus::LEXEME_PAGE_BOUNDARY;
 use nsrl_corpus::encode_lexeme_prompt_tokens;
 use nsrl_train::{
-    ByteDecodePriors, ByteEmbedSoftmaxModel, ByteEmbedSoftmaxTrainConfig, ByteGenerationConfig,
-    ByteSoftmaxModel, ByteSoftmaxTrainConfig, ByteTokenizerId, DecodeStrategy,
+    ByteDecodePriors, ByteGenerationConfig, ByteTokenizerId, DecodeStrategy,
     LEXEME_DECODE_TOKEN_SET_CAP, LEXEME_SENTENCE_STOP_TOKEN_CAP, LexemeContextFeatures,
     LexemeDecodePriors, LexemeEmbeddingModel, LexemeEmbeddingTrainConfig, LexemeGenerationConfig,
     LexemeMemoryPriors, LexemeQualityWeightProfile, LexemeSoftmaxModel, LexemeSoftmaxTrainConfig,
-    LexemeTopicPriors, LinearBackwardConfig, MiniTransformerAttentionKind,
-    MiniTransformerBatchMode, MiniTransformerBinaryTraceRecord, MiniTransformerBinaryTraceWriter,
-    MiniTransformerMlpModel, MiniTransformerMlpSwarmModel, MiniTransformerMlpSwarmTrainConfig,
+    LexemeTopicPriors, MiniTransformerAttentionKind, MiniTransformerBatchMode,
+    MiniTransformerBinaryTraceRecord, MiniTransformerBinaryTraceWriter, MiniTransformerMlpModel,
+    MiniTransformerMlpSwarmModel, MiniTransformerMlpSwarmTrainConfig,
     MiniTransformerMlpSwarmWorkerArtifact, MiniTransformerMlpTrainConfig,
     MiniTransformerPositionPolicy, MiniTransformerSwarmComposition,
     MiniTransformerSwarmRouteConfig, MiniTransformerSwarmRoutedGenerationExpert,
-    MiniTransformerTraceDetail, SoftmaxTrainConfig, TrainConfig, TrainError,
-    assemble_mini_transformer_mlp_swarm_worker_artifacts, generate_byte_embed_softmax_with_priors,
-    generate_byte_softmax_with_priors, generate_lexeme_softmax_with_memory,
+    MiniTransformerTraceDetail, TrainError, assemble_mini_transformer_mlp_swarm_worker_artifacts,
+    generate_lexeme_softmax_with_memory,
     generate_mini_transformer_swarm_with_attention_kind_position_policy_composition_and_priors,
     generate_mini_transformer_with_attention_kind_position_policy_priors_and_ttt_shift,
     generate_routed_mini_transformer_swarm_experts, lexeme_quality_weights_from_vocab,
     reduce_lexeme_softmax_models, route_mini_transformer_swarm_expert_models,
-    run_byte_embed_softmax_training_with_model, run_byte_softmax_training_with_model,
-    run_gated_mlp_backward_smoke, run_lexeme_embedding_training_with_model_and_quality,
-    run_lexeme_softmax_evaluate, run_lexeme_softmax_training_from_softmax_model_and_quality,
-    run_lexeme_softmax_training_with_model_and_quality, run_linear_backward_smoke,
+    run_lexeme_embedding_training_with_model_and_quality, run_lexeme_softmax_evaluate,
+    run_lexeme_softmax_training_from_softmax_model_and_quality,
+    run_lexeme_softmax_training_with_model_and_quality,
     run_mini_transformer_mlp_swarm_scaling_benchmark_from_model,
     run_mini_transformer_mlp_swarm_training_from_model_with_progress,
     run_mini_transformer_mlp_swarm_worker_from_model_with_progress,
     run_mini_transformer_mlp_training_from_model_with_progress_and_trace_detail,
     run_mini_transformer_mlp_training_from_model_with_progress_trace_detail_and_binary_trace,
-    run_softmax_training, run_training_smoke,
 };
 
 fn main() {
@@ -53,17 +49,12 @@ enum TraceFormat {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let mut config = TrainConfig::default();
-    let mut softmax_config = SoftmaxTrainConfig::default();
-    let mut linear_backward_config = LinearBackwardConfig::default();
-    let mut byte_softmax_config = ByteSoftmaxTrainConfig::default();
-    let mut byte_embed_softmax_config = ByteEmbedSoftmaxTrainConfig::default();
     let mut lexeme_embedding_config = LexemeEmbeddingTrainConfig::default();
     let mut lexeme_softmax_config = LexemeSoftmaxTrainConfig::default();
     let mut mini_transformer_config = MiniTransformerMlpTrainConfig::default();
     let mut byte_generation_config = ByteGenerationConfig::greedy(32);
     let mut lexeme_generation_config = LexemeGenerationConfig::greedy(32);
-    let mut mode = String::from("softmax");
+    let mut mode = String::from("mini-transformer-mlp");
     let mut trace_format = TraceFormat::Json;
     let mut tokens_path = None;
     let mut model_path = None;
@@ -100,7 +91,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         match arg.as_str() {
             "--mode" => {
                 mode = args.next().ok_or(
-                    "--mode requires softmax, perceptron, linear-backward, gated-mlp-backward, byte-softmax, byte-generate, byte-embed-softmax, byte-embed-generate, lexeme-embedding, lexeme-softmax, lexeme-reduce, lexeme-generate, mini-transformer-mlp, mini-transformer-swarm, mini-transformer-swarm-worker, mini-transformer-swarm-assemble, mini-transformer-swarm-manifest, mini-transformer-swarm-route, mini-transformer-swarm-routed-generate, mini-transformer-swarm-scaling, mini-transformer-swarm-generate, or mini-transformer-generate",
+                    "--mode requires lexeme-embedding, lexeme-softmax, lexeme-reduce, lexeme-generate, mini-transformer-mlp, mini-transformer-swarm, mini-transformer-swarm-worker, mini-transformer-swarm-assemble, mini-transformer-swarm-manifest, mini-transformer-swarm-route, mini-transformer-swarm-routed-generate, mini-transformer-swarm-scaling, mini-transformer-swarm-generate, or mini-transformer-generate",
                 )?;
             }
             "--epochs" => {
@@ -108,10 +99,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .next()
                     .ok_or("--epochs requires a following integer")?
                     .parse()?;
-                config.epochs = epochs;
-                softmax_config.epochs = epochs;
-                byte_softmax_config.epochs = epochs;
-                byte_embed_softmax_config.epochs = epochs;
                 lexeme_embedding_config.epochs = epochs;
                 lexeme_softmax_config.epochs = epochs;
                 mini_transformer_config.epochs = epochs;
@@ -121,11 +108,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .next()
                     .ok_or("--learning-rate requires a following integer")?
                     .parse()?;
-                config.learning_rate = i8::try_from(value)?;
-                softmax_config.learning_rate = value;
-                linear_backward_config.learning_rate = value;
-                byte_softmax_config.learning_rate = value;
-                byte_embed_softmax_config.learning_rate = value;
                 lexeme_embedding_config.learning_rate = value;
                 lexeme_softmax_config.learning_rate = value;
                 mini_transformer_config.learning_rate = value;
@@ -135,10 +117,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .next()
                     .ok_or("--lr-shift requires a following integer")?
                     .parse()?;
-                softmax_config.learning_rate_shift = value;
-                linear_backward_config.learning_rate_shift = value;
-                byte_softmax_config.learning_rate_shift = value;
-                byte_embed_softmax_config.head_learning_rate_shift = value;
                 lexeme_embedding_config.learning_rate_shift = value;
                 lexeme_softmax_config.learning_rate_shift = value;
                 if lexeme_softmax_config.max_learning_rate_shift < value {
@@ -187,7 +165,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .next()
                     .ok_or("--embed-lr-shift requires an integer")?
                     .parse()?;
-                byte_embed_softmax_config.embedding_learning_rate_shift = value;
                 lexeme_softmax_config.embedding_learning_rate_shift = value;
                 mini_transformer_config.embedding_learning_rate_shift = value;
             }
@@ -433,8 +410,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     _ => return Err("--tokenizer requires identity or ascii-lower".into()),
                 };
-                byte_softmax_config.tokenizer_id = tokenizer_id;
-                byte_embed_softmax_config.tokenizer_id = tokenizer_id;
                 mini_transformer_config.tokenizer_id = tokenizer_id;
                 byte_generation_config.tokenizer_id = tokenizer_id;
             }
@@ -735,31 +710,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 lexeme_generation_config.decode.strict_adjacency = true;
             }
             "--seq-len" => {
-                byte_softmax_config.seq_len = args
+                let seq_len = args
                     .next()
                     .ok_or("--seq-len requires an integer")?
                     .parse()?;
-                byte_embed_softmax_config.seq_len = byte_softmax_config.seq_len;
-                lexeme_softmax_config.seq_len = byte_softmax_config.seq_len;
-                mini_transformer_config.seq_len = byte_softmax_config.seq_len;
+                lexeme_softmax_config.seq_len = seq_len;
+                mini_transformer_config.seq_len = seq_len;
             }
             "--stride" => {
-                byte_softmax_config.stride =
-                    args.next().ok_or("--stride requires an integer")?.parse()?;
-                byte_embed_softmax_config.stride = byte_softmax_config.stride;
-                lexeme_embedding_config.stride = byte_softmax_config.stride;
-                lexeme_softmax_config.stride = byte_softmax_config.stride;
-                mini_transformer_config.stride = byte_softmax_config.stride;
+                let stride = args.next().ok_or("--stride requires an integer")?.parse()?;
+                lexeme_embedding_config.stride = stride;
+                lexeme_softmax_config.stride = stride;
+                mini_transformer_config.stride = stride;
             }
             "--window-offset" => {
-                byte_softmax_config.window_offset = args
+                let window_offset = args
                     .next()
                     .ok_or("--window-offset requires an integer")?
                     .parse()?;
-                byte_embed_softmax_config.window_offset = byte_softmax_config.window_offset;
-                lexeme_embedding_config.window_offset = byte_softmax_config.window_offset;
-                lexeme_softmax_config.window_offset = byte_softmax_config.window_offset;
-                mini_transformer_config.window_offset = byte_softmax_config.window_offset;
+                lexeme_embedding_config.window_offset = window_offset;
+                lexeme_softmax_config.window_offset = window_offset;
+                mini_transformer_config.window_offset = window_offset;
             }
             "--batch-windows" => {
                 let value = args
@@ -789,15 +760,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .parse()?;
             }
             "--max-windows" => {
-                byte_softmax_config.max_windows = Some(
+                let max_windows = Some(
                     args.next()
                         .ok_or("--max-windows requires an integer")?
                         .parse()?,
                 );
-                byte_embed_softmax_config.max_windows = byte_softmax_config.max_windows;
-                lexeme_embedding_config.max_windows = byte_softmax_config.max_windows;
-                lexeme_softmax_config.max_windows = byte_softmax_config.max_windows;
-                mini_transformer_config.max_windows = byte_softmax_config.max_windows;
+                lexeme_embedding_config.max_windows = max_windows;
+                lexeme_softmax_config.max_windows = max_windows;
+                mini_transformer_config.max_windows = max_windows;
             }
             "--trace" => {
                 trace_path = Some(PathBuf::from(
@@ -861,77 +831,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut binary_output = None;
     let mut trace_output_written = false;
     let line = match mode.as_str() {
-        "perceptron" | "smoke" => run_training_smoke(config)?.to_json_line(),
-        "softmax" => run_softmax_training(softmax_config)?.to_json_line(),
-        "linear-backward" | "linear_backward" => {
-            run_linear_backward_smoke(linear_backward_config)?.to_json_line()
-        }
-        "gated-mlp-backward" | "gated_mlp_backward" => {
-            run_gated_mlp_backward_smoke(linear_backward_config)?.to_json_line()
-        }
-        "byte-softmax" | "byte_softmax" => {
-            let path = tokens_path.ok_or("--tokens is required for byte-softmax mode")?;
-            let tokens = fs::read(path)?;
-            let run = run_byte_softmax_training_with_model(&tokens, byte_softmax_config)?;
-            if let Some(path) = model_out_path {
-                fs::write(path, run.model.try_to_bytes()?)?;
-            }
-            run.trace.to_json_line()
-        }
-        "byte-generate" | "byte_generate" => {
-            let path = model_path.ok_or("--model is required for byte-generate mode")?;
-            if prompt.is_empty() {
-                return Err("--prompt is required for byte-generate mode".into());
-            }
-            let model_bytes = fs::read(path)?;
-            let model = ByteSoftmaxModel::from_bytes(&model_bytes)?;
-            let decode_priors = load_decode_priors(&tokens_path, byte_generation_config)?;
-            let generation = generate_byte_softmax_with_priors(
-                &model,
-                &prompt,
-                byte_generation_config,
-                decode_priors.as_ref(),
-            )?;
-            write_text_generation(
-                &text_out_path,
-                &generation.prompt_bytes,
-                &generation.generated_bytes,
-                generated_only_text,
-            )?;
-            generation.to_json_line()
-        }
-        "byte-embed-softmax" | "byte_embed_softmax" => {
-            let path = tokens_path.ok_or("--tokens is required for byte-embed-softmax mode")?;
-            let tokens = fs::read(path)?;
-            let run =
-                run_byte_embed_softmax_training_with_model(&tokens, byte_embed_softmax_config)?;
-            if let Some(path) = model_out_path {
-                fs::write(path, run.model.try_to_bytes()?)?;
-            }
-            run.trace.to_json_line()
-        }
-        "byte-embed-generate" | "byte_embed_generate" => {
-            let path = model_path.ok_or("--model is required for byte-embed-generate mode")?;
-            if prompt.is_empty() {
-                return Err("--prompt is required for byte-embed-generate mode".into());
-            }
-            let model_bytes = fs::read(path)?;
-            let model = ByteEmbedSoftmaxModel::from_bytes(&model_bytes)?;
-            let decode_priors = load_decode_priors(&tokens_path, byte_generation_config)?;
-            let generation = generate_byte_embed_softmax_with_priors(
-                &model,
-                &prompt,
-                byte_generation_config,
-                decode_priors.as_ref(),
-            )?;
-            write_text_generation(
-                &text_out_path,
-                &generation.prompt_bytes,
-                &generation.generated_bytes,
-                generated_only_text,
-            )?;
-            generation.to_json_line()
-        }
         "lexeme-embedding" | "lexeme_embedding" => {
             let path = tokens_path.ok_or("--tokens is required for lexeme-embedding mode")?;
             let tokens = fs::read(path)?;
@@ -1564,10 +1463,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode softmax|perceptron|linear-backward|gated-mlp-backward|byte-softmax|byte-generate|byte-embed-softmax|byte-embed-generate|lexeme-embedding|lexeme-softmax|lexeme-reduce|lexeme-generate|mini-transformer-mlp|mini-transformer-swarm|mini-transformer-swarm-worker|mini-transformer-swarm-assemble|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--expert PATH] [--model-out PATH] [--swarm-model-out PATH] [--swarm-worker-out PATH] [--swarm-worker-artifact PATH] [--manifest-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--decode-ban-token TEXT] [--decode-function-word-run-cap N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N|--swarm-worker-count N] [--swarm-worker-index N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--lexeme-map-reduce-workers N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
+        "Usage: nsrl-train [--mode lexeme-embedding|lexeme-softmax|lexeme-reduce|lexeme-generate|mini-transformer-mlp|mini-transformer-swarm|mini-transformer-swarm-worker|mini-transformer-swarm-assemble|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--expert PATH] [--model-out PATH] [--swarm-model-out PATH] [--swarm-worker-out PATH] [--swarm-worker-artifact PATH] [--manifest-out PATH] [--vocab PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--decode-profile coherent-prose|grounded-prose] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--decode-ban-token TEXT] [--decode-function-word-run-cap N] [--corpus-prior] [--corpus-prior-logit-shift N] [--corpus-prior-order 1|2|3] [--decode-frequency-cap N] [--decode-frequency-min-q15 N] [--decode-frequency-logit-shift N] [--decode-local-frequency-cap N] [--decode-local-frequency-min-q15 N] [--decode-local-frequency-logit-shift N] [--decode-local-frequency-hard-cap N] [--decode-island-count-cap N] [--decode-island-min-degree N] [--decode-island-min-q15 N] [--decode-island-logit-shift N] [--prompt-topic-radius N] [--prompt-topic-min-q15 N] [--prompt-topic-strict-min-q15 N] [--prompt-topic-logit-shift N] [--decode-memory-order N] [--decode-memory-min-order N] [--decode-memory-logit-shift N] [--strict-memory-on-steps N] [--strict-memory-off-steps N] [--strict-memory] [--strict-topic] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--lr-shift-decay-windows N] [--lr-shift-decay-step N] [--max-lr-shift N] [--max-weight-delta N] [--max-embedding-delta N] [--max-hidden-weight-delta N] [--concept-frequency-cap N] [--target-frequency-cap N] [--frequency-weight-min-q15 N] [--quality-weight-profile off|cruft-aware|prose-aware] [--lexeme-context-features mean|ordered] [--train-lexeme-embeddings] [--lexeme-hidden-dim N] [--lexeme-hidden-lr-shift N] [--lexeme-adapter-logit-shift N] [--context-radius N] [--vocab-size N] [--embedding-dim N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N|--swarm-worker-count N] [--swarm-worker-index N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--lexeme-map-reduce-workers N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only] [--stop-on-sentence-terminal]"
     );
     println!();
-    println!("Runs a deterministic integer training trace.");
+    println!("Runs deterministic lexeme and mini-transformer training or generation traces.");
 }
 
 fn write_progress_trace(path: &PathBuf, line: &str) -> Result<(), TrainError> {
