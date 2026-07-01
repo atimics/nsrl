@@ -1,7 +1,9 @@
 import init, { SolomonSampler } from "./pkg/nsrl_web_wasm.js";
+import { SolomonAttentionSampler } from "./attention-sampler.js?v=3";
 import { SolomonMultimodalSampler } from "./multimodal-sampler.js";
 
 const ASSETS = {
+  solomonAttentionModel: "./assets/solomon-attention.nsrllmm?v=5",
   solomonMultimodalModel: "./assets/solomon-multimodal.nsrlmod?v=1",
   solomonModel: "./assets/solomon-model.nsrltch?v=4-seal-scaled",
   solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv?v=4-seal-scaled",
@@ -11,6 +13,8 @@ const DEFAULT_PROMPT = "king solomon seal";
 const state = {
   solomon: null,
   solomonLoad: null,
+  attention: null,
+  attentionLoad: null,
   multimodal: null,
   multimodalLoad: null,
   sigilWorker: null,
@@ -137,7 +141,9 @@ function createSigilWorker() {
     return null;
   }
   try {
-    const worker = new Worker(new URL("./sigil-worker.js", import.meta.url), { type: "module" });
+    const worker = new Worker(new URL("./sigil-worker.js?v=6", import.meta.url), {
+      type: "module",
+    });
     worker.addEventListener("message", handleSigilWorkerMessage);
     worker.addEventListener("error", (event) => {
       console.warn("Solomon model worker failed", event.message || event);
@@ -183,11 +189,34 @@ function disableSigilWorker() {
 }
 
 async function ensureMainThreadSampler() {
+  await ensureAttentionFallback();
+  if (state.attention) {
+    return;
+  }
   await ensureMultimodalFallback();
   if (state.multimodal) {
     return;
   }
   await ensureSolomonFallback();
+}
+
+async function ensureAttentionFallback() {
+  if (state.attention) {
+    return;
+  }
+  if (!state.attentionLoad) {
+    state.attentionLoad = fetchOptionalBytes(ASSETS.solomonAttentionModel).then((modelBytes) => {
+      if (!modelBytes) {
+        return;
+      }
+      try {
+        state.attention = new SolomonAttentionSampler(modelBytes);
+      } catch (error) {
+        console.warn("Could not load NSRLLMM1 attention model", error);
+      }
+    });
+  }
+  await state.attentionLoad;
 }
 
 async function ensureMultimodalFallback() {
@@ -238,6 +267,18 @@ function renderSolomonSigil(text, salt = "") {
   let sample = null;
   try {
     const seed = sigilSeed(text, salt);
+    if (state.attention) {
+      const result = state.attention.sample(text, {
+        seed: hashText(seed),
+        topK: Number(nodes.candidates.value),
+      });
+      drawSolomonSigil(result.rgba, result.width, result.height);
+      state.lastSigilMetadata = result.metadata;
+      nodes.oracle.textContent = result.text;
+      updateMetadata(result.metadata);
+      setBusy(false, "Ready");
+      return;
+    }
     if (state.multimodal) {
       const result = state.multimodal.sample(text, {
         seed: hashText(seed),
@@ -326,6 +367,20 @@ function updateMetadata(metadata) {
   if (row.model_kind === "NSRLMOD1") {
     nodes.target.textContent = "Joint";
     nodes.score.textContent = row.model_hash || "NSRLMOD1";
+    return;
+  }
+  if (row.model_kind === "NSRLLMM1") {
+    const strictImageMemory = row.image_source === "embedded_image_memory_strict";
+    nodes.target.textContent = "Attention";
+    if (strictImageMemory && row.text_source === "embedded_text_lm_strict") {
+      nodes.score.textContent = "Embedded LM text+image";
+    } else if (strictImageMemory && row.text_source === "embedded_text_memory_guard") {
+      nodes.score.textContent = "Guarded memory text+image";
+    } else if (strictImageMemory && row.text_source === "embedded_text_memory_strict") {
+      nodes.score.textContent = "Memory text+image";
+    } else {
+      nodes.score.textContent = row.text_source || row.model_hash || "NSRLLMM1";
+    }
     return;
   }
   nodes.target.textContent = `Target ${row.target_number}`;

@@ -1,7 +1,9 @@
 import init, { SolomonSampler } from "./pkg/nsrl_web_wasm.js";
+import { SolomonAttentionSampler } from "./attention-sampler.js?v=3";
 import { SolomonMultimodalSampler } from "./multimodal-sampler.js";
 
 const ASSETS = {
+  solomonAttentionModel: "./assets/solomon-attention.nsrllmm?v=5",
   solomonMultimodalModel: "./assets/solomon-multimodal.nsrlmod?v=1",
   solomonModel: "./assets/solomon-model.nsrltch?v=4-seal-scaled",
   solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv?v=4-seal-scaled",
@@ -36,6 +38,28 @@ async function sampleSigil(message) {
   try {
     const text = String(message.text || "");
     const seed = sigilSeed(text, String(message.salt || ""));
+    if (loaded.kind === "attention") {
+      const result = loaded.sampler.sample(text, {
+        seed: hashText(seed),
+        topK: Math.max(1, Number(message.candidates || 4)),
+      });
+      if (job !== latestJob) {
+        return;
+      }
+      self.postMessage(
+        {
+          type: "sample",
+          id: job,
+          width: result.width,
+          height: result.height,
+          rgba: result.rgba.buffer,
+          metadata: result.metadata,
+          generatedText: result.text,
+        },
+        [result.rgba.buffer],
+      );
+      return;
+    }
     if (loaded.kind === "multimodal") {
       const result = loaded.sampler.sample(text, {
         seed: hashText(seed),
@@ -88,6 +112,17 @@ async function sampleSigil(message) {
 async function getSampler() {
   if (!samplerPromise) {
     samplerPromise = (async () => {
+      const attentionBytes = await fetchOptionalBytes(ASSETS.solomonAttentionModel);
+      if (attentionBytes) {
+        try {
+          return {
+            kind: "attention",
+            sampler: new SolomonAttentionSampler(attentionBytes),
+          };
+        } catch (error) {
+          console.warn("Could not load NSRLLMM1 attention model", error);
+        }
+      }
       const multimodalBytes = await fetchOptionalBytes(ASSETS.solomonMultimodalModel);
       if (multimodalBytes) {
         return {

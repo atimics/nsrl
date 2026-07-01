@@ -25,3 +25,4 @@ qemu_rustc_*.core
 * 2.*
 # Ad-hoc full-source dumps
 /all-rust-code.txt
+/web/results/

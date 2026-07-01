@@ -464,6 +464,101 @@ impl MiniTransformerBatchMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiniTransformerTargetSegment {
+    All,
+    AfterMarkerBeforeAny {
+        start_marker: u8,
+        end_markers: [u8; 4],
+        end_marker_count: u8,
+    },
+    AfterSequenceBeforeAny {
+        start_sequence: [u8; 32],
+        start_sequence_len: u8,
+        end_markers: [u8; 4],
+        end_marker_count: u8,
+    },
+    FirstAfterSequenceBeforeAny {
+        start_sequence: [u8; 32],
+        start_sequence_len: u8,
+        end_markers: [u8; 4],
+        end_marker_count: u8,
+    },
+}
+
+impl MiniTransformerTargetSegment {
+    pub fn after_marker_before_any(
+        start_marker: u8,
+        end_markers: &[u8],
+    ) -> Result<Self, TrainError> {
+        if end_markers.is_empty() || end_markers.len() > 4 {
+            return Err(TrainError::InvalidConfig);
+        }
+        let mut markers = [0_u8; 4];
+        markers[..end_markers.len()].copy_from_slice(end_markers);
+        Ok(Self::AfterMarkerBeforeAny {
+            start_marker,
+            end_markers: markers,
+            end_marker_count: end_markers.len() as u8,
+        })
+    }
+
+    pub fn after_sequence_before_any(
+        start_sequence: &[u8],
+        end_markers: &[u8],
+    ) -> Result<Self, TrainError> {
+        if start_sequence.is_empty()
+            || start_sequence.len() > 32
+            || end_markers.is_empty()
+            || end_markers.len() > 4
+        {
+            return Err(TrainError::InvalidConfig);
+        }
+        let mut sequence = [0_u8; 32];
+        sequence[..start_sequence.len()].copy_from_slice(start_sequence);
+        let mut markers = [0_u8; 4];
+        markers[..end_markers.len()].copy_from_slice(end_markers);
+        Ok(Self::AfterSequenceBeforeAny {
+            start_sequence: sequence,
+            start_sequence_len: start_sequence.len() as u8,
+            end_markers: markers,
+            end_marker_count: end_markers.len() as u8,
+        })
+    }
+
+    pub fn first_after_sequence_before_any(
+        start_sequence: &[u8],
+        end_markers: &[u8],
+    ) -> Result<Self, TrainError> {
+        if start_sequence.is_empty()
+            || start_sequence.len() > 32
+            || end_markers.is_empty()
+            || end_markers.len() > 4
+        {
+            return Err(TrainError::InvalidConfig);
+        }
+        let mut sequence = [0_u8; 32];
+        sequence[..start_sequence.len()].copy_from_slice(start_sequence);
+        let mut markers = [0_u8; 4];
+        markers[..end_markers.len()].copy_from_slice(end_markers);
+        Ok(Self::FirstAfterSequenceBeforeAny {
+            start_sequence: sequence,
+            start_sequence_len: start_sequence.len() as u8,
+            end_markers: markers,
+            end_marker_count: end_markers.len() as u8,
+        })
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::AfterMarkerBeforeAny { .. } => "after_marker_before_any",
+            Self::AfterSequenceBeforeAny { .. } => "after_sequence_before_any",
+            Self::FirstAfterSequenceBeforeAny { .. } => "first_after_sequence_before_any",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MiniTransformerMlpTrainConfig {
     pub epochs: usize,
     pub seq_len: usize,
@@ -471,6 +566,12 @@ pub struct MiniTransformerMlpTrainConfig {
     pub window_offset: usize,
     pub max_windows: Option<usize>,
     pub batch_windows: usize,
+    pub target_token_min: u8,
+    pub target_token_max: u8,
+    pub target_segment: MiniTransformerTargetSegment,
+    pub target_frequency_cap: u32,
+    pub target_frequency_min_weight_q15: i16,
+    pub argmax_margin_weight_q15: i16,
     pub tokenizer_id: ByteTokenizerId,
     pub attention_kind: MiniTransformerAttentionKind,
     pub position_policy: MiniTransformerPositionPolicy,
@@ -517,6 +618,12 @@ impl Default for MiniTransformerMlpTrainConfig {
             window_offset: 0,
             max_windows: Some(DEFAULT_MINI_TRANSFORMER_MAX_WINDOWS),
             batch_windows: DEFAULT_MINI_TRANSFORMER_BATCH_WINDOWS,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Linear,
             position_policy: MiniTransformerPositionPolicy::Nope,
@@ -5818,14 +5925,8 @@ where
         return Err(TrainError::InvalidConfig);
     }
 
-    let available_windows = mini_transformer_window_starts(
-        tokens.len(),
-        config.seq_len,
-        config.stride,
-        config.window_offset,
-        config.max_windows,
-    )
-    .len();
+    let available_windows =
+        mini_transformer_filtered_window_starts(tokens.len(), tokens, config).len();
     if available_windows == 0 {
         return Err(TrainError::InvalidConfig);
     }
@@ -5924,14 +6025,8 @@ where
         return Err(TrainError::InvalidConfig);
     }
 
-    let available_windows = mini_transformer_window_starts(
-        tokens.len(),
-        config.seq_len,
-        config.stride,
-        config.window_offset,
-        config.max_windows,
-    )
-    .len();
+    let available_windows =
+        mini_transformer_filtered_window_starts(tokens.len(), tokens, config).len();
     if available_windows == 0
         || mini_transformer_swarm_effective_worker_count(config, worker_count, available_windows)
             != worker_count
@@ -5999,14 +6094,8 @@ pub fn assemble_mini_transformer_mlp_swarm_worker_artifacts(
         return Err(TrainError::InvalidConfig);
     }
 
-    let available_windows = mini_transformer_window_starts(
-        tokens.len(),
-        config.seq_len,
-        config.stride,
-        config.window_offset,
-        config.max_windows,
-    )
-    .len();
+    let available_windows =
+        mini_transformer_filtered_window_starts(tokens.len(), tokens, config).len();
     if available_windows == 0
         || mini_transformer_swarm_effective_worker_count(config, worker_count, available_windows)
             != worker_count
@@ -6472,13 +6561,7 @@ fn validate_mini_transformer_swarm_worker_artifact(
     }
 
     let worker_config = mini_transformer_swarm_worker_config(config, worker_index, worker_count);
-    let starts = mini_transformer_window_starts(
-        tokens.len(),
-        worker_config.seq_len,
-        worker_config.stride,
-        worker_config.window_offset,
-        worker_config.max_windows,
-    );
+    let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, worker_config);
     if starts.is_empty()
         || artifact.worker.window_offset != worker_config.window_offset
         || artifact.worker.stride != worker_config.stride
@@ -6609,6 +6692,10 @@ where
         || config.stride == 0
         || config.batch_windows == 0
         || config.learning_rate <= 0
+        || config.target_token_min > config.target_token_max
+        || !valid_mini_transformer_target_segment(config.target_segment)
+        || !valid_q15_weight_floor(config.target_frequency_min_weight_q15)
+        || config.argmax_margin_weight_q15 < 0
         || config.output_learning_rate_shift > MAX_RIGHT_SHIFT
         || config.mlp_learning_rate_shift > MAX_RIGHT_SHIFT
         || config.embedding_learning_rate_shift > MAX_RIGHT_SHIFT
@@ -6627,19 +6714,20 @@ where
         return Err(TrainError::InvalidConfig);
     }
 
-    let starts = mini_transformer_window_starts(
-        tokens.len(),
-        config.seq_len,
-        config.stride,
-        config.window_offset,
-        config.max_windows,
-    );
+    let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, config);
     if starts.is_empty() {
         return Err(TrainError::InvalidConfig);
     }
 
     let token_hash = hash_u8_slice(tokens);
     let window_hash = hash_mini_transformer_windows(tokens, config, &starts);
+    let target_frequency_weights_q15 = byte_target_frequency_weights_q15(
+        tokens,
+        &starts,
+        config.seq_len,
+        config.target_frequency_cap,
+        config.target_frequency_min_weight_q15,
+    )?;
     let initial_model_hash = model.model_hash();
     let initial_embedding_hash = model.embedding_hash();
     let initial_output_head_hash = model.output_head_hash();
@@ -6801,6 +6889,7 @@ where
                 match mini_transformer_map_reduce_batch(
                     tokens,
                     &starts,
+                    &target_frequency_weights_q15,
                     batch_start_index,
                     batch_end_index,
                     epoch,
@@ -6904,11 +6993,21 @@ where
                     } else {
                         0
                     };
-                    let gradient_q15 = byte_vocab_softmax_gradient_q15(
+                    let mut gradient_q15 = byte_vocab_softmax_gradient_q15(
                         &cache_before.probabilities_q15,
                         target_token,
                     );
-                    let grad_output_q15 = byte_gradient_i32_to_i16(&gradient_q15);
+                    apply_byte_argmax_margin_gradient_q15(
+                        &mut gradient_q15,
+                        &cache_before.logits_q8,
+                        target_token,
+                        config.argmax_margin_weight_q15,
+                    );
+                    let target_frequency_weight_q15 =
+                        target_frequency_weights_q15[usize::from(target_token)];
+                    let weighted_gradient_q15 =
+                        byte_scale_gradient_q15(&gradient_q15, target_frequency_weight_q15);
+                    let grad_output_q15 = byte_gradient_i32_to_i16(&weighted_gradient_q15);
                     let output_head_hash_before = if should_record_step {
                         model.output_head_hash()
                     } else {
@@ -7277,7 +7376,7 @@ where
                         .ok_or(TrainError::CoreRejected("mini_transformer_mlp_update"))?
                     };
 
-                    let attention_update = mini_transformer_attention_update_i8_checked(
+                    let attention_update = match mini_transformer_attention_update_i8_checked(
                         &cache_before,
                         &mut model,
                         runtime_config,
@@ -7287,7 +7386,22 @@ where
                         } else {
                             None
                         },
-                    )?;
+                    ) {
+                        Ok(update) => update,
+                        Err(TrainError::CoreRejected(_)) => {
+                            model = model_checkpoint;
+                            rollback_count = rollback_count.saturating_add(1);
+                            rejected_window_count = rejected_window_count.saturating_add(1);
+                            adaptive_attention_shifts.observe_rejected(
+                                rejected_batch_count.saturating_add(rejected_window_count),
+                                adaptive_shift_controller_enabled,
+                                config,
+                                &mut adaptive_shift_events,
+                            );
+                            continue;
+                        }
+                        Err(error) => return Err(error),
+                    };
                     let attention_rms_backward_saturation_count = 0_usize;
 
                     let embedding_gradient_saturation_count = add_i16_residual_rows_checked(
@@ -7704,29 +7818,31 @@ where
                             batch_start_index,
                             batch_end_index,
                         );
-                        let before_loss =
-                            mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
-                                tokens,
-                                &loss_guard_starts,
-                                &batch_model_checkpoint,
-                                config.seq_len,
-                                config.attention_kind,
-                                config.position_policy,
-                            )?;
-                        let after_loss =
-                            mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
-                                tokens,
-                                &loss_guard_starts,
-                                &candidate_model,
-                                config.seq_len,
-                                config.attention_kind,
-                                config.position_policy,
-                            )?;
-                        batch_loss_regressed = mini_transformer_loss_guard_regressed(
-                            before_loss,
-                            after_loss,
-                            loss_guard_starts.len(),
+                        let before_loss = mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
+                            tokens,
+                            &loss_guard_starts,
+                            &batch_model_checkpoint,
+                            config.seq_len,
+                            config.attention_kind,
+                            config.position_policy,
+                        )?;
+                        let after_loss = mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
+                            tokens,
+                            &loss_guard_starts,
+                            &candidate_model,
+                            config.seq_len,
+                            config.attention_kind,
+                            config.position_policy,
                         );
+                        batch_loss_regressed = match after_loss {
+                            Ok(after_loss) => mini_transformer_loss_guard_regressed(
+                                before_loss,
+                                after_loss,
+                                loss_guard_starts.len(),
+                            ),
+                            Err(TrainError::CoreRejected(_)) => true,
+                            Err(error) => return Err(error),
+                        };
                     }
 
                     if batch_valid && !batch_loss_regressed {
@@ -8193,6 +8309,7 @@ impl MiniTransformerMapReduceBatchResult {
 fn mini_transformer_map_reduce_batch(
     tokens: &[u8],
     starts: &[usize],
+    target_frequency_weights_q15: &[i16; BYTE_VOCAB],
     batch_start_index: usize,
     batch_end_index: usize,
     epoch: usize,
@@ -8217,6 +8334,7 @@ fn mini_transformer_map_reduce_batch(
         return mini_transformer_map_reduce_worker_batch(
             tokens,
             starts,
+            target_frequency_weights_q15,
             batch_start_index,
             batch_end_index,
             batch_start_index,
@@ -8240,6 +8358,7 @@ fn mini_transformer_map_reduce_batch(
                 mini_transformer_map_reduce_worker_batch(
                     tokens,
                     starts,
+                    target_frequency_weights_q15,
                     start,
                     end,
                     batch_start_index,
@@ -8270,6 +8389,7 @@ fn mini_transformer_map_reduce_batch(
 fn mini_transformer_map_reduce_worker_batch(
     tokens: &[u8],
     starts: &[usize],
+    target_frequency_weights_q15: &[i16; BYTE_VOCAB],
     range_start_index: usize,
     range_end_index: usize,
     batch_start_index: usize,
@@ -8317,9 +8437,18 @@ fn mini_transformer_map_reduce_worker_batch(
             config.position_policy,
         )
         .map_err(|_| TrainError::CoreRejected("mini_transformer_map_reduce_forward"))?;
-        let gradient_q15 =
+        let mut gradient_q15 =
             byte_vocab_softmax_gradient_q15(&cache_before.probabilities_q15, target_token);
-        let grad_output_q15 = byte_gradient_i32_to_i16(&gradient_q15);
+        apply_byte_argmax_margin_gradient_q15(
+            &mut gradient_q15,
+            &cache_before.logits_q8,
+            target_token,
+            config.argmax_margin_weight_q15,
+        );
+        let target_frequency_weight_q15 = target_frequency_weights_q15[usize::from(target_token)];
+        let weighted_gradient_q15 =
+            byte_scale_gradient_q15(&gradient_q15, target_frequency_weight_q15);
+        let grad_output_q15 = byte_gradient_i32_to_i16(&weighted_gradient_q15);
         workspace.reset_host_training_step();
         linear_backward_input_i16_i8_i16_per_channel_checked(
             &grad_output_q15,
@@ -10067,6 +10196,42 @@ impl MiniTransformerMlpTrainingTrace {
         push_optional_usize_field(&mut out, "max_windows", self.config.max_windows);
         comma(&mut out);
         push_usize_field(&mut out, "batch_windows", self.config.batch_windows);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "target_token_min",
+            usize::from(self.config.target_token_min),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "target_token_max",
+            usize::from(self.config.target_token_max),
+        );
+        comma(&mut out);
+        push_string_field(
+            &mut out,
+            "target_segment",
+            self.config.target_segment.as_str(),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "target_frequency_cap",
+            self.config.target_frequency_cap as usize,
+        );
+        comma(&mut out);
+        push_i16_field(
+            &mut out,
+            "target_frequency_min_weight_q15",
+            self.config.target_frequency_min_weight_q15,
+        );
+        comma(&mut out);
+        push_i16_field(
+            &mut out,
+            "argmax_margin_weight_q15",
+            self.config.argmax_margin_weight_q15,
+        );
         comma(&mut out);
         push_string_field(&mut out, "batch_mode", self.config.batch_mode.as_str());
         comma(&mut out);
@@ -14607,6 +14772,184 @@ fn mini_transformer_window_starts(
     starts
 }
 
+fn mini_transformer_filtered_window_starts(
+    token_count: usize,
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+) -> Vec<usize> {
+    if config.target_token_min == u8::MIN
+        && config.target_token_max == u8::MAX
+        && config.target_segment == MiniTransformerTargetSegment::All
+    {
+        return mini_transformer_window_starts(
+            token_count,
+            config.seq_len,
+            config.stride,
+            config.window_offset,
+            config.max_windows,
+        );
+    }
+    let mut starts = mini_transformer_window_starts(
+        token_count,
+        config.seq_len,
+        config.stride,
+        config.window_offset,
+        None,
+    );
+    starts.retain(|&start| {
+        let target_index = start.saturating_add(config.seq_len);
+        tokens.get(target_index).is_some_and(|&target| {
+            target >= config.target_token_min
+                && target <= config.target_token_max
+                && mini_transformer_target_segment_allows(
+                    tokens,
+                    target_index,
+                    config.target_segment,
+                )
+        })
+    });
+    match config.max_windows {
+        Some(limit) => spread_usize_values(starts, limit),
+        None => starts,
+    }
+}
+
+fn valid_mini_transformer_target_segment(segment: MiniTransformerTargetSegment) -> bool {
+    match segment {
+        MiniTransformerTargetSegment::All => true,
+        MiniTransformerTargetSegment::AfterMarkerBeforeAny {
+            end_marker_count, ..
+        } => usize::from(end_marker_count) <= 4 && end_marker_count > 0,
+        MiniTransformerTargetSegment::AfterSequenceBeforeAny {
+            start_sequence_len,
+            end_marker_count,
+            ..
+        }
+        | MiniTransformerTargetSegment::FirstAfterSequenceBeforeAny {
+            start_sequence_len,
+            end_marker_count,
+            ..
+        } => {
+            usize::from(start_sequence_len) <= 32
+                && start_sequence_len > 0
+                && usize::from(end_marker_count) <= 4
+                && end_marker_count > 0
+        }
+    }
+}
+
+fn mini_transformer_target_segment_allows(
+    tokens: &[u8],
+    target_index: usize,
+    segment: MiniTransformerTargetSegment,
+) -> bool {
+    match segment {
+        MiniTransformerTargetSegment::All => true,
+        MiniTransformerTargetSegment::AfterMarkerBeforeAny {
+            start_marker,
+            end_markers,
+            end_marker_count,
+        } => {
+            let end_markers = &end_markers[..usize::from(end_marker_count)];
+            if tokens
+                .get(target_index)
+                .is_some_and(|target| end_markers.contains(target))
+            {
+                return false;
+            }
+            let mut index = target_index;
+            while index > 0 {
+                index -= 1;
+                let token = tokens[index];
+                if token == start_marker {
+                    return true;
+                }
+                if end_markers.contains(&token) {
+                    return false;
+                }
+            }
+            false
+        }
+        MiniTransformerTargetSegment::AfterSequenceBeforeAny {
+            start_sequence,
+            start_sequence_len,
+            end_markers,
+            end_marker_count,
+        } => {
+            let start_sequence = &start_sequence[..usize::from(start_sequence_len)];
+            let end_markers = &end_markers[..usize::from(end_marker_count)];
+            if tokens
+                .get(target_index)
+                .is_some_and(|target| end_markers.contains(target))
+            {
+                return false;
+            }
+            let mut index = target_index;
+            while index > 0 {
+                index -= 1;
+                if end_markers.contains(&tokens[index]) {
+                    return false;
+                }
+                let Some(sequence_start) = index.checked_add(1).and_then(|end| {
+                    if end >= start_sequence.len() {
+                        Some(end - start_sequence.len())
+                    } else {
+                        None
+                    }
+                }) else {
+                    continue;
+                };
+                if tokens.get(sequence_start..=index) == Some(start_sequence) {
+                    return true;
+                }
+            }
+            false
+        }
+        MiniTransformerTargetSegment::FirstAfterSequenceBeforeAny {
+            start_sequence,
+            start_sequence_len,
+            end_markers,
+            end_marker_count,
+        } => {
+            let start_sequence = &start_sequence[..usize::from(start_sequence_len)];
+            let end_markers = &end_markers[..usize::from(end_marker_count)];
+            if tokens
+                .get(target_index)
+                .is_none_or(|target| end_markers.contains(target))
+            {
+                return false;
+            }
+            let Some(sequence_start) = target_index.checked_sub(start_sequence.len()) else {
+                return false;
+            };
+            tokens.get(sequence_start..target_index) == Some(start_sequence)
+        }
+    }
+}
+
+fn spread_usize_values(values: Vec<usize>, limit: usize) -> Vec<usize> {
+    let available = values.len();
+    if limit >= available {
+        return values;
+    }
+    if limit == 0 {
+        return Vec::new();
+    }
+    if limit == 1 {
+        return values.first().copied().into_iter().collect();
+    }
+
+    let mut spread = Vec::with_capacity(limit);
+    let numerator_max = available - 1;
+    let denominator = limit - 1;
+    let half = denominator / 2;
+    for index in 0..limit {
+        let source_index = index.saturating_mul(numerator_max).saturating_add(half) / denominator;
+        spread.push(values[source_index]);
+    }
+    spread
+}
+
 fn mini_transformer_loss_guard_starts(
     starts: &[usize],
     batch_start_index: usize,
@@ -18303,6 +18646,12 @@ fn hash_mini_transformer_windows(
     hasher.update_usize(config.window_offset);
     hasher.update_usize(config.max_windows.unwrap_or(usize::MAX));
     hasher.update_usize(config.batch_windows);
+    hasher.update_usize(usize::from(config.target_token_min));
+    hasher.update_usize(usize::from(config.target_token_max));
+    hash_mini_transformer_target_segment(&mut hasher, config.target_segment);
+    hasher.update_usize(config.target_frequency_cap as usize);
+    hasher.update_usize(config.target_frequency_min_weight_q15 as usize);
+    hasher.update_usize(config.argmax_margin_weight_q15 as usize);
     hasher.update_usize(match config.batch_mode {
         MiniTransformerBatchMode::Serial => 0,
         MiniTransformerBatchMode::MapReduce => 1,
@@ -18315,6 +18664,61 @@ fn hash_mini_transformer_windows(
         hasher.update_bytes(&tokens[start..start + config.seq_len + 1]);
     }
     hasher.finish()
+}
+
+fn hash_mini_transformer_target_segment(
+    hasher: &mut StableHasher,
+    segment: MiniTransformerTargetSegment,
+) {
+    match segment {
+        MiniTransformerTargetSegment::All => {
+            hasher.update_usize(0);
+        }
+        MiniTransformerTargetSegment::AfterMarkerBeforeAny {
+            start_marker,
+            end_markers,
+            end_marker_count,
+        } => {
+            hasher.update_usize(1);
+            hasher.update_usize(usize::from(start_marker));
+            hasher.update_usize(usize::from(end_marker_count));
+            for &marker in &end_markers[..usize::from(end_marker_count)] {
+                hasher.update_usize(usize::from(marker));
+            }
+        }
+        MiniTransformerTargetSegment::AfterSequenceBeforeAny {
+            start_sequence,
+            start_sequence_len,
+            end_markers,
+            end_marker_count,
+        } => {
+            hasher.update_usize(2);
+            hasher.update_usize(usize::from(start_sequence_len));
+            for &token in &start_sequence[..usize::from(start_sequence_len)] {
+                hasher.update_usize(usize::from(token));
+            }
+            hasher.update_usize(usize::from(end_marker_count));
+            for &marker in &end_markers[..usize::from(end_marker_count)] {
+                hasher.update_usize(usize::from(marker));
+            }
+        }
+        MiniTransformerTargetSegment::FirstAfterSequenceBeforeAny {
+            start_sequence,
+            start_sequence_len,
+            end_markers,
+            end_marker_count,
+        } => {
+            hasher.update_usize(3);
+            hasher.update_usize(usize::from(start_sequence_len));
+            for &token in &start_sequence[..usize::from(start_sequence_len)] {
+                hasher.update_usize(usize::from(token));
+            }
+            hasher.update_usize(usize::from(end_marker_count));
+            for &marker in &end_markers[..usize::from(end_marker_count)] {
+                hasher.update_usize(usize::from(marker));
+            }
+        }
+    }
 }
 
 fn hash_lexeme_windows(
@@ -19383,6 +19787,89 @@ fn byte_vocab_softmax_gradient_q15(
         }
     }
     gradient
+}
+
+fn byte_target_frequency_weights_q15(
+    tokens: &[u8],
+    starts: &[usize],
+    seq_len: usize,
+    frequency_cap: u32,
+    min_weight_q15: i16,
+) -> Result<[i16; BYTE_VOCAB], TrainError> {
+    if seq_len == 0 || !valid_q15_weight_floor(min_weight_q15) {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut weights = [i16::MAX; BYTE_VOCAB];
+    if frequency_cap == 0 {
+        return Ok(weights);
+    }
+    let mut counts = [0_u32; BYTE_VOCAB];
+    for &start in starts {
+        let Some(target_index) = start.checked_add(seq_len) else {
+            return Err(TrainError::InvalidConfig);
+        };
+        let Some(&target) = tokens.get(target_index) else {
+            return Err(TrainError::InvalidConfig);
+        };
+        let count = &mut counts[usize::from(target)];
+        *count = count.saturating_add(1);
+    }
+    for (index, &count) in counts.iter().enumerate() {
+        weights[index] = lexeme_frequency_weight_q15(count, frequency_cap, min_weight_q15);
+    }
+    Ok(weights)
+}
+
+fn apply_byte_argmax_margin_gradient_q15(
+    gradient_q15: &mut [i32; BYTE_VOCAB],
+    logits_q8: &[i32; BYTE_VOCAB],
+    target: u8,
+    margin_weight_q15: i16,
+) {
+    if margin_weight_q15 <= 0 {
+        return;
+    }
+    let target = usize::from(target);
+    let mut best_competitor = None::<(usize, i32)>;
+    for (token, &logit) in logits_q8.iter().enumerate() {
+        if token == target {
+            continue;
+        }
+        if best_competitor.is_none_or(|(best_token, best_logit)| {
+            logit > best_logit || (logit == best_logit && token < best_token)
+        }) {
+            best_competitor = Some((token, logit));
+        }
+    }
+    let Some((competitor, competitor_logit)) = best_competitor else {
+        return;
+    };
+    if logits_q8[target] > competitor_logit {
+        return;
+    }
+    let delta = round_shift_rhu_i64(
+        i64::from(i16::MAX).saturating_mul(i64::from(margin_weight_q15)),
+        Q15_SHIFT,
+    ) as i32;
+    gradient_q15[target] = gradient_q15[target].saturating_sub(delta);
+    gradient_q15[competitor] = gradient_q15[competitor].saturating_add(delta);
+}
+
+fn byte_scale_gradient_q15(
+    gradient_q15: &[i32; BYTE_VOCAB],
+    frequency_weight_q15: i16,
+) -> [i32; BYTE_VOCAB] {
+    if frequency_weight_q15 == i16::MAX {
+        return *gradient_q15;
+    }
+    let mut out = [0_i32; BYTE_VOCAB];
+    for (dst, &gradient) in out.iter_mut().zip(gradient_q15.iter()) {
+        *dst = round_shift_rhu_i64(
+            i64::from(gradient).saturating_mul(i64::from(frequency_weight_q15)),
+            Q15_SHIFT,
+        ) as i32;
+    }
+    out
 }
 
 fn byte_gradient_i32_to_i16(gradient: &[i32; BYTE_VOCAB]) -> [i16; BYTE_VOCAB] {
@@ -24656,6 +25143,44 @@ mod tests {
     }
 
     #[test]
+    fn byte_target_frequency_weights_only_downweight_common_targets() {
+        let tokens = [b'x', b'a', b'y', b'a', b'z', b'a', b'w', b'b'];
+        let weights = byte_target_frequency_weights_q15(&tokens, &[0, 2, 4, 6], 1, 2, 4096)
+            .expect("byte target frequency weights");
+
+        assert!(weights[usize::from(b'a')] < i16::MAX);
+        assert!(weights[usize::from(b'a')] >= 4096);
+        assert_eq!(weights[usize::from(b'b')], i16::MAX);
+        assert_eq!(weights[usize::from(b'c')], i16::MAX);
+
+        let disabled = byte_target_frequency_weights_q15(&tokens, &[0, 2, 4, 6], 1, 0, 4096)
+            .expect("disabled byte target frequency weights");
+        assert!(disabled.iter().all(|&weight| weight == i16::MAX));
+    }
+
+    #[test]
+    fn byte_argmax_margin_gradient_pushes_target_against_best_competitor() {
+        let mut gradient = [0_i32; BYTE_VOCAB];
+        let mut logits = [0_i32; BYTE_VOCAB];
+        logits[usize::from(b'a')] = 10;
+        logits[usize::from(b'b')] = 12;
+        logits[usize::from(b'c')] = 12;
+
+        apply_byte_argmax_margin_gradient_q15(&mut gradient, &logits, b'a', i16::MAX);
+
+        assert!(gradient[usize::from(b'a')] < 0);
+        assert!(gradient[usize::from(b'b')] > 0);
+        assert_eq!(gradient[usize::from(b'c')], 0);
+
+        let pushed_target = gradient[usize::from(b'a')];
+        let pushed_competitor = gradient[usize::from(b'b')];
+        logits[usize::from(b'a')] = 13;
+        apply_byte_argmax_margin_gradient_q15(&mut gradient, &logits, b'a', i16::MAX);
+        assert_eq!(gradient[usize::from(b'a')], pushed_target);
+        assert_eq!(gradient[usize::from(b'b')], pushed_competitor);
+    }
+
+    #[test]
     fn lexeme_softmax_training_traces_quality_weight() {
         let tokens = encode_u16_test_tokens(&[256, 256, 256, 256, 300, 301, 302, 303]);
         let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
@@ -25935,6 +26460,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(64),
                 batch_windows: 1,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Base2Softmax,
                 position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
@@ -26029,6 +26560,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(16),
                 batch_windows: 1,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Linear,
                 position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26077,6 +26614,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(8),
                 batch_windows: 2,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Linear,
                 position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26136,6 +26679,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(8),
                 batch_windows: 2,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Linear,
                 position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26258,6 +26807,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(8),
                 batch_windows: 2,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Linear,
                 position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26400,6 +26955,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(6),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Base2Softmax,
             position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
@@ -26447,6 +27008,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(6),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Base2Softmax,
             position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
@@ -26492,6 +27059,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(8),
             batch_windows: 2,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Linear,
             position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26543,6 +27116,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(8),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Linear,
             position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26605,6 +27184,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(8),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Linear,
             position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26682,6 +27267,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(6),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Linear,
             position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26728,6 +27319,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(6),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Linear,
             position_policy: MiniTransformerPositionPolicy::Nope,
@@ -26785,6 +27382,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(8),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Linear,
             position_policy: MiniTransformerPositionPolicy::Nope,
@@ -27224,6 +27827,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(1),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Linear,
             position_policy: MiniTransformerPositionPolicy::Nope,
@@ -27384,6 +27993,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(16),
                 batch_windows: 1,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Base2Softmax,
                 position_policy: MiniTransformerPositionPolicy::Nope,
@@ -27430,6 +28045,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(8),
                 batch_windows: 4,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Base2Softmax,
                 position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
@@ -27482,6 +28103,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(4),
                 batch_windows: 2,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Linear,
                 position_policy: MiniTransformerPositionPolicy::Nope,
@@ -27527,6 +28154,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(6),
                 batch_windows: 3,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Linear,
                 position_policy: MiniTransformerPositionPolicy::Nope,
@@ -27596,6 +28229,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(8),
                 batch_windows: 2,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::AsciiLowerText,
                 attention_kind: MiniTransformerAttentionKind::Linear,
                 position_policy: MiniTransformerPositionPolicy::Nope,
@@ -27931,6 +28570,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(1),
                 batch_windows: 1,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Base2Softmax,
                 position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
@@ -27994,6 +28639,12 @@ mod tests {
             window_offset: 0,
             max_windows: Some(1),
             batch_windows: 1,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Base2Softmax,
             position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
@@ -28189,6 +28840,131 @@ mod tests {
     }
 
     #[test]
+    fn mini_transformer_filtered_window_starts_cap_after_target_filter() {
+        let mut tokens = vec![b'a'; 40];
+        for target_index in [4_usize, 10, 16, 22, 28, 34] {
+            tokens[target_index] = b'Z';
+        }
+
+        let starts = mini_transformer_filtered_window_starts(
+            tokens.len(),
+            &tokens,
+            MiniTransformerMlpTrainConfig {
+                seq_len: 4,
+                stride: 1,
+                window_offset: 0,
+                max_windows: Some(3),
+                target_token_min: b'Z',
+                target_token_max: b'Z',
+                ..MiniTransformerMlpTrainConfig::default()
+            },
+        );
+
+        assert_eq!(starts, vec![0, 18, 30]);
+        assert!(starts.iter().all(|&start| tokens[start + 4] == b'Z'));
+    }
+
+    #[test]
+    fn mini_transformer_filtered_window_starts_can_target_marker_segment() {
+        let tokens = [
+            0, 1, 2, b's', b'e', 3, b'A', b'B', 5, 1, 2, b'x', 3, b'C', 4, b'i', 5,
+        ];
+        let starts = mini_transformer_filtered_window_starts(
+            tokens.len(),
+            &tokens,
+            MiniTransformerMlpTrainConfig {
+                seq_len: 1,
+                stride: 1,
+                window_offset: 0,
+                max_windows: None,
+                target_token_min: b'A',
+                target_token_max: b'Z',
+                target_segment: MiniTransformerTargetSegment::after_marker_before_any(3, &[4, 5])
+                    .expect("segment"),
+                ..MiniTransformerMlpTrainConfig::default()
+            },
+        );
+
+        assert_eq!(starts, vec![5, 6, 12]);
+        assert_eq!(
+            starts
+                .iter()
+                .map(|&start| tokens[start + 1])
+                .collect::<Vec<_>>(),
+            vec![b'A', b'B', b'C']
+        );
+    }
+
+    #[test]
+    fn mini_transformer_filtered_window_starts_can_target_sequence_segment() {
+        let tokens = [
+            1, 2, b'p', 3, b'S', b'o', b'B', b'a', b':', b' ', b'H', 5, 1, 2, b'q', 3, b'S', b'o',
+            b'C', b'a', b'm', b':', 5,
+        ];
+        let starts = mini_transformer_filtered_window_starts(
+            tokens.len(),
+            &tokens,
+            MiniTransformerMlpTrainConfig {
+                seq_len: 1,
+                stride: 1,
+                window_offset: 0,
+                max_windows: None,
+                target_token_min: b'A',
+                target_token_max: b'z',
+                target_segment: MiniTransformerTargetSegment::after_sequence_before_any(
+                    &[3, b'S', b'o'],
+                    &[b':', 4, 5],
+                )
+                .expect("segment"),
+                ..MiniTransformerMlpTrainConfig::default()
+            },
+        );
+
+        assert_eq!(starts, vec![5, 6, 17, 18, 19]);
+        assert_eq!(
+            starts
+                .iter()
+                .map(|&start| tokens[start + 1])
+                .collect::<Vec<_>>(),
+            vec![b'B', b'a', b'C', b'a', b'm']
+        );
+    }
+
+    #[test]
+    fn mini_transformer_filtered_window_starts_can_target_first_after_sequence() {
+        let tokens = [
+            1, 3, b'H', b'e', b' ', b'm', b'a', 5, 1, 3, b'H', b'e', b' ', b'i', b's', 5,
+        ];
+        let starts = mini_transformer_filtered_window_starts(
+            tokens.len(),
+            &tokens,
+            MiniTransformerMlpTrainConfig {
+                seq_len: 1,
+                stride: 1,
+                window_offset: 0,
+                max_windows: None,
+                target_token_min: b'a',
+                target_token_max: b'z',
+                target_segment: MiniTransformerTargetSegment::first_after_sequence_before_any(
+                    &[b'H', b'e', b' '],
+                    &[4, 5],
+                )
+                .expect("segment"),
+                ..MiniTransformerMlpTrainConfig::default()
+            },
+        );
+
+        assert_eq!(starts, vec![4, 12]);
+        assert_eq!(
+            starts
+                .iter()
+                .map(|&start| tokens[start + 1])
+                .collect::<Vec<_>>(),
+            vec![b'm', b'i']
+        );
+    }
+
+    #[test]
     fn mini_transformer_loss_guard_starts_mix_batch_and_global_points() {
         let starts: Vec<usize> = (0..32).map(|index| index * 10).collect();
         let guarded = mini_transformer_loss_guard_starts(&starts, 5, 7);
@@ -28248,6 +29024,12 @@ mod tests {
                 window_offset: 0,
                 max_windows: Some(32),
                 batch_windows: 1,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
                 tokenizer_id: ByteTokenizerId::Identity,
                 attention_kind: MiniTransformerAttentionKind::Base2Softmax,
                 position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,

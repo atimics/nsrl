@@ -10,6 +10,7 @@ const defaults = {
   padContext: 0,
   sequenceProfile: "joint",
   textOnlyRepeats: 0,
+  nameInitialRepeats: 0,
   nameOpeningRepeats: 0,
   textTokenProfile: "char",
 };
@@ -28,32 +29,101 @@ const IMAGE_BINS = 16;
 const TEXT_CHUNK_BASE = 160;
 const TEXT_CHUNKS = [
   "Solomon selects ",
-  " He ",
-  " he ",
-  "The ",
-  " the ",
-  " and ",
-  " of ",
-  " to ",
-  " in ",
-  " a ",
-  " is ",
-  " his ",
-  " with ",
-  " upon ",
-  " unto ",
-  " maketh ",
-  " teacheth ",
-  " giveth ",
-  " causeth ",
-  " appeareth ",
-  " governeth ",
-  " ruleth ",
-  " can ",
-  " all ",
-  " upon a ",
-  " the Art ",
+  ": ",
   "He ",
+  "is ",
+  "appeareth ",
+  "maketh ",
+  "teacheth ",
+  "giveth ",
+  "causeth ",
+  "knoweth ",
+  "healeth ",
+  "teaches ",
+  "and ",
+  "the ",
+  "of ",
+  "to ",
+  "in ",
+  "a ",
+  "his ",
+  "with ",
+  "upon ",
+  "unto ",
+  "This ",
+  "His ",
+  "Bael",
+  "Agares",
+  "Vassago",
+  "Samigina",
+  "Marbas",
+  "Valefor",
+  "Amon",
+  "Barbatos",
+  "Paimon",
+  "Buer",
+  "Gusion",
+  "Sitri",
+  "Beleth",
+  "Leraje",
+  "Eligos",
+  "Zepar",
+  "Botis",
+  "Bathin",
+  "Sallos",
+  "Purson",
+  "Marax",
+  "Ipos",
+  "Aim",
+  "Naberius",
+  "Glasya-Labolas",
+  "Bune",
+  "Ronove",
+  "Berith",
+  "Astaroth",
+  "Forneus",
+  "Foras",
+  "Asmoday",
+  "Gaap",
+  "Furfur",
+  "Marchosias",
+  "Stolas",
+  "Phenex",
+  "Halphas",
+  "Malphas",
+  "Raum",
+  "Focalor",
+  "Vepar",
+  "Sabnock",
+  "Shax",
+  "Vine",
+  "Bifrons",
+  "Uvall",
+  "Haagenti",
+  "Crocell",
+  "Furcas",
+  "Balam",
+  "Alloces",
+  "Camio",
+  "Murmur",
+  "Orobas",
+  "Gremory",
+  "Ose",
+  "Amy",
+  "Oriax",
+  "Vapula",
+  "Zagan",
+  "Volac",
+  "Andras",
+  "Haures",
+  "Andrealphus",
+  "Cimejes",
+  "Amdusias",
+  "Belial",
+  "Decarabia",
+  "Seere",
+  "Dantalion",
+  "Andromalius",
 ];
 const SIGNATURE_GRID = 16;
 const SIGNATURE_BINS = SIGNATURE_GRID * SIGNATURE_GRID;
@@ -63,9 +133,10 @@ function usage() {
   console.log(
     [
       "Usage: build-solomon-multimodal-corpus.mjs [--text-index PATH] [--out-dir PATH]",
-      "       [--max-text-chars N] [--prompt-profile generic|names|all]",
+      "       [--max-text-chars N] [--prompt-profile generic|names|seal-names|all]",
       "       [--pad-context N] [--sequence-profile joint|text-only|name-opening|joint-and-text]",
-      "       [--text-only-repeats N] [--name-opening-repeats N]",
+      "       [--text-only-repeats N] [--name-initial-repeats N]",
+      "       [--name-opening-repeats N]",
       "       [--text-token-profile char|chunked]",
       "",
       "Builds a discrete joint Solomon corpus:",
@@ -74,6 +145,8 @@ function usage() {
       "attention training sees early record positions.",
       "Optional --text-only-repeats adds prompt/text/EOS training-only sequences",
       "to rebalance text targets without changing joint examples.",
+      "Optional --name-initial-repeats adds prompt/name-initial sequences",
+      "to train the first token after Solomon selects.",
       "Optional --name-opening-repeats adds short prompt/name-opening sequences",
       "to directly train prompt-conditioned continuation after Solomon selects.",
       "Optional --text-token-profile chunked uses reserved byte-vocab IDs",
@@ -97,8 +170,8 @@ function parseArgs(argv) {
       config.maxTextChars = parsePositiveInteger(requireValue(argv, ++index, arg), arg);
     } else if (arg === "--prompt-profile") {
       config.promptProfile = requireValue(argv, ++index, arg);
-      if (!["generic", "names", "all"].includes(config.promptProfile)) {
-        throw new Error("--prompt-profile requires generic, names, or all");
+      if (!["generic", "names", "seal-names", "all"].includes(config.promptProfile)) {
+        throw new Error("--prompt-profile requires generic, names, seal-names, or all");
       }
     } else if (arg === "--pad-context") {
       config.padContext = parseNonNegativeInteger(requireValue(argv, ++index, arg), arg);
@@ -109,6 +182,8 @@ function parseArgs(argv) {
       }
     } else if (arg === "--text-only-repeats") {
       config.textOnlyRepeats = parseNonNegativeInteger(requireValue(argv, ++index, arg), arg);
+    } else if (arg === "--name-initial-repeats") {
+      config.nameInitialRepeats = parseNonNegativeInteger(requireValue(argv, ++index, arg), arg);
     } else if (arg === "--name-opening-repeats") {
       config.nameOpeningRepeats = parseNonNegativeInteger(requireValue(argv, ++index, arg), arg);
     } else if (arg === "--text-token-profile") {
@@ -218,6 +293,9 @@ function promptsForRow(row, profile) {
   if (profile === "names") {
     return names;
   }
+  if (profile === "seal-names") {
+    return [`seal of ${name}`];
+  }
   return unique([...generic, ...names]);
 }
 
@@ -230,6 +308,11 @@ function textForRow(row, maxTextChars) {
 function nameOpeningForRow(row) {
   const name = normalizeText(row.primary_name);
   return `Solomon selects ${name}: He `;
+}
+
+function nameInitialForRow(row) {
+  const name = normalizeText(row.primary_name);
+  return `Solomon selects ${name.slice(0, 1)}`;
 }
 
 function selectSentence(text) {
@@ -282,6 +365,7 @@ function normalizeText(value) {
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201c\u201d]/g, '"')
     .replace(/[\u2013\u2014]/g, " - ")
+    .replace(/\[[0-9]+\]/g, " ")
     .replace(/[^ -~]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -392,6 +476,17 @@ function buildExamples(rows, config) {
           corpusTokens: [...textOnlyPadding, ...textOnlyTokens],
         });
         tokenOffset += textOnlyTokens.length;
+      }
+      for (let repeatIndex = 0; repeatIndex < config.nameInitialRepeats; repeatIndex += 1) {
+        const initialTokens = textOnlySequence(prompt, nameInitialForRow(row), config.textTokenProfile);
+        const initialPadding = Array(config.padContext).fill(PAD);
+        tokenOffset += initialPadding.length;
+        examples.push({
+          example: null,
+          tokens: initialTokens,
+          corpusTokens: [...initialPadding, ...initialTokens],
+        });
+        tokenOffset += initialTokens.length;
       }
       const nameOpeningCount =
         (config.sequenceProfile === "name-opening" ? 1 : 0) + config.nameOpeningRepeats;
@@ -517,8 +612,10 @@ function main() {
         rows: rows.length,
         examples: jointExamples.length,
         training_sequences: examples.length,
+        prompt_profile: config.promptProfile,
         sequence_profile: config.sequenceProfile,
         text_only_repeats: config.textOnlyRepeats,
+        name_initial_repeats: config.nameInitialRepeats,
         name_opening_repeats: config.nameOpeningRepeats,
         text_token_profile: config.textTokenProfile,
         text_chunk_base: TEXT_CHUNK_BASE,

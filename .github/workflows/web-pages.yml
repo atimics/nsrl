@@ -8,6 +8,11 @@ on:
       - master
     paths:
       - ".github/workflows/web-pages.yml"
+      - "docs/solomon-*.tsv"
+      - "scripts/build-pages-results.mjs"
+      - "scripts/check-solomon-attention-web-quality.mjs"
+      - "scripts/probe-solomon-attention-body-start-rank.mjs"
+      - "scripts/probe-solomon-attention-raw-rank.mjs"
       - "web/**"
       - "crates/nsrl-web-wasm/**"
       - "Cargo.toml"
@@ -41,6 +46,11 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
         with:
@@ -50,6 +60,9 @@ jobs:
         run: |
           wasm-pack build crates/nsrl-web-wasm --release --target web --out-dir ../../web/pkg
           rm -f web/pkg/.gitignore
+
+      - name: Build published results
+        run: node scripts/build-pages-results.mjs --out-dir web/results
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

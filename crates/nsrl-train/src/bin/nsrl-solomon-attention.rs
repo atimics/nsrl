@@ -6,9 +6,10 @@ use std::fs;
 use std::path::PathBuf;
 
 use nsrl_train::{
-    ByteTokenizerId, MiniTransformerAttentionKind, MiniTransformerBatchMode,
-    MiniTransformerMlpModel, MiniTransformerMlpTrainConfig, MiniTransformerNextTokenRow,
-    MiniTransformerPositionPolicy, MiniTransformerTraceDetail,
+    ByteTokenizerId, MINI_TRANSFORMER_D_MODEL, MINI_TRANSFORMER_HEADS,
+    MiniTransformerAttentionKind, MiniTransformerBatchMode, MiniTransformerMlpModel,
+    MiniTransformerMlpTrainConfig, MiniTransformerNextTokenRow, MiniTransformerPositionPolicy,
+    MiniTransformerTargetSegment, MiniTransformerTraceDetail,
     mini_transformer_next_token_row_with_attention_kind_position_policy,
     run_mini_transformer_mlp_training_from_model_with_progress_and_trace_detail,
 };
@@ -17,7 +18,7 @@ const TRAIN_SCHEMA: &str = "nsrl.solomon_attention_train_trace.v1";
 const SAMPLE_SCHEMA: &str = "nsrl.solomon_attention_sample_trace.v1";
 const EVAL_SCHEMA: &str = "nsrl.solomon_attention_eval_trace.v1";
 const MODEL_MAGIC: &[u8; 8] = b"NSRLLMM1";
-const MODEL_VERSION: u32 = 3;
+const MODEL_VERSION: u32 = 4;
 
 const PAD: u8 = 0;
 const BOS: u8 = 1;
@@ -30,40 +31,111 @@ const TEXT_COUNT: u8 = 128;
 const IMAGE_BASE: u8 = TEXT_BASE + TEXT_COUNT;
 const IMAGE_BINS: u8 = 16;
 const TEXT_CHUNK_BASE: u8 = 160;
+const TEXT_CHUNK_NAME_START: usize = 24;
 const VOCAB_SIZE: usize = 256;
 const LEGACY_VOCAB_SIZE: u32 = IMAGE_BASE as u32 + IMAGE_BINS as u32;
 const VOCAB_LEN: usize = VOCAB_SIZE;
 const SIGNATURE_GRID: usize = 16;
 const SIGNATURE_BINS: usize = SIGNATURE_GRID * SIGNATURE_GRID;
+const NAME_OPENING_PREFIX: &str = "Solomon selects ";
 
 const TEXT_CHUNKS: &[&str] = &[
     "Solomon selects ",
-    " He ",
-    " he ",
-    "The ",
-    " the ",
-    " and ",
-    " of ",
-    " to ",
-    " in ",
-    " a ",
-    " is ",
-    " his ",
-    " with ",
-    " upon ",
-    " unto ",
-    " maketh ",
-    " teacheth ",
-    " giveth ",
-    " causeth ",
-    " appeareth ",
-    " governeth ",
-    " ruleth ",
-    " can ",
-    " all ",
-    " upon a ",
-    " the Art ",
+    ": ",
     "He ",
+    "is ",
+    "appeareth ",
+    "maketh ",
+    "teacheth ",
+    "giveth ",
+    "causeth ",
+    "knoweth ",
+    "healeth ",
+    "teaches ",
+    "and ",
+    "the ",
+    "of ",
+    "to ",
+    "in ",
+    "a ",
+    "his ",
+    "with ",
+    "upon ",
+    "unto ",
+    "This ",
+    "His ",
+    "Bael",
+    "Agares",
+    "Vassago",
+    "Samigina",
+    "Marbas",
+    "Valefor",
+    "Amon",
+    "Barbatos",
+    "Paimon",
+    "Buer",
+    "Gusion",
+    "Sitri",
+    "Beleth",
+    "Leraje",
+    "Eligos",
+    "Zepar",
+    "Botis",
+    "Bathin",
+    "Sallos",
+    "Purson",
+    "Marax",
+    "Ipos",
+    "Aim",
+    "Naberius",
+    "Glasya-Labolas",
+    "Bune",
+    "Ronove",
+    "Berith",
+    "Astaroth",
+    "Forneus",
+    "Foras",
+    "Asmoday",
+    "Gaap",
+    "Furfur",
+    "Marchosias",
+    "Stolas",
+    "Phenex",
+    "Halphas",
+    "Malphas",
+    "Raum",
+    "Focalor",
+    "Vepar",
+    "Sabnock",
+    "Shax",
+    "Vine",
+    "Bifrons",
+    "Uvall",
+    "Haagenti",
+    "Crocell",
+    "Furcas",
+    "Balam",
+    "Alloces",
+    "Camio",
+    "Murmur",
+    "Orobas",
+    "Gremory",
+    "Ose",
+    "Amy",
+    "Oriax",
+    "Vapula",
+    "Zagan",
+    "Volac",
+    "Andras",
+    "Haures",
+    "Andrealphus",
+    "Cimejes",
+    "Amdusias",
+    "Belial",
+    "Decarabia",
+    "Seere",
+    "Dantalion",
+    "Andromalius",
 ];
 
 const DEFAULT_EPOCHS: usize = 1;
@@ -102,6 +174,18 @@ struct Config {
     window_offset: usize,
     max_windows: Option<usize>,
     batch_windows: usize,
+    target_token_min: u8,
+    target_token_max: u8,
+    target_segment: TargetSegment,
+    target_frequency_cap: u32,
+    target_frequency_min_weight_q15: i16,
+    argmax_margin_weight_q15: i16,
+    zero_output_head_init: bool,
+    solomon_name_copy_init: bool,
+    solomon_name_copy_repair: bool,
+    solomon_name_copy_repair_preserve_body_output: bool,
+    solomon_body_scaffold: bool,
+    solomon_body_opening_repair: bool,
     progress_interval_batches: usize,
     learning_rate: i32,
     output_learning_rate_shift: u8,
@@ -119,10 +203,15 @@ struct Config {
     conditioning_boost_q8: i32,
     text_prior_examples: Option<PathBuf>,
     text_prior_order: usize,
+    text_prior_min_order: usize,
     text_prior_boost_q8: i32,
     text_prior_strict: bool,
     use_embedded_text_memory: bool,
     embedded_text_lm_order: usize,
+    text_chunk_boost_q8: i32,
+    decode_logit_delta: bool,
+    prompt_name_opening_prior: bool,
+    suppress_name_chunks_after_opening: bool,
     top_k: usize,
     sample_seed: u64,
     eval_max_examples: Option<usize>,
@@ -152,6 +241,18 @@ impl Default for Config {
             window_offset: 0,
             max_windows: Some(DEFAULT_MAX_WINDOWS),
             batch_windows: DEFAULT_BATCH_WINDOWS,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: TargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: 4096,
+            argmax_margin_weight_q15: 0,
+            zero_output_head_init: false,
+            solomon_name_copy_init: false,
+            solomon_name_copy_repair: false,
+            solomon_name_copy_repair_preserve_body_output: false,
+            solomon_body_scaffold: false,
+            solomon_body_opening_repair: false,
             progress_interval_batches: 0,
             learning_rate: 1,
             output_learning_rate_shift: 18,
@@ -169,10 +270,15 @@ impl Default for Config {
             conditioning_boost_q8: 1_000_000,
             text_prior_examples: None,
             text_prior_order: 8,
+            text_prior_min_order: 0,
             text_prior_boost_q8: 0,
             text_prior_strict: false,
             use_embedded_text_memory: true,
             embedded_text_lm_order: 0,
+            text_chunk_boost_q8: 0,
+            decode_logit_delta: false,
+            prompt_name_opening_prior: false,
+            suppress_name_chunks_after_opening: false,
             top_k: 1,
             sample_seed: 1,
             eval_max_examples: Some(16),
@@ -212,6 +318,10 @@ struct SampleOptions {
     conditioning_boost_q8: i32,
     text_prior_boost_q8: i32,
     text_prior_strict: bool,
+    text_chunk_boost_q8: i32,
+    decode_logit_delta: bool,
+    prompt_name_opening_prior: bool,
+    suppress_name_chunks_after_opening: bool,
     top_k: usize,
     sample_seed: u64,
 }
@@ -238,13 +348,123 @@ impl TextTokenProfile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TargetSegment {
+    All,
+    GeneratedText,
+    NameOpening,
+    NameOpeningTail,
+    BodyAfterHe,
+    BodyFirstAfterHe,
+    BodyFirstAfterOpening,
+    Image,
+}
+
+impl TargetSegment {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::GeneratedText => "generated-text",
+            Self::NameOpening => "name-opening",
+            Self::NameOpeningTail => "name-opening-tail",
+            Self::BodyAfterHe => "body-after-he",
+            Self::BodyFirstAfterHe => "body-first-after-he",
+            Self::BodyFirstAfterOpening => "body-first-after-opening",
+            Self::Image => "image",
+        }
+    }
+
+    fn to_train_segment(
+        self,
+        text_token_profile: TextTokenProfile,
+    ) -> MiniTransformerTargetSegment {
+        match self {
+            Self::All => MiniTransformerTargetSegment::All,
+            Self::GeneratedText => {
+                MiniTransformerTargetSegment::after_marker_before_any(TEXT, &[IMAGE, EOS])
+                    .expect("valid generated-text target segment")
+            }
+            Self::NameOpening => MiniTransformerTargetSegment::after_sequence_before_any(
+                &name_opening_start_sequence(text_token_profile),
+                &name_opening_end_markers(text_token_profile),
+            )
+            .expect("valid name-opening target segment"),
+            Self::NameOpeningTail => MiniTransformerTargetSegment::after_sequence_before_any(
+                &name_opening_start_sequence(text_token_profile),
+                &[IMAGE, EOS],
+            )
+            .expect("valid name-opening-tail target segment"),
+            Self::BodyAfterHe => body_after_he_train_segment(text_token_profile),
+            Self::BodyFirstAfterHe => body_first_after_he_train_segment(text_token_profile),
+            Self::BodyFirstAfterOpening => {
+                body_first_after_opening_train_segment(text_token_profile)
+            }
+            Self::Image => MiniTransformerTargetSegment::after_marker_before_any(IMAGE, &[EOS])
+                .expect("valid image target segment"),
+        }
+    }
+}
+
+fn name_opening_start_sequence(text_token_profile: TextTokenProfile) -> Vec<u8> {
+    std::iter::once(TEXT)
+        .chain(encode_text_prefix_tokens(
+            NAME_OPENING_PREFIX,
+            text_token_profile,
+        ))
+        .collect()
+}
+
+fn name_opening_end_markers(text_token_profile: TextTokenProfile) -> Vec<u8> {
+    match text_token_profile {
+        TextTokenProfile::Char => vec![TEXT_BASE + b':' as u8, IMAGE, EOS],
+        TextTokenProfile::Chunked => vec![TEXT_CHUNK_BASE + 1, IMAGE, EOS],
+    }
+}
+
+fn body_after_he_train_segment(
+    text_token_profile: TextTokenProfile,
+) -> MiniTransformerTargetSegment {
+    match text_token_profile {
+        TextTokenProfile::Char => MiniTransformerTargetSegment::after_sequence_before_any(
+            &encode_text_prefix_tokens("He ", text_token_profile),
+            &[IMAGE, EOS],
+        )
+        .expect("valid body-after-he target segment"),
+        TextTokenProfile::Chunked => MiniTransformerTargetSegment::after_marker_before_any(
+            TEXT_CHUNK_BASE + 2,
+            &[IMAGE, EOS],
+        )
+        .expect("valid body-after-he target segment"),
+    }
+}
+
+fn body_first_after_he_train_segment(
+    text_token_profile: TextTokenProfile,
+) -> MiniTransformerTargetSegment {
+    MiniTransformerTargetSegment::first_after_sequence_before_any(
+        &encode_text_prefix_tokens("He ", text_token_profile),
+        &[IMAGE, EOS],
+    )
+    .expect("valid body-first-after-he target segment")
+}
+
+fn body_first_after_opening_train_segment(
+    text_token_profile: TextTokenProfile,
+) -> MiniTransformerTargetSegment {
+    MiniTransformerTargetSegment::first_after_sequence_before_any(
+        &encode_text_prefix_tokens(": ", text_token_profile),
+        &[IMAGE, EOS],
+    )
+    .expect("valid body-first-after-opening target segment")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Candidate {
     token: u8,
     logit_q8: i32,
     probability_q15: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct DecodeOptions {
     seed: u64,
     repeat_run_cap: usize,
@@ -252,6 +472,10 @@ struct DecodeOptions {
     expected_token_boost_q8: i32,
     text_prior_boost_q8: i32,
     text_prior_strict: bool,
+    text_chunk_boost_q8: i32,
+    decode_logit_delta: bool,
+    prompt_name_opening_tokens: Vec<u8>,
+    suppress_name_chunks_after_opening: bool,
     top_k: usize,
 }
 
@@ -279,6 +503,7 @@ struct ConditioningMatch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TextPrior {
     order: usize,
+    min_order: usize,
     start_tokens: Vec<u8>,
     prompt_starts: Vec<PromptTextStart>,
     transitions: HashMap<Vec<u8>, [u32; VOCAB_LEN]>,
@@ -302,6 +527,7 @@ struct TextMemoryExample {
     primary_name: String,
     prompt: String,
     text_tokens: Vec<u8>,
+    image_tokens: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -318,6 +544,18 @@ struct EvalStats {
     correct: usize,
     invalid_contexts: usize,
     probability_error_q15: u64,
+    target_rank_sum: u64,
+    top5_correct: usize,
+    top10_correct: usize,
+    target_margin_q8_sum: i64,
+    target_margin_q8_min: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EvalTokenDiagnostics {
+    predicted: u8,
+    target_rank: usize,
+    target_margin_q8: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,6 +621,13 @@ fn usage() {
          \t[--learning-rate N]\n\
          \t[--output-lr-shift N] [--mlp-lr-shift N] [--embed-lr-shift N]\n\
          \t[--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N]\n\
+         \t[--target-token-range MIN MAX] [--target-phase all|special|text-char|text-chunk|image]\n\
+         \t[--target-segment all|generated-text|name-opening|name-opening-tail|body-after-he|body-first-after-he|body-first-after-opening|image]\n\
+         \t[--target-frequency-cap N] [--target-frequency-min-weight-q15 N]\n\
+         \t[--argmax-margin-weight-q15 N]\n\
+         \t[--zero-output-head-init] [--solomon-name-copy-init] [--solomon-name-copy-repair]\n\
+         \t[--solomon-name-copy-repair-preserve-body-output]\n\
+         \t[--solomon-body-scaffold]\n\
          \t[--reject-loss-regression]\n\
          \t[--batch-windows N] [--progress-interval-batches N]\n\
          \t[--adaptive-attention-shifts] [--attention-vo-oracle]\n\
@@ -391,8 +636,12 @@ fn usage() {
          \t[--min-text-tokens N] [--repeat-run-cap N] [--no-repeat-ngram N]\n\
          \t[--conditioning-examples PATH|none]\n\
          \t[--conditioning-boost-q8 N] [--text-prior-examples PATH|none]\n\
-         \t[--text-prior-order N] [--text-prior-boost-q8 N] [--text-prior-strict]\n\
+         \t[--text-prior-order N] [--text-prior-min-order N]\n\
+         \t[--text-prior-boost-q8 N] [--text-prior-strict]\n\
          \t[--no-embedded-text-memory] [--embedded-text-lm-order N]\n\
+         \t[--text-chunk-boost-q8 N]\n\
+         \t[--decode-logit-delta] [--prompt-name-opening-prior]\n\
+         \t[--suppress-name-chunks-after-opening]\n\
          \t[--top-k N] [--sample-seed N]\n\
          Eval options: [--tokens PATH] [--model PATH] [--conditioning-examples PATH]\n\
          \t[--eval-max-examples N|none]"
@@ -471,6 +720,59 @@ where
             }
             "--batch-windows" => {
                 config.batch_windows = parse_positive_usize(args.next(), "--batch-windows")?;
+            }
+            "--target-token-range" => {
+                config.target_token_min = parse_u8(args.next(), "--target-token-range MIN")?;
+                config.target_token_max = parse_u8(args.next(), "--target-token-range MAX")?;
+            }
+            "--target-phase" => {
+                let phase = args.next().ok_or(
+                    "--target-phase requires all, special, text-char, text-chunk, or image",
+                )?;
+                (config.target_token_min, config.target_token_max) = parse_target_phase(&phase)?;
+            }
+            "--target-segment" => {
+                let segment = args.next().ok_or(
+                    "--target-segment requires all, generated-text, name-opening, name-opening-tail, body-after-he, body-first-after-he, body-first-after-opening, or image",
+                )?;
+                config.target_segment = parse_target_segment(&segment)?;
+            }
+            "--target-frequency-cap" => {
+                config.target_frequency_cap = args
+                    .next()
+                    .ok_or("--target-frequency-cap requires N")?
+                    .parse()?;
+            }
+            "--target-frequency-min-weight-q15" => {
+                config.target_frequency_min_weight_q15 = args
+                    .next()
+                    .ok_or("--target-frequency-min-weight-q15 requires N")?
+                    .parse()?;
+            }
+            "--argmax-margin-weight-q15" => {
+                config.argmax_margin_weight_q15 = args
+                    .next()
+                    .ok_or("--argmax-margin-weight-q15 requires N")?
+                    .parse()?;
+            }
+            "--zero-output-head-init" => {
+                config.zero_output_head_init = true;
+            }
+            "--solomon-name-copy-init" => {
+                config.solomon_name_copy_init = true;
+            }
+            "--solomon-name-copy-repair" => {
+                config.solomon_name_copy_repair = true;
+            }
+            "--solomon-name-copy-repair-preserve-body-output" => {
+                config.solomon_name_copy_repair = true;
+                config.solomon_name_copy_repair_preserve_body_output = true;
+            }
+            "--solomon-body-scaffold" => {
+                config.solomon_body_scaffold = true;
+            }
+            "--solomon-body-opening-repair" => {
+                config.solomon_body_opening_repair = true;
             }
             "--progress-interval-batches" => {
                 config.progress_interval_batches =
@@ -553,6 +855,9 @@ where
             "--text-prior-order" => {
                 config.text_prior_order = parse_usize(args.next(), "--text-prior-order")?;
             }
+            "--text-prior-min-order" => {
+                config.text_prior_min_order = parse_usize(args.next(), "--text-prior-min-order")?;
+            }
             "--text-prior-boost-q8" => {
                 config.text_prior_boost_q8 = args
                     .next()
@@ -568,6 +873,21 @@ where
             "--embedded-text-lm-order" => {
                 config.embedded_text_lm_order =
                     parse_usize(args.next(), "--embedded-text-lm-order")?;
+            }
+            "--text-chunk-boost-q8" => {
+                config.text_chunk_boost_q8 = args
+                    .next()
+                    .ok_or("--text-chunk-boost-q8 requires N")?
+                    .parse()?;
+            }
+            "--decode-logit-delta" => {
+                config.decode_logit_delta = true;
+            }
+            "--prompt-name-opening-prior" => {
+                config.prompt_name_opening_prior = true;
+            }
+            "--suppress-name-chunks-after-opening" => {
+                config.suppress_name_chunks_after_opening = true;
             }
             "--top-k" => {
                 config.top_k = parse_positive_usize(args.next(), "--top-k")?;
@@ -605,6 +925,9 @@ where
     if config.min_text_tokens > config.max_text_tokens {
         return Err("--min-text-tokens cannot exceed --max-text-tokens".into());
     }
+    if config.target_token_min > config.target_token_max {
+        return Err("--target-token-range MIN cannot exceed MAX".into());
+    }
     Ok(config)
 }
 
@@ -627,6 +950,44 @@ fn parse_text_token_profile(value: &str) -> Result<TextTokenProfile, Box<dyn std
         "char" => Ok(TextTokenProfile::Char),
         "chunked" => Ok(TextTokenProfile::Chunked),
         _ => Err(format!("unknown text token profile: {value}; expected char or chunked").into()),
+    }
+}
+
+fn parse_target_phase(value: &str) -> Result<(u8, u8), Box<dyn std::error::Error>> {
+    match value {
+        "all" => Ok((u8::MIN, u8::MAX)),
+        "special" => Ok((BOS, EOS)),
+        "text-char" | "text" => Ok((TEXT_BASE + 32, TEXT_BASE + 126)),
+        "text-chunk" | "chunk" => Ok((TEXT_CHUNK_BASE, u8::MAX)),
+        "image" => Ok((IMAGE_BASE, IMAGE_BASE + IMAGE_BINS - 1)),
+        _ => Err(format!(
+            "unknown target phase: {value}; expected all, special, text-char, text-chunk, or image"
+        )
+        .into()),
+    }
+}
+
+fn parse_target_segment(value: &str) -> Result<TargetSegment, Box<dyn std::error::Error>> {
+    match value {
+        "all" => Ok(TargetSegment::All),
+        "generated-text" | "text" => Ok(TargetSegment::GeneratedText),
+        "name-opening" | "opening-name" | "prompt-name" => Ok(TargetSegment::NameOpening),
+        "name-opening-tail" | "opening-tail" | "prompt-name-tail" => {
+            Ok(TargetSegment::NameOpeningTail)
+        }
+        "body-after-he" | "body" | "after-he" => Ok(TargetSegment::BodyAfterHe),
+        "body-first-after-he" | "first-body-after-he" | "first-after-he" => {
+            Ok(TargetSegment::BodyFirstAfterHe)
+        }
+        "body-first-after-opening"
+        | "first-body-after-opening"
+        | "body-start"
+        | "first-after-opening" => Ok(TargetSegment::BodyFirstAfterOpening),
+        "image" => Ok(TargetSegment::Image),
+        _ => Err(format!(
+            "unknown target segment: {value}; expected all, generated-text, name-opening, name-opening-tail, body-after-he, body-first-after-he, body-first-after-opening, or image"
+        )
+        .into()),
     }
 }
 
@@ -691,6 +1052,23 @@ fn train_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         },
     )?;
+    let mut transformer = run.model;
+    if config.solomon_name_copy_repair {
+        repair_solomon_name_copy_scaffold_with_options(
+            &mut transformer,
+            config.text_token_profile,
+            config.solomon_name_copy_repair_preserve_body_output,
+        )?;
+    }
+    if config.solomon_body_scaffold {
+        apply_solomon_body_scaffold(&mut transformer, config.text_token_profile)?;
+    }
+    if config.solomon_body_opening_repair {
+        let memory = text_memory
+            .as_ref()
+            .ok_or("--solomon-body-opening-repair requires --embed-text-memory-examples")?;
+        repair_solomon_body_opening_scaffold(&mut transformer, config.text_token_profile, memory)?;
+    }
     let model = SolomonAttentionModel {
         token_count: u64::try_from(tokens.len())?,
         token_hash: hash_bytes(&tokens),
@@ -698,14 +1076,14 @@ fn train_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         position_policy: config.position_policy,
         text_token_profile: config.text_token_profile,
         text_memory,
-        transformer: run.model,
+        transformer,
     };
     if let Some(parent) = config.model_out.parent() {
         fs::create_dir_all(parent)?;
     }
     fs::write(&config.model_out, model.try_to_bytes()?)?;
     println!(
-        "{{\"schema\":\"{}\",\"model\":\"{}\",\"token_count\":{},\"token_hash\":\"0x{:016x}\",\"model_hash\":\"0x{:016x}\",\"inner_model_hash\":\"0x{:016x}\",\"attention_kind\":\"{}\",\"position_policy\":\"{}\",\"text_token_profile\":\"{}\",\"embedded_text_memory_order\":{},\"embedded_text_memory_examples\":{},\"adaptive_attention_shifts\":{},\"attention_vo_oracle\":{},\"learning_rate\":{},\"output_lr_shift\":{},\"mlp_lr_shift\":{},\"embed_lr_shift\":{},\"attention_lr_shift\":{},\"attention_q_lr_shift\":{},\"attention_qk_lr_shift\":{},\"reject_loss_regression\":{},\"seq_len\":{},\"stride\":{},\"window_offset\":{},\"windows\":{},\"examined_windows\":{},\"updates\":{},\"accepted_batches\":{},\"rejected_batches\":{},\"rollback_count\":{},\"rejected_windows\":{},\"final_accuracy_per_mille\":{},\"final_probability_error_q15\":{}}}",
+        "{{\"schema\":\"{}\",\"model\":\"{}\",\"token_count\":{},\"token_hash\":\"0x{:016x}\",\"model_hash\":\"0x{:016x}\",\"inner_model_hash\":\"0x{:016x}\",\"attention_kind\":\"{}\",\"position_policy\":\"{}\",\"text_token_profile\":\"{}\",\"embedded_text_memory_order\":{},\"embedded_text_memory_examples\":{},\"adaptive_attention_shifts\":{},\"attention_vo_oracle\":{},\"zero_output_head_init\":{},\"solomon_name_copy_init\":{},\"solomon_name_copy_repair\":{},\"solomon_name_copy_repair_preserve_body_output\":{},\"solomon_body_scaffold\":{},\"solomon_body_opening_repair\":{},\"learning_rate\":{},\"output_lr_shift\":{},\"mlp_lr_shift\":{},\"embed_lr_shift\":{},\"attention_lr_shift\":{},\"attention_q_lr_shift\":{},\"attention_qk_lr_shift\":{},\"target_token_min\":{},\"target_token_max\":{},\"target_segment\":\"{}\",\"target_frequency_cap\":{},\"target_frequency_min_weight_q15\":{},\"argmax_margin_weight_q15\":{},\"reject_loss_regression\":{},\"seq_len\":{},\"stride\":{},\"window_offset\":{},\"windows\":{},\"examined_windows\":{},\"updates\":{},\"accepted_batches\":{},\"rejected_batches\":{},\"rollback_count\":{},\"rejected_windows\":{},\"final_accuracy_per_mille\":{},\"initial_probability_error_q15\":{},\"final_probability_error_q15\":{},\"probability_error_delta_i64\":{}}}",
         TRAIN_SCHEMA,
         json_escape(&config.model_out.display().to_string()),
         model.token_count,
@@ -727,6 +1105,12 @@ fn train_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(0),
         config.adaptive_attention_shifts,
         config.attention_vo_oracle,
+        config.zero_output_head_init,
+        config.solomon_name_copy_init,
+        config.solomon_name_copy_repair,
+        config.solomon_name_copy_repair_preserve_body_output,
+        config.solomon_body_scaffold,
+        config.solomon_body_opening_repair,
         run.trace.config.learning_rate,
         run.trace.config.output_learning_rate_shift,
         run.trace.config.mlp_learning_rate_shift,
@@ -734,6 +1118,12 @@ fn train_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         run.trace.config.attention_learning_rate_shift,
         run.trace.config.attention_q_learning_rate_shift,
         run.trace.config.attention_qk_learning_rate_shift,
+        run.trace.config.target_token_min,
+        run.trace.config.target_token_max,
+        config.target_segment.as_str(),
+        run.trace.config.target_frequency_cap,
+        run.trace.config.target_frequency_min_weight_q15,
+        run.trace.config.argmax_margin_weight_q15,
         run.trace.config.reject_loss_regression,
         run.trace.config.seq_len,
         run.trace.config.stride,
@@ -746,7 +1136,10 @@ fn train_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         run.trace.rollback_count,
         run.trace.rejected_window_count,
         run.trace.final_accuracy_per_mille,
+        run.trace.initial_probability_error_q15,
         run.trace.final_probability_error_q15,
+        run.trace.final_probability_error_q15 as i64
+            - run.trace.initial_probability_error_q15 as i64,
     );
     Ok(())
 }
@@ -765,6 +1158,8 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         config.text_prior_examples.as_ref(),
         &config.tokens_path,
         config.text_prior_order,
+        config.text_prior_min_order,
+        model.text_token_profile,
     )?;
     let (
         text_prior_source,
@@ -783,7 +1178,7 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     {
         (
             "embedded",
-            Some(TextPrior::from(memory)),
+            Some(TextPrior::from(memory, model.text_token_profile)),
             if config.text_prior_boost_q8 > 0 {
                 config.text_prior_boost_q8
             } else {
@@ -796,10 +1191,13 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     {
         (
             "embedded_lm",
-            Some(TextPrior::from_memory_with_order(
+            Some(TextPrior::from_memory_for_prompt_with_order(
                 memory,
+                &config.prompt,
                 config.embedded_text_lm_order,
+                config.text_prior_min_order,
                 true,
+                model.text_token_profile,
             )),
             if config.text_prior_boost_q8 > 0 {
                 config.text_prior_boost_q8
@@ -816,6 +1214,15 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             config.text_prior_strict,
         )
     };
+    let embedded_image_match = if conditioning.is_none() && config.use_embedded_text_memory {
+        model
+            .text_memory
+            .as_ref()
+            .and_then(|memory| memory.best_example_for_prompt(&config.prompt))
+            .filter(|example| example.image_tokens.len() == SIGNATURE_BINS)
+    } else {
+        None
+    };
     let sample = sample_model(
         &model,
         &config.prompt,
@@ -827,11 +1234,18 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             conditioning_boost_q8: config.conditioning_boost_q8,
             text_prior_boost_q8: effective_text_prior_boost_q8,
             text_prior_strict: effective_text_prior_strict,
+            text_chunk_boost_q8: config.text_chunk_boost_q8,
+            decode_logit_delta: config.decode_logit_delta,
+            prompt_name_opening_prior: config.prompt_name_opening_prior,
+            suppress_name_chunks_after_opening: config.suppress_name_chunks_after_opening,
             top_k: config.top_k,
             sample_seed: config.sample_seed,
         },
         conditioning.as_ref(),
         effective_text_prior.as_ref(),
+        embedded_image_match
+            .as_ref()
+            .map(|example| example.image_tokens.as_slice()),
         &config.text_prefix,
     )?;
     fs::create_dir_all(&config.out_dir)?;
@@ -847,7 +1261,7 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     fs::write(
         &trace_path,
         format!(
-            "{{\n  \"schema\":\"{}\",\n  \"model\":\"{}\",\n  \"model_hash\":\"0x{:016x}\",\n  \"inner_model_hash\":\"0x{:016x}\",\n  \"attention_kind\":\"{}\",\n  \"position_policy\":\"{}\",\n  \"text_token_profile\":\"{}\",\n  \"prompt\":\"{}\",\n  \"text_prefix\":\"{}\",\n  \"text_prefix_tokens\":{},\n  \"generated_text\":\"{}\",\n  \"generated_token_count\":{},\n  \"conditioning_primary_name\":\"{}\",\n  \"conditioning_prompt\":\"{}\",\n  \"conditioning_score\":{},\n  \"conditioning_text_tokens\":{},\n  \"conditioning_image_tokens\":{},\n  \"text_prior_source\":\"{}\",\n  \"text_prior_order\":{},\n  \"text_prior_contexts\":{},\n  \"text_prior_prompt_starts\":{},\n  \"text_prior_selected_start_tokens\":{},\n  \"text_prior_boost_q8\":{},\n  \"text_prior_strict\":{},\n  \"image_grid\":{},\n  \"image_bins\":{},\n  \"text_out\":\"{}\",\n  \"image_ink16_u8\":\"{}\",\n  \"image_pgm\":\"{}\"\n}}\n",
+            "{{\n  \"schema\":\"{}\",\n  \"model\":\"{}\",\n  \"model_hash\":\"0x{:016x}\",\n  \"inner_model_hash\":\"0x{:016x}\",\n  \"attention_kind\":\"{}\",\n  \"position_policy\":\"{}\",\n  \"text_token_profile\":\"{}\",\n  \"prompt\":\"{}\",\n  \"text_prefix\":\"{}\",\n  \"text_prefix_tokens\":{},\n  \"generated_text\":\"{}\",\n  \"generated_token_count\":{},\n  \"conditioning_primary_name\":\"{}\",\n  \"conditioning_prompt\":\"{}\",\n  \"conditioning_score\":{},\n  \"conditioning_text_tokens\":{},\n  \"conditioning_image_tokens\":{},\n  \"text_prior_source\":\"{}\",\n  \"text_prior_order\":{},\n  \"text_prior_min_order\":{},\n  \"text_prior_contexts\":{},\n  \"text_prior_prompt_starts\":{},\n  \"text_prior_selected_start_tokens\":{},\n  \"text_prior_boost_q8\":{},\n  \"text_prior_strict\":{},\n  \"text_chunk_boost_q8\":{},\n  \"image_prior_source\":\"{}\",\n  \"image_prior_primary_name\":\"{}\",\n  \"image_prior_prompt\":\"{}\",\n  \"image_prior_tokens\":{},\n  \"decode_logit_delta\":{},\n  \"prompt_name_opening_prior\":{},\n  \"suppress_name_chunks_after_opening\":{},\n  \"image_grid\":{},\n  \"image_bins\":{},\n  \"text_out\":\"{}\",\n  \"image_ink16_u8\":\"{}\",\n  \"image_pgm\":\"{}\"\n}}\n",
             SAMPLE_SCHEMA,
             json_escape(&config.model_path.display().to_string()),
             model.model_hash()?,
@@ -888,6 +1302,10 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or(0),
             effective_text_prior
                 .as_ref()
+                .map(|value| value.min_order)
+                .unwrap_or(0),
+            effective_text_prior
+                .as_ref()
                 .map(|value| value.transitions.len())
                 .unwrap_or(0),
             effective_text_prior
@@ -900,6 +1318,27 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or(0),
             effective_text_prior_boost_q8,
             effective_text_prior_strict,
+            config.text_chunk_boost_q8,
+            if embedded_image_match.is_some() {
+                "embedded"
+            } else {
+                "none"
+            },
+            embedded_image_match
+                .as_ref()
+                .map(|example| json_escape(&example.primary_name))
+                .unwrap_or_default(),
+            embedded_image_match
+                .as_ref()
+                .map(|example| json_escape(&example.prompt))
+                .unwrap_or_default(),
+            embedded_image_match
+                .as_ref()
+                .map(|example| example.image_tokens.len())
+                .unwrap_or(0),
+            config.decode_logit_delta,
+            config.prompt_name_opening_prior,
+            config.suppress_name_chunks_after_opening,
             SIGNATURE_GRID,
             IMAGE_BINS,
             json_escape(&text_path.display().to_string()),
@@ -993,17 +1432,17 @@ fn eval_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             let target = example_tokens[target_index];
             match row {
                 Ok(row) => {
-                    let predicted = eval_argmax_token(&row, phase, model.text_token_profile);
+                    let diagnostics =
+                        eval_token_diagnostics(&row, phase, model.text_token_profile, target);
                     let target_probability_q15 = u64::try_from(
                         i32::from(row.probabilities_q15[usize::from(target)]).max(0),
                     )?;
-                    let correct = predicted == target;
-                    total.observe(correct, target_probability_q15);
+                    total.observe(target_probability_q15, diagnostics);
                     match phase {
-                        EvalPhase::Special => special.observe(correct, target_probability_q15),
-                        EvalPhase::Prompt => prompt.observe(correct, target_probability_q15),
-                        EvalPhase::Text => text.observe(correct, target_probability_q15),
-                        EvalPhase::Image => image.observe(correct, target_probability_q15),
+                        EvalPhase::Special => special.observe(target_probability_q15, diagnostics),
+                        EvalPhase::Prompt => prompt.observe(target_probability_q15, diagnostics),
+                        EvalPhase::Text => text.observe(target_probability_q15, diagnostics),
+                        EvalPhase::Image => image.observe(target_probability_q15, diagnostics),
                     }
                 }
                 Err(_) => {
@@ -1056,6 +1495,14 @@ fn train_config(config: &Config) -> MiniTransformerMlpTrainConfig {
         window_offset: config.window_offset,
         max_windows: config.max_windows,
         batch_windows: config.batch_windows,
+        target_token_min: config.target_token_min,
+        target_token_max: config.target_token_max,
+        target_segment: config
+            .target_segment
+            .to_train_segment(config.text_token_profile),
+        target_frequency_cap: config.target_frequency_cap,
+        target_frequency_min_weight_q15: config.target_frequency_min_weight_q15,
+        argmax_margin_weight_q15: config.argmax_margin_weight_q15,
         tokenizer_id: ByteTokenizerId::Identity,
         attention_kind: MiniTransformerAttentionKind::Base2Softmax,
         position_policy: config.position_policy,
@@ -1083,7 +1530,14 @@ fn load_initial_transformer(
     seq_len: usize,
 ) -> Result<MiniTransformerMlpModel, Box<dyn std::error::Error>> {
     let Some(init_model) = config.init_model.as_ref() else {
-        return Ok(MiniTransformerMlpModel::new_initial_with_seq_len(seq_len));
+        let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(seq_len);
+        if config.zero_output_head_init {
+            model.output_weights.fill(0);
+        }
+        if config.solomon_name_copy_init {
+            apply_solomon_name_copy_init(&mut model, config.text_token_profile)?;
+        }
+        return Ok(model);
     };
     let model = SolomonAttentionModel::from_bytes(&fs::read(init_model)?)?;
     if model.transformer.context_seq_len != seq_len {
@@ -1112,7 +1566,475 @@ fn load_initial_transformer(
         )
         .into());
     }
-    Ok(model.transformer)
+    let mut transformer = model.transformer;
+    if config.zero_output_head_init {
+        transformer.output_weights.fill(0);
+    }
+    if config.solomon_name_copy_init {
+        apply_solomon_name_copy_init(&mut transformer, config.text_token_profile)?;
+    }
+    if config.solomon_body_scaffold {
+        apply_solomon_body_scaffold(&mut transformer, config.text_token_profile)?;
+    }
+    Ok(transformer)
+}
+
+fn apply_solomon_name_copy_init(
+    model: &mut MiniTransformerMlpModel,
+    text_token_profile: TextTokenProfile,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if text_token_profile != TextTokenProfile::Chunked {
+        return Err("--solomon-name-copy-init requires --text-token-profile chunked".into());
+    }
+    if MINI_TRANSFORMER_HEADS == 0
+        || !MINI_TRANSFORMER_D_MODEL.is_multiple_of(MINI_TRANSFORMER_HEADS)
+    {
+        return Err("invalid mini-transformer head layout for Solomon name copy init".into());
+    }
+    let head_dim = MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS;
+    if MINI_TRANSFORMER_HEADS < 2 || head_dim < 16 {
+        return Err(
+            "Solomon name copy init requires at least two heads with 16 dimensions each".into(),
+        );
+    }
+
+    let embedding_len = VOCAB_SIZE
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or("Solomon name copy embedding shape overflow")?;
+    if model.embeddings.len() != embedding_len {
+        return Err("Solomon name copy init embedding shape mismatch".into());
+    }
+
+    model.position_embeddings.fill(0);
+    model.q_weights.fill(0);
+    model.k_weights.fill(0);
+    model.v_weights.fill(0);
+    model.o_weights.fill(0);
+    model.up_weights.fill(0);
+    model.gate_weights.fill(0);
+    model.down_weights.fill(0);
+    model.output_weights.fill(0);
+
+    model.embeddings.fill(0);
+    repair_solomon_name_copy_scaffold(model, text_token_profile)?;
+
+    Ok(())
+}
+
+fn repair_solomon_name_copy_scaffold(
+    model: &mut MiniTransformerMlpModel,
+    text_token_profile: TextTokenProfile,
+) -> Result<(), Box<dyn std::error::Error>> {
+    repair_solomon_name_copy_scaffold_with_options(model, text_token_profile, false)
+}
+
+fn repair_solomon_name_copy_scaffold_with_options(
+    model: &mut MiniTransformerMlpModel,
+    text_token_profile: TextTokenProfile,
+    preserve_body_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if text_token_profile != TextTokenProfile::Chunked {
+        return Err("--solomon-name-copy-repair requires --text-token-profile chunked".into());
+    }
+    if MINI_TRANSFORMER_HEADS == 0
+        || !MINI_TRANSFORMER_D_MODEL.is_multiple_of(MINI_TRANSFORMER_HEADS)
+    {
+        return Err("invalid mini-transformer head layout for Solomon name copy repair".into());
+    }
+    let head_dim = MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS;
+    if MINI_TRANSFORMER_HEADS < 2 || head_dim < 16 {
+        return Err(
+            "Solomon name copy repair requires at least two heads with 16 dimensions each".into(),
+        );
+    }
+
+    let embedding_len = VOCAB_SIZE
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or("Solomon name copy repair embedding shape overflow")?;
+    if model.embeddings.len() != embedding_len {
+        return Err("Solomon name copy repair embedding shape mismatch".into());
+    }
+
+    let prefix_token = usize::from(TEXT_CHUNK_BASE);
+    let colon_token = usize::from(TEXT_CHUNK_BASE) + 1;
+    let he_token = usize::from(TEXT_CHUNK_BASE) + 2;
+    let code_dims = 2..9;
+    let name_to_colon_dim = 14;
+    let colon_to_he_dim = 15;
+    let copied_code_base = head_dim;
+    let name_start = usize::from(TEXT_CHUNK_BASE) + TEXT_CHUNK_NAME_START;
+    let name_end = usize::from(TEXT_CHUNK_BASE) + TEXT_CHUNKS.len();
+
+    for token in 0..VOCAB_SIZE {
+        let row_start = token * MINI_TRANSFORMER_D_MODEL;
+        model.embeddings[row_start] = 0;
+        model.embeddings[row_start + 1] = 0;
+        model.embeddings[row_start + name_to_colon_dim] = 0;
+        model.embeddings[row_start + colon_to_he_dim] = 0;
+        for dim in code_dims.clone() {
+            model.embeddings[row_start + dim] = 0;
+            model.embeddings[row_start + copied_code_base + dim] = 0;
+        }
+    }
+    for position in 0..model.position_embeddings.len() / MINI_TRANSFORMER_D_MODEL {
+        let row_start = position * MINI_TRANSFORMER_D_MODEL;
+        model.position_embeddings[row_start] = 0;
+        model.position_embeddings[row_start + 1] = 0;
+        model.position_embeddings[row_start + name_to_colon_dim] = 0;
+        model.position_embeddings[row_start + colon_to_he_dim] = 0;
+        for dim in code_dims.clone() {
+            model.position_embeddings[row_start + dim] = 0;
+            model.position_embeddings[row_start + copied_code_base + dim] = 0;
+        }
+    }
+    for dim in 0..head_dim {
+        clear_square_row(&mut model.q_weights, dim)?;
+        clear_square_row(&mut model.k_weights, dim)?;
+    }
+    for dim in code_dims.clone() {
+        clear_square_row(&mut model.v_weights, dim)?;
+        clear_square_row(&mut model.o_weights, copied_code_base + dim)?;
+    }
+    if preserve_body_output {
+        clear_output_row(&mut model.output_weights, prefix_token)?;
+    } else {
+        for token in 0..VOCAB_SIZE {
+            let row_start = token * MINI_TRANSFORMER_D_MODEL;
+            for dim in 0..head_dim {
+                model.output_weights[row_start + dim] = 0;
+            }
+            for dim in code_dims.clone() {
+                model.output_weights[row_start + copied_code_base + dim] = 0;
+            }
+        }
+    }
+    for token in name_start..name_end {
+        clear_output_row(&mut model.output_weights, token)?;
+    }
+    clear_output_row(&mut model.output_weights, colon_token)?;
+    clear_output_row(&mut model.output_weights, he_token)?;
+
+    model.embeddings[prefix_token * MINI_TRANSFORMER_D_MODEL] = 4096;
+    model.embeddings[colon_token * MINI_TRANSFORMER_D_MODEL + colon_to_he_dim] = 4096;
+    model.output_weights[colon_token * MINI_TRANSFORMER_D_MODEL + name_to_colon_dim] = 127;
+    model.output_weights[he_token * MINI_TRANSFORMER_D_MODEL + colon_to_he_dim] = 127;
+
+    for token in name_start..name_end {
+        let name_index = token - name_start;
+        let row_start = token * MINI_TRANSFORMER_D_MODEL;
+        model.embeddings[row_start + 1] = 4096;
+        model.embeddings[row_start + name_to_colon_dim] = 4096;
+        for (bit_index, dim) in code_dims.clone().enumerate() {
+            let code = solomon_name_copy_code_q15(name_index, bit_index);
+            let copied_dim = copied_code_base + dim;
+            model.embeddings[row_start + dim] = code;
+            model.output_weights[token * MINI_TRANSFORMER_D_MODEL + copied_dim] =
+                if code >= 0 { 127 } else { -127 };
+        }
+    }
+
+    set_square_i8(&mut model.q_weights, 0, 0, 8)?;
+    set_square_i8(&mut model.k_weights, 0, 1, 8)?;
+    for dim in code_dims {
+        set_square_i8(&mut model.v_weights, dim, dim, 1)?;
+        set_square_i8(&mut model.o_weights, copied_code_base + dim, dim, 1)?;
+    }
+
+    Ok(())
+}
+
+fn clear_output_row(weights: &mut [i8], token: usize) -> Result<(), Box<dyn std::error::Error>> {
+    let row_start = token
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or("Solomon name copy output row overflow")?;
+    let row_end = row_start
+        .checked_add(MINI_TRANSFORMER_D_MODEL)
+        .ok_or("Solomon name copy output row overflow")?;
+    let row = weights
+        .get_mut(row_start..row_end)
+        .ok_or("Solomon name copy output shape mismatch")?;
+    row.fill(0);
+    Ok(())
+}
+
+fn clear_square_row(
+    weights: &mut [i8],
+    output_dim: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let row_start = output_dim
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or("Solomon name copy weight row overflow")?;
+    let row_end = row_start
+        .checked_add(MINI_TRANSFORMER_D_MODEL)
+        .ok_or("Solomon name copy weight row overflow")?;
+    let row = weights
+        .get_mut(row_start..row_end)
+        .ok_or("Solomon name copy weight shape mismatch")?;
+    row.fill(0);
+    Ok(())
+}
+
+fn set_square_i8(
+    weights: &mut [i8],
+    output_dim: usize,
+    input_dim: usize,
+    value: i8,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let index = output_dim
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .and_then(|start| start.checked_add(input_dim))
+        .ok_or("Solomon name copy weight index overflow")?;
+    let slot = weights
+        .get_mut(index)
+        .ok_or("Solomon name copy weight shape mismatch")?;
+    *slot = value;
+    Ok(())
+}
+
+fn solomon_name_copy_code_q15(name_index: usize, bit_index: usize) -> i16 {
+    if ((name_index + 1) >> bit_index) & 1 == 1 {
+        4096
+    } else {
+        -4096
+    }
+}
+
+fn apply_solomon_body_scaffold(
+    model: &mut MiniTransformerMlpModel,
+    text_token_profile: TextTokenProfile,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if text_token_profile != TextTokenProfile::Chunked {
+        return Err("--solomon-body-scaffold requires --text-token-profile chunked".into());
+    }
+    let body_dims = 25..MINI_TRANSFORMER_D_MODEL;
+    if body_dims.is_empty() || body_dims.start <= MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS
+    {
+        return Err("Solomon body scaffold requires a free high model dimension".into());
+    }
+    let embedding_len = VOCAB_SIZE
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or("Solomon body scaffold embedding shape overflow")?;
+    if model.embeddings.len() != embedding_len {
+        return Err("Solomon body scaffold embedding shape mismatch".into());
+    }
+    if model.output_weights.len() != embedding_len {
+        return Err("Solomon body scaffold output shape mismatch".into());
+    }
+
+    for token in 0..VOCAB_SIZE {
+        let row_start = token * MINI_TRANSFORMER_D_MODEL;
+        for dim in body_dims.clone() {
+            model.embeddings[row_start + dim] = 0;
+            model.output_weights[row_start + dim] = 0;
+        }
+    }
+
+    for (transition_index, (previous, next)) in
+        solomon_body_scaffold_transitions()?.into_iter().enumerate()
+    {
+        let previous_row = usize::from(previous) * MINI_TRANSFORMER_D_MODEL;
+        let next_row = usize::from(next) * MINI_TRANSFORMER_D_MODEL;
+        for (bit_index, dim) in body_dims.clone().enumerate() {
+            let code = solomon_name_copy_code_q15(transition_index, bit_index);
+            model.embeddings[previous_row + dim] = code;
+            model.output_weights[next_row + dim] = if code >= 0 { 127 } else { -127 };
+        }
+    }
+
+    Ok(())
+}
+
+fn repair_solomon_body_opening_scaffold(
+    model: &mut MiniTransformerMlpModel,
+    text_token_profile: TextTokenProfile,
+    memory: &TextMemory,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if text_token_profile != TextTokenProfile::Chunked {
+        return Err("--solomon-body-opening-repair requires --text-token-profile chunked".into());
+    }
+    if MINI_TRANSFORMER_HEADS == 0
+        || !MINI_TRANSFORMER_D_MODEL.is_multiple_of(MINI_TRANSFORMER_HEADS)
+    {
+        return Err("invalid mini-transformer head layout for Solomon body opening repair".into());
+    }
+    let head_dim = MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS;
+    if head_dim < 16 {
+        return Err("Solomon body opening repair requires a 16-dimensional first head".into());
+    }
+
+    let embedding_len = VOCAB_SIZE
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or("Solomon body opening repair embedding shape overflow")?;
+    if model.embeddings.len() != embedding_len {
+        return Err("Solomon body opening repair embedding shape mismatch".into());
+    }
+    if model.output_weights.len() != embedding_len {
+        return Err("Solomon body opening repair output shape mismatch".into());
+    }
+
+    let assignments = solomon_body_opening_assignments(memory, text_token_profile)?;
+    let mut class_tokens = Vec::<u8>::new();
+    let mut name_classes = Vec::<(usize, usize)>::new();
+    for (name_index, token) in assignments {
+        let class_index = if let Some(index) = class_tokens.iter().position(|&seen| seen == token) {
+            index
+        } else {
+            if class_tokens.len() >= 8 {
+                return Err(
+                    "Solomon body opening repair supports at most eight opening classes".into(),
+                );
+            }
+            class_tokens.push(token);
+            class_tokens.len() - 1
+        };
+        name_classes.push((name_index, class_index));
+    }
+
+    let colon_token = usize::from(TEXT_CHUNK_BASE) + 1;
+    let query_input_dim = head_dim;
+    let key_input_dim = head_dim + 1;
+    let code_dims = head_dim + 9..head_dim + 12;
+    let copied_code_dims = [head_dim + 12, head_dim + 13, head_dim + 14, head_dim + 15];
+    let scaffold_output_tokens = solomon_body_scaffold_transitions()?
+        .into_iter()
+        .map(|(_, next)| next)
+        .collect::<Vec<_>>();
+
+    for token in 0..VOCAB_SIZE {
+        let row_start = token * MINI_TRANSFORMER_D_MODEL;
+        model.embeddings[row_start + query_input_dim] = 0;
+        model.embeddings[row_start + key_input_dim] = 0;
+        model.embeddings[row_start + copied_code_dims[0]] = 0;
+        model.output_weights[row_start + copied_code_dims[0]] = 0;
+    }
+    for position in 0..model.position_embeddings.len() / MINI_TRANSFORMER_D_MODEL {
+        let row_start = position * MINI_TRANSFORMER_D_MODEL;
+        model.position_embeddings[row_start + query_input_dim] = 0;
+        model.position_embeddings[row_start + key_input_dim] = 0;
+        model.position_embeddings[row_start + copied_code_dims[0]] = 0;
+    }
+
+    clear_square_row(&mut model.q_weights, query_input_dim)?;
+    clear_square_row(&mut model.k_weights, query_input_dim)?;
+    for dim in code_dims.clone() {
+        clear_square_row(&mut model.v_weights, dim)?;
+        set_square_i8(&mut model.v_weights, dim, dim, 1)?;
+    }
+    for (index, &output_dim) in copied_code_dims.iter().enumerate() {
+        let input_dim = code_dims.start + index % code_dims.len();
+        clear_square_row(&mut model.o_weights, output_dim)?;
+        set_square_i8(&mut model.o_weights, output_dim, input_dim, 1)?;
+    }
+    set_square_i8(&mut model.q_weights, query_input_dim, query_input_dim, 8)?;
+    set_square_i8(&mut model.k_weights, query_input_dim, key_input_dim, 8)?;
+
+    model.embeddings[colon_token * MINI_TRANSFORMER_D_MODEL + query_input_dim] = 4096;
+    for &(name_index, class_index) in &name_classes {
+        let name_token = usize::from(TEXT_CHUNK_BASE) + TEXT_CHUNK_NAME_START + name_index;
+        let row_start = name_token * MINI_TRANSFORMER_D_MODEL;
+        model.embeddings[row_start + key_input_dim] = 4096;
+        for (bit_index, dim) in code_dims.clone().enumerate() {
+            model.embeddings[row_start + dim] =
+                solomon_body_opening_class_code_q15(class_index, bit_index);
+        }
+    }
+    for (class_index, &token) in class_tokens.iter().enumerate() {
+        let preserve_scaffold_output = scaffold_output_tokens.contains(&token);
+        let row_start = usize::from(token) * MINI_TRANSFORMER_D_MODEL;
+        for (index, &dim) in copied_code_dims.iter().enumerate() {
+            let bit_index = index % code_dims.len();
+            let value = if solomon_body_opening_class_code_q15(class_index, bit_index) >= 0 {
+                127
+            } else {
+                -127
+            };
+            if preserve_scaffold_output {
+                model.output_weights[row_start + dim] =
+                    model.output_weights[row_start + dim].saturating_add(value / 2);
+            } else {
+                model.output_weights[row_start + dim] = value;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn solomon_body_opening_assignments(
+    memory: &TextMemory,
+    text_token_profile: TextTokenProfile,
+) -> Result<Vec<(usize, u8)>, Box<dyn std::error::Error>> {
+    let mut assignments = vec![None; TEXT_CHUNKS.len().saturating_sub(TEXT_CHUNK_NAME_START)];
+    for example in &memory.examples {
+        let Some(name_index) = solomon_name_chunk_index(&example.primary_name) else {
+            continue;
+        };
+        let text_tokens = sanitize_source_text_tokens(&example.text_tokens, text_token_profile);
+        let prefix = text_prefix_through_colon(&text_tokens);
+        let Some(&token) = text_tokens.get(prefix.len()) else {
+            continue;
+        };
+        if !is_text_token(token) {
+            continue;
+        }
+        match assignments[name_index] {
+            Some(previous) if previous != token => {
+                return Err(format!(
+                    "conflicting body opening token for {}",
+                    example.primary_name
+                )
+                .into());
+            }
+            _ => assignments[name_index] = Some(token),
+        }
+    }
+    assignments
+        .into_iter()
+        .enumerate()
+        .map(|(name_index, token)| {
+            token.map(|token| (name_index, token)).ok_or_else(|| {
+                format!(
+                    "missing body opening token for {}",
+                    TEXT_CHUNKS[TEXT_CHUNK_NAME_START + name_index]
+                )
+                .into()
+            })
+        })
+        .collect()
+}
+
+fn solomon_name_chunk_index(name: &str) -> Option<usize> {
+    let name_key = normalize_key(name);
+    TEXT_CHUNKS
+        .get(TEXT_CHUNK_NAME_START..)?
+        .iter()
+        .position(|candidate| normalize_key(candidate) == name_key)
+}
+
+fn solomon_body_opening_class_code_q15(class_index: usize, bit_index: usize) -> i16 {
+    solomon_name_copy_code_q15(class_index, bit_index)
+}
+
+fn solomon_body_scaffold_transitions() -> Result<Vec<(u8, u8)>, Box<dyn std::error::Error>> {
+    let body_tokens = encode_text_prefix_tokens(
+        "He is of the Goetia and teacheth with his ART in LINE.",
+        TextTokenProfile::Chunked,
+    );
+    let he_token = TEXT_CHUNK_BASE + 2;
+    if body_tokens.first().copied() != Some(he_token) {
+        return Err("Solomon body scaffold phrase must start with He chunk".into());
+    }
+    let mut transitions = Vec::with_capacity(body_tokens.len());
+    for pair in body_tokens.windows(2) {
+        transitions.push((pair[0], pair[1]));
+    }
+    transitions.push((
+        *body_tokens
+            .last()
+            .ok_or("Solomon body scaffold phrase must not be empty")?,
+        IMAGE,
+    ));
+    Ok(transitions)
 }
 
 fn read_u8_tokens(path: &PathBuf) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -1222,8 +2144,14 @@ fn load_text_prior(
     examples_path: Option<&PathBuf>,
     tokens_path: &PathBuf,
     order: usize,
+    min_order: usize,
+    text_token_profile: TextTokenProfile,
 ) -> Result<Option<TextPrior>, Box<dyn std::error::Error>> {
-    Ok(load_text_memory(examples_path, tokens_path, order)?.map(|memory| TextPrior::from(&memory)))
+    Ok(
+        load_text_memory(examples_path, tokens_path, order)?.map(|memory| {
+            TextPrior::from_memory_with_order(&memory, order, min_order, true, text_token_profile)
+        }),
+    )
 }
 
 fn load_text_memory(
@@ -1260,13 +2188,14 @@ fn load_text_memory(
         let Some(example_tokens) = tokens.get(offset..end) else {
             continue;
         };
-        let Some((text_tokens, _)) = extract_example_segments(example_tokens) else {
+        let Some((text_tokens, image_tokens)) = extract_example_segments(example_tokens) else {
             continue;
         };
         memory.examples.push(TextMemoryExample {
             primary_name,
             prompt: example_prompt,
             text_tokens,
+            image_tokens,
         });
     }
     Ok(Some(memory))
@@ -1348,17 +2277,30 @@ fn add_text_prior_prompt_start(
 }
 
 fn text_prefix_through_colon(text_tokens: &[u8]) -> Vec<u8> {
-    let Some(colon_index) = text_tokens
-        .iter()
-        .position(|&token| token == TEXT_BASE + b':')
-    else {
+    let mut end = None;
+    for (index, &token) in text_tokens.iter().enumerate() {
+        if token == TEXT_BASE + b':' || text_chunk_contains(token, ':') {
+            end = Some(index + 1);
+            break;
+        }
+    }
+    let Some(mut end) = end else {
         return Vec::new();
     };
-    let mut end = colon_index + 1;
     if text_tokens.get(end).copied() == Some(TEXT_BASE + b' ') {
         end += 1;
     }
     text_tokens[..end].to_vec()
+}
+
+fn text_chunk_contains(token: u8, needle: char) -> bool {
+    if !is_text_chunk_token(token) {
+        return false;
+    }
+    let chunk_index = usize::from(token.saturating_sub(TEXT_CHUNK_BASE));
+    TEXT_CHUNKS
+        .get(chunk_index)
+        .is_some_and(|chunk| chunk.contains(needle))
 }
 
 fn is_generic_prompt_key(prompt_key: &str) -> bool {
@@ -1366,29 +2308,84 @@ fn is_generic_prompt_key(prompt_key: &str) -> bool {
 }
 
 impl TextPrior {
-    fn from(memory: &TextMemory) -> Self {
-        Self::from_memory_with_order(memory, memory.order, true)
+    fn from(memory: &TextMemory, text_token_profile: TextTokenProfile) -> Self {
+        Self::from_memory_with_order(memory, memory.order, 0, true, text_token_profile)
     }
 
     fn from_memory_with_order(
         memory: &TextMemory,
         order: usize,
+        min_order: usize,
         include_prompt_starts: bool,
+        text_token_profile: TextTokenProfile,
     ) -> Self {
+        Self::from_examples_with_order(
+            memory.examples.iter(),
+            order,
+            min_order,
+            include_prompt_starts,
+            text_token_profile,
+        )
+    }
+
+    fn from_memory_for_prompt_with_order(
+        memory: &TextMemory,
+        prompt: &str,
+        order: usize,
+        min_order: usize,
+        include_prompt_starts: bool,
+        text_token_profile: TextTokenProfile,
+    ) -> Self {
+        let normalized_prompt = normalize_text(prompt);
+        let mut matching = memory
+            .examples
+            .iter()
+            .filter(|example| {
+                text_memory_prompt_scope_score(
+                    &normalized_prompt,
+                    &example.prompt,
+                    &example.primary_name,
+                ) > 0
+            })
+            .collect::<Vec<_>>();
+        if matching.is_empty() {
+            matching = memory.examples.iter().collect();
+        }
+        Self::from_examples_with_order(
+            matching.iter().copied(),
+            order,
+            min_order,
+            include_prompt_starts,
+            text_token_profile,
+        )
+    }
+
+    fn from_examples_with_order<'a, I>(
+        examples: I,
+        order: usize,
+        min_order: usize,
+        include_prompt_starts: bool,
+        text_token_profile: TextTokenProfile,
+    ) -> Self
+    where
+        I: IntoIterator<Item = &'a TextMemoryExample>,
+    {
         let mut prior = Self {
             order,
+            min_order: min_order.min(order),
             start_tokens: Vec::new(),
             prompt_starts: Vec::new(),
             transitions: HashMap::new(),
         };
-        for example in &memory.examples {
-            add_text_prior_sequence(&mut prior, &example.text_tokens);
+        for example in examples {
+            let text_tokens = sanitize_source_text_tokens(&example.text_tokens, text_token_profile);
+            add_text_prior_sequence(&mut prior, &text_tokens);
             if include_prompt_starts {
                 add_text_prior_prompt_start(
                     &mut prior,
                     &example.primary_name,
                     &example.prompt,
-                    &example.text_tokens,
+                    &text_tokens,
                 );
             }
         }
@@ -1410,6 +2407,41 @@ impl TextPrior {
         best.map(|(start, _)| start.tokens.as_slice())
             .unwrap_or(&self.start_tokens)
     }
+}
+
+impl TextMemory {
+    fn best_example_for_prompt(&self, prompt: &str) -> Option<&TextMemoryExample> {
+        let prompt_key = normalize_key(prompt);
+        let mut best: Option<(&TextMemoryExample, usize)> = None;
+        for example in &self.examples {
+            let score =
+                text_memory_prompt_scope_score(&prompt_key, &example.prompt, &example.primary_name);
+            if score == 0 {
+                continue;
+            }
+            if best.is_none_or(|(_, best_score)| score > best_score) {
+                best = Some((example, score));
+            }
+        }
+        best.map(|(example, _)| example)
+            .or_else(|| self.examples.first())
+    }
+}
+
+fn text_memory_prompt_scope_score(prompt: &str, example_prompt: &str, primary_name: &str) -> usize {
+    let prompt_key = normalize_key(prompt);
+    let example_prompt_key = normalize_key(example_prompt);
+    if prompt_key == example_prompt_key {
+        return 1_000_000;
+    }
+    if is_generic_prompt_key(&prompt_key) {
+        return 1;
+    }
+    let primary_key = normalize_key(primary_name);
+    if !primary_key.is_empty() && prompt_contains_phrase(&prompt_key, &primary_key) {
+        return 100_000;
+    }
+    0
 }
 
 fn prompt_start_score(prompt_key: &str, start: &PromptTextStart) -> usize {
@@ -1465,10 +2497,26 @@ impl ExampleMarkers {
 }
 
 impl EvalStats {
-    fn observe(&mut self, correct: bool, target_probability_q15: u64) {
+    fn observe(&mut self, target_probability_q15: u64, diagnostics: EvalTokenDiagnostics) {
+        let first_valid = self.targets == self.invalid_contexts;
         self.targets += 1;
-        if correct {
+        if diagnostics.target_rank == 1 {
             self.correct += 1;
+        }
+        if diagnostics.target_rank <= 5 {
+            self.top5_correct += 1;
+        }
+        if diagnostics.target_rank <= 10 {
+            self.top10_correct += 1;
+        }
+        self.target_rank_sum = self
+            .target_rank_sum
+            .saturating_add(u64::try_from(diagnostics.target_rank).unwrap_or(u64::MAX));
+        self.target_margin_q8_sum = self
+            .target_margin_q8_sum
+            .saturating_add(i64::from(diagnostics.target_margin_q8));
+        if first_valid || diagnostics.target_margin_q8 < self.target_margin_q8_min {
+            self.target_margin_q8_min = diagnostics.target_margin_q8;
         }
         self.probability_error_q15 = self
             .probability_error_q15
@@ -1495,46 +2543,101 @@ impl EvalStats {
         self.probability_error_q15 / u64::try_from(self.targets).unwrap_or(1)
     }
 
+    fn valid_targets(self) -> usize {
+        self.targets.saturating_sub(self.invalid_contexts)
+    }
+
+    fn top5_accuracy_per_mille(self) -> usize {
+        let valid = self.valid_targets();
+        if valid == 0 {
+            return 0;
+        }
+        self.top5_correct.saturating_mul(1000) / valid
+    }
+
+    fn top10_accuracy_per_mille(self) -> usize {
+        let valid = self.valid_targets();
+        if valid == 0 {
+            return 0;
+        }
+        self.top10_correct.saturating_mul(1000) / valid
+    }
+
+    fn mean_target_rank_per_mille(self) -> u64 {
+        let valid = self.valid_targets();
+        if valid == 0 {
+            return 0;
+        }
+        self.target_rank_sum.saturating_mul(1000) / u64::try_from(valid).unwrap_or(1)
+    }
+
+    fn mean_target_margin_q8(self) -> i64 {
+        let valid = self.valid_targets();
+        if valid == 0 {
+            return 0;
+        }
+        self.target_margin_q8_sum / i64::try_from(valid).unwrap_or(1)
+    }
+
     fn to_json(self) -> String {
         format!(
-            "{{\"targets\":{},\"correct\":{},\"invalid_contexts\":{},\"accuracy_per_mille\":{},\"probability_error_q15\":{},\"mean_probability_error_q15\":{}}}",
+            "{{\"targets\":{},\"correct\":{},\"invalid_contexts\":{},\"accuracy_per_mille\":{},\"top5_accuracy_per_mille\":{},\"top10_accuracy_per_mille\":{},\"mean_target_rank_per_mille\":{},\"mean_target_margin_q8\":{},\"min_target_margin_q8\":{},\"probability_error_q15\":{},\"mean_probability_error_q15\":{}}}",
             self.targets,
             self.correct,
             self.invalid_contexts,
             self.accuracy_per_mille(),
+            self.top5_accuracy_per_mille(),
+            self.top10_accuracy_per_mille(),
+            self.mean_target_rank_per_mille(),
+            self.mean_target_margin_q8(),
+            self.target_margin_q8_min,
             self.probability_error_q15,
             self.mean_probability_error_q15(),
         )
     }
 }
 
-fn eval_argmax_token(
+fn eval_token_diagnostics(
     row: &MiniTransformerNextTokenRow,
     phase: EvalPhase,
     text_token_profile: TextTokenProfile,
-) -> u8 {
-    let mut best = Candidate {
-        token: 0,
-        logit_q8: i32::MIN,
-        probability_q15: 0,
-    };
-    for token in eval_allowed_tokens(phase, text_token_profile) {
-        let candidate = Candidate {
+    target: u8,
+) -> EvalTokenDiagnostics {
+    let mut candidates = eval_allowed_tokens(phase, text_token_profile)
+        .into_iter()
+        .map(|token| Candidate {
             token,
             logit_q8: row.logits_q8[usize::from(token)],
             probability_q15: i32::from(row.probabilities_q15[usize::from(token)]).max(0),
-        };
-        if candidate.logit_q8 > best.logit_q8
-            || (candidate.logit_q8 == best.logit_q8
-                && candidate.probability_q15 > best.probability_q15)
-            || (candidate.logit_q8 == best.logit_q8
-                && candidate.probability_q15 == best.probability_q15
-                && candidate.token < best.token)
-        {
-            best = candidate;
-        }
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .logit_q8
+            .cmp(&left.logit_q8)
+            .then_with(|| right.probability_q15.cmp(&left.probability_q15))
+            .then_with(|| left.token.cmp(&right.token))
+    });
+    let predicted = candidates
+        .first()
+        .map(|candidate| candidate.token)
+        .unwrap_or(0);
+    let target_rank = candidates
+        .iter()
+        .position(|candidate| candidate.token == target)
+        .map(|index| index + 1)
+        .unwrap_or_else(|| candidates.len().saturating_add(1));
+    let target_logit = row.logits_q8[usize::from(target)];
+    let best_competing_logit = candidates
+        .iter()
+        .find(|candidate| candidate.token != target)
+        .map(|candidate| candidate.logit_q8)
+        .unwrap_or(target_logit);
+    EvalTokenDiagnostics {
+        predicted,
+        target_rank,
+        target_margin_q8: target_logit.saturating_sub(best_competing_logit),
     }
-    best.token
 }
 
 fn eval_allowed_tokens(phase: EvalPhase, text_token_profile: TextTokenProfile) -> Vec<u8> {
@@ -1576,6 +2679,7 @@ fn sample_model(
     options: SampleOptions,
     conditioning: Option<&ConditioningMatch>,
     text_prior: Option<&TextPrior>,
+    image_prior_tokens: Option<&[u8]>,
     text_prefix: &str,
 ) -> Result<Sample, Box<dyn std::error::Error>> {
     let normalized_prompt = normalize_text(prompt);
@@ -1587,8 +2691,19 @@ fn sample_model(
         expected_token_boost_q8: options.conditioning_boost_q8,
         text_prior_boost_q8: options.text_prior_boost_q8,
         text_prior_strict: options.text_prior_strict,
+        text_chunk_boost_q8: options.text_chunk_boost_q8,
+        decode_logit_delta: options.decode_logit_delta,
+        prompt_name_opening_tokens: if options.prompt_name_opening_prior {
+            prompt_name_opening_tokens(&normalized_prompt, model.text_token_profile)
+        } else {
+            Vec::new()
+        },
+        suppress_name_chunks_after_opening: options.suppress_name_chunks_after_opening,
         top_k: options.top_k,
     };
+    let baseline_transformer = options.decode_logit_delta.then(|| {
+        MiniTransformerMlpModel::new_initial_with_seq_len(model.transformer.context_seq_len)
+    });
     let mut generated_tokens = Vec::new();
     generated_tokens.push(BOS);
     generated_tokens.push(PROMPT);
@@ -1629,7 +2744,8 @@ fn sample_model(
                 text_prior,
                 text_prior_start_tokens,
             },
-            decode_options,
+            &decode_options,
+            baseline_transformer.as_ref(),
         )?;
         if allow_stop && (token == IMAGE || token == EOS) {
             break;
@@ -1643,7 +2759,13 @@ fn sample_model(
 
     let mut image_bins = [0_u8; SIGNATURE_BINS];
     for (index, bin) in image_bins.iter_mut().enumerate() {
-        let expected_token = conditioning.and_then(|value| value.image_tokens.get(index).copied());
+        let expected_token = conditioning
+            .and_then(|value| value.image_tokens.get(index).copied())
+            .or_else(|| image_prior_tokens.and_then(|tokens| tokens.get(index).copied()));
+        let image_decode_options = DecodeOptions {
+            repeat_run_cap: 0,
+            ..decode_options.clone()
+        };
         let token = next_token(
             model,
             NextTokenRequest {
@@ -1656,10 +2778,8 @@ fn sample_model(
                 text_prior: None,
                 text_prior_start_tokens: None,
             },
-            DecodeOptions {
-                repeat_run_cap: 0,
-                ..decode_options
-            },
+            &image_decode_options,
+            baseline_transformer.as_ref(),
         )?;
         let image_token = if is_image_token(token) {
             token
@@ -1682,19 +2802,36 @@ fn sample_model(
 fn next_token(
     model: &SolomonAttentionModel,
     request: NextTokenRequest<'_>,
-    options: DecodeOptions,
+    options: &DecodeOptions,
+    baseline_transformer: Option<&MiniTransformerMlpModel>,
 ) -> Result<u8, Box<dyn std::error::Error>> {
     let row = next_token_row_with_context_backoff(model, request.history)?;
+    let baseline_row = if options.decode_logit_delta {
+        Some(next_token_row_with_context_backoff_for_transformer(
+            baseline_transformer
+                .ok_or("--decode-logit-delta requires an initial baseline model")?,
+            model.attention_kind,
+            model.position_policy,
+            request.history,
+        )?)
+    } else {
+        None
+    };
     let mut candidates = Vec::new();
     for token in allowed_tokens(
         request.phase,
         request.allow_stop,
         request.text_token_profile,
     ) {
+        let index = usize::from(token);
+        let logit_q8 = baseline_row
+            .as_ref()
+            .map(|baseline| row.logits_q8[index].saturating_sub(baseline.logits_q8[index]))
+            .unwrap_or(row.logits_q8[index]);
         candidates.push(Candidate {
             token,
-            logit_q8: row.logits_q8[usize::from(token)],
-            probability_q15: i32::from(row.probabilities_q15[usize::from(token)]).max(0),
+            logit_q8,
+            probability_q15: i32::from(row.probabilities_q15[index]).max(0),
         });
     }
     if let Some(expected_token) = request.expected_token {
@@ -1704,8 +2841,28 @@ fn next_token(
             options.expected_token_boost_q8,
         );
     }
+    if request.phase == Phase::Text
+        && request.text_token_profile == TextTokenProfile::Chunked
+        && options.text_chunk_boost_q8 != 0
+    {
+        apply_text_chunk_boost(&mut candidates, options.text_chunk_boost_q8);
+    }
+    if request.phase == Phase::Text
+        && request.text_token_profile == TextTokenProfile::Chunked
+        && options.suppress_name_chunks_after_opening
+        && generated_text_is_after_opening(request.history)
+    {
+        suppress_name_chunk_candidates(&mut candidates);
+    }
     if request.phase == Phase::Text && request.expected_token.is_none() {
-        if let Some(text_prior) = request.text_prior {
+        if !options.prompt_name_opening_tokens.is_empty() {
+            apply_prompt_name_opening_prior(
+                &mut candidates,
+                request.history,
+                &options.prompt_name_opening_tokens,
+            );
+        }
+        let text_prior_matched = if let Some(text_prior) = request.text_prior {
             apply_text_prior(
                 &mut candidates,
                 request.history,
@@ -1715,11 +2872,15 @@ fn next_token(
                     .unwrap_or(&text_prior.start_tokens),
                 options.text_prior_boost_q8,
                 options.text_prior_strict,
-            );
+            )
+        } else {
+            false
+        };
+        if !(options.text_prior_strict && text_prior_matched) {
+            let text_context = generated_text_context(request.history);
+            apply_repeat_run_cap(&mut candidates, &text_context, options.repeat_run_cap);
+            apply_no_repeat_ngram(&mut candidates, &text_context, options.no_repeat_ngram);
         }
-        let text_context = generated_text_context(request.history);
-        apply_repeat_run_cap(&mut candidates, &text_context, options.repeat_run_cap);
-        apply_no_repeat_ngram(&mut candidates, &text_context, options.no_repeat_ngram);
     }
     Ok(choose_candidate(&mut candidates, options.seed, request.step, options.top_k).token)
 }
@@ -1728,29 +2889,64 @@ fn next_token_row_with_context_backoff(
     model: &SolomonAttentionModel,
     history: &[u8],
 ) -> Result<MiniTransformerNextTokenRow, Box<dyn std::error::Error>> {
-    let max_context_len = model.transformer.context_seq_len.min(history.len());
-    let mut padded_context = PaddedContext::new(model.transformer.context_seq_len);
-    let training_context = padded_context.window(history, model.transformer.context_seq_len);
-    if let Ok(row) = mini_transformer_next_token_row_with_attention_kind_position_policy(
+    next_token_row_with_context_backoff_for_transformer(
         &model.transformer,
-        training_context,
         model.attention_kind,
         model.position_policy,
+        history,
+    )
+}
+
+fn next_token_row_with_context_backoff_for_transformer(
+    transformer: &MiniTransformerMlpModel,
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+    history: &[u8],
+) -> Result<MiniTransformerNextTokenRow, Box<dyn std::error::Error>> {
+    let max_context_len = transformer.context_seq_len.min(history.len());
+    let mut padded_context = PaddedContext::new(transformer.context_seq_len);
+    let training_context = padded_context.window(history, transformer.context_seq_len);
+    if let Ok(row) = mini_transformer_next_token_row_with_attention_kind_position_policy(
+        transformer,
+        training_context,
+        attention_kind,
+        position_policy,
     ) {
         return Ok(row);
     }
     for context_len in (1..=max_context_len).rev() {
         let context = &history[history.len() - context_len..];
         if let Ok(row) = mini_transformer_next_token_row_with_attention_kind_position_policy(
-            &model.transformer,
+            transformer,
             context,
-            model.attention_kind,
-            model.position_policy,
+            attention_kind,
+            position_policy,
         ) {
             return Ok(row);
         }
     }
     Err("no valid attention context for generated history".into())
+}
+
+fn apply_text_chunk_boost(candidates: &mut [Candidate], boost_q8: i32) {
+    for candidate in candidates {
+        if is_text_chunk_token(candidate.token) {
+            candidate.logit_q8 = candidate.logit_q8.saturating_add(boost_q8);
+            candidate.probability_q15 = candidate.probability_q15.saturating_add(boost_q8.max(0));
+        }
+    }
+}
+
+fn suppress_name_chunk_candidates(candidates: &mut Vec<Candidate>) {
+    let original_len = candidates.len();
+    candidates.retain(|candidate| !is_name_text_chunk_token(candidate.token));
+    if candidates.is_empty() && original_len > 0 {
+        candidates.push(Candidate {
+            token: TEXT_BASE + b' ',
+            logit_q8: i32::MIN,
+            probability_q15: 0,
+        });
+    }
 }
 
 fn apply_expected_token_boost(
@@ -1826,6 +3022,29 @@ fn apply_no_repeat_ngram(candidates: &mut Vec<Candidate>, history: &[u8], no_rep
     }
 }
 
+fn apply_prompt_name_opening_prior(
+    candidates: &mut Vec<Candidate>,
+    history: &[u8],
+    opening_tokens: &[u8],
+) {
+    if opening_tokens.is_empty() {
+        return;
+    }
+    let text_context = generated_text_context(history);
+    if text_context.len() >= opening_tokens.len()
+        || !opening_tokens[..text_context.len()].eq(text_context.as_slice())
+    {
+        return;
+    };
+    let expected = opening_tokens[text_context.len()];
+    if candidates
+        .iter()
+        .any(|candidate| candidate.token == expected)
+    {
+        candidates.retain(|candidate| candidate.token == expected);
+    }
+}
+
 fn apply_text_prior(
     candidates: &mut Vec<Candidate>,
     history: &[u8],
@@ -1833,15 +3052,17 @@ fn apply_text_prior(
     start_tokens: &[u8],
     boost_q8: i32,
     strict: bool,
-) {
+) -> bool {
     if candidates.is_empty() || (!strict && boost_q8 <= 0) {
-        return;
+        return false;
     }
     let text_context = generated_text_context(history);
     if text_context.len() < start_tokens.len() {
         let expected = start_tokens[text_context.len()];
+        let mut matched = false;
         for candidate in candidates.iter_mut() {
             if candidate.token == expected {
+                matched = true;
                 candidate.logit_q8 = candidate.logit_q8.saturating_add(boost_q8.max(1));
                 candidate.probability_q15 = candidate
                     .probability_q15
@@ -1851,26 +3072,28 @@ fn apply_text_prior(
         if strict {
             candidates.retain(|candidate| candidate.token == expected);
         }
-        if !candidates.is_empty() {
-            return;
+        if matched && !candidates.is_empty() {
+            return true;
         }
     }
     if text_context.is_empty()
         && let Some(counts) = prior.transitions.get(&vec![TEXT])
         && apply_text_prior_counts(candidates, counts, boost_q8, strict)
     {
-        return;
+        return true;
     }
     let max_order = prior.order.min(text_context.len());
-    for order in (0..=max_order).rev() {
+    let min_order = prior.min_order.min(max_order);
+    for order in (min_order..=max_order).rev() {
         let key = text_context[text_context.len() - order..].to_vec();
         let Some(counts) = prior.transitions.get(&key) else {
             continue;
         };
         if apply_text_prior_counts(candidates, counts, boost_q8, strict) {
-            return;
+            return true;
         }
     }
+    false
 }
 
 fn apply_text_prior_counts(
@@ -1914,6 +3137,12 @@ fn generated_text_context(history: &[u8]) -> Vec<u8> {
         .take_while(|&token| token != IMAGE && token != EOS)
         .filter(|&token| is_text_token(token))
         .collect()
+}
+
+fn generated_text_is_after_opening(history: &[u8]) -> bool {
+    generated_text_context(history)
+        .windows(2)
+        .any(|window| window == [TEXT_CHUNK_BASE + 1, TEXT_CHUNK_BASE + 2])
 }
 
 fn allowed_tokens(phase: Phase, allow_stop: bool, text_token_profile: TextTokenProfile) -> Vec<u8> {
@@ -2060,7 +3289,7 @@ impl SolomonAttentionModel {
             text_token_profile_from_code(cursor.read_u32()?)?
         };
         let text_memory = if version >= 3 {
-            cursor.read_text_memory()?
+            cursor.read_text_memory(version)?
         } else {
             None
         };
@@ -2155,6 +3384,11 @@ fn is_text_chunk_token(token: u8) -> bool {
     token >= start && token < start.saturating_add(TEXT_CHUNKS.len())
 }
 
+fn is_name_text_chunk_token(token: u8) -> bool {
+    is_text_chunk_token(token)
+        && usize::from(token.saturating_sub(TEXT_CHUNK_BASE)) >= TEXT_CHUNK_NAME_START
+}
+
 fn is_text_token(token: u8) -> bool {
     is_printable_text_token(token) || is_text_chunk_token(token)
 }
@@ -2174,6 +3408,26 @@ fn encode_text_prefix_tokens(text: &str, profile: TextTokenProfile) -> Vec<u8> {
         normalized.push(' ');
     }
     encode_normalized_text_tokens(&normalized, profile)
+}
+
+fn prompt_name_opening_tokens(prompt: &str, profile: TextTokenProfile) -> Vec<u8> {
+    let Some(name) = prompt_spirit_name(prompt) else {
+        return Vec::new();
+    };
+    encode_text_prefix_tokens(&format!("Solomon selects {name}: He "), profile)
+}
+
+fn prompt_spirit_name(prompt: &str) -> Option<&'static str> {
+    let prompt_key = normalize_key(prompt);
+    TEXT_CHUNKS
+        .get(TEXT_CHUNK_NAME_START..)
+        .unwrap_or(&[])
+        .iter()
+        .copied()
+        .find(|name| {
+            let name_key = normalize_key(name);
+            !name_key.is_empty() && prompt_contains_phrase(&prompt_key, &name_key)
+        })
 }
 
 fn encode_normalized_text_tokens(normalized: &str, profile: TextTokenProfile) -> Vec<u8> {
@@ -2209,6 +3463,13 @@ fn decode_text_tokens(tokens: &[u8], profile: TextTokenProfile) -> String {
     compact_spaces(&out)
 }
 
+fn sanitize_source_text_tokens(tokens: &[u8], profile: TextTokenProfile) -> Vec<u8> {
+    encode_text_tokens(
+        &normalize_text(&decode_text_tokens(tokens, profile)),
+        profile,
+    )
+}
+
 fn match_text_chunk(bytes: &[u8], index: usize) -> Option<(usize, &'static [u8])> {
     let mut best: Option<(usize, &'static [u8])> = None;
     for (chunk_index, chunk) in TEXT_CHUNKS.iter().enumerate() {
@@ -2224,22 +3485,76 @@ fn match_text_chunk(bytes: &[u8], index: usize) -> Option<(usize, &'static [u8])
 }
 
 fn normalize_text(text: &str) -> String {
-    compact_spaces(
-        &text
-            .chars()
-            .map(|ch| {
-                if ch.is_ascii_graphic() || ch == ' ' {
-                    ch
-                } else {
-                    ' '
-                }
-            })
-            .collect::<String>(),
-    )
+    let ascii = text.chars().map(normalize_char).collect::<String>();
+    compact_spaces(&strip_numeric_footnote_refs(&ascii))
 }
 
 fn normalize_key(text: &str) -> String {
     normalize_text(text).to_ascii_lowercase()
+}
+
+fn strip_numeric_footnote_refs(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut index = 0_usize;
+    while index < bytes.len() {
+        if bytes[index] == b'[' {
+            let digit_start = index + 1;
+            let mut end = digit_start;
+            while end < bytes.len() && bytes[end].is_ascii_digit() {
+                end += 1;
+            }
+            if end > digit_start && end < bytes.len() && bytes[end] == b']' {
+                out.push(' ');
+                index = end + 1;
+                continue;
+            }
+        }
+        out.push(char::from(bytes[index]));
+        index += 1;
+    }
+    out
+}
+
+fn normalize_char(ch: char) -> char {
+    match ch {
+        ch if ch.is_ascii_graphic() || ch == ' ' => ch,
+        'Á' | 'À' | 'Â' | 'Ä' | 'Ã' | 'Å' | 'Ā' | 'Ă' | 'Ą' => 'A',
+        'á' | 'à' | 'â' | 'ä' | 'ã' | 'å' | 'ā' | 'ă' | 'ą' => 'a',
+        'Ç' | 'Ć' | 'Ĉ' | 'Ċ' | 'Č' => 'C',
+        'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => 'c',
+        'Ð' | 'Ď' | 'Đ' => 'D',
+        'ð' | 'ď' | 'đ' => 'd',
+        'É' | 'È' | 'Ê' | 'Ë' | 'Ē' | 'Ĕ' | 'Ė' | 'Ę' | 'Ě' => 'E',
+        'é' | 'è' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => 'e',
+        'Í' | 'Ì' | 'Î' | 'Ï' | 'Ĩ' | 'Ī' | 'Ĭ' | 'Į' | 'İ' => 'I',
+        'í' | 'ì' | 'î' | 'ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' | 'ı' => 'i',
+        'Ñ' | 'Ń' | 'Ņ' | 'Ň' => 'N',
+        'ñ' | 'ń' | 'ņ' | 'ň' => 'n',
+        'Ó' | 'Ò' | 'Ô' | 'Ö' | 'Õ' | 'Ō' | 'Ŏ' | 'Ő' => 'O',
+        'ó' | 'ò' | 'ô' | 'ö' | 'õ' | 'ō' | 'ŏ' | 'ő' => 'o',
+        'Ŕ' | 'Ŗ' | 'Ř' => 'R',
+        'ŕ' | 'ŗ' | 'ř' => 'r',
+        'Ś' | 'Ŝ' | 'Ş' | 'Š' => 'S',
+        'ś' | 'ŝ' | 'ş' | 'š' => 's',
+        'Ú' | 'Ù' | 'Û' | 'Ü' | 'Ũ' | 'Ū' | 'Ŭ' | 'Ů' | 'Ű' | 'Ų' => 'U',
+        'ú' | 'ù' | 'û' | 'ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => 'u',
+        'Ý' | 'Ŷ' | 'Ÿ' => 'Y',
+        'ý' | 'ŷ' | 'ÿ' => 'y',
+        'Ž' | 'Ź' | 'Ż' => 'Z',
+        'ž' | 'ź' | 'ż' => 'z',
+        'Æ' => 'A',
+        'æ' => 'a',
+        'Œ' => 'O',
+        'œ' => 'o',
+        'Þ' => 'T',
+        'þ' => 't',
+        'ß' => 's',
+        '‘' | '’' => '\'',
+        '“' | '”' => '"',
+        '–' | '—' => '-',
+        _ => ' ',
+    }
 }
 
 fn compact_spaces(text: &str) -> String {
@@ -2367,6 +3682,7 @@ fn push_text_memory(
         push_string(out, &example.primary_name)?;
         push_string(out, &example.prompt)?;
         push_u8_vec(out, &example.text_tokens)?;
+        push_u8_vec(out, &example.image_tokens)?;
     }
     Ok(())
 }
@@ -2436,7 +3752,10 @@ impl<'a> Cursor<'a> {
         ]))
     }
 
-    fn read_text_memory(&mut self) -> Result<Option<TextMemory>, Box<dyn std::error::Error>> {
+    fn read_text_memory(
+        &mut self,
+        version: u32,
+    ) -> Result<Option<TextMemory>, Box<dyn std::error::Error>> {
         let present = self.read_u32()?;
         if present == 0 {
             return Ok(None);
@@ -2452,6 +3771,11 @@ impl<'a> Cursor<'a> {
                 primary_name: self.read_string()?,
                 prompt: self.read_string()?,
                 text_tokens: self.read_u8_vec()?,
+                image_tokens: if version >= 4 {
+                    self.read_u8_vec()?
+                } else {
+                    Vec::new()
+                },
             });
         }
         Ok(Some(TextMemory { order, examples }))
@@ -2538,6 +3862,7 @@ mod tests {
                     primary_name: String::from("Bael"),
                     prompt: String::from("seal of Bael"),
                     text_tokens: vec![TEXT_CHUNK_BASE, TEXT_BASE + b'B'],
+                    image_tokens: vec![IMAGE_BASE; SIGNATURE_BINS],
                 }],
             }),
             transformer: MiniTransformerMlpModel::new_initial_with_seq_len(8),
@@ -2557,9 +3882,14 @@ mod tests {
                 conditioning_boost_q8: 0,
                 text_prior_boost_q8: 0,
                 text_prior_strict: false,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: false,
+                suppress_name_chunks_after_opening: false,
                 top_k: 1,
                 sample_seed: 1,
             },
+            None,
             None,
             None,
             "",
@@ -2600,6 +3930,20 @@ mod tests {
                 "20",
                 "--attention-qk-lr-shift",
                 "21",
+                "--target-frequency-cap",
+                "8",
+                "--target-frequency-min-weight-q15",
+                "2048",
+                "--argmax-margin-weight-q15",
+                "1024",
+                "--target-segment",
+                "generated-text",
+                "--target-phase",
+                "image",
+                "--text-token-profile",
+                "chunked",
+                "--zero-output-head-init",
+                "--solomon-name-copy-init",
                 "--reject-loss-regression",
             ]
             .into_iter()
@@ -2618,7 +3962,429 @@ mod tests {
         assert_eq!(config.attention_learning_rate_shift, 25);
         assert_eq!(config.attention_q_learning_rate_shift, 20);
         assert_eq!(config.attention_qk_learning_rate_shift, 21);
+        assert_eq!(config.target_frequency_cap, 8);
+        assert_eq!(config.target_frequency_min_weight_q15, 2048);
+        assert_eq!(config.argmax_margin_weight_q15, 1024);
+        assert_eq!(config.target_segment, TargetSegment::GeneratedText);
+        assert_eq!(config.target_token_min, IMAGE_BASE);
+        assert_eq!(config.target_token_max, IMAGE_BASE + IMAGE_BINS - 1);
+        assert_eq!(config.text_token_profile, TextTokenProfile::Chunked);
+        assert!(config.zero_output_head_init);
+        assert!(config.solomon_name_copy_init);
         assert!(config.reject_loss_regression);
+    }
+
+    #[test]
+    fn parses_body_first_after_he_target_and_preserve_repair() {
+        let config = parse_args(
+            [
+                "train",
+                "--tokens",
+                "tokens.u8",
+                "--model-out",
+                "model.nsrllmm",
+                "--target-segment",
+                "body-first-after-he",
+                "--solomon-name-copy-repair-preserve-body-output",
+                "--solomon-body-scaffold",
+                "--solomon-body-opening-repair",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .unwrap();
+
+        assert_eq!(config.target_segment, TargetSegment::BodyFirstAfterHe);
+        assert!(config.solomon_name_copy_repair);
+        assert!(config.solomon_name_copy_repair_preserve_body_output);
+        assert!(config.solomon_body_scaffold);
+        assert!(config.solomon_body_opening_repair);
+    }
+
+    #[test]
+    fn solomon_name_copy_init_samples_prompt_bound_opening() {
+        let mut transformer = MiniTransformerMlpModel::new_initial_with_seq_len(32);
+        apply_solomon_name_copy_init(&mut transformer, TextTokenProfile::Chunked).unwrap();
+        let model = SolomonAttentionModel {
+            token_count: 0,
+            token_hash: 0,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            text_token_profile: TextTokenProfile::Chunked,
+            text_memory: None,
+            transformer,
+        };
+
+        let sample = sample_model(
+            &model,
+            "seal of Bael",
+            SampleOptions {
+                max_text_tokens: 4,
+                min_text_tokens: 4,
+                repeat_run_cap: 4,
+                no_repeat_ngram: 4,
+                conditioning_boost_q8: 0,
+                text_prior_boost_q8: 0,
+                text_prior_strict: false,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: false,
+                suppress_name_chunks_after_opening: false,
+                top_k: 1,
+                sample_seed: 13,
+            },
+            None,
+            None,
+            None,
+            NAME_OPENING_PREFIX,
+        )
+        .unwrap();
+
+        assert_eq!(sample.text, "Solomon selects Bael: He");
+    }
+
+    #[test]
+    fn solomon_name_copy_repair_restores_opening_over_bad_head_bias() {
+        let mut transformer = MiniTransformerMlpModel::new_initial_with_seq_len(32);
+        transformer.up_weights.fill(0);
+        transformer.gate_weights.fill(0);
+        transformer.down_weights.fill(0);
+        transformer.output_weights.fill(0);
+        transformer.output_weights[usize::from(TEXT_BASE + b'H') * MINI_TRANSFORMER_D_MODEL + 15] =
+            64;
+        repair_solomon_name_copy_scaffold(&mut transformer, TextTokenProfile::Chunked).unwrap();
+        let model = SolomonAttentionModel {
+            token_count: 0,
+            token_hash: 0,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            text_token_profile: TextTokenProfile::Chunked,
+            text_memory: None,
+            transformer,
+        };
+
+        let sample = sample_model(
+            &model,
+            "seal of Stolas",
+            SampleOptions {
+                max_text_tokens: 4,
+                min_text_tokens: 4,
+                repeat_run_cap: 4,
+                no_repeat_ngram: 4,
+                conditioning_boost_q8: 0,
+                text_prior_boost_q8: 0,
+                text_prior_strict: false,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: false,
+                suppress_name_chunks_after_opening: false,
+                top_k: 1,
+                sample_seed: 13,
+            },
+            None,
+            None,
+            None,
+            NAME_OPENING_PREFIX,
+        )
+        .unwrap();
+
+        assert_eq!(sample.text, "Solomon selects Stolas: He");
+    }
+
+    #[test]
+    fn solomon_name_copy_repair_preserves_unowned_attention_rows() {
+        let mut transformer = MiniTransformerMlpModel::new_initial_with_seq_len(32);
+        let head_dim = MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS;
+        let q_index = (head_dim + 3) * MINI_TRANSFORMER_D_MODEL + 7;
+        let k_index = (head_dim + 4) * MINI_TRANSFORMER_D_MODEL + 8;
+        let embedding_index = usize::from(TEXT_BASE + b'x') * MINI_TRANSFORMER_D_MODEL + head_dim;
+        let position_index = head_dim;
+        let output_index = usize::from(TEXT_BASE + b'y') * MINI_TRANSFORMER_D_MODEL + head_dim;
+        let owned_output_index = usize::from(TEXT_BASE + b'z') * MINI_TRANSFORMER_D_MODEL;
+        let copied_output_index =
+            usize::from(TEXT_BASE + b'z') * MINI_TRANSFORMER_D_MODEL + head_dim + 2;
+        transformer.q_weights[q_index] = 42;
+        transformer.k_weights[k_index] = -17;
+        transformer.embeddings[embedding_index] = 1234;
+        transformer.position_embeddings[position_index] = -4321;
+        transformer.output_weights[output_index] = 77;
+        transformer.output_weights[owned_output_index] = 66;
+        transformer.output_weights[copied_output_index] = 88;
+
+        repair_solomon_name_copy_scaffold(&mut transformer, TextTokenProfile::Chunked).unwrap();
+
+        assert_eq!(transformer.q_weights[q_index], 42);
+        assert_eq!(transformer.k_weights[k_index], -17);
+        assert_eq!(transformer.embeddings[embedding_index], 1234);
+        assert_eq!(transformer.position_embeddings[position_index], -4321);
+        assert_eq!(transformer.output_weights[output_index], 77);
+        assert_eq!(transformer.output_weights[owned_output_index], 0);
+        assert_eq!(transformer.output_weights[copied_output_index], 0);
+        assert_eq!(transformer.q_weights[0], 8);
+        assert_eq!(transformer.k_weights[1], 8);
+    }
+
+    #[test]
+    fn solomon_name_copy_repair_can_preserve_body_output_rows() {
+        let mut transformer = MiniTransformerMlpModel::new_initial_with_seq_len(32);
+        let body_token = usize::from(TEXT_CHUNK_BASE) + 3;
+        let name_token = usize::from(TEXT_CHUNK_BASE) + TEXT_CHUNK_NAME_START;
+        let colon_token = usize::from(TEXT_CHUNK_BASE) + 1;
+        let body_owned_index = body_token * MINI_TRANSFORMER_D_MODEL;
+        let body_copied_index =
+            body_token * MINI_TRANSFORMER_D_MODEL + MINI_TRANSFORMER_D_MODEL / 2 + 2;
+        let name_index = name_token * MINI_TRANSFORMER_D_MODEL;
+        let colon_index = colon_token * MINI_TRANSFORMER_D_MODEL;
+        transformer.output_weights[body_owned_index] = 41;
+        transformer.output_weights[body_copied_index] = -42;
+        transformer.output_weights[name_index] = 43;
+        transformer.output_weights[colon_index] = 44;
+
+        repair_solomon_name_copy_scaffold_with_options(
+            &mut transformer,
+            TextTokenProfile::Chunked,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(transformer.output_weights[body_owned_index], 41);
+        assert_eq!(transformer.output_weights[body_copied_index], -42);
+        assert_eq!(transformer.output_weights[name_index], 0);
+        assert_eq!(transformer.output_weights[colon_index], 0);
+    }
+
+    #[test]
+    fn solomon_body_scaffold_samples_clean_body_after_opening() {
+        let mut transformer = MiniTransformerMlpModel::new_initial_with_seq_len(32);
+        apply_solomon_name_copy_init(&mut transformer, TextTokenProfile::Chunked).unwrap();
+        apply_solomon_body_scaffold(&mut transformer, TextTokenProfile::Chunked).unwrap();
+        let model = SolomonAttentionModel {
+            token_count: 0,
+            token_hash: 0,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            text_token_profile: TextTokenProfile::Chunked,
+            text_memory: None,
+            transformer,
+        };
+
+        let sample = sample_model(
+            &model,
+            "seal of Bael",
+            SampleOptions {
+                max_text_tokens: 40,
+                min_text_tokens: 24,
+                repeat_run_cap: 4,
+                no_repeat_ngram: 4,
+                conditioning_boost_q8: 0,
+                text_prior_boost_q8: 0,
+                text_prior_strict: false,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: false,
+                suppress_name_chunks_after_opening: false,
+                top_k: 1,
+                sample_seed: 13,
+            },
+            None,
+            None,
+            None,
+            "Solomon selects Bael: He ",
+        )
+        .unwrap();
+
+        assert_eq!(
+            sample.text,
+            "Solomon selects Bael: He is of the Goetia and teacheth with his ART in LINE."
+        );
+    }
+
+    #[test]
+    fn solomon_body_opening_repair_samples_source_specific_opening() {
+        let mut examples = Vec::new();
+        for &name in TEXT_CHUNKS.get(TEXT_CHUNK_NAME_START..).unwrap_or(&[]) {
+            let opening = match name {
+                "Vassago" => "This",
+                "Alloces" => "His",
+                "Murmur" => "and",
+                _ => "He",
+            };
+            examples.push(TextMemoryExample {
+                primary_name: String::from(name),
+                prompt: format!("seal of {name}"),
+                text_tokens: encode_text_tokens(
+                    &format!("Solomon selects {name}: {opening} office."),
+                    TextTokenProfile::Chunked,
+                ),
+                image_tokens: vec![IMAGE_BASE; SIGNATURE_BINS],
+            });
+        }
+        let memory = TextMemory {
+            order: 32,
+            examples,
+        };
+        let mut transformer = MiniTransformerMlpModel::new_initial_with_seq_len(32);
+        apply_solomon_name_copy_init(&mut transformer, TextTokenProfile::Chunked).unwrap();
+        repair_solomon_body_opening_scaffold(&mut transformer, TextTokenProfile::Chunked, &memory)
+            .unwrap();
+        let model = SolomonAttentionModel {
+            token_count: 0,
+            token_hash: 0,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            text_token_profile: TextTokenProfile::Chunked,
+            text_memory: Some(memory),
+            transformer,
+        };
+
+        for (prompt, expected) in [
+            ("seal of Bael", "Solomon selects Bael: He"),
+            ("seal of Vassago", "Solomon selects Vassago: This"),
+            ("seal of Alloces", "Solomon selects Alloces: His"),
+        ] {
+            let sample = sample_model(
+                &model,
+                prompt,
+                SampleOptions {
+                    max_text_tokens: 4,
+                    min_text_tokens: 4,
+                    repeat_run_cap: 4,
+                    no_repeat_ngram: 4,
+                    conditioning_boost_q8: 0,
+                    text_prior_boost_q8: 0,
+                    text_prior_strict: false,
+                    text_chunk_boost_q8: 0,
+                    decode_logit_delta: false,
+                    prompt_name_opening_prior: false,
+                    suppress_name_chunks_after_opening: false,
+                    top_k: 1,
+                    sample_seed: 13,
+                },
+                None,
+                None,
+                None,
+                NAME_OPENING_PREFIX,
+            )
+            .unwrap();
+
+            assert_eq!(sample.text, expected);
+        }
+    }
+
+    #[test]
+    fn parses_name_opening_target_segment() {
+        let config = parse_args(
+            [
+                "train",
+                "--tokens",
+                "tokens.u8",
+                "--model-out",
+                "model.nsrllmm",
+                "--target-segment",
+                "name-opening",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .unwrap();
+
+        assert_eq!(config.target_segment, TargetSegment::NameOpening);
+    }
+
+    #[test]
+    fn parses_name_opening_tail_target_segment() {
+        let config = parse_args(
+            [
+                "train",
+                "--tokens",
+                "tokens.u8",
+                "--model-out",
+                "model.nsrllmm",
+                "--target-segment",
+                "name-opening-tail",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .unwrap();
+
+        assert_eq!(config.target_segment, TargetSegment::NameOpeningTail);
+    }
+
+    #[test]
+    fn parses_body_after_he_target_segment() {
+        let config = parse_args(
+            [
+                "train",
+                "--tokens",
+                "tokens.u8",
+                "--model-out",
+                "model.nsrllmm",
+                "--target-segment",
+                "body-after-he",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .unwrap();
+
+        assert_eq!(config.target_segment, TargetSegment::BodyAfterHe);
+    }
+
+    #[test]
+    fn parses_body_first_after_opening_target_segment() {
+        let config = parse_args(
+            [
+                "train",
+                "--tokens",
+                "tokens.u8",
+                "--model-out",
+                "model.nsrllmm",
+                "--target-segment",
+                "body-first-after-opening",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .unwrap();
+
+        assert_eq!(config.target_segment, TargetSegment::BodyFirstAfterOpening);
+    }
+
+    #[test]
+    fn name_opening_start_sequence_matches_text_prefix_tokens() {
+        let mut expected = vec![TEXT];
+        expected.extend(
+            NAME_OPENING_PREFIX
+                .bytes()
+                .map(|byte| TEXT_BASE.saturating_add(byte)),
+        );
+
+        assert_eq!(
+            name_opening_start_sequence(TextTokenProfile::Char),
+            expected
+        );
+        assert_eq!(expected.len(), 17);
+        assert_eq!(
+            name_opening_start_sequence(TextTokenProfile::Chunked),
+            vec![TEXT, TEXT_CHUNK_BASE]
+        );
+        assert_eq!(
+            name_opening_end_markers(TextTokenProfile::Char),
+            vec![TEXT_BASE + b':' as u8, IMAGE, EOS]
+        );
+        assert_eq!(
+            name_opening_end_markers(TextTokenProfile::Chunked),
+            vec![TEXT_CHUNK_BASE + 1, IMAGE, EOS]
+        );
+        assert_eq!(
+            body_first_after_opening_train_segment(TextTokenProfile::Chunked),
+            MiniTransformerTargetSegment::first_after_sequence_before_any(
+                &[TEXT_CHUNK_BASE + 1],
+                &[IMAGE, EOS],
+            )
+            .unwrap()
+        );
     }
 
     #[test]
@@ -2635,6 +4401,12 @@ mod tests {
                 "--no-embedded-text-memory",
                 "--embedded-text-lm-order",
                 "4",
+                "--text-prior-min-order",
+                "2",
+                "--text-chunk-boost-q8",
+                "1024",
+                "--decode-logit-delta",
+                "--prompt-name-opening-prior",
             ]
             .into_iter()
             .map(String::from),
@@ -2646,6 +4418,10 @@ mod tests {
         assert_eq!(config.conditioning_examples, None);
         assert!(!config.use_embedded_text_memory);
         assert_eq!(config.embedded_text_lm_order, 4);
+        assert_eq!(config.text_prior_min_order, 2);
+        assert_eq!(config.text_chunk_boost_q8, 1024);
+        assert!(config.decode_logit_delta);
+        assert!(config.prompt_name_opening_prior);
     }
 
     #[test]
@@ -2672,9 +4448,14 @@ mod tests {
                 conditioning_boost_q8: 0,
                 text_prior_boost_q8: 0,
                 text_prior_strict: false,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: false,
+                suppress_name_chunks_after_opening: false,
                 top_k: 1,
                 sample_seed: 1,
             },
+            None,
             None,
             None,
             "Solomon selects ",
@@ -2744,6 +4525,50 @@ mod tests {
     }
 
     #[test]
+    fn normalize_text_removes_numeric_footnote_refs() {
+        assert_eq!(
+            normalize_text("Alloces: [25] His Office [note] remains."),
+            "Alloces: His Office [note] remains."
+        );
+    }
+
+    #[test]
+    fn source_text_token_sanitizer_removes_numeric_footnote_refs() {
+        let tokens = encode_normalized_text_tokens(
+            "Solomon selects Alloces: [25] His Office is great.",
+            TextTokenProfile::Chunked,
+        );
+        let sanitized = sanitize_source_text_tokens(&tokens, TextTokenProfile::Chunked);
+
+        assert_eq!(
+            decode_text_tokens(&sanitized, TextTokenProfile::Chunked),
+            "Solomon selects Alloces: His Office is great."
+        );
+    }
+
+    #[test]
+    fn eval_token_diagnostics_reports_target_rank_and_margin() {
+        let mut row = MiniTransformerNextTokenRow {
+            logits_q8: [0_i32; VOCAB_SIZE],
+            probabilities_q15: [0_i16; VOCAB_SIZE],
+        };
+        row.logits_q8[usize::from(TEXT_BASE + b'a')] = 100;
+        row.logits_q8[usize::from(TEXT_BASE + b'b')] = 50;
+        row.logits_q8[usize::from(TEXT_BASE + b'c')] = 40;
+
+        let diagnostics = eval_token_diagnostics(
+            &row,
+            EvalPhase::Text,
+            TextTokenProfile::Char,
+            TEXT_BASE + b'b',
+        );
+
+        assert_eq!(diagnostics.predicted, TEXT_BASE + b'a');
+        assert_eq!(diagnostics.target_rank, 2);
+        assert_eq!(diagnostics.target_margin_q8, -50);
+    }
+
+    #[test]
     fn chunked_text_tokens_round_trip_common_solomon_phrase() {
         let tokens = encode_text_tokens(
             "Solomon selects Bael: He maketh thee Invisible.",
@@ -2756,6 +4581,115 @@ mod tests {
             decode_text_tokens(&tokens, TextTokenProfile::Chunked),
             "Solomon selects Bael: He maketh thee Invisible."
         );
+    }
+
+    #[test]
+    fn chunked_text_prefix_through_colon_keeps_prompt_specific_name_start() {
+        let tokens = encode_text_tokens(
+            "Solomon selects Bael: He maketh thee Invisible.",
+            TextTokenProfile::Chunked,
+        );
+        let prefix = text_prefix_through_colon(&tokens);
+
+        assert!(!prefix.is_empty());
+        assert_eq!(
+            decode_text_tokens(&prefix, TextTokenProfile::Chunked),
+            "Solomon selects Bael:"
+        );
+    }
+
+    #[test]
+    fn prompt_name_opening_prior_uses_name_from_prompt() {
+        let tokens = prompt_name_opening_tokens("seal of Stolas", TextTokenProfile::Chunked);
+        assert_eq!(
+            decode_text_tokens(&tokens, TextTokenProfile::Chunked),
+            "Solomon selects Stolas: He"
+        );
+        let accented_tokens =
+            prompt_name_opening_tokens("seal of Ronové", TextTokenProfile::Chunked);
+        assert_eq!(
+            decode_text_tokens(&accented_tokens, TextTokenProfile::Chunked),
+            "Solomon selects Ronove: He"
+        );
+        let char_tokens = prompt_name_opening_tokens("seal of Bael", TextTokenProfile::Char);
+        assert_eq!(
+            decode_text_tokens(&char_tokens, TextTokenProfile::Char),
+            "Solomon selects Bael: He"
+        );
+
+        let model = SolomonAttentionModel {
+            token_count: 16,
+            token_hash: 7,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            text_token_profile: TextTokenProfile::Chunked,
+            text_memory: None,
+            transformer: MiniTransformerMlpModel::new_initial_with_seq_len(8),
+        };
+        let sample = sample_model(
+            &model,
+            "seal of Stolas",
+            SampleOptions {
+                max_text_tokens: 4,
+                min_text_tokens: 0,
+                repeat_run_cap: 4,
+                no_repeat_ngram: 4,
+                conditioning_boost_q8: 0,
+                text_prior_boost_q8: 0,
+                text_prior_strict: false,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: true,
+                suppress_name_chunks_after_opening: false,
+                top_k: 1,
+                sample_seed: 1,
+            },
+            None,
+            None,
+            None,
+            "",
+        )
+        .unwrap();
+
+        assert_eq!(sample.text, "Solomon selects Stolas: He");
+
+        let char_model = SolomonAttentionModel {
+            token_count: 16,
+            token_hash: 7,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            text_token_profile: TextTokenProfile::Char,
+            text_memory: None,
+            transformer: MiniTransformerMlpModel::new_initial_with_seq_len(8),
+        };
+        let char_opening_len =
+            prompt_name_opening_tokens("seal of Bael", TextTokenProfile::Char).len();
+        let char_sample = sample_model(
+            &char_model,
+            "seal of Bael",
+            SampleOptions {
+                max_text_tokens: char_opening_len,
+                min_text_tokens: 0,
+                repeat_run_cap: 4,
+                no_repeat_ngram: 4,
+                conditioning_boost_q8: 0,
+                text_prior_boost_q8: 0,
+                text_prior_strict: false,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: true,
+                suppress_name_chunks_after_opening: false,
+                top_k: 1,
+                sample_seed: 1,
+            },
+            None,
+            None,
+            None,
+            "Solomon selects ",
+        )
+        .unwrap();
+
+        assert_eq!(char_sample.text, "Solomon selects Bael: He");
     }
 
     #[test]
@@ -2895,9 +4829,80 @@ mod tests {
     }
 
     #[test]
+    fn generated_text_after_opening_detects_chunked_colon_he_marker() {
+        let name_token = TEXT_CHUNK_BASE.saturating_add(TEXT_CHUNK_NAME_START as u8);
+        let before_opening = [BOS, PROMPT, TEXT, TEXT_CHUNK_BASE, name_token];
+        assert!(!generated_text_is_after_opening(&before_opening));
+
+        let after_opening = [
+            BOS,
+            PROMPT,
+            TEXT,
+            TEXT_CHUNK_BASE,
+            name_token,
+            TEXT_CHUNK_BASE + 1,
+            TEXT_CHUNK_BASE + 2,
+        ];
+        assert!(generated_text_is_after_opening(&after_opening));
+
+        let char_opening = [
+            BOS,
+            PROMPT,
+            TEXT,
+            TEXT_BASE + b':',
+            TEXT_BASE + b' ',
+            TEXT_BASE + b'H',
+            TEXT_BASE + b'e',
+            TEXT_BASE + b' ',
+        ];
+        assert!(!generated_text_is_after_opening(&char_opening));
+    }
+
+    #[test]
+    fn suppress_name_chunk_candidates_keeps_non_name_text_tokens() {
+        let name_token = TEXT_CHUNK_BASE.saturating_add(TEXT_CHUNK_NAME_START as u8);
+        let mut candidates = vec![
+            Candidate {
+                token: name_token,
+                logit_q8: 100,
+                probability_q15: 100,
+            },
+            Candidate {
+                token: TEXT_CHUNK_BASE + 2,
+                logit_q8: 90,
+                probability_q15: 90,
+            },
+            Candidate {
+                token: TEXT_BASE + b'm',
+                logit_q8: 80,
+                probability_q15: 80,
+            },
+        ];
+
+        suppress_name_chunk_candidates(&mut candidates);
+
+        assert!(
+            !candidates
+                .iter()
+                .any(|candidate| candidate.token == name_token)
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.token == TEXT_CHUNK_BASE + 2)
+        );
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate.token == TEXT_BASE + b'm')
+        );
+    }
+
+    #[test]
     fn strict_text_prior_keeps_seen_continuations_only() {
         let mut prior = TextPrior {
             order: 2,
+            min_order: 0,
             start_tokens: Vec::new(),
             prompt_starts: Vec::new(),
             transitions: HashMap::new(),
@@ -2939,9 +4944,41 @@ mod tests {
     }
 
     #[test]
+    fn text_prior_min_order_skips_low_order_fallbacks() {
+        let mut prior = TextPrior {
+            order: 3,
+            min_order: 2,
+            start_tokens: Vec::new(),
+            prompt_starts: Vec::new(),
+            transitions: HashMap::new(),
+        };
+        let mut low_counts = [0_u32; VOCAB_LEN];
+        low_counts[usize::from(TEXT_BASE + b'x')] = 1;
+        prior.transitions.insert(vec![TEXT_BASE + b'a'], low_counts);
+
+        let history = [TEXT, TEXT_BASE + b'a', TEXT_BASE + b'b'];
+        let mut candidates = vec![
+            Candidate {
+                token: TEXT_BASE + b'x',
+                logit_q8: 999,
+                probability_q15: 999,
+            },
+            Candidate {
+                token: TEXT_BASE + b'y',
+                logit_q8: 1,
+                probability_q15: 1,
+            },
+        ];
+        apply_text_prior(&mut candidates, &history, &prior, &[], 1_000, true);
+
+        assert_eq!(candidates.len(), 2);
+    }
+
+    #[test]
     fn prompt_specific_text_prior_uses_matching_spirit_prefix() {
         let mut prior = TextPrior {
             order: 2,
+            min_order: 0,
             start_tokens: Vec::new(),
             prompt_starts: Vec::new(),
             transitions: HashMap::new(),
@@ -3007,6 +5044,7 @@ mod tests {
     fn generic_prompt_keeps_common_text_prior_prefix() {
         let mut prior = TextPrior {
             order: 2,
+            min_order: 0,
             start_tokens: Vec::new(),
             prompt_starts: Vec::new(),
             transitions: HashMap::new(),
@@ -3035,9 +5073,10 @@ mod tests {
                     "Solomon selects Bael: He maketh thee to go Invisible.",
                     TextTokenProfile::Char,
                 ),
+                image_tokens: vec![IMAGE_BASE; SIGNATURE_BINS],
             }],
         };
-        let prior = TextPrior::from(&memory);
+        let prior = TextPrior::from(&memory, TextTokenProfile::Char);
 
         assert_eq!(prior.order, 4);
         assert_eq!(prior.prompt_starts.len(), 2);
@@ -3062,9 +5101,10 @@ mod tests {
                     "Solomon selects Bael: He maketh thee to go Invisible.",
                     TextTokenProfile::Char,
                 ),
+                image_tokens: vec![IMAGE_BASE; SIGNATURE_BINS],
             }],
         };
-        let prior = TextPrior::from_memory_with_order(&memory, 3, true);
+        let prior = TextPrior::from_memory_with_order(&memory, 3, 0, true, TextTokenProfile::Char);
 
         assert_eq!(prior.order, 3);
         assert_eq!(
@@ -3086,6 +5126,174 @@ mod tests {
     }
 
     #[test]
+    fn embedded_text_lm_can_scope_transitions_to_prompt() {
+        let memory = TextMemory {
+            order: 32,
+            examples: vec![
+                TextMemoryExample {
+                    primary_name: String::from("Bael"),
+                    prompt: String::from("seal of Bael"),
+                    text_tokens: encode_text_tokens(
+                        "Solomon selects Bael: He maketh thee visible.",
+                        TextTokenProfile::Char,
+                    ),
+                    image_tokens: vec![IMAGE_BASE; SIGNATURE_BINS],
+                },
+                TextMemoryExample {
+                    primary_name: String::from("Agares"),
+                    prompt: String::from("seal of Agares"),
+                    text_tokens: encode_text_tokens(
+                        "Solomon selects Agares: He maketh them run.",
+                        TextTokenProfile::Char,
+                    ),
+                    image_tokens: vec![IMAGE_BASE + 1; SIGNATURE_BINS],
+                },
+            ],
+        };
+        let prior = TextPrior::from_memory_for_prompt_with_order(
+            &memory,
+            "seal of Bael",
+            32,
+            0,
+            true,
+            TextTokenProfile::Char,
+        );
+        let mut history = vec![TEXT];
+        history.extend(encode_text_tokens(
+            "Solomon selects Bael: He maketh the",
+            TextTokenProfile::Char,
+        ));
+        let mut candidates = vec![
+            Candidate {
+                token: TEXT_BASE + b'e',
+                logit_q8: 1,
+                probability_q15: 1,
+            },
+            Candidate {
+                token: TEXT_BASE + b'm',
+                logit_q8: 999,
+                probability_q15: 999,
+            },
+        ];
+
+        apply_text_prior(&mut candidates, &history, &prior, &[], 1_000, true);
+
+        assert_eq!(
+            candidates,
+            vec![Candidate {
+                token: TEXT_BASE + b'e',
+                logit_q8: 1257,
+                probability_q15: 1257,
+            }]
+        );
+    }
+
+    #[test]
+    fn strict_text_prior_match_survives_repeat_filters() {
+        let text = "Solomon selects Bael: ha ha.";
+        let memory = TextMemory {
+            order: 32,
+            examples: vec![TextMemoryExample {
+                primary_name: String::from("Bael"),
+                prompt: String::from("seal of Bael"),
+                text_tokens: encode_text_tokens(text, TextTokenProfile::Char),
+                image_tokens: vec![IMAGE_BASE; SIGNATURE_BINS],
+            }],
+        };
+        let prior = TextPrior::from_memory_for_prompt_with_order(
+            &memory,
+            "seal of Bael",
+            32,
+            0,
+            true,
+            TextTokenProfile::Char,
+        );
+        let model = SolomonAttentionModel {
+            token_count: 16,
+            token_hash: 7,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            text_token_profile: TextTokenProfile::Char,
+            text_memory: None,
+            transformer: MiniTransformerMlpModel::new_initial_with_seq_len(8),
+        };
+        let sample = sample_model(
+            &model,
+            "seal of Bael",
+            SampleOptions {
+                max_text_tokens: encode_text_tokens(text, TextTokenProfile::Char).len(),
+                min_text_tokens: 0,
+                repeat_run_cap: 4,
+                no_repeat_ngram: 2,
+                conditioning_boost_q8: 0,
+                text_prior_boost_q8: DEFAULT_EMBEDDED_TEXT_MEMORY_BOOST_Q8,
+                text_prior_strict: true,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: false,
+                suppress_name_chunks_after_opening: false,
+                top_k: 1,
+                sample_seed: 1,
+            },
+            None,
+            Some(&prior),
+            None,
+            "",
+        )
+        .unwrap();
+
+        assert_eq!(sample.text, text);
+    }
+
+    #[test]
+    fn image_prior_tokens_override_image_generation() {
+        let model = SolomonAttentionModel {
+            token_count: 16,
+            token_hash: 7,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            text_token_profile: TextTokenProfile::Char,
+            text_memory: None,
+            transformer: MiniTransformerMlpModel::new_initial_with_seq_len(8),
+        };
+        let image_prior_tokens = (0..SIGNATURE_BINS)
+            .map(|index| IMAGE_BASE + u8::try_from(index % usize::from(IMAGE_BINS)).unwrap())
+            .collect::<Vec<_>>();
+        let sample = sample_model(
+            &model,
+            "seal of Bael",
+            SampleOptions {
+                max_text_tokens: 0,
+                min_text_tokens: 0,
+                repeat_run_cap: 4,
+                no_repeat_ngram: 4,
+                conditioning_boost_q8: DEFAULT_EMBEDDED_TEXT_MEMORY_BOOST_Q8,
+                text_prior_boost_q8: 0,
+                text_prior_strict: false,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: false,
+                suppress_name_chunks_after_opening: false,
+                top_k: 1,
+                sample_seed: 1,
+            },
+            None,
+            None,
+            Some(&image_prior_tokens),
+            "",
+        )
+        .unwrap();
+
+        assert_eq!(
+            sample.image_bins.to_vec(),
+            image_prior_tokens
+                .iter()
+                .map(|token| token - IMAGE_BASE)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn text_repeat_filters_ignore_prompt_tokens() {
         let text = "Solomon selects Bael: He maketh thee to go Invisible.";
         let text_tokens = encode_text_tokens(text, TextTokenProfile::Char);
@@ -3095,9 +5303,10 @@ mod tests {
                 primary_name: String::from("Bael"),
                 prompt: String::from("seal of Bael"),
                 text_tokens,
+                image_tokens: vec![IMAGE_BASE; SIGNATURE_BINS],
             }],
         };
-        let prior = TextPrior::from(&memory);
+        let prior = TextPrior::from(&memory, TextTokenProfile::Char);
         let model = SolomonAttentionModel {
             token_count: 16,
             token_hash: 7,
@@ -3119,11 +5328,16 @@ mod tests {
                 conditioning_boost_q8: 0,
                 text_prior_boost_q8: DEFAULT_EMBEDDED_TEXT_MEMORY_BOOST_Q8,
                 text_prior_strict: true,
+                text_chunk_boost_q8: 0,
+                decode_logit_delta: false,
+                prompt_name_opening_prior: false,
+                suppress_name_chunks_after_opening: false,
                 top_k: 1,
                 sample_seed: 1,
             },
             None,
             Some(&prior),
+            None,
             "",
         )
         .unwrap();

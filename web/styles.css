@@ -86,6 +86,17 @@ h1 {
   gap: 8px;
 }
 
+.results-link {
+  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--brass);
+  font-size: 0.82rem;
+  line-height: 1;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .meters span,
 .controls button {
   min-height: 36px;
