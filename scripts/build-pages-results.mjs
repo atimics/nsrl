@@ -76,6 +76,24 @@ const tables = [
     ],
     highlights: ["top1_per_mille", "top5_per_mille", "latent_top1_per_mille"],
   },
+  {
+    id: "multimodal-eval",
+    title: "Multimodal Eval",
+    path: "docs/solomon-multimodal-eval.tsv",
+    columns: [
+      "model",
+      "eval_scope",
+      "examples",
+      "overall_top1_per_mille",
+      "text_top1_per_mille",
+      "image_top1_per_mille",
+      "prompt_top1_per_mille",
+      "exact_examples_per_mille",
+      "context_hit_per_mille",
+      "model_hash",
+    ],
+    highlights: ["overall_top1_per_mille", "text_top1_per_mille", "image_top1_per_mille"],
+  },
 ];
 
 const assets = [
@@ -329,6 +347,7 @@ function buildModelSummaries(report) {
   const priorScaling = tableById.get("prior-scaling");
   const textShape = tableById.get("text-feature-shape");
   const generative = tableById.get("generative-eval");
+  const multimodal = tableById.get("multimodal-eval");
   const webQuality = probeById.get("web-quality");
   const rawNameRank = probeById.get("raw-name-rank");
   const bodyStartRank = probeById.get("body-start-rank");
@@ -449,14 +468,42 @@ function buildModelSummaries(report) {
       id: "nsrlmod1",
       name: "NSRLMOD1",
       role: "coarse joint text/image-token model",
-      status: assetById.get("multimodal")?.status === "present" ? "artifact published" : "missing",
-      summary:
-        "The multimodal artifact is published as a browser fallback. No checked-in model-quality eval table currently tracks this path separately.",
+      status: hasRows(multimodal)
+        ? "published evals"
+        : assetById.get("multimodal")?.status === "present"
+          ? "artifact published"
+          : "missing",
+      summary: hasRows(multimodal)
+        ? "The multimodal fallback artifact is scored on tracked corpus replay: next-token ranks over prompt bytes, generated text bytes, marker tokens, and 16x16 image bins. This is artifact-native replay quality, not broad free-running quality."
+        : "The multimodal artifact is published as a browser fallback. No checked-in model-quality eval table currently tracks this path separately.",
       metrics: [
         artifactMetric(assetById.get("multimodal")),
-        rowsMetric("Dedicated eval rows", 0, "No separate checked-in NSRLMOD1 eval table yet."),
+        perMilleMetric(
+          "Overall replay top-1",
+          bestRow(multimodal?.rows || [], "overall_top1_per_mille"),
+          "overall_top1_per_mille",
+        ),
+        perMilleMetric(
+          "Text replay top-1",
+          bestRow(multimodal?.rows || [], "text_top1_per_mille"),
+          "text_top1_per_mille",
+        ),
+        perMilleMetric(
+          "Image-token top-1",
+          bestRow(multimodal?.rows || [], "image_top1_per_mille"),
+          "image_top1_per_mille",
+        ),
+        perMilleMetric(
+          "Exact examples",
+          bestRow(multimodal?.rows || [], "exact_examples_per_mille"),
+          "exact_examples_per_mille",
+        ),
       ],
-      evidence: ["web/assets/solomon-multimodal.nsrlmod"],
+      evidence: [
+        "web/assets/solomon-multimodal.nsrlmod",
+        "docs/solomon-multimodal-eval.tsv",
+        "scripts/run-solomon-multimodal-eval.mjs",
+      ],
     },
   ];
 }
@@ -719,6 +766,7 @@ function evalCoverage(report) {
     ["Attention artifact probes", `${report.probes.filter((probe) => probe.status === "passed").length}/${report.probes.length} passed`, "Prompt/text/image checks run against the browser artifact."],
     ["Latent prior tables", `${rowsForTable(report, "prior-scaling") + rowsForTable(report, "text-feature-shape") + rowsForTable(report, "text-feature")} rows`, "Prompt routing, shape, and text-feature sweeps."],
     ["Generative eval table", `${rowsForTable(report, "generative-eval")} rows`, "Held-out generated bitmap eval rows, when checked in."],
+    ["Multimodal eval table", `${rowsForTable(report, "multimodal-eval")} rows`, "NSRLMOD1 prompt/text/image-token replay rows."],
   ];
   return `<div class="coverage-grid">
     ${rows
@@ -855,6 +903,7 @@ function compactRowLabel(row) {
     row.model ? row.model : null,
     row.prompt_rows ? `${row.prompt_rows} prompt rows` : null,
     row.prompts ? `${row.prompts} prompts` : null,
+    row.examples ? `${row.examples} examples` : null,
     row.latent_dim ? `latent ${row.latent_dim}` : null,
     row.text_features ? `text ${row.text_features}` : null,
     row.model_hash ? row.model_hash : null,

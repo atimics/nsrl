@@ -77,6 +77,16 @@ Emitted by `nsrl-solomon-multimodal sample`.
 Purpose: record joint sampling from one prompt into generated text plus a coarse
 16x16 image token plan.
 
+## `nsrl.solomon_multimodal_eval.v1`
+
+Emitted by `scripts/run-solomon-multimodal-eval.mjs`.
+
+Purpose: record `NSRLMOD1` tracked-corpus replay metrics for the deployed
+artifact. The evaluator rebuilds the expected prompt/text/image-token stream
+from the tracked Solomon text/signature table, verifies the rebuilt token hash
+against the artifact, then reports phase-specific next-token top-k ranks.
+This is artifact-native replay evidence, not a free-running quality benchmark.
+
 ## `nsrl.solomon_attention_train_trace.v1`
 
 Emitted by `nsrl-solomon-attention train`.

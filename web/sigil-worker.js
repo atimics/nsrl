@@ -4,7 +4,7 @@ import { SolomonMultimodalSampler } from "./multimodal-sampler.js";
 
 const ASSETS = {
   solomonAttentionModel: "./assets/solomon-attention.nsrllmm?v=5",
-  solomonMultimodalModel: "./assets/solomon-multimodal.nsrlmod?v=1",
+  solomonMultimodalModel: "./assets/solomon-multimodal.nsrlmod?v=2",
   solomonModel: "./assets/solomon-model.nsrltch?v=4-seal-scaled",
   solomonTextIndex: "./assets/solomon-spirit-text-signatures.tsv?v=4-seal-scaled",
 };
