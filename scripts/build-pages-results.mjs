@@ -308,6 +308,20 @@ function bestRow(rows, column) {
   return best;
 }
 
+function lowestRow(rows, column) {
+  let best = null;
+  for (const row of rows) {
+    const value = Number(row[column]);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    if (!best || value < best.value) {
+      best = { column, value, row };
+    }
+  }
+  return best;
+}
+
 function buildModelSummaries(report) {
   const tableById = new Map(report.tables.map((table) => [table.id, table]));
   const probeById = new Map(report.probes.map((probe) => [probe.id, probe]));
@@ -398,12 +412,36 @@ function buildModelSummaries(report) {
       id: "nsrltch",
       name: "NSRLTCH",
       role: "text-conditioned bitmap denoiser",
-      status: assetById.get("denoiser")?.status === "present" ? "artifact published" : "missing",
-      summary:
-        "The denoiser artifact is published for browser fallback sampling. The checked-in generative eval table currently has no result rows, so this page does not claim a current denoiser score.",
+      status: hasRows(generative)
+        ? "published evals"
+        : assetById.get("denoiser")?.status === "present"
+          ? "artifact published"
+          : "missing",
+      summary: hasRows(generative)
+        ? "The denoiser artifact is scored on class-head latent-conditioned Solomon generations. Scores report target retrieval from generated seal images plus the latent prior's own decoded target rank."
+        : "The denoiser artifact is published for browser fallback sampling. The checked-in generative eval table currently has no result rows, so this page does not claim a current denoiser score.",
       metrics: [
         artifactMetric(assetById.get("denoiser")),
-        rowsMetric("Generative eval rows", generative?.rows?.length || 0, "docs/solomon-generative-eval.tsv"),
+        perMilleMetric(
+          "Best generated top-1",
+          bestRow(generative?.rows || [], "top1_per_mille"),
+          "top1_per_mille",
+        ),
+        perMilleMetric(
+          "Best generated top-5",
+          bestRow(generative?.rows || [], "top5_per_mille"),
+          "top5_per_mille",
+        ),
+        perMilleMetric(
+          "Best latent top-1",
+          bestRow(generative?.rows || [], "latent_top1_per_mille"),
+          "latent_top1_per_mille",
+        ),
+        lowerIsBetterMetric(
+          "Best target distance",
+          lowestRow(generative?.rows || [], "mean_generated_target_distance_q8"),
+          "mean_generated_target_distance_q8",
+        ),
       ],
       evidence: ["web/assets/solomon-model.nsrltch", "docs/solomon-generative-eval.tsv"],
     },
@@ -476,6 +514,23 @@ function perMilleMetric(label, best, column) {
   };
 }
 
+function lowerIsBetterMetric(label, best, column) {
+  if (!best) {
+    return {
+      label,
+      value: "n/a",
+      detail: "No published rows.",
+      bar: null,
+    };
+  }
+  return {
+    label,
+    value: formatInteger(best.value),
+    detail: `${column} from ${compactRowLabel(best.row)}. Lower is better.`,
+    bar: null,
+  };
+}
+
 function artifactMetric(asset) {
   return {
     label: "Published artifact",
@@ -526,6 +581,10 @@ function formatRatio(passed, total) {
 
 function formatPerMille(value) {
   return `${(Number(value) / 10).toFixed(1)}%`;
+}
+
+function formatInteger(value) {
+  return Number(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
 function gitRevParse(args) {
@@ -792,14 +851,15 @@ function highlights(rows) {
 }
 
 function compactRowLabel(row) {
-  return [
-    row.prompt_rows ? `${row.prompt_rows} prompts` : null,
+  const parts = [
+    row.model ? row.model : null,
+    row.prompt_rows ? `${row.prompt_rows} prompt rows` : null,
+    row.prompts ? `${row.prompts} prompts` : null,
     row.latent_dim ? `latent ${row.latent_dim}` : null,
     row.text_features ? `text ${row.text_features}` : null,
     row.model_hash ? row.model_hash : null,
-  ]
-    .filter(Boolean)
-    .join(" / ");
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" / ") : "row";
 }
 
 function resultStyles() {
