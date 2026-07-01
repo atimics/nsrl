@@ -1,2 +1,2 @@
-model	model_path	eval_scope	prompts	generated	prompt_name_matches	prompt_name_match_per_mille	mean_raw_quality_score	min_raw_quality_score	distinct_texts	scaffold_outputs	scaffold_output_per_mille	mean_chars	model_hash
-raw-no-memory	web/assets/solomon-attention.nsrllmm	native_raw_no_memory_no_conditioning	72	72	0	0	27	15	4	55	763	63	0xff009204cd3d1767
+model	model_path	eval_scope	prompts	generated	prompt_name_matches	prompt_name_match_per_mille	mean_raw_quality_score	min_raw_quality_score	distinct_texts	scaffold_outputs	scaffold_output_per_mille	mean_chars	model_hash	sample_prompt	sample_output
+raw-no-memory	web/assets/solomon-attention.nsrllmm	native_raw_no_memory_no_conditioning	72	72	0	0	27	15	4	55	763	63	0xff009204cd3d1767	seal of Bael	---He is of the Goetia and teacheth with his ART in LINE.

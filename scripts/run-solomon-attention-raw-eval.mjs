@@ -30,6 +30,8 @@ let charTotal = 0;
 let scoreTotal = 0;
 let minScore = null;
 let modelHash = "";
+let samplePrompt = "";
+let sampleOutput = "";
 const distinctTexts = new Set();
 
 for (const row of rows) {
@@ -72,6 +74,10 @@ for (const row of rows) {
   const sample = JSON.parse(readFileSync(path.join(sampleDir, "sample.json"), "utf8"));
   modelHash ||= sample.model_hash || "";
   const text = readFileSync(path.join(sampleDir, "text.txt"), "utf8").trimEnd();
+  if (!samplePrompt) {
+    samplePrompt = prompt;
+    sampleOutput = text;
+  }
   generated += text ? 1 : 0;
   distinctTexts.add(text);
   charTotal += [...text].length;
@@ -120,6 +126,8 @@ const row = {
   scaffold_output_per_mille: perMille(scaffoldOutputs, rows.length),
   mean_chars: rows.length ? Math.round(charTotal / rows.length) : 0,
   model_hash: modelHash,
+  sample_prompt: samplePrompt,
+  sample_output: sampleOutput,
 };
 
 const header = [
@@ -137,8 +145,10 @@ const header = [
   "scaffold_output_per_mille",
   "mean_chars",
   "model_hash",
+  "sample_prompt",
+  "sample_output",
 ];
-const output = `${header.join("\t")}\n${header.map((column) => row[column]).join("\t")}\n`;
+const output = `${header.join("\t")}\n${header.map((column) => tsvCell(row[column])).join("\t")}\n`;
 if (config.out === "-") {
   process.stdout.write(output);
 } else {
@@ -247,4 +257,8 @@ function metricFromLine(line, key) {
 
 function perMille(value, total) {
   return total > 0 ? Math.floor((value * 1000) / total) : 0;
+}
+
+function tsvCell(value) {
+  return String(value ?? "").replace(/[\t\r\n]+/g, " ");
 }

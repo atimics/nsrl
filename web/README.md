@@ -28,8 +28,10 @@ python3 -m http.server 5173 --directory web
 ## Publish
 
 `.github/workflows/web-pages.yml` rebuilds the WASM package, generates
-`web/results/` from checked-in result tables plus fast artifact probes, and
-deploys the static `web/` directory to GitHub Pages.
+`web/results/` from checked-in result tables, tracked sample panels, and fast
+artifact probes, then deploys the static `web/` directory to GitHub Pages. The
+main CI workflow also runs the guarded results build so unsupported dashboard
+claims fail before publish.
 
 1. Commit `web/`, `crates/nsrl-web-wasm/`, `Cargo.toml`, and `Cargo.lock`.
 2. Merge to `main` or `master`.

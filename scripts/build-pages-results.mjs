@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
@@ -128,6 +128,15 @@ const assets = [
   },
 ];
 
+const sampleAssets = [
+  {
+    id: "text-conditioned-seals",
+    label: "NSRLTCH text-conditioned seal panel",
+    source: "docs/assets/solomon-text-conditioned-seals.png",
+    path: "assets/solomon-text-conditioned-seals.png",
+  },
+];
+
 const probes = config.skipProbes
   ? []
   : [
@@ -171,6 +180,7 @@ mkdirSync(outDir, { recursive: true });
 const assetResults = assets.map(assetSummary);
 const probeResults = probes.map(runProbe);
 const tableResults = tables.map(readConfiguredTable);
+const sampleAssetResults = sampleAssets.map(copySampleAsset);
 
 const report = {
   schema: "nsrl.github_pages_results.v1",
@@ -185,14 +195,13 @@ const report = {
         : null,
   },
   assets: assetResults,
+  sampleAssets: sampleAssetResults,
   probes: probeResults,
   tables: tableResults,
-  models: buildModelSummaries({
-    assets: assetResults,
-    probes: probeResults,
-    tables: tableResults,
-  }),
 };
+report.models = buildModelSummaries(report);
+report.samplePanels = buildSamplePanels(report);
+report.honesty = validateHonesty(report, { requireProbes: !config.skipProbes });
 
 writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify(report, null, 2)}\n`);
 writeFileSync(path.join(outDir, "styles.css"), resultStyles());
@@ -201,6 +210,13 @@ writeFileSync(path.join(outDir, "index.html"), resultHtml(report));
 const failedProbe = report.probes.find((probe) => probe.status === "failed");
 if (failedProbe) {
   console.error(`pages results probe failed: ${failedProbe.label}`);
+  process.exitCode = 1;
+}
+if (report.honesty.errors.length > 0) {
+  console.error("pages results honesty guard failed:");
+  for (const error of report.honesty.errors) {
+    console.error(`- ${error}`);
+  }
   process.exitCode = 1;
 }
 
@@ -239,6 +255,26 @@ function assetSummary(asset) {
     };
   }
   const bytes = readFileSync(absolutePath);
+  return {
+    ...asset,
+    status: "present",
+    bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+}
+
+function copySampleAsset(asset) {
+  const sourcePath = path.join(rootDir, asset.source);
+  if (!existsSync(sourcePath)) {
+    return {
+      ...asset,
+      status: "missing",
+    };
+  }
+  const targetPath = path.join(outDir, asset.path);
+  mkdirSync(path.dirname(targetPath), { recursive: true });
+  copyFileSync(sourcePath, targetPath);
+  const bytes = readFileSync(sourcePath);
   return {
     ...asset,
     status: "present",
@@ -374,15 +410,19 @@ function buildModelSummaries(report) {
   const rawNameRank = probeById.get("raw-name-rank");
   const bodyStartRank = probeById.get("body-start-rank");
 
+  const attentionProbesPassed = probesPassed([webQuality, rawNameRank, bodyStartRank]);
+
   return [
     {
       id: "nsrllmm1",
       name: "NSRLLMM1",
       role: "attention joint text/image-token model",
-      status: hasRows(attentionRaw)
+      status: attentionProbesPassed && hasRows(attentionRaw)
         ? "probe-gated + raw control"
-        : probesPassed([webQuality, rawNameRank, bodyStartRank])
+        : attentionProbesPassed
           ? "probe-gated"
+          : hasRows(attentionRaw)
+            ? "raw control only"
           : "incomplete",
       summary:
         "Current browser artifact path. The probe suite exercises prompt-scoped text, embedded image memory, raw name logits, and source-specific body-start logits. The raw no-memory row is a free-running negative control and should not be read as browser-path quality.",
@@ -543,6 +583,236 @@ function buildModelSummaries(report) {
       ],
     },
   ];
+}
+
+function buildSamplePanels(report) {
+  const tableById = new Map(report.tables.map((table) => [table.id, table]));
+  const probeById = new Map(report.probes.map((probe) => [probe.id, probe]));
+  const sampleAssetById = new Map(report.sampleAssets.map((asset) => [asset.id, asset]));
+
+  const priorScaling = tableById.get("prior-scaling");
+  const generative = tableById.get("generative-eval");
+  const multimodal = tableById.get("multimodal-eval");
+  const attentionRaw = tableById.get("attention-raw-eval");
+
+  const priorBest = bestRow(priorScaling?.rows || [], "eval_top1_per_mille");
+  const generativeBest = bestRow(generative?.rows || [], "top1_per_mille");
+  const multimodalBest = bestRow(multimodal?.rows || [], "overall_top1_per_mille");
+  const attentionRawRow = firstRow(attentionRaw?.rows || []);
+  const sealPanel = sampleAssetById.get("text-conditioned-seals");
+  const webQuality = probeById.get("web-quality");
+  const rawNameRank = probeById.get("raw-name-rank");
+  const bodyStartRank = probeById.get("body-start-rank");
+  const attentionProbesPassed = probesPassed([webQuality, rawNameRank, bodyStartRank]);
+  const attentionProbeMetrics = attentionProbesPassed
+    ? [
+        textMetric("Artifact prompts", ratioValue(webQuality?.data?.prompts, webQuality?.data?.prompts)),
+        textMetric("Name-logit top-1", ratioValue(rawNameRank?.data?.top1, rawNameRank?.data?.prompts)),
+        textMetric("Body-start top-1", ratioValue(bodyStartRank?.data?.top1, bodyStartRank?.data?.prompts)),
+      ]
+    : [];
+
+  return [
+    priorBest
+      ? {
+          id: "nsrllat1-routing",
+          model: "NSRLLAT1",
+          title: "Latent Prior Routing",
+          outcome: "Best checked-in routing row",
+          summary:
+            "Prompt-to-layout routing is scored on held-out Solomon prompt partitions. This panel shows the strongest eval top-1 row now published.",
+          metrics: [
+            textMetric("Eval top-1", formatPerMille(priorBest.value)),
+            textMetric("Eval top-5", formatPerMille(priorBest.row.eval_top5_per_mille)),
+            textMetric("Gold top-5", formatPerMille(priorBest.row.gold_top5_per_mille)),
+          ],
+          evidence: ["docs/solomon-eval-scaling-curve.tsv", compactRowLabel(priorBest.row)],
+        }
+      : null,
+    generativeBest
+      ? {
+          id: "nsrltch-generative",
+          model: "NSRLTCH",
+          title: "Generated Seal Retrieval",
+          outcome: "Class-head generation eval",
+          summary:
+            "Generated bitmap seals are checked against target retrieval. The image panel is the tracked visual sample; the numbers come from the generative eval table.",
+          image:
+            sealPanel?.status === "present"
+              ? {
+                  src: sealPanel.path,
+                  alt: sealPanel.label,
+                }
+              : null,
+          metrics: [
+            textMetric("Generated top-1", formatPerMille(generativeBest.value)),
+            textMetric("Generated top-5", formatPerMille(generativeBest.row.top5_per_mille)),
+            textMetric("Latent top-1", formatPerMille(generativeBest.row.latent_top1_per_mille)),
+          ],
+          evidence: [
+            "docs/solomon-generative-eval.tsv",
+            "docs/assets/solomon-text-conditioned-seals.png",
+          ],
+        }
+      : null,
+    multimodalBest
+      ? {
+          id: "nsrlmod1-replay",
+          model: "NSRLMOD1",
+          title: "Text/Image Token Replay",
+          outcome: "Tracked corpus replay",
+          summary:
+            "The multimodal artifact is scored on next-token replay over prompt bytes, generated text bytes, marker tokens, and 16x16 image bins.",
+          metrics: [
+            textMetric("Overall top-1", formatPerMille(multimodalBest.value)),
+            textMetric("Text top-1", formatPerMille(multimodalBest.row.text_top1_per_mille)),
+            textMetric("Image top-1", formatPerMille(multimodalBest.row.image_top1_per_mille)),
+            textMetric("Context hit", formatPerMille(multimodalBest.row.context_hit_per_mille)),
+          ],
+          evidence: ["docs/solomon-multimodal-eval.tsv", compactRowLabel(multimodalBest.row)],
+        }
+      : null,
+    attentionRawRow
+      ? {
+          id: "nsrllmm1-control",
+          model: "NSRLLMM1",
+          title: "Probe-Gated Artifact, Raw Control",
+          outcome: attentionProbesPassed
+            ? "Browser probes pass; raw no-memory control fails name binding"
+            : "Raw no-memory control row",
+          summary:
+            attentionProbesPassed
+              ? "The browser artifact path is probe-gated separately from native free-running sampling with memory and conditioning disabled."
+              : "Native free-running sampling is shown with memory and conditioning disabled. Probe metrics are omitted because this build skipped probes.",
+          sample: attentionRawRow.sample_output
+            ? {
+                label: attentionRawRow.sample_prompt || "raw sample",
+                text: attentionRawRow.sample_output,
+              }
+            : null,
+          metrics: [
+            ...attentionProbeMetrics,
+            textMetric("Raw name match", formatPerMille(attentionRawRow.prompt_name_match_per_mille)),
+            textMetric("Raw text score", `${attentionRawRow.mean_raw_quality_score}/100`),
+          ],
+          evidence: [
+            "docs/solomon-attention-eval.tsv",
+            "scripts/check-solomon-attention-web-quality.mjs --all-names --summary",
+          ],
+        }
+      : null,
+  ].filter(Boolean);
+}
+
+function firstRow(rows) {
+  return rows[0] || null;
+}
+
+function textMetric(label, value) {
+  return {
+    label,
+    value: value === undefined || value === null || value === "NaN%" ? "n/a" : String(value),
+  };
+}
+
+function ratioValue(passed, total) {
+  const numericPassed = Number(passed);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericPassed) || !Number.isFinite(numericTotal) || numericTotal === 0) {
+    return "n/a";
+  }
+  return `${numericPassed}/${numericTotal}`;
+}
+
+function validateHonesty(report, options = {}) {
+  const errors = [];
+  const tableById = new Map(report.tables.map((table) => [table.id, table]));
+  const assetById = new Map(report.assets.map((asset) => [asset.id, asset]));
+  const probeById = new Map(report.probes.map((probe) => [probe.id, probe]));
+  const modelById = new Map(report.models.map((model) => [model.id, model]));
+  const sampleAssetById = new Map(report.sampleAssets.map((asset) => [asset.id, asset]));
+
+  for (const [id, minRows] of [
+    ["prior-scaling", 1],
+    ["text-feature-shape", 1],
+    ["text-feature", 1],
+    ["generative-eval", 1],
+    ["multimodal-eval", 1],
+    ["attention-raw-eval", 1],
+  ]) {
+    const rowCount = tableById.get(id)?.rows?.length || 0;
+    if (rowCount < minRows) {
+      errors.push(`${id} has ${rowCount} rows; expected at least ${minRows}`);
+    }
+  }
+
+  for (const id of ["attention", "multimodal", "denoiser", "text-index"]) {
+    if (assetById.get(id)?.status !== "present") {
+      errors.push(`${id} asset is not present`);
+    }
+  }
+
+  if (options.requireProbes) {
+    for (const id of ["web-quality", "raw-name-rank", "body-start-rank"]) {
+      const probe = probeById.get(id);
+      if (probe?.status !== "passed") {
+        errors.push(`${id} probe is ${probe?.status || "missing"}; expected passed`);
+      }
+    }
+  }
+
+  const nsrllmm1 = modelById.get("nsrllmm1");
+  if (nsrllmm1?.status.includes("probe-gated") && !probesPassed([
+    probeById.get("web-quality"),
+    probeById.get("raw-name-rank"),
+    probeById.get("body-start-rank"),
+  ])) {
+    errors.push("NSRLLMM1 claims probe-gated status without all attention probes passing");
+  }
+  if (nsrllmm1?.status.includes("raw control") && !hasRows(tableById.get("attention-raw-eval"))) {
+    errors.push("NSRLLMM1 claims a raw control without attention-raw-eval rows");
+  }
+
+  const claimedModelIds = ["nsrllmm1", "nsrllat1", "nsrltch", "nsrlmod1"];
+  for (const id of claimedModelIds) {
+    const model = modelById.get(id);
+    if (!model) {
+      errors.push(`${id} model card is missing`);
+      continue;
+    }
+    if (/published evals|probe-gated/.test(model.status)) {
+      for (const metric of model.metrics || []) {
+        if (metric.value === "n/a") {
+          errors.push(`${model.name} claims ${model.status} but metric "${metric.label}" is n/a`);
+        }
+      }
+    }
+  }
+
+  if ((report.samplePanels?.length || 0) < 4) {
+    errors.push(`sample panel count is ${report.samplePanels?.length || 0}; expected at least 4`);
+  }
+  for (const panel of report.samplePanels || []) {
+    if (!panel.evidence?.length) {
+      errors.push(`${panel.id} sample panel lacks evidence`);
+    }
+    for (const metric of panel.metrics || []) {
+      if (metric.value === "n/a") {
+        errors.push(`${panel.id} sample metric "${metric.label}" is n/a`);
+      }
+    }
+    if (panel.id === "nsrllmm1-control" && !panel.sample?.text) {
+      errors.push("NSRLLMM1 raw-control sample panel lacks representative raw output");
+    }
+  }
+  if (sampleAssetById.get("text-conditioned-seals")?.status !== "present") {
+    errors.push("tracked text-conditioned seal sample asset is missing");
+  }
+
+  return {
+    status: errors.length === 0 ? "passed" : "failed",
+    errors,
+  };
 }
 
 function probesPassed(probes) {
@@ -736,6 +1006,19 @@ function resultHtml(report) {
         </div>
       </section>
 
+      <section class="section" aria-labelledby="sample-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">SAMPLES</p>
+            <h2 id="sample-title">Representative Eval Panels</h2>
+          </div>
+          <span>${report.samplePanels.length} panels</span>
+        </div>
+        <div class="sample-grid">
+          ${report.samplePanels.map(samplePanelCard).join("\n")}
+        </div>
+      </section>
+
       <section class="section" aria-labelledby="eval-title">
         <div class="section-head">
           <div>
@@ -815,8 +1098,44 @@ function evidenceList(items) {
   </ul>`;
 }
 
+function samplePanelCard(panel) {
+  const image = panel.image
+    ? `<img src="${escapeHtml(panel.image.src)}" alt="${escapeHtml(panel.image.alt)}" loading="lazy" />`
+    : "";
+  const sample = panel.sample
+    ? `<figure>
+        <figcaption>${escapeHtml(panel.sample.label)}</figcaption>
+        <blockquote>${escapeHtml(panel.sample.text)}</blockquote>
+      </figure>`
+    : "";
+  return `<article class="sample-card">
+    <div class="sample-main">
+      <div>
+        <p class="model-name">${escapeHtml(panel.model)}</p>
+        <h3>${escapeHtml(panel.title)}</h3>
+      </div>
+      <span>${escapeHtml(panel.outcome)}</span>
+    </div>
+    ${image}
+    <p>${escapeHtml(panel.summary)}</p>
+    ${sample}
+    <dl class="sample-metrics">
+      ${(panel.metrics || [])
+        .map(
+          (metric) => `<div>
+            <dt>${escapeHtml(metric.label)}</dt>
+            <dd>${escapeHtml(metric.value)}</dd>
+          </div>`,
+        )
+        .join("\n")}
+    </dl>
+    ${evidenceList(panel.evidence)}
+  </article>`;
+}
+
 function evalCoverage(report) {
   const rows = [
+    ["Honesty guard", report.honesty.status, "CI fails when claimed model coverage lacks checked-in rows, probes, assets, or samples."],
     ["Attention artifact probes", `${report.probes.filter((probe) => probe.status === "passed").length}/${report.probes.length} passed`, "Prompt/text/image checks run against the browser artifact."],
     ["Attention raw eval table", `${rowsForTable(report, "attention-raw-eval")} rows`, "NSRLLMM1 no-memory native sampling control row."],
     ["Latent prior tables", `${rowsForTable(report, "prior-scaling") + rowsForTable(report, "text-feature-shape") + rowsForTable(report, "text-feature")} rows`, "Prompt routing, shape, and text-feature sweeps."],
@@ -1183,6 +1502,91 @@ dd {
   font-size: 0.78rem;
 }
 
+.sample-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sample-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.sample-main {
+  display: grid;
+  gap: 8px;
+}
+
+.sample-main span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.sample-card > p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.sample-card img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  border: 1px solid rgba(53, 65, 69, 0.75);
+  border-radius: 8px;
+  background: #f4f0e6;
+}
+
+.sample-card figure {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.sample-card figcaption {
+  color: var(--brass);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.sample-card blockquote {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(53, 65, 69, 0.75);
+  border-radius: 8px;
+  background: var(--panel-3);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.sample-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.sample-metrics div {
+  padding: 10px;
+  border: 1px solid rgba(53, 65, 69, 0.72);
+  border-radius: 8px;
+  background: var(--panel-3);
+}
+
+.sample-metrics dd {
+  font-size: 1.15rem;
+  font-weight: 760;
+}
+
 .coverage-grid,
 .probe-grid {
   display: grid;
@@ -1311,6 +1715,7 @@ tbody tr:last-child td {
   }
 
   .model-grid,
+  .sample-grid,
   .metric-grid,
   .coverage-grid,
   .probe-grid,

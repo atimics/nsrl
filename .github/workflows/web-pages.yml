@@ -8,6 +8,7 @@ on:
       - master
     paths:
       - ".github/workflows/web-pages.yml"
+      - "docs/assets/**"
       - "docs/solomon-*.tsv"
       - "scripts/build-pages-results.mjs"
       - "scripts/check-solomon-attention-web-quality.mjs"

@@ -28,3 +28,21 @@ jobs:
 
       - name: Run Checks
         run: ./scripts/check.sh
+
+  pages-results:
+    name: Pages Results
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check results generator
+        run: node --check scripts/build-pages-results.mjs
+
+      - name: Build guarded results
+        run: node scripts/build-pages-results.mjs --out-dir /tmp/nsrl-pages-results

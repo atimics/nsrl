@@ -187,7 +187,9 @@ Purpose: record `NSRLLMM1` native sampling with conditioning examples, text
 prior, and embedded text memory disabled. This is a raw free-running control
 that reports prompt-name binding, simple text-quality heuristics, and scaffold
 output frequency for the deployed attention artifact. It is intentionally
-separate from browser-path artifact probes.
+separate from browser-path artifact probes. The table also carries one
+representative `sample_prompt` and `sample_output` so the results page can show
+the raw-control behavior from checked-in evidence.
 
 ## `nsrl.solomon_attention_raw_rank_summary.v1`
 
