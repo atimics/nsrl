@@ -17,6 +17,7 @@ text-signature index.
 ```sh
 wasm-pack build crates/nsrl-web-wasm --release --target web --out-dir ../../web/pkg
 rm -f web/pkg/.gitignore
+node scripts/generate-solomon-results-samples.mjs
 node scripts/build-pages-results.mjs --out-dir web/results
 NSRL_SOLOMON_MULTIMODAL_MODEL=web/assets/solomon-multimodal.nsrlmod \
   scripts/run-solomon-multimodal-smoke.sh

@@ -115,6 +115,24 @@ const tables = [
       "distinct_texts",
     ],
   },
+  {
+    id: "sample-gallery",
+    title: "Prompt Sample Gallery",
+    path: "docs/solomon-sample-gallery.tsv",
+    columns: [
+      "model",
+      "prompt_id",
+      "prompt_kind",
+      "prompt",
+      "text_source",
+      "image_source",
+      "text_lm_fallback",
+      "text",
+      "image_path",
+      "model_hash",
+    ],
+    highlights: [],
+  },
 ];
 
 const assets = [
@@ -134,6 +152,12 @@ const sampleAssets = [
     label: "NSRLTCH text-conditioned seal panel",
     source: "docs/assets/solomon-text-conditioned-seals.png",
     path: "assets/solomon-text-conditioned-seals.png",
+  },
+  {
+    id: "sample-gallery-trace",
+    label: "Fixed prompt gallery trace",
+    source: "docs/solomon-sample-gallery.tsv",
+    path: "assets/solomon-sample-gallery.tsv",
   },
 ];
 
@@ -180,7 +204,7 @@ mkdirSync(outDir, { recursive: true });
 const assetResults = assets.map(assetSummary);
 const probeResults = probes.map(runProbe);
 const tableResults = tables.map(readConfiguredTable);
-const sampleAssetResults = sampleAssets.map(copySampleAsset);
+const sampleAssetResults = [...sampleAssets, ...gallerySampleAssets(tableResults)].map(copySampleAsset);
 
 const report = {
   schema: "nsrl.github_pages_results.v1",
@@ -201,6 +225,7 @@ const report = {
 };
 report.models = buildModelSummaries(report);
 report.samplePanels = buildSamplePanels(report);
+report.promptSamples = buildPromptSamples(report);
 report.honesty = validateHonesty(report, { requireProbes: !config.skipProbes });
 
 writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify(report, null, 2)}\n`);
@@ -281,6 +306,22 @@ function copySampleAsset(asset) {
     bytes: bytes.length,
     sha256: createHash("sha256").update(bytes).digest("hex"),
   };
+}
+
+function gallerySampleAssets(tableResults) {
+  const gallery = tableResults.find((table) => table.id === "sample-gallery");
+  return (gallery?.rows || [])
+    .filter((row) => row.prompt_id && row.image_path)
+    .map((row) => ({
+      id: `prompt-sample-${row.prompt_id}`,
+      label: `Prompt sample: ${row.prompt}`,
+      source: row.image_path,
+      path: publicSampleAssetPath(row.image_path),
+    }));
+}
+
+function publicSampleAssetPath(sourcePath) {
+  return sourcePath.replace(/^docs\/assets\//, "assets/");
 }
 
 function runProbe(probe) {
@@ -704,6 +745,35 @@ function buildSamplePanels(report) {
   ].filter(Boolean);
 }
 
+function buildPromptSamples(report) {
+  const tableById = new Map(report.tables.map((table) => [table.id, table]));
+  const sampleAssetById = new Map(report.sampleAssets.map((asset) => [asset.id, asset]));
+  const gallery = tableById.get("sample-gallery");
+  const trace = sampleAssetById.get("sample-gallery-trace");
+  return (gallery?.rows || []).map((row) => {
+    const asset = sampleAssetById.get(`prompt-sample-${row.prompt_id}`);
+    return {
+      id: row.prompt_id,
+      model: row.model,
+      promptKind: row.prompt_kind,
+      prompt: row.prompt,
+      textSource: row.text_source,
+      imageSource: row.image_source,
+      textFallback: row.text_lm_fallback,
+      text: row.text,
+      image:
+        asset?.status === "present"
+          ? {
+              src: asset.path,
+              alt: `${row.prompt} sample`,
+            }
+          : null,
+      traceHref: trace?.status === "present" ? trace.path : null,
+      modelHash: row.model_hash,
+    };
+  });
+}
+
 function firstRow(rows) {
   return rows[0] || null;
 }
@@ -739,6 +809,7 @@ function validateHonesty(report, options = {}) {
     ["generative-eval", 1],
     ["multimodal-eval", 1],
     ["attention-raw-eval", 1],
+    ["sample-gallery", 6],
   ]) {
     const rowCount = tableById.get(id)?.rows?.length || 0;
     if (rowCount < minRows) {
@@ -807,6 +878,23 @@ function validateHonesty(report, options = {}) {
   }
   if (sampleAssetById.get("text-conditioned-seals")?.status !== "present") {
     errors.push("tracked text-conditioned seal sample asset is missing");
+  }
+  if (sampleAssetById.get("sample-gallery-trace")?.status !== "present") {
+    errors.push("prompt sample gallery trace asset is missing");
+  }
+  if ((report.promptSamples?.length || 0) < 6) {
+    errors.push(`prompt sample count is ${report.promptSamples?.length || 0}; expected at least 6`);
+  }
+  for (const sample of report.promptSamples || []) {
+    if (!sample.text) {
+      errors.push(`${sample.id} prompt sample lacks generated text`);
+    }
+    if (!sample.image) {
+      errors.push(`${sample.id} prompt sample lacks a copied image`);
+    }
+    if (!sample.traceHref) {
+      errors.push(`${sample.id} prompt sample lacks a trace link`);
+    }
   }
 
   return {
@@ -1017,6 +1105,7 @@ function resultHtml(report) {
         <div class="sample-grid">
           ${report.samplePanels.map(samplePanelCard).join("\n")}
         </div>
+        ${promptGallery(report.promptSamples)}
       </section>
 
       <section class="section" aria-labelledby="eval-title">
@@ -1133,9 +1222,67 @@ function samplePanelCard(panel) {
   </article>`;
 }
 
+function promptGallery(samples) {
+  if (!samples?.length) {
+    return "";
+  }
+  return `<div class="prompt-gallery" id="fixed-prompt-gallery" aria-label="Fixed prompt gallery">
+    <div class="prompt-gallery-head">
+      <div>
+        <p class="eyebrow">FIXED PROMPTS</p>
+        <h3>Bael, Stolas, Marbas, Generic, Held-Out Phrases</h3>
+      </div>
+      <span>${samples.length} samples</span>
+    </div>
+    <div class="prompt-grid">
+      ${samples.map(promptSampleCard).join("\n")}
+    </div>
+  </div>`;
+}
+
+function promptSampleCard(sample) {
+  const trace = sample.traceHref
+    ? `<a href="${escapeHtml(sample.traceHref)}">trace</a>`
+    : "";
+  const image = sample.image
+    ? `<img src="${escapeHtml(sample.image.src)}" alt="${escapeHtml(sample.image.alt)}" loading="lazy" />`
+    : "";
+  return `<article class="prompt-card">
+    ${image}
+    <div class="prompt-card-body">
+      <div>
+        <p class="model-name">${escapeHtml(sample.model)}</p>
+        <h4>${escapeHtml(sample.prompt)}</h4>
+      </div>
+      <p>${escapeHtml(sample.text)}</p>
+      <dl>
+        <div><dt>Prompt kind</dt><dd>${escapeHtml(compactPromptKind(sample.promptKind))}</dd></div>
+        <div><dt>Text source</dt><dd>${escapeHtml(compactSampleSource(sample.textSource))}</dd></div>
+        <div><dt>Image source</dt><dd>${escapeHtml(compactSampleSource(sample.imageSource))}</dd></div>
+      </dl>
+      ${trace}
+    </div>
+  </article>`;
+}
+
+function compactPromptKind(value) {
+  return String(value || "")
+    .replace(/^fixed-/, "")
+    .replace("held-out-phrase", "held-out");
+}
+
+function compactSampleSource(value) {
+  return String(value || "")
+    .replace("embedded_text_lm_strict", "lm strict")
+    .replace("embedded_text_memory_guard", "memory guard")
+    .replace("embedded_image_memory_strict", "image memory")
+    .replace("raw_attention", "raw attention");
+}
+
 function evalCoverage(report) {
   const rows = [
     ["Honesty guard", report.honesty.status, "CI fails when claimed model coverage lacks checked-in rows, probes, assets, or samples."],
+    ["Prompt sample gallery", `${rowsForTable(report, "sample-gallery")} rows`, "Fixed NSRLLMM1 prompt samples with copied PNGs and a TSV trace."],
     ["Attention artifact probes", `${report.probes.filter((probe) => probe.status === "passed").length}/${report.probes.length} passed`, "Prompt/text/image checks run against the browser artifact."],
     ["Attention raw eval table", `${rowsForTable(report, "attention-raw-eval")} rows`, "NSRLLMM1 no-memory native sampling control row."],
     ["Latent prior tables", `${rowsForTable(report, "prior-scaling") + rowsForTable(report, "text-feature-shape") + rowsForTable(report, "text-feature")} rows`, "Prompt routing, shape, and text-feature sweeps."],
@@ -1343,7 +1490,7 @@ a {
   text-transform: uppercase;
 }
 
-h1, h2, h3, p { margin: 0; }
+h1, h2, h3, h4, p { margin: 0; }
 
 h1 {
   max-width: 820px;
@@ -1357,6 +1504,10 @@ h2 {
 
 h3 {
   font-size: 1rem;
+}
+
+h4 {
+  font-size: 0.98rem;
 }
 
 .lede {
@@ -1587,6 +1738,77 @@ dd {
   font-weight: 760;
 }
 
+.prompt-gallery {
+  display: grid;
+  gap: 14px;
+  padding-top: 10px;
+}
+
+.prompt-gallery-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: end;
+}
+
+.prompt-gallery-head span {
+  color: var(--muted);
+}
+
+.prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.prompt-card {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.prompt-card img {
+  width: 116px;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  border: 1px solid rgba(53, 65, 69, 0.75);
+  border-radius: 8px;
+  background: #f4f0e6;
+}
+
+.prompt-card-body {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.prompt-card-body > p {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.42;
+}
+
+.prompt-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+
+.prompt-card dd {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.prompt-card a {
+  width: fit-content;
+  font-size: 0.82rem;
+}
+
 .coverage-grid,
 .probe-grid {
   display: grid;
@@ -1716,10 +1938,23 @@ tbody tr:last-child td {
 
   .model-grid,
   .sample-grid,
+  .prompt-grid,
   .metric-grid,
   .coverage-grid,
   .probe-grid,
   .highlights {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-card {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .prompt-card img {
+    width: 92px;
+  }
+
+  .prompt-card dl {
     grid-template-columns: 1fr;
   }
 }

@@ -179,6 +179,17 @@ error improvements are moving the true next token near argmax. This is the
 quality signal for model-only attention behavior, separate from
 prompt-conditioned sampling.
 
+## `nsrl.solomon_sample_gallery.v1`
+
+Emitted by `scripts/generate-solomon-results-samples.mjs`.
+
+Purpose: publish the fixed `NSRLLMM1` prompt gallery used on `/results/`.
+Rows include the prompt, prompt kind, deterministic decode settings, generated
+text, text/image source metadata, model/token hashes, PNG path, and image hash.
+The checked-in PNGs live under `docs/assets/results-samples/`; the Pages build
+copies them into `web/results/assets/results-samples/` and copies the TSV trace
+beside them.
+
 ## `nsrl.solomon_attention_raw_eval.v1`
 
 Emitted by `scripts/run-solomon-attention-raw-eval.mjs`.

@@ -44,5 +44,10 @@ jobs:
       - name: Check results generator
         run: node --check scripts/build-pages-results.mjs
 
+      - name: Check fixed sample gallery
+        run: |
+          node scripts/generate-solomon-results-samples.mjs
+          git diff --exit-code -- docs/solomon-sample-gallery.tsv docs/assets/results-samples
+
       - name: Build guarded results
         run: node scripts/build-pages-results.mjs --out-dir /tmp/nsrl-pages-results
