@@ -129,6 +129,10 @@ const probes = config.skipProbes
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
+const assetResults = assets.map(assetSummary);
+const probeResults = probes.map(runProbe);
+const tableResults = tables.map(readConfiguredTable);
+
 const report = {
   schema: "nsrl.github_pages_results.v1",
   generatedAt: new Date().toISOString(),
@@ -141,9 +145,14 @@ const report = {
         ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
         : null,
   },
-  assets: assets.map(assetSummary),
-  probes: probes.map(runProbe),
-  tables: tables.map(readConfiguredTable),
+  assets: assetResults,
+  probes: probeResults,
+  tables: tableResults,
+  models: buildModelSummaries({
+    assets: assetResults,
+    probes: probeResults,
+    tables: tableResults,
+  }),
 };
 
 writeFileSync(path.join(outDir, "results.json"), `${JSON.stringify(report, null, 2)}\n`);
@@ -299,6 +308,226 @@ function bestRow(rows, column) {
   return best;
 }
 
+function buildModelSummaries(report) {
+  const tableById = new Map(report.tables.map((table) => [table.id, table]));
+  const probeById = new Map(report.probes.map((probe) => [probe.id, probe]));
+  const assetById = new Map(report.assets.map((asset) => [asset.id, asset]));
+  const priorScaling = tableById.get("prior-scaling");
+  const textShape = tableById.get("text-feature-shape");
+  const generative = tableById.get("generative-eval");
+  const webQuality = probeById.get("web-quality");
+  const rawNameRank = probeById.get("raw-name-rank");
+  const bodyStartRank = probeById.get("body-start-rank");
+
+  return [
+    {
+      id: "nsrllmm1",
+      name: "NSRLLMM1",
+      role: "attention joint text/image-token model",
+      status: probesPassed([webQuality, rawNameRank, bodyStartRank]) ? "passing" : "incomplete",
+      summary:
+        "Current browser artifact path. Its own checks exercise prompt-scoped text, embedded image memory, raw name binding, and source-specific body-start logits.",
+      metrics: [
+        ratioMetric(
+          "Browser artifact quality",
+          webQuality?.data?.prompts,
+          webQuality?.data?.prompts,
+          webQuality?.status === "passed"
+            ? "All configured prompt samples passed the browser sampler gate."
+            : probeFallback(webQuality),
+        ),
+        ratioMetric(
+          "Raw prompt-name top-1",
+          rawNameRank?.data?.top1,
+          rawNameRank?.data?.prompts,
+          rankDetail(rawNameRank, "Expected spirit name token after `Solomon selects `"),
+        ),
+        ratioMetric(
+          "Body-start top-1",
+          bodyStartRank?.data?.top1,
+          bodyStartRank?.data?.prompts,
+          rankDetail(bodyStartRank, "First source prose token after the name opening"),
+        ),
+        scalarMetric(
+          "Worst body-start rank",
+          bodyStartRank?.data?.worstRank,
+          "Lower is better; 1 means the expected token was argmax.",
+        ),
+      ],
+      evidence: [
+        "scripts/check-solomon-attention-web-quality.mjs --all-names --summary",
+        "scripts/probe-solomon-attention-raw-rank.mjs --all-names --summary",
+        "scripts/probe-solomon-attention-body-start-rank.mjs --summary",
+      ],
+    },
+    {
+      id: "nsrllat1",
+      name: "NSRLLAT1",
+      role: "prompt-to-layout latent prior",
+      status: hasRows(priorScaling) || hasRows(textShape) ? "published evals" : "no rows",
+      summary:
+        "Prompt/layout prior measured on checked-in train/eval/gold prompt partitions. Scores are internal top-k routing accuracy, reported per mille.",
+      metrics: [
+        perMilleMetric(
+          "Best eval top-1",
+          bestRow(priorScaling?.rows || [], "eval_top1_per_mille"),
+          "eval_top1_per_mille",
+        ),
+        perMilleMetric(
+          "Best eval top-5",
+          bestRow(priorScaling?.rows || [], "eval_top5_per_mille"),
+          "eval_top5_per_mille",
+        ),
+        perMilleMetric(
+          "Best gold top-1",
+          bestRow(priorScaling?.rows || [], "gold_top1_per_mille"),
+          "gold_top1_per_mille",
+        ),
+        perMilleMetric(
+          "Best shape-probe eval top-1",
+          bestRow(textShape?.rows || [], "eval_top1_per_mille"),
+          "eval_top1_per_mille",
+        ),
+      ],
+      evidence: [
+        "docs/solomon-eval-scaling-curve.tsv",
+        "docs/solomon-text-feature-shape-probe.tsv",
+      ],
+    },
+    {
+      id: "nsrltch",
+      name: "NSRLTCH",
+      role: "text-conditioned bitmap denoiser",
+      status: assetById.get("denoiser")?.status === "present" ? "artifact published" : "missing",
+      summary:
+        "The denoiser artifact is published for browser fallback sampling. The checked-in generative eval table currently has no result rows, so this page does not claim a current denoiser score.",
+      metrics: [
+        artifactMetric(assetById.get("denoiser")),
+        rowsMetric("Generative eval rows", generative?.rows?.length || 0, "docs/solomon-generative-eval.tsv"),
+      ],
+      evidence: ["web/assets/solomon-model.nsrltch", "docs/solomon-generative-eval.tsv"],
+    },
+    {
+      id: "nsrlmod1",
+      name: "NSRLMOD1",
+      role: "coarse joint text/image-token model",
+      status: assetById.get("multimodal")?.status === "present" ? "artifact published" : "missing",
+      summary:
+        "The multimodal artifact is published as a browser fallback. No checked-in model-quality eval table currently tracks this path separately.",
+      metrics: [
+        artifactMetric(assetById.get("multimodal")),
+        rowsMetric("Dedicated eval rows", 0, "No separate checked-in NSRLMOD1 eval table yet."),
+      ],
+      evidence: ["web/assets/solomon-multimodal.nsrlmod"],
+    },
+  ];
+}
+
+function probesPassed(probes) {
+  return probes.every((probe) => probe?.status === "passed");
+}
+
+function hasRows(table) {
+  return (table?.rows?.length || 0) > 0;
+}
+
+function ratioMetric(label, passed, total, detail) {
+  const numericPassed = Number(passed);
+  const numericTotal = Number(total);
+  if (!Number.isFinite(numericPassed) || !Number.isFinite(numericTotal) || numericTotal === 0) {
+    return {
+      label,
+      value: "n/a",
+      detail: detail || "No published result.",
+      bar: null,
+    };
+  }
+  return {
+    label,
+    value: `${numericPassed}/${numericTotal}`,
+    detail: `${formatRatio(numericPassed, numericTotal)}. ${detail || ""}`.trim(),
+    bar: Math.round((numericPassed * 1000) / numericTotal) / 10,
+  };
+}
+
+function scalarMetric(label, value, detail) {
+  return {
+    label,
+    value: value === undefined || value === null ? "n/a" : String(value),
+    detail,
+    bar: null,
+  };
+}
+
+function perMilleMetric(label, best, column) {
+  if (!best) {
+    return {
+      label,
+      value: "n/a",
+      detail: "No published rows.",
+      bar: null,
+    };
+  }
+  return {
+    label,
+    value: formatPerMille(best.value),
+    detail: `${best.value} per mille from ${compactRowLabel(best.row)} (${column}).`,
+    bar: best.value / 10,
+  };
+}
+
+function artifactMetric(asset) {
+  return {
+    label: "Published artifact",
+    value: asset?.status || "missing",
+    detail: asset?.bytes ? `${humanBytes(asset.bytes)} / sha256 ${asset.sha256.slice(0, 12)}` : "No artifact found.",
+    bar: asset?.status === "present" ? 100 : 0,
+  };
+}
+
+function rowsMetric(label, rows, detail) {
+  return {
+    label,
+    value: String(rows),
+    detail,
+    bar: rows > 0 ? 100 : 0,
+  };
+}
+
+function rankDetail(probe, target) {
+  if (probe?.status !== "passed") {
+    return probeFallback(probe);
+  }
+  const data = probe.data || {};
+  const parts = [
+    target,
+    data.medianRank !== undefined ? `median rank ${data.medianRank}` : null,
+    data.worstRank !== undefined ? `worst rank ${data.worstRank}` : null,
+  ].filter(Boolean);
+  return parts.join("; ") + ".";
+}
+
+function probeFallback(probe) {
+  if (!probe) {
+    return "Probe was not configured.";
+  }
+  if (probe.status === "skipped") {
+    return probe.reason || "Probe skipped.";
+  }
+  if (probe.status === "failed") {
+    return "Probe failed.";
+  }
+  return "No published probe result.";
+}
+
+function formatRatio(passed, total) {
+  return `${((passed / total) * 100).toFixed(total === passed ? 0 : 1)}%`;
+}
+
+function formatPerMille(value) {
+  return `${(Number(value) / 10).toFixed(1)}%`;
+}
+
 function gitRevParse(args) {
   const result = spawnSync("git", args, {
     cwd: rootDir,
@@ -313,8 +542,8 @@ function resultHtml(report) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NSRL Results</title>
-    <meta name="description" content="Published NSRL Solomon model results and artifact checks." />
+    <title>NSRL Model Evals</title>
+    <meta name="description" content="Published NSRL Solomon model performance on NSRL's own evaluation suite." />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -324,9 +553,9 @@ function resultHtml(report) {
           <a href="../">Sampler</a>
           <a href="./results.json">JSON</a>
         </nav>
-        <p class="eyebrow">NSRL RESULTS</p>
-        <h1>Solomon Results</h1>
-        <p class="lede">Published artifact checks and replayable evaluation tables from the CI Pages build.</p>
+        <p class="eyebrow">NSRL MODEL EVALS</p>
+        <h1>How Solomon Models Perform</h1>
+        <p class="lede">Current published scores on NSRL's own replayable Solomon evals. These are internal gates and probes, not external benchmarks.</p>
         <dl class="build-meta">
           <div><dt>Generated</dt><dd>${escapeHtml(report.generatedAt)}</dd></div>
           <div><dt>Commit</dt><dd>${escapeHtml(shortCommit(report.commit))}</dd></div>
@@ -334,15 +563,50 @@ function resultHtml(report) {
         </dl>
       </header>
 
+      <section class="section" aria-labelledby="model-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">SCOREBOARD</p>
+            <h2 id="model-title">Models On Our Evals</h2>
+          </div>
+          <span>${report.models.length} model paths</span>
+        </div>
+        <div class="model-grid">
+          ${report.models.map(modelCard).join("\n")}
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="eval-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">EVIDENCE</p>
+            <h2 id="eval-title">Published Eval Inputs</h2>
+          </div>
+          <span>${report.tables.reduce((sum, table) => sum + (table.rows?.length || 0), 0)} table rows</span>
+        </div>
+        ${evalCoverage(report)}
+      </section>
+
       <section class="section" aria-labelledby="probe-title">
-        <h2 id="probe-title">Artifact Probes</h2>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">ATTENTION ARTIFACT</p>
+            <h2 id="probe-title">Probe Details</h2>
+          </div>
+          <span>${report.probes.filter((probe) => probe.status === "passed").length}/${report.probes.length} passed</span>
+        </div>
         <div class="probe-grid">
           ${report.probes.map(probeCard).join("\n")}
         </div>
       </section>
 
       <section class="section" aria-labelledby="asset-title">
-        <h2 id="asset-title">Published Artifacts</h2>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">ARTIFACTS</p>
+            <h2 id="asset-title">Published Files</h2>
+          </div>
+        </div>
         ${assetTable(report.assets)}
       </section>
 
@@ -351,6 +615,67 @@ function resultHtml(report) {
   </body>
 </html>
 `;
+}
+
+function modelCard(model) {
+  return `<article class="model-card ${escapeHtml(model.status.replace(/\s+/g, "-"))}">
+    <header>
+      <div>
+        <p class="model-name">${escapeHtml(model.name)}</p>
+        <h3>${escapeHtml(model.role)}</h3>
+      </div>
+      <span class="model-status">${escapeHtml(model.status)}</span>
+    </header>
+    <p class="model-summary">${escapeHtml(model.summary)}</p>
+    <dl class="metric-grid">
+      ${model.metrics.map(metricCard).join("\n")}
+    </dl>
+    ${evidenceList(model.evidence)}
+  </article>`;
+}
+
+function metricCard(metric) {
+  const bar = Number.isFinite(metric.bar)
+    ? `<span class="bar"><span style="width: ${escapeHtml(String(clamp(metric.bar, 0, 100)))}%"></span></span>`
+    : "";
+  return `<div class="metric">
+    <dt>${escapeHtml(metric.label)}</dt>
+    <dd>${escapeHtml(metric.value)}</dd>
+    ${bar}
+    <span>${escapeHtml(metric.detail || "")}</span>
+  </div>`;
+}
+
+function evidenceList(items) {
+  if (!items?.length) {
+    return "";
+  }
+  return `<ul class="evidence">
+    ${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("\n")}
+  </ul>`;
+}
+
+function evalCoverage(report) {
+  const rows = [
+    ["Attention artifact probes", `${report.probes.filter((probe) => probe.status === "passed").length}/${report.probes.length} passed`, "Prompt/text/image checks run against the browser artifact."],
+    ["Latent prior tables", `${rowsForTable(report, "prior-scaling") + rowsForTable(report, "text-feature-shape") + rowsForTable(report, "text-feature")} rows`, "Prompt routing, shape, and text-feature sweeps."],
+    ["Generative eval table", `${rowsForTable(report, "generative-eval")} rows`, "Held-out generated bitmap eval rows, when checked in."],
+  ];
+  return `<div class="coverage-grid">
+    ${rows
+      .map(
+        ([label, value, detail]) => `<article>
+          <dt>${escapeHtml(label)}</dt>
+          <dd>${escapeHtml(value)}</dd>
+          <p>${escapeHtml(detail)}</p>
+        </article>`,
+      )
+      .join("\n")}
+  </div>`;
+}
+
+function rowsForTable(report, id) {
+  return report.tables.find((table) => table.id === id)?.rows?.length || 0;
 }
 
 function probeCard(probe) {
@@ -483,35 +808,42 @@ function resultStyles() {
   --bg: #101314;
   --panel: #171b1d;
   --panel-2: #202629;
+  --panel-3: #111617;
   --ink: #f4f0e6;
   --muted: #a9b5b1;
   --line: #354145;
   --brass: #d0a24d;
   --teal: #38a59d;
   --red: #d87070;
+  --green: #85c889;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: #101314;
+  background: var(--bg);
   color: var(--ink);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-a { color: var(--brass); }
+a {
+  color: var(--brass);
+  text-underline-offset: 4px;
+}
 
 .page {
-  width: min(1180px, 100%);
+  width: min(1240px, 100%);
   margin: 0 auto;
-  padding: 28px;
+  padding: 30px;
 }
 
 .hero {
   display: grid;
-  gap: 14px;
-  padding: 30px 0 24px;
+  gap: 16px;
+  min-height: 290px;
+  align-content: end;
+  padding: 34px 0 28px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -531,7 +863,8 @@ a { color: var(--brass); }
 h1, h2, h3, p { margin: 0; }
 
 h1 {
-  font-size: 2.4rem;
+  max-width: 820px;
+  font-size: 3rem;
   line-height: 1.1;
 }
 
@@ -546,19 +879,18 @@ h3 {
 .lede {
   max-width: 720px;
   color: var(--muted);
+  font-size: 1.04rem;
   line-height: 1.55;
 }
 
-.build-meta,
-.probe dl {
+.build-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   margin: 0;
 }
 
-.build-meta div,
-.probe dl div {
+.build-meta div {
   min-width: 130px;
 }
 
@@ -574,8 +906,8 @@ dd {
 
 .section {
   display: grid;
-  gap: 14px;
-  padding: 26px 0;
+  gap: 16px;
+  padding: 30px 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -591,20 +923,142 @@ dd {
   color: var(--muted);
 }
 
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.model-card {
+  display: grid;
+  gap: 16px;
+  min-height: 360px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.model-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: start;
+}
+
+.model-name {
+  color: var(--brass);
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.model-status {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid rgba(56, 165, 157, 0.32);
+  border-radius: 999px;
+  color: var(--green);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.model-summary {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.metric {
+  display: grid;
+  gap: 6px;
+  padding: 13px;
+  border: 1px solid rgba(53, 65, 69, 0.75);
+  border-radius: 8px;
+  background: var(--panel-3);
+}
+
+.metric dd {
+  font-size: 1.45rem;
+  font-weight: 780;
+}
+
+.metric span:not(.bar) {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.bar {
+  display: block;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(244, 240, 230, 0.1);
+}
+
+.bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--teal), var(--brass));
+}
+
+.evidence {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.coverage-grid,
 .probe-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
+.coverage-grid article,
 .probe {
   display: grid;
   gap: 16px;
-  min-height: 188px;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
+}
+
+.coverage-grid dd {
+  font-size: 1.7rem;
+  font-weight: 780;
+}
+
+.coverage-grid p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.probe {
+  min-height: 188px;
+}
+
+.probe dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+}
+
+.probe dl div {
+  min-width: 130px;
 }
 
 .status {
@@ -692,6 +1146,9 @@ tbody tr:last-child td {
     font-size: 2rem;
   }
 
+  .model-grid,
+  .metric-grid,
+  .coverage-grid,
   .probe-grid,
   .highlights {
     grid-template-columns: 1fr;
@@ -712,6 +1169,10 @@ function humanBytes(bytes) {
     return `${(bytes / 1024).toFixed(1)} KiB`;
   }
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function escapeHtml(value) {
