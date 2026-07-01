@@ -179,6 +179,16 @@ error improvements are moving the true next token near argmax. This is the
 quality signal for model-only attention behavior, separate from
 prompt-conditioned sampling.
 
+## `nsrl.solomon_attention_raw_eval.v1`
+
+Emitted by `scripts/run-solomon-attention-raw-eval.mjs`.
+
+Purpose: record `NSRLLMM1` native sampling with conditioning examples, text
+prior, and embedded text memory disabled. This is a raw free-running control
+that reports prompt-name binding, simple text-quality heuristics, and scaffold
+output frequency for the deployed attention artifact. It is intentionally
+separate from browser-path artifact probes.
+
 ## `nsrl.solomon_attention_raw_rank_summary.v1`
 
 Emitted by `scripts/probe-solomon-attention-raw-rank.mjs --summary`.

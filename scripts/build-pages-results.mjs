@@ -94,6 +94,27 @@ const tables = [
     ],
     highlights: ["overall_top1_per_mille", "text_top1_per_mille", "image_top1_per_mille"],
   },
+  {
+    id: "attention-raw-eval",
+    title: "Attention Raw Eval",
+    path: "docs/solomon-attention-eval.tsv",
+    columns: [
+      "model",
+      "eval_scope",
+      "prompts",
+      "prompt_name_match_per_mille",
+      "mean_raw_quality_score",
+      "min_raw_quality_score",
+      "distinct_texts",
+      "scaffold_output_per_mille",
+      "model_hash",
+    ],
+    highlights: [
+      "prompt_name_match_per_mille",
+      "mean_raw_quality_score",
+      "distinct_texts",
+    ],
+  },
 ];
 
 const assets = [
@@ -348,6 +369,7 @@ function buildModelSummaries(report) {
   const textShape = tableById.get("text-feature-shape");
   const generative = tableById.get("generative-eval");
   const multimodal = tableById.get("multimodal-eval");
+  const attentionRaw = tableById.get("attention-raw-eval");
   const webQuality = probeById.get("web-quality");
   const rawNameRank = probeById.get("raw-name-rank");
   const bodyStartRank = probeById.get("body-start-rank");
@@ -357,12 +379,16 @@ function buildModelSummaries(report) {
       id: "nsrllmm1",
       name: "NSRLLMM1",
       role: "attention joint text/image-token model",
-      status: probesPassed([webQuality, rawNameRank, bodyStartRank]) ? "passing" : "incomplete",
+      status: hasRows(attentionRaw)
+        ? "probe-gated + raw control"
+        : probesPassed([webQuality, rawNameRank, bodyStartRank])
+          ? "probe-gated"
+          : "incomplete",
       summary:
-        "Current browser artifact path. Its own checks exercise prompt-scoped text, embedded image memory, raw name binding, and source-specific body-start logits.",
+        "Current browser artifact path. The probe suite exercises prompt-scoped text, embedded image memory, raw name logits, and source-specific body-start logits. The raw no-memory row is a free-running negative control and should not be read as browser-path quality.",
       metrics: [
         ratioMetric(
-          "Browser artifact quality",
+          "Artifact probe suite",
           webQuality?.data?.prompts,
           webQuality?.data?.prompts,
           webQuality?.status === "passed"
@@ -370,27 +396,38 @@ function buildModelSummaries(report) {
             : probeFallback(webQuality),
         ),
         ratioMetric(
-          "Raw prompt-name top-1",
+          "Constrained name-logit top-1",
           rawNameRank?.data?.top1,
           rawNameRank?.data?.prompts,
           rankDetail(rawNameRank, "Expected spirit name token after `Solomon selects `"),
         ),
         ratioMetric(
-          "Body-start top-1",
+          "Constrained body-start top-1",
           bodyStartRank?.data?.top1,
           bodyStartRank?.data?.prompts,
           rankDetail(bodyStartRank, "First source prose token after the name opening"),
         ),
-        scalarMetric(
-          "Worst body-start rank",
-          bodyStartRank?.data?.worstRank,
-          "Lower is better; 1 means the expected token was argmax.",
+        perMilleMetric(
+          "Raw no-memory name match",
+          bestRow(attentionRaw?.rows || [], "prompt_name_match_per_mille"),
+          "prompt_name_match_per_mille",
+        ),
+        scoreMetric(
+          "Raw text quality score",
+          bestRow(attentionRaw?.rows || [], "mean_raw_quality_score"),
+          "mean_raw_quality_score",
+        ),
+        perMilleMetric(
+          "Raw scaffold outputs",
+          bestRow(attentionRaw?.rows || [], "scaffold_output_per_mille"),
+          "scaffold_output_per_mille",
         ),
       ],
       evidence: [
         "scripts/check-solomon-attention-web-quality.mjs --all-names --summary",
         "scripts/probe-solomon-attention-raw-rank.mjs --all-names --summary",
         "scripts/probe-solomon-attention-body-start-rank.mjs --summary",
+        "docs/solomon-attention-eval.tsv",
       ],
     },
     {
@@ -575,6 +612,23 @@ function lowerIsBetterMetric(label, best, column) {
     value: formatInteger(best.value),
     detail: `${column} from ${compactRowLabel(best.row)}. Lower is better.`,
     bar: null,
+  };
+}
+
+function scoreMetric(label, best, column) {
+  if (!best) {
+    return {
+      label,
+      value: "n/a",
+      detail: "No published rows.",
+      bar: null,
+    };
+  }
+  return {
+    label,
+    value: `${best.value}/100`,
+    detail: `${column} from ${compactRowLabel(best.row)}.`,
+    bar: best.value,
   };
 }
 
@@ -764,6 +818,7 @@ function evidenceList(items) {
 function evalCoverage(report) {
   const rows = [
     ["Attention artifact probes", `${report.probes.filter((probe) => probe.status === "passed").length}/${report.probes.length} passed`, "Prompt/text/image checks run against the browser artifact."],
+    ["Attention raw eval table", `${rowsForTable(report, "attention-raw-eval")} rows`, "NSRLLMM1 no-memory native sampling control row."],
     ["Latent prior tables", `${rowsForTable(report, "prior-scaling") + rowsForTable(report, "text-feature-shape") + rowsForTable(report, "text-feature")} rows`, "Prompt routing, shape, and text-feature sweeps."],
     ["Generative eval table", `${rowsForTable(report, "generative-eval")} rows`, "Held-out generated bitmap eval rows, when checked in."],
     ["Multimodal eval table", `${rowsForTable(report, "multimodal-eval")} rows`, "NSRLMOD1 prompt/text/image-token replay rows."],
