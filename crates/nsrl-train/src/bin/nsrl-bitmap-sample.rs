@@ -60,6 +60,7 @@ struct Config {
     passes: usize,
     preview_columns: usize,
     latent_model_path: Option<PathBuf>,
+    attention_plan_path: Option<PathBuf>,
     prompt: Option<String>,
     text_weight: i64,
     seed: String,
@@ -86,6 +87,7 @@ impl Default for Config {
             passes: 8,
             preview_columns: 8,
             latent_model_path: None,
+            attention_plan_path: None,
             prompt: None,
             text_weight: 96,
             seed: "solomon-sampler-v1".to_string(),
@@ -292,6 +294,7 @@ struct TextFeatureCache {
 #[derive(Debug)]
 struct LatentCondition {
     model_path: PathBuf,
+    target_plan_path: PathBuf,
     prompt: String,
     latent_dim: usize,
     text_feature_count: usize,
@@ -401,11 +404,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if config.latent_class_blend_q8 > 256 {
         return Err("--latent-class-blend-q8 must be in 0..256".into());
     }
+    if config.latent_model_path.is_some() && config.attention_plan_path.is_some() {
+        return Err("--latent-model and --attention-plan are mutually exclusive".into());
+    }
     if config.latent_model_path.is_some() && config.prompt.is_none() {
         return Err("--latent-model requires --prompt".into());
     }
-    if config.prompt.is_some() && config.latent_model_path.is_none() {
-        return Err("--prompt requires --latent-model".into());
+    if config.prompt.is_some()
+        && config.latent_model_path.is_none()
+        && config.attention_plan_path.is_none()
+    {
+        return Err("--prompt requires --latent-model or --attention-plan".into());
     }
     fs::create_dir_all(&config.out_dir)?;
 
@@ -417,7 +426,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let image_size = model.image_size();
     let image_bytes = checked_image_bytes(image_size)?;
-    let latent_condition = if config.latent_model_path.is_some() {
+    let latent_condition = if config.attention_plan_path.is_some() {
+        Some(read_attention_plan_condition(&config)?)
+    } else if config.latent_model_path.is_some() {
         Some(read_latent_condition(&config)?)
     } else {
         None
@@ -479,7 +490,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn usage() {
     println!(
-        "Usage: nsrl-bitmap-sample [--model PATH] [--out-dir PATH] [--samples N] [--candidate-multiplier N] [--diversity-weight N] [--border-clear N] [--passes N] [--preview-columns N] [--latent-model PATH] [--prompt TEXT] [--text-weight N] [--seed TEXT] [--init noise] [--workers N]"
+        "Usage: nsrl-bitmap-sample [--model PATH] [--out-dir PATH] [--samples N] [--candidate-multiplier N] [--diversity-weight N] [--border-clear N] [--passes N] [--preview-columns N] [--latent-model PATH --prompt TEXT | --attention-plan PATH [--prompt TEXT]] [--text-weight N] [--seed TEXT] [--init noise] [--workers N]"
     );
 }
 
@@ -534,6 +545,11 @@ where
             "--latent-model" => {
                 config.latent_model_path = Some(PathBuf::from(
                     args.next().ok_or("--latent-model requires PATH")?,
+                ));
+            }
+            "--attention-plan" => {
+                config.attention_plan_path = Some(PathBuf::from(
+                    args.next().ok_or("--attention-plan requires PATH")?,
                 ));
             }
             "--prompt" => {
@@ -745,6 +761,7 @@ fn read_latent_condition(config: &Config) -> Result<LatentCondition, Box<dyn std
     )?;
     Ok(LatentCondition {
         model_path: model_path.clone(),
+        target_plan_path: PathBuf::new(),
         prompt: prompt.clone(),
         latent_dim: model.latent_dim,
         text_feature_count: model.text_feature_count,
@@ -755,6 +772,53 @@ fn read_latent_condition(config: &Config) -> Result<LatentCondition, Box<dyn std
         target_latent_score: prediction.score,
         target_lexical_score: 0,
         target_signature: prediction.signature,
+    })
+}
+
+fn read_attention_plan_condition(
+    config: &Config,
+) -> Result<LatentCondition, Box<dyn std::error::Error>> {
+    let plan_path = config
+        .attention_plan_path
+        .as_ref()
+        .ok_or("--attention-plan is required")?;
+    let plan = fs::read(plan_path)?;
+    if plan.len() != SIGNATURE_BINS {
+        return Err(format!(
+            "{} must contain exactly {} u8 bins",
+            plan_path.display(),
+            SIGNATURE_BINS
+        )
+        .into());
+    }
+    let mut target_signature = [0_u16; SIGNATURE_BINS];
+    for (target, &value) in target_signature.iter_mut().zip(plan.iter()) {
+        *target = u16::from(value);
+    }
+    let prompt = config
+        .prompt
+        .clone()
+        .unwrap_or_else(|| plan_path.display().to_string());
+    let target_name = config.prompt.clone().unwrap_or_else(|| {
+        plan_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("attention-plan")
+            .to_string()
+    });
+    Ok(LatentCondition {
+        model_path: PathBuf::new(),
+        target_plan_path: plan_path.clone(),
+        prompt,
+        latent_dim: 0,
+        text_feature_count: 0,
+        target_source: "attention-plan".to_string(),
+        target_number: 0,
+        target_name,
+        target_score: 0,
+        target_latent_score: 0,
+        target_lexical_score: 0,
+        target_signature,
     })
 }
 
@@ -2859,10 +2923,14 @@ fn write_trace(
     let latent_model = latent_condition
         .map(|condition| condition.model_path.display().to_string())
         .unwrap_or_default();
+    let latent_target_plan = latent_condition
+        .map(|condition| condition.target_plan_path.display().to_string())
+        .unwrap_or_default();
     let latent_prompt = latent_condition
         .map(|condition| condition.prompt.clone())
         .unwrap_or_default();
     json_field(&mut out, "latent_model", &latent_model, true);
+    json_field(&mut out, "latent_target_plan", &latent_target_plan, true);
     json_field(&mut out, "latent_prompt", &latent_prompt, true);
     json_field(
         &mut out,

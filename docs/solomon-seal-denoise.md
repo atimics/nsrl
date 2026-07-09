@@ -43,6 +43,22 @@ node scripts/run-solomon-generative-eval.mjs \
   --latent-model current=data/local-runs-linux/local-solomon-prior-smoke/latent/model.nsrllat
 ```
 
+Run the diagnostic-only oracle conditioning split:
+
+```bash
+node scripts/run-solomon-oracle-condition-diagnostic.mjs \
+  --source-samples path/to/generative-eval/samples.tsv \
+  --retrieval-head path/to/retrieval-head.json
+```
+
+This gives the denoiser the true held-out 16x16 signature as an attention plan.
+It must not be used as headline evidence. Its purpose is to separate a bad
+prompt-to-plan latent prior from a denoiser that cannot follow a correct plan.
+The checked-in 72-prompt diagnostic row in
+`docs/solomon-oracle-condition-diagnostic.tsv` shows near-perfect signature
+identity under oracle plans but weak rendered-image retrieval identity, so the
+next model work should first improve learned prompt-to-signature planning.
+
 Build the coarse joint text/image-token model:
 
 ```bash
