@@ -25,14 +25,42 @@ As of the first status-surface pass, NSRL is not release-ready. The integer
 runtime and research artifacts exist, but the Solomon product proof is
 incomplete.
 
+The project headline is now `NSRL-MME v0`, a model-native multimodal LLM eval
+defined in `docs/multimodal-llm-eval.md`. The current headline score is **not
+measured**. Existing sampler, replay, browser-probe, latent-prior, and denoiser
+numbers are diagnostics only until they feed a green `quality-report.json` with
+confidence-trace evidence for the headline task families.
+
 Known facts from the status command:
 
 - the working tree is dirty,
+- the headline multimodal LLM eval is missing,
 - the checked-in attention artifacts are smoke-scale, not promoted-profile,
 - no `quality-report.json`, `objective-coverage.json`, `release-proof.json`, or
   completed Solomon `pipeline-complete.json` is present under `data/`,
 - raw/free-running attention text is still diagnostic-only,
 - coherent Solomon text currently comes from prompted or memory-assisted paths.
+
+## Headline Eval
+
+The number we are chasing is:
+
+```text
+NSRL-MME v0 headline_score_per_mille
+```
+
+It is the floor across model-native multimodal task families:
+
+- text prompt -> symbolic image plan,
+- seal image -> identity, attributes, and source text,
+- text plus seal -> grounded explanation and match behavior,
+- prompt/name -> identity and source binding,
+- match/no-match hard negatives.
+
+The first target is `>= 700` per mille with the required source-grounding,
+held-out generated-output integrity, green quality report, and objective
+coverage gates. Replay and sampler metrics remain useful debugging evidence,
+but they are not the headline.
 
 ## LLM Path
 
@@ -42,8 +70,9 @@ must be born into the integer/base-2 attention contract.
 The practical sequence is:
 
 1. Keep `node scripts/nsrl-status.mjs` green enough that project state is obvious.
-2. Repair the failing product-proof/self-test surface.
-3. Produce a full local Solomon diagnostic.
+2. Produce a measured `NSRL-MME v0` quality report with confidence-trace
+   evidence.
+3. Repair the failing product-proof/self-test surface.
 4. Run the Graviton product path:
 
    ```bash
