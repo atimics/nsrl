@@ -47,6 +47,7 @@ jobs:
       - name: Check generative eval provenance harness
         run: |
           node --check scripts/run-solomon-generative-eval.mjs
+          node --check scripts/run-solomon-oracle-condition-diagnostic.mjs
           node --check scripts/score-solomon-generative-eval-retrieval.mjs
           node --check scripts/check-solomon-generative-eval-provenance.mjs
           node --check scripts/lib/solomon-symbolic-image.mjs

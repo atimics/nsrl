@@ -86,6 +86,28 @@ const tables = [
     highlights: ["top1_per_mille", "top5_per_mille", "latent_top1_per_mille"],
   },
   {
+    id: "oracle-condition-diagnostic",
+    title: "Oracle Conditioning Diagnostic",
+    path: "docs/solomon-oracle-condition-diagnostic.tsv",
+    columns: [
+      "run_id",
+      "diagnostic_only",
+      "prompts",
+      "signature_top1_per_mille",
+      "signature_top5_per_mille",
+      "retrieval_top1_per_mille",
+      "retrieval_top5_per_mille",
+      "mean_signature_rank_q8",
+      "mean_retrieval_rank_q8",
+      "conclusion",
+    ],
+    highlights: [
+      "signature_top1_per_mille",
+      "retrieval_top1_per_mille",
+      "retrieval_top5_per_mille",
+    ],
+  },
+  {
     id: "multimodal-eval",
     title: "Multimodal Eval",
     path: "docs/solomon-multimodal-eval.tsv",
@@ -740,6 +762,7 @@ function buildModelSummaries(report) {
   const priorScaling = tableById.get("prior-scaling");
   const textShape = tableById.get("text-feature-shape");
   const generative = tableById.get("generative-eval");
+  const oracleDiagnostic = tableById.get("oracle-condition-diagnostic");
   const multimodal = tableById.get("multimodal-eval");
   const attentionRaw = tableById.get("attention-raw-eval");
   const webQuality = probeById.get("web-quality");
@@ -850,7 +873,7 @@ function buildModelSummaries(report) {
           ? "artifact published"
           : "missing",
       summary: hasRows(generative)
-        ? "The denoiser artifact is scored on class-head latent-conditioned Solomon generations. Scores report target retrieval from generated seal images plus the latent prior's own decoded target rank."
+        ? "The denoiser artifact is scored on learned latent-conditioned generations. The oracle-conditioning diagnostic is an upper bound only: it gives the denoiser the true 16x16 target plan to separate planner failure from renderer/retrieval failure."
         : "The denoiser artifact is published for browser fallback sampling. The checked-in generative eval table currently has no result rows, so this page does not claim a current denoiser score.",
       metrics: [
         artifactMetric(assetById.get("denoiser")),
@@ -869,13 +892,27 @@ function buildModelSummaries(report) {
           bestRow(generative?.rows || [], "latent_top1_per_mille"),
           "latent_top1_per_mille",
         ),
+        perMilleMetric(
+          "Oracle-plan signature top-1",
+          bestRow(oracleDiagnostic?.rows || [], "signature_top1_per_mille"),
+          "signature_top1_per_mille",
+        ),
+        perMilleMetric(
+          "Oracle-plan retrieval top-1",
+          bestRow(oracleDiagnostic?.rows || [], "retrieval_top1_per_mille"),
+          "retrieval_top1_per_mille",
+        ),
         lowerIsBetterMetric(
           "Best target distance",
           lowestRow(generative?.rows || [], "mean_generated_target_distance_q8"),
           "mean_generated_target_distance_q8",
         ),
       ],
-      evidence: ["web/assets/solomon-model.nsrltch", "docs/solomon-generative-eval.tsv"],
+      evidence: [
+        "web/assets/solomon-model.nsrltch",
+        "docs/solomon-generative-eval.tsv",
+        "docs/solomon-oracle-condition-diagnostic.tsv",
+      ],
     },
     {
       id: "nsrlmod1",
@@ -928,11 +965,13 @@ function buildSamplePanels(report) {
 
   const priorScaling = tableById.get("prior-scaling");
   const generative = tableById.get("generative-eval");
+  const oracleDiagnostic = tableById.get("oracle-condition-diagnostic");
   const multimodal = tableById.get("multimodal-eval");
   const attentionRaw = tableById.get("attention-raw-eval");
 
   const priorBest = bestRow(priorScaling?.rows || [], "eval_top1_per_mille");
   const generativeBest = bestRow(generative?.rows || [], "top1_per_mille");
+  const oracleRow = firstRow(oracleDiagnostic?.rows || []);
   const multimodalBest = bestRow(multimodal?.rows || [], "overall_top1_per_mille");
   const attentionRawRow = firstRow(attentionRaw?.rows || []);
   const sealPanel = sampleAssetById.get("text-conditioned-seals");
@@ -988,6 +1027,26 @@ function buildSamplePanels(report) {
           evidence: [
             "docs/solomon-generative-eval.tsv",
             "docs/assets/solomon-text-conditioned-seals.png",
+          ],
+        }
+      : null,
+    oracleRow
+      ? {
+          id: "nsrltch-oracle-conditioning",
+          model: "NSRLTCH",
+          title: "Oracle Conditioning Split",
+          outcome: "Diagnostic upper bound; not headline evidence",
+          summary:
+            "The denoiser receives the true held-out 16x16 target plan here. This isolates the current failure: the learned planner is the first blocker, while rendered-image retrieval remains a separate weak gate.",
+          metrics: [
+            textMetric("Signature top-1", formatPerMille(oracleRow.signature_top1_per_mille)),
+            textMetric("Signature top-5", formatPerMille(oracleRow.signature_top5_per_mille)),
+            textMetric("Retrieval top-1", formatPerMille(oracleRow.retrieval_top1_per_mille)),
+            textMetric("Retrieval top-5", formatPerMille(oracleRow.retrieval_top5_per_mille)),
+          ],
+          evidence: [
+            "docs/solomon-oracle-condition-diagnostic.tsv",
+            "scripts/run-solomon-oracle-condition-diagnostic.mjs",
           ],
         }
       : null,
@@ -1102,6 +1161,7 @@ function validateHonesty(report, options = {}) {
     ["text-feature-shape", 1],
     ["text-feature", 1],
     ["generative-eval", 1],
+    ["oracle-condition-diagnostic", 1],
     ["multimodal-eval", 1],
     ["attention-raw-eval", 1],
     ["sample-gallery", 6],
