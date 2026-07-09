@@ -518,11 +518,13 @@ function buildHeadlineSummary() {
     scorePerMille: score,
     scoreLabel: score === null ? "not measured" : formatPerMille(score),
     targetLabel: formatPerMille(headlineContract.targetScorePerMille),
-    hero: status === "passed"
-      ? "NSRL-MME v0 Is Passing"
-      : "Headline Multimodal LLM Eval Is Not Measured",
-    summary:
-      "The public rows below are diagnostics until a green quality-report confidence trace produces the NSRL-MME v0 floor score.",
+    hero: headlineHero(status),
+    summary: headlineSummaryText(status, {
+      score,
+      target,
+      fallback:
+        "The public rows below are diagnostics until a green quality-report confidence trace produces the NSRL-MME v0 floor score.",
+    }),
     policy:
       "Sampler, replay, browser-probe, latent-prior, and denoiser metrics are useful diagnostics; they are not the headline multimodal LLM score.",
     evidence: {
@@ -549,11 +551,13 @@ function headlineSummaryFromArtifact(report, file) {
     scorePerMille: score,
     scoreLabel: score === null ? "not measured" : formatPerMille(score),
     targetLabel: formatPerMille(target),
-    hero: status === "passed"
-      ? "NSRL-MME v0 Is Passing"
-      : "Headline Multimodal LLM Eval Is Not Measured",
-    summary:
-      "The public rows below are diagnostics until a green NSRL-MME v0 artifact produces the floor score.",
+    hero: headlineHero(status),
+    summary: headlineSummaryText(status, {
+      score,
+      target,
+      fallback:
+        "The public rows below are diagnostics until a green NSRL-MME v0 artifact produces the floor score.",
+    }),
     policy: report.policy || "Sampler, replay, browser-probe, latent-prior, and denoiser metrics are useful diagnostics; they are not the headline multimodal LLM score.",
     evidence: {
       artifact: evidencePublicPath(file),
@@ -576,6 +580,32 @@ function headlineSummaryFromArtifact(report, file) {
       ok: gate.ok === true,
     })),
   };
+}
+
+function headlineHero(status) {
+  if (status === "passed") {
+    return "NSRL-MME v0 Is Passing";
+  }
+  if (status === "failed") {
+    return "NSRL-MME v0 Is Measured And Failing";
+  }
+  if (status === "incomplete") {
+    return "NSRL-MME v0 Evidence Is Incomplete";
+  }
+  return "Headline Multimodal LLM Eval Is Not Measured";
+}
+
+function headlineSummaryText(status, { score, target, fallback }) {
+  if (status === "failed" && score !== null) {
+    return `The current headline floor is ${formatPerMille(score)} against the ${formatPerMille(target)} target; the gates below show what must be fixed next.`;
+  }
+  if (status === "passed" && score !== null) {
+    return `The current headline floor is ${formatPerMille(score)} against the ${formatPerMille(target)} target.`;
+  }
+  if (status === "incomplete") {
+    return "The eval has partial model-native evidence, but at least one required family or gate is not yet measurable.";
+  }
+  return fallback;
 }
 
 function latestEvidenceFile(fileName) {
@@ -1620,7 +1650,7 @@ function compactSampleSource(value) {
 
 function evalCoverage(report) {
   const rows = [
-    ["Headline NSRL-MME v0", report.headline.scoreLabel, "Floor score across model-native multimodal task families; missing until quality-report confidence_trace exists."],
+    ["Headline NSRL-MME v0", report.headline.scoreLabel, `Status: ${report.headline.status}. Floor score across model-native multimodal task families.`],
     ["Honesty guard", report.honesty.status, "CI fails when claimed model coverage lacks checked-in rows, probes, assets, or samples."],
     ["Prompt sample gallery", `${rowsForTable(report, "sample-gallery")} rows`, "Fixed NSRLLMM1 prompt samples with copied PNGs and a TSV trace."],
     ["Attention artifact probes", `${report.probes.filter((probe) => probe.status === "passed").length}/${report.probes.length} passed`, "Prompt/text/image checks run against the browser artifact."],

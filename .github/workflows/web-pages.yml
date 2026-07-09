@@ -10,6 +10,7 @@ on:
       - ".github/workflows/web-pages.yml"
       - "docs/assets/**"
       - "docs/solomon-*.tsv"
+      - "data/processed/nsrl-mme-v0.json"
       - "scripts/build-pages-results.mjs"
       - "scripts/check-solomon-attention-web-quality.mjs"
       - "scripts/probe-solomon-attention-body-start-rank.mjs"

@@ -1,0 +1,182 @@
+{
+  "schema": "nsrl.multimodal_llm_eval.v0",
+  "id": "nsrl-mme-v0",
+  "label": "NSRL-MME v0 multimodal LLM eval",
+  "generated_at": "2026-07-09T08:08:48.740Z",
+  "status": "failed",
+  "ok": false,
+  "headline_score_per_mille": 371,
+  "score_per_mille": 371,
+  "target_score_per_mille": 700,
+  "minimum_rows_per_family": 72,
+  "target_met": false,
+  "weakest_component": {
+    "key": "text_and_seal_to_explanation",
+    "label": "text + seal -> grounded explanation / match",
+    "score_per_mille": 371
+  },
+  "headline_metric": "minimum per-mille score across model-native multimodal task families",
+  "policy": "Sampler, replay, browser-probe, and memory-assisted sample metrics are diagnostics only; they do not define the headline score.",
+  "inputs": {
+    "quality_report": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report.json",
+    "objective_coverage": "data/processed/objective-coverage.json"
+  },
+  "evidence": {
+    "quality_report": {
+      "path": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report.json",
+      "present": true,
+      "schema": "nsrl.solomon_v2_quality_report.v1",
+      "ok": false
+    },
+    "objective_coverage": {
+      "path": "data/processed/objective-coverage.json",
+      "present": true,
+      "schema": "nsrl.solomon_objective_coverage_check.v1",
+      "ok": true,
+      "local_objective_proof": true,
+      "release_objective_proof": false
+    },
+    "confidence_label": "incomplete"
+  },
+  "metric_components": [
+    {
+      "key": "text_prompt_to_image_plan",
+      "label": "text prompt -> symbolic image plan",
+      "kind": "model_native_directional_task",
+      "score_metric": "top5_accuracy_per_mille",
+      "score_per_mille": 439,
+      "rows": 432,
+      "ok": true,
+      "source": "confidence_trace.directional_native_eval.groups.text_prompt_to_image_plan.stats",
+      "errors": []
+    },
+    {
+      "key": "seal_image_to_text",
+      "label": "seal image -> identity / attributes / source text",
+      "kind": "model_native_directional_task",
+      "score_metric": "top5_accuracy_per_mille",
+      "score_per_mille": 434,
+      "rows": 720,
+      "ok": true,
+      "source": "confidence_trace.directional_native_eval.groups.seal_image_to_text.stats",
+      "errors": []
+    },
+    {
+      "key": "text_and_seal_to_explanation",
+      "label": "text + seal -> grounded explanation / match",
+      "kind": "model_native_directional_task",
+      "score_metric": "top5_accuracy_per_mille",
+      "score_per_mille": 371,
+      "rows": 576,
+      "ok": true,
+      "source": "confidence_trace.directional_native_eval.groups.text_and_seal_to_explanation.stats",
+      "errors": []
+    },
+    {
+      "key": "identity_source_binding",
+      "label": "prompt/name -> identity / source binding",
+      "kind": "model_native_directional_task",
+      "score_metric": "top5_accuracy_per_mille",
+      "score_per_mille": 375,
+      "rows": 720,
+      "ok": true,
+      "source": "confidence_trace.directional_native_eval.groups.identity_source_binding.stats",
+      "errors": []
+    },
+    {
+      "key": "hard_negative_match",
+      "label": "match / no-match hard-negative agreement",
+      "kind": "model_native_cross_modal_agreement",
+      "score_metric": "minimum top1_per_mille across match yes/no and hard negatives",
+      "score_per_mille": 1000,
+      "rows": 313,
+      "ok": true,
+      "source": "confidence_trace.cross_modal_agreement",
+      "submetrics": [
+        {
+          "key": "match_yes",
+          "label": "match yes",
+          "rows": 313,
+          "top1": 313,
+          "score_per_mille": 1000,
+          "min_margin": 841364
+        },
+        {
+          "key": "match_no",
+          "label": "match no",
+          "rows": 626,
+          "top1": 626,
+          "score_per_mille": 1000,
+          "min_margin": 841364
+        },
+        {
+          "key": "wrong_image_negatives",
+          "label": "wrong-image hard negatives",
+          "rows": 313,
+          "top1": 313,
+          "score_per_mille": 1000,
+          "min_margin": 2078843
+        },
+        {
+          "key": "wrong_prompt_negatives",
+          "label": "wrong-prompt hard negatives",
+          "rows": 313,
+          "top1": 313,
+          "score_per_mille": 1000,
+          "min_margin": 841364
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "gates": [
+    {
+      "key": "quality_report",
+      "label": "green quality report with confidence trace",
+      "kind": "gate",
+      "ok": false,
+      "source": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report.json",
+      "failed": [
+        "ok"
+      ]
+    },
+    {
+      "key": "objective_coverage",
+      "label": "local objective coverage proof",
+      "kind": "gate",
+      "ok": true,
+      "source": "data/processed/objective-coverage.json",
+      "failed": []
+    },
+    {
+      "key": "source_grounding",
+      "label": "source-grounded text/image evidence",
+      "kind": "gate",
+      "ok": false,
+      "source": "confidence_trace.source_grounding",
+      "failed": [
+        "grounded_corpus_ok"
+      ]
+    },
+    {
+      "key": "generated_output_integrity",
+      "label": "held-out generated output integrity",
+      "kind": "gate",
+      "ok": false,
+      "source": "confidence_trace.product_generation + generation_integrity",
+      "sample_count": 70,
+      "best_retrieval_top1_per_mille": 0,
+      "failed": [
+        "heldout_partition_ready",
+        "trace_integrity_ok"
+      ]
+    }
+  ],
+  "missing_evidence": [],
+  "errors": [
+    "quality_report gate is not green: ok",
+    "source_grounding gate is not green: grounded_corpus_ok",
+    "generated_output_integrity gate is not green: heldout_partition_ready, trace_integrity_ok",
+    "headline score 371 < target 700"
+  ]
+}
