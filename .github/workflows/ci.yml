@@ -44,6 +44,14 @@ jobs:
       - name: Check results generator
         run: node --check scripts/build-pages-results.mjs
 
+      - name: Check generative eval provenance harness
+        run: |
+          node --check scripts/run-solomon-generative-eval.mjs
+          node --check scripts/score-solomon-generative-eval-retrieval.mjs
+          node --check scripts/check-solomon-generative-eval-provenance.mjs
+          node --check scripts/lib/solomon-symbolic-image.mjs
+          node scripts/check-solomon-generative-eval-provenance.mjs
+
       - name: Check fixed sample gallery
         run: |
           node scripts/generate-solomon-results-samples.mjs
