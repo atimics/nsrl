@@ -2,11 +2,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import * as solomonImage from "./lib/solomon-symbolic-image.mjs";
 
 const defaults = {
   prompts: "data/processed/key-solomon-goetia-latent-v1/prompts-expanded.jsonl",
   textIndex: "data/processed/key-solomon-goetia-text-index-pg72679-16x16/solomon-spirit-text-signatures.tsv",
   samplerModel: "data/processed/key-solomon-goetia-denoise-v1/text-multichannel-conv/model.nsrltch",
+  retrievalHead: "",
+  requireRetrievalHead: false,
   gold: "data/processed/key-solomon-goetia-latent-v1/gold.tsv",
   outDir: "data/processed/key-solomon-goetia-latent-v1/generative-eval",
   runName: "",
@@ -23,6 +26,9 @@ const defaults = {
   latentTarget: "decoded",
   latentModels: [],
 };
+const FNV64_OFFSET = 0xcbf29ce484222325n;
+const FNV64_PRIME = 0x100000001b3n;
+const FNV64_MASK = 0xffffffffffffffffn;
 
 const signatureGrid = 16;
 const signatureBins = signatureGrid * signatureGrid;
@@ -32,6 +38,49 @@ const imageSize = 128;
 const imageBytes = imageSize * imageSize;
 const inkThreshold = 64;
 const contentWindow = 16;
+const IMAGE_BASE = 144;
+const IMAGE_BINS = 16;
+const IMAGE_CHANNEL_INK = 11;
+const IMAGE_CHANNEL_EDGE = 12;
+const IMAGE_CHANNEL_COMPONENT = 13;
+const IMAGE_CHANNEL_RADIAL = 14;
+const IMAGE_CHANNEL_DIRECTION = 15;
+const CHANNEL_NAMES = new Map([
+  [IMAGE_CHANNEL_INK, "ink"],
+  [IMAGE_CHANNEL_EDGE, "edge"],
+  [IMAGE_CHANNEL_COMPONENT, "component"],
+  [IMAGE_CHANNEL_RADIAL, "radial"],
+  [IMAGE_CHANNEL_DIRECTION, "direction"],
+]);
+const BITMAP_TRACE_SCHEMA = "nsrl.bitmap_sampler_trace.v1";
+const ALLOWED_TARGET_KEYS = new Set([
+  "latent_target_source",
+  "latent_target_number",
+  "latent_target_name",
+  "latent_target_score",
+  "latent_target_latent_score",
+  "latent_target_lexical_score",
+  "latent_target_signature",
+]);
+const FREE_TEXT_TRACE_VALUE_KEYS = new Set([
+  "latent_prompt",
+  "latent_target_name",
+]);
+const FORBIDDEN_TRACE_KEY_PATTERNS = [
+  /display[_-]?cleanup/i,
+  /cleanup/i,
+  /post[_-]?process/i,
+  /postprocess/i,
+  /oracle/i,
+  /ground[_-]?truth/i,
+  /guidance/i,
+  /target[_-]?(pixel|pixels|bitmap|image|ink|seal|lookup|source|guidance)/i,
+  /(pixel|pixels|bitmap|image|ink|seal)[_-]?target/i,
+];
+const BROAD_FORBIDDEN_TRACE_VALUE =
+  /target[-_\s]*(pixel|pixels|bitmap|image|ink|seal|signature)|ground[-_\s]*truth|oracle|retrieval[-_\s]*hybrid|display[-_\s]*cleanup|cleanup|post[-_\s]*process|postprocess|targetctx/i;
+const SOURCE_FORBIDDEN_TRACE_VALUE =
+  /\btarget\b|target[-_\s]*(lookup|guidance|source)|retrieval[-_\s]*hybrid|ground[-_\s]*truth|oracle|display[-_\s]*cleanup|cleanup|post[-_\s]*process|postprocess/i;
 const stopwords = new Set([
   "a", "about", "after", "again", "all", "also", "an", "and", "any", "are",
   "as", "at", "be", "before", "both", "but", "by", "can", "etc", "for",
@@ -53,6 +102,8 @@ function usage() {
       "  --prompts PATH",
       "  --text-index PATH",
       "  --sampler-model PATH",
+      "  --retrieval-head PATH",
+      "  --require-retrieval-head",
       "  --gold PATH",
       "  --out-dir PATH",
       "  --run-name NAME",
@@ -83,6 +134,10 @@ function parseArgs(argv) {
       config.textIndex = requireValue(argv, ++index, arg);
     } else if (arg === "--sampler-model") {
       config.samplerModel = requireValue(argv, ++index, arg);
+    } else if (arg === "--retrieval-head") {
+      config.retrievalHead = requireValue(argv, ++index, arg);
+    } else if (arg === "--require-retrieval-head") {
+      config.requireRetrievalHead = true;
     } else if (arg === "--gold") {
       config.gold = requireValue(argv, ++index, arg);
     } else if (arg === "--out-dir") {
@@ -176,6 +231,12 @@ function main() {
   requireFile(config.prompts, "--prompts");
   requireFile(config.textIndex, "--text-index");
   requireFile(config.samplerModel, "--sampler-model");
+  if (config.requireRetrievalHead && !config.retrievalHead) {
+    throw new Error("--require-retrieval-head was set but --retrieval-head was not supplied");
+  }
+  if (config.retrievalHead) {
+    requireFile(config.retrievalHead, "--retrieval-head");
+  }
   for (const spec of config.latentModels) {
     requireFile(spec.path, `--latent-model ${spec.label}`);
   }
@@ -196,10 +257,32 @@ function main() {
   ], path.join(runDir, "build.log"));
 
   const textRows = readTextIndex(config.textIndex);
-  const prompts = selectPrompts(config, readPrompts(config.prompts), readGoldHashes(config.gold));
+  const retrievalHead = config.retrievalHead ? readRetrievalHead(config.retrievalHead) : null;
+  const promptRows = readPrompts(config.prompts);
+  const prompts = selectPrompts(config, promptRows, readGoldHashes(config.gold));
   if (prompts.length === 0) {
     throw new Error(`no prompts selected for partition ${config.partition}`);
   }
+  const promptProvenance = {
+    promptsHash: fnv64FileHex(config.prompts),
+    promptRows: promptRows.length,
+    selectedPromptRows: prompts.length,
+    selectedPromptEligibleRows: prompts.filter(isGenerativeHeldoutPrompt).length,
+    selectedPromptUniqueTargets: uniquePromptTargets(prompts),
+    selectedPromptEligibleUniqueTargets: uniquePromptTargets(prompts.filter(isGenerativeHeldoutPrompt)),
+    selectedPromptTiers: countBy(prompts, (prompt) => prompt.tier || "unknown"),
+    selectedPromptSources: countBy(prompts, (prompt) => prompt.source || "unknown"),
+    selectedPromptHash: promptSelectionHash(prompts),
+  };
+  const latentModelProvenance = config.latentModels.map((latent) => ({
+    label: latent.label,
+    path: latent.path,
+    modelHash: fnv64FileHex(latent.path),
+  }));
+  const latentModelHashes = Object.fromEntries(
+    latentModelProvenance.map((latent) => [latent.label, latent.modelHash]),
+  );
+  const samplerModelHash = fnv64FileHex(config.samplerModel);
 
   const sampleRows = [];
   const summaryRows = [];
@@ -215,6 +298,8 @@ function main() {
     let pixelTop5 = 0;
     let latentTop1 = 0;
     let latentTop5 = 0;
+    let retrievalTop1 = 0;
+    let retrievalTop5 = 0;
     let rankTotal = 0;
     let fineRankTotal = 0;
     let pixelRankTotal = 0;
@@ -227,6 +312,8 @@ function main() {
     let pixelGtDistanceTotal = 0;
     let latentDecodedDistanceTotal = 0;
     let latentDistanceTotal = 0;
+    let retrievalRankTotal = 0;
+    let minRetrievalMargin = null;
     for (const prompt of prompts) {
       const target = textRows.byNumber.get(prompt.spirit_id);
       if (!target) {
@@ -237,13 +324,9 @@ function main() {
       const promptOutDir = path.join(modelOutDir, promptSlug);
       fs.mkdirSync(promptOutDir, { recursive: true });
       runSampler(config, latent, prompt, promptOutDir);
-      const trace = JSON.parse(fs.readFileSync(path.join(promptOutDir, "trace.json"), "utf8"));
-      if (trace.latent_target_source !== "class-layout-code") {
-        throw new Error(
-          `${promptOutDir} used ${trace.latent_target_source || "no latent target source"}; expected class-layout-code`,
-        );
-      }
-      const sampleBytes = fs.readFileSync(path.join(promptOutDir, `samples.ink${imageSize}.u8`));
+      const cleanTrace = readCleanBitmapTrace(promptOutDir, imageSize);
+      const trace = cleanTrace.trace;
+      const sampleBytes = readGeneratedSampleBytes(cleanTrace.rawSamplesPath, imageSize);
       const generated = generatedMetrics(sampleBytes, target.signature, textRows.targets);
       const generatedFine = generatedMetrics(
         sampleBytes,
@@ -254,6 +337,9 @@ function main() {
       );
       const generatedPixel = generatedImageMetrics(sampleBytes, target.imageBytes, textRows.targets);
       const generatedArtifact = generatedArtifactMetrics(sampleBytes);
+      const generatedRetrieval = retrievalHead
+        ? generatedRetrievalMetrics(sampleBytes, prompt.spirit_id, retrievalHead)
+        : null;
       if (generated.bestRank <= 1) {
         top1 += 1;
       }
@@ -277,6 +363,21 @@ function main() {
       }
       if (latentDecoded.rank <= 5) {
         latentTop5 += 1;
+      }
+      if (generatedRetrieval) {
+        if (generatedRetrieval.bestRank <= 1) {
+          retrievalTop1 += 1;
+        }
+        if (generatedRetrieval.bestRank <= 5) {
+          retrievalTop5 += 1;
+        }
+        retrievalRankTotal += generatedRetrieval.bestRank;
+        if (generatedRetrieval.bestMargin !== null) {
+          minRetrievalMargin =
+            minRetrievalMargin === null
+              ? generatedRetrieval.bestMargin
+              : Math.min(minRetrievalMargin, generatedRetrieval.bestMargin);
+        }
       }
       rankTotal += generated.bestRank;
       fineRankTotal += generatedFine.bestRank;
@@ -308,6 +409,11 @@ function main() {
         generated_edge_ink_q8: generatedArtifact.edgeInkQ8,
         latent_decoded_rank: latentDecoded.rank,
         latent_decoded_target_distance: latentDecoded.distance,
+        generated_retrieval_rank: generatedRetrieval?.bestRank ?? "",
+        generated_retrieval_margin: generatedRetrieval?.bestMargin ?? "",
+        generated_retrieval_top1_spirit_id: generatedRetrieval?.top1SpiritId ?? "",
+        generated_retrieval_top1_name: generatedRetrieval?.top1Name ?? "",
+        generated_retrieval_identity: generatedRetrieval ? (generatedRetrieval.bestRank === 1 ? 1 : 0) : "",
         sampler_target_source: trace.latent_target_source ?? "",
         sampler_target_number: trace.latent_target_number ?? 0,
         sampler_target_name: trace.latent_target_name ?? "",
@@ -323,6 +429,7 @@ function main() {
     summaryRows.push({
       model: latent.label,
       latent_model: latent.path,
+      latent_model_hash: latentModelHashes[latent.label] || "",
       prompts: prompts.length,
       top1,
       top5,
@@ -340,6 +447,12 @@ function main() {
       latent_top5: latentTop5,
       latent_top1_per_mille: Math.floor((latentTop1 * 1000) / prompts.length),
       latent_top5_per_mille: Math.floor((latentTop5 * 1000) / prompts.length),
+      generated_retrieval_top1: retrievalHead ? retrievalTop1 : "",
+      generated_retrieval_top5: retrievalHead ? retrievalTop5 : "",
+      generated_retrieval_top1_per_mille: retrievalHead ? Math.floor((retrievalTop1 * 1000) / prompts.length) : "",
+      generated_retrieval_top5_per_mille: retrievalHead ? Math.floor((retrievalTop5 * 1000) / prompts.length) : "",
+      mean_generated_retrieval_rank_q8: retrievalHead ? Math.floor((retrievalRankTotal * 256) / prompts.length) : "",
+      min_generated_retrieval_margin: retrievalHead ? minRetrievalMargin ?? "" : "",
       mean_rank_q8: Math.floor((rankTotal * 256) / prompts.length),
       mean_rank_16_q8: Math.floor((fineRankTotal * 256) / prompts.length),
       mean_rank_px_q8: Math.floor((pixelRankTotal * 256) / prompts.length),
@@ -375,6 +488,11 @@ function main() {
     "generated_edge_ink_q8",
     "latent_decoded_rank",
     "latent_decoded_target_distance",
+    "generated_retrieval_rank",
+    "generated_retrieval_margin",
+    "generated_retrieval_top1_spirit_id",
+    "generated_retrieval_top1_name",
+    "generated_retrieval_identity",
     "sampler_target_source",
     "sampler_target_number",
     "sampler_target_name",
@@ -389,6 +507,7 @@ function main() {
   writeTsv(path.join(runDir, "summary.tsv"), summaryRows, [
     "model",
     "latent_model",
+    "latent_model_hash",
     "prompts",
     "top1",
     "top5",
@@ -406,6 +525,12 @@ function main() {
     "latent_top5",
     "latent_top1_per_mille",
     "latent_top5_per_mille",
+    "generated_retrieval_top1",
+    "generated_retrieval_top5",
+    "generated_retrieval_top1_per_mille",
+    "generated_retrieval_top5_per_mille",
+    "mean_generated_retrieval_rank_q8",
+    "min_generated_retrieval_margin",
     "mean_rank_q8",
     "mean_rank_16_q8",
     "mean_rank_px_q8",
@@ -423,7 +548,21 @@ function main() {
   ]);
   fs.writeFileSync(
     path.join(runDir, "config.json"),
-    `${JSON.stringify({ ...config, runName, runDir }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        ...config,
+        runName,
+        runDir,
+        ...promptProvenance,
+        latentModelProvenance,
+        latentModelHashes,
+        samplerModelHash,
+        retrievalHeadModelHash: retrievalHead?.model_hash || "",
+        retrievalHeadFeatureCount: Number(retrievalHead?.feature_count || 0),
+      },
+      null,
+      2,
+    )}\n`,
     "utf8",
   );
   console.log(JSON.stringify({ run_dir: runDir, prompts: prompts.length, models: config.latentModels.length }));
@@ -498,22 +637,7 @@ function readLatentModel(filePath) {
   const decoderWeights = readI8Vec(signatureBins * latentDim);
   const decoderBiases = readI16Vec(signatureBins);
   if (offset !== bytes.length) {
-    const extensionMagic = readBytes(8).toString("ascii");
-    if (extensionMagic !== "NSRLCLS1") {
-      throw new Error(`${filePath} has unsupported latent extension ${extensionMagic}`);
-    }
-    const classCount = readU32();
-    for (let classIndex = 0; classIndex < classCount; classIndex += 1) {
-      readU32();
-      const nameLength = readU32();
-      readBytes(nameLength);
-      readI16Vec(latentDim);
-    }
-    readI8Vec(classCount * textFeatureCount);
-    readI16Vec(classCount);
-    if (offset !== bytes.length) {
-      throw new Error(`${filePath} has ${bytes.length - offset} trailing bytes`);
-    }
+    throw new Error(`${filePath} has ${bytes.length - offset} trailing bytes`);
   }
   return {
     latentDim,
@@ -722,10 +846,14 @@ function runSampler(config, latent, prompt, outDir) {
   ];
   runCommand(
     `sample ${latent.label} ${prompt.prompt_hash}`,
-    "target/release/nsrl-bitmap-sample",
+    cargoReleaseBin("nsrl-bitmap-sample"),
     args,
     path.join(outDir, "sample.log"),
   );
+}
+
+function cargoReleaseBin(name) {
+  return path.join(process.env.CARGO_TARGET_DIR || "target", "release", name);
 }
 
 function runCommand(label, command, args, logPath) {
@@ -740,6 +868,139 @@ function runCommand(label, command, args, logPath) {
     throw new Error(`${label} failed; see ${logPath}`);
   }
   return result.stdout.trim();
+}
+
+function readCleanBitmapTrace(outDir, expectedImageSize) {
+  const tracePath = path.join(outDir, "trace.json");
+  if (!fs.existsSync(tracePath)) {
+    throw new Error(`${outDir} missing trace.json`);
+  }
+  let trace = null;
+  try {
+    trace = JSON.parse(fs.readFileSync(tracePath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${tracePath} could not be parsed: ${message}`);
+  }
+  if (!trace || typeof trace !== "object" || Array.isArray(trace)) {
+    throw new Error(`${tracePath} is not a JSON object`);
+  }
+  if (trace.schema !== BITMAP_TRACE_SCHEMA) {
+    throw new Error(`${tracePath} schema ${JSON.stringify(trace.schema || "")} != ${BITMAP_TRACE_SCHEMA}`);
+  }
+  if (trace.latent_target_source !== "decoded-latent") {
+    throw new Error(
+      `${tracePath} latent_target_source ${JSON.stringify(trace.latent_target_source || "")} != decoded-latent`,
+    );
+  }
+  const rawSamplesPath = validatedRawSamplesPath(trace, outDir, expectedImageSize, tracePath);
+  const violations = [];
+  scanTraceObject(trace, [], violations);
+  if (violations.length > 0) {
+    throw new Error(`${tracePath} ${violations[0].field}: ${violations[0].reason}`);
+  }
+  return { trace, rawSamplesPath };
+}
+
+function validatedRawSamplesPath(trace, outDir, expectedImageSize, tracePath) {
+  if (typeof trace.raw_samples !== "string" || trace.raw_samples.length === 0) {
+    throw new Error(`${tracePath} raw_samples is missing`);
+  }
+  const expectedName = `samples.ink${expectedImageSize}.u8`;
+  const expectedPath = path.resolve(outDir, expectedName);
+  const matched = rawSampleReferenceCandidates(trace.raw_samples, outDir)
+    .find((candidate) => sameResolvedPath(candidate, expectedPath));
+  if (!matched) {
+    throw new Error(`${tracePath} raw_samples must resolve to ${expectedName} in out_dir`);
+  }
+  return matched;
+}
+
+function rawSampleReferenceCandidates(reference, sampleDir) {
+  const candidates = [];
+  if (path.isAbsolute(reference)) {
+    candidates.push(path.resolve(reference));
+  } else {
+    candidates.push(path.resolve(sampleDir, reference));
+    candidates.push(path.resolve(reference));
+  }
+  return [...new Set(candidates)];
+}
+
+function sameResolvedPath(left, right) {
+  return path.resolve(left) === path.resolve(right);
+}
+
+function readGeneratedSampleBytes(filePath, expectedImageSize) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`${filePath} missing generated raw sample bytes`);
+  }
+  const bytes = fs.readFileSync(filePath);
+  const expectedImageBytes = expectedImageSize * expectedImageSize;
+  if (bytes.length === 0 || bytes.length % expectedImageBytes !== 0) {
+    throw new Error(
+      `${filePath} byte count ${bytes.length} is not a positive multiple of ${expectedImageBytes}`,
+    );
+  }
+  return bytes;
+}
+
+function scanTraceObject(value, keyPath, violations) {
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      scanTraceObject(value[index], keyPath.concat(String(index)), violations);
+    }
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const nextPath = keyPath.concat(key);
+    const field = nextPath.join(".");
+    if (isForbiddenTraceKey(key) && !ALLOWED_TARGET_KEYS.has(key)) {
+      violations.push({
+        field,
+        reason: "forbidden target-pixel, oracle, guidance, or cleanup field",
+      });
+    }
+    if (typeof child === "string") {
+      const reason = forbiddenTraceValueReason(key, child);
+      if (reason) {
+        violations.push({ field, reason });
+      }
+    }
+    scanTraceObject(child, nextPath, violations);
+  }
+}
+
+function isForbiddenTraceKey(key) {
+  return FORBIDDEN_TRACE_KEY_PATTERNS.some((pattern) => pattern.test(key));
+}
+
+function forbiddenTraceValueReason(key, value) {
+  if (isPathLikeTraceKey(key) || isFreeTextTraceValueKey(key)) {
+    return "";
+  }
+  if (BROAD_FORBIDDEN_TRACE_VALUE.test(value)) {
+    return "forbidden target-pixel, oracle, retrieval-hybrid, or cleanup value";
+  }
+  if (isSourceLikeTraceKey(key) && SOURCE_FORBIDDEN_TRACE_VALUE.test(value)) {
+    return "forbidden generation source value";
+  }
+  return "";
+}
+
+function isFreeTextTraceValueKey(key) {
+  return FREE_TEXT_TRACE_VALUE_KEYS.has(key);
+}
+
+function isPathLikeTraceKey(key) {
+  return /(path|file|dir|raw[_-]?samples|preview|pgm|model)$/i.test(key);
+}
+
+function isSourceLikeTraceKey(key) {
+  return /(source|mode|policy|method|strategy|guidance|cleanup|post[_-]?process|postprocess)$/i.test(key);
 }
 
 function readTextIndex(filePath) {
@@ -775,6 +1036,42 @@ function readTextIndex(filePath) {
   }
   const targets = [...byNumber.values()].sort((left, right) => left.number - right.number);
   return { byNumber, targets };
+}
+
+function readRetrievalHead(filePath) {
+  const model = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (model.schema !== "nsrl.solomon_v2_retrieval_head.v1") {
+    throw new Error(`${filePath} has unexpected schema ${JSON.stringify(model.schema)}`);
+  }
+  validateRetrievalHeadLabels(filePath, model.labels);
+  return {
+    ...model,
+    image_head: hydrateHead(model.image_head),
+  };
+}
+
+function validateRetrievalHeadLabels(filePath, labels) {
+  if (!Array.isArray(labels) || labels.length !== 72) {
+    throw new Error(`${filePath} retrieval head labels ${Array.isArray(labels) ? labels.length : 0} != 72`);
+  }
+  const ids = new Set();
+  for (const label of labels) {
+    const spiritId = Number(label?.spirit_id || 0);
+    if (!Number.isInteger(spiritId) || spiritId < 1 || spiritId > 72) {
+      throw new Error(`${filePath} retrieval head label has invalid spirit_id ${JSON.stringify(label?.spirit_id)}`);
+    }
+    ids.add(spiritId);
+  }
+  if (ids.size !== 72) {
+    throw new Error(`${filePath} retrieval head labels must cover each spirit_id 1..72 exactly once`);
+  }
+}
+
+function hydrateHead(head) {
+  return {
+    biases: head?.biases || [],
+    weights: (head?.weights || []).map((entries) => new Map(entries)),
+  };
 }
 
 function textIndexImageRoot(filePath) {
@@ -838,14 +1135,32 @@ function readGoldHashes(filePath) {
 }
 
 function selectPrompts(config, prompts, goldHashes) {
-  const candidates = prompts
-    .map((prompt) => ({ ...prompt, partition: promptPartition(prompt, config, goldHashes) }))
-    .filter((prompt) => config.partition === "all" || prompt.partition === config.partition)
-    .sort((left, right) => {
-      const leftKey = `${left.tier}:${left.prompt_hash}`;
-      const rightKey = `${right.tier}:${right.prompt_hash}`;
-      return leftKey.localeCompare(rightKey);
-    });
+  const candidates = generativeEvalSelectionCandidates(config, prompts, goldHashes);
+  return balancedPromptSelection(candidates, config.limit);
+}
+
+function generativeEvalSelectionCandidates(config, prompts, goldHashes) {
+  const mapped = prompts.map((prompt) => ({ ...prompt, partition: promptPartition(prompt, config, goldHashes) }));
+  const candidates = mapped.filter((prompt) => config.partition === "all" || prompt.partition === config.partition);
+  if (config.partition === "eval") {
+    const eligible = mapped.filter((prompt) => prompt.partition === "eval" && isGenerativeHeldoutPrompt(prompt));
+    const requiredTargets = Math.min(Number(config.limit || 0), 72);
+    if (uniquePromptTargets(eligible) >= requiredTargets) {
+      return sortPromptsForSelection(eligible);
+    }
+  }
+  return sortPromptsForSelection(candidates);
+}
+
+function sortPromptsForSelection(prompts) {
+  return [...prompts].sort((left, right) => {
+    const leftKey = `${left.tier}:${left.prompt_hash}`;
+    const rightKey = `${right.tier}:${right.prompt_hash}`;
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+function balancedPromptSelection(candidates, limit) {
   const byTier = new Map();
   for (const prompt of candidates) {
     if (!byTier.has(prompt.tier)) {
@@ -857,7 +1172,7 @@ function selectPrompts(config, prompts, goldHashes) {
   const offsets = new Map(tiers.map((tier) => [tier, 0]));
   const selected = [];
   const usedTargets = new Set();
-  while (selected.length < config.limit) {
+  while (selected.length < limit) {
     let advanced = false;
     for (const tier of tiers) {
       const group = byTier.get(tier);
@@ -874,7 +1189,7 @@ function selectPrompts(config, prompts, goldHashes) {
       usedTargets.add(prompt.spirit_id);
       offsets.set(tier, offset + 1);
       advanced = true;
-      if (selected.length >= config.limit) {
+      if (selected.length >= limit) {
         break;
       }
     }
@@ -885,9 +1200,50 @@ function selectPrompts(config, prompts, goldHashes) {
   return selected;
 }
 
+function isGenerativeHeldoutPrompt(prompt) {
+  const tier = String(prompt.tier || "").toLowerCase();
+  const source = String(prompt.source || "").toLowerCase();
+  return source !== "canonical" && (tier.includes("holdout") || tier.includes("novel"));
+}
+
+function uniquePromptTargets(prompts) {
+  return new Set(
+    prompts
+      .map((prompt) => Number(prompt.spirit_id || 0))
+      .filter((id) => Number.isInteger(id) && id > 0),
+  ).size;
+}
+
+function countBy(rows, keyFn) {
+  const out = {};
+  for (const row of rows) {
+    const key = String(keyFn(row) || "unknown");
+    out[key] = (out[key] || 0) + 1;
+  }
+  return out;
+}
+
+function promptSelectionHash(prompts) {
+  const lines = prompts
+    .map((prompt) => [
+      prompt.prompt_hash || "",
+      prompt.spirit_id || "",
+      prompt.partition || "",
+      prompt.tier || "",
+      prompt.source || "",
+      prompt.text || "",
+    ].join("\t"))
+    .sort()
+    .join("\n");
+  return fnv64TextHex(`${lines}\n`);
+}
+
 function promptPartition(prompt, config, goldHashes) {
   if (goldHashes.has(String(prompt.prompt_hash).toLowerCase())) {
     return "gold";
+  }
+  if (isGenerativeHeldoutPrompt(prompt)) {
+    return "eval";
   }
   const bucket = prompt.tier === "tier-cluster-holdout"
     ? hashParts([config.splitSeed, "cluster", prompt.cluster]) % 1000
@@ -935,6 +1291,74 @@ function generatedImageMetrics(sampleBytes, targetBytes, targetRows, imageKey = 
     }
   }
   return { bestDistance, bestRank };
+}
+
+function generatedRetrievalMetrics(sampleBytes, targetSpiritId, retrievalHead) {
+  if (sampleBytes.length % imageBytes !== 0) {
+    throw new Error(`sample byte count ${sampleBytes.length} is not a multiple of ${imageBytes}`);
+  }
+  let bestRank = Number.MAX_SAFE_INTEGER;
+  let bestMargin = null;
+  let top1SpiritId = null;
+  let top1Name = "";
+  for (let offset = 0; offset < sampleBytes.length; offset += imageBytes) {
+    const image = sampleBytes.subarray(offset, offset + imageBytes);
+    const signature = sampleSignature(image, signatureGrid);
+    const ranked = rankRetrievalImage(retrievalHead, signature, retrievalHead.labels.length);
+    const rank = ranked.findIndex((row) => row.spirit_id === targetSpiritId) + 1;
+    const stats = scoreRankStats(ranked, targetSpiritId);
+    const margin = stats.margin;
+    if (
+      rank > 0 &&
+      (rank < bestRank || (rank === bestRank && margin !== null && (bestMargin === null || margin > bestMargin)))
+    ) {
+      bestRank = rank;
+      bestMargin = margin;
+      top1SpiritId = ranked[0]?.spirit_id ?? null;
+      top1Name = ranked[0]?.primary_name ?? "";
+    }
+  }
+  return {
+    bestRank,
+    bestMargin,
+    top1SpiritId,
+    top1Name,
+  };
+}
+
+function rankRetrievalImage(model, signature, count = 5) {
+  const features = imageFeatures(symbolicImageTokens(signature), model.feature_count);
+  return rankHead(model.image_head, model.labels, features, count);
+}
+
+function rankHead(head, labels, features, count) {
+  const ranked = labels.map((label) => ({
+    label: label.label,
+    spirit_id: label.spirit_id,
+    primary_name: label.primary_name,
+    score: scoreLabel(head, label.label, features),
+  }));
+  ranked.sort((left, right) => right.score - left.score || left.spirit_id - right.spirit_id);
+  return ranked.slice(0, count);
+}
+
+function scoreLabel(head, label, features) {
+  let score = head.biases[label] || 0;
+  const weights = head.weights[label] || new Map();
+  for (const [feature, value] of features) {
+    score += (weights.get(feature) || 0) * value;
+  }
+  return score;
+}
+
+function scoreRankStats(ranked, targetSpiritId) {
+  const target = ranked.find((row) => row.spirit_id === targetSpiritId) || null;
+  const runnerUp = ranked.find((row) => row.spirit_id !== targetSpiritId) || null;
+  return {
+    score: target?.score ?? null,
+    runner_up_score: runnerUp?.score ?? null,
+    margin: target && runnerUp ? target.score - runnerUp.score : null,
+  };
 }
 
 function generatedArtifactMetrics(sampleBytes) {
@@ -1020,6 +1444,54 @@ function sampleSignature(bytes, grid = signatureGrid) {
     }
   }
   return sums.map((sum, index) => Math.floor((sum + Math.floor(counts[index] / 2)) / counts[index]));
+}
+
+function symbolicImageTokens(signature) {
+  return solomonImage.symbolicImageTokens(signature, symbolicImageOptions());
+}
+
+function symbolicImageOptions() {
+  return {
+    grid: signatureGrid,
+    imageBase: IMAGE_BASE,
+    imageBins: IMAGE_BINS,
+    channelTokens: {
+      ink: IMAGE_CHANNEL_INK,
+      edge: IMAGE_CHANNEL_EDGE,
+      component: IMAGE_CHANNEL_COMPONENT,
+      radial: IMAGE_CHANNEL_RADIAL,
+      direction: IMAGE_CHANNEL_DIRECTION,
+    },
+  };
+}
+
+function imageFeatures(image, featureCount) {
+  const out = new Map();
+  let channel = "ink";
+  let position = 0;
+  for (const token of image) {
+    if (CHANNEL_NAMES.has(token)) {
+      channel = CHANNEL_NAMES.get(token);
+      position = 0;
+      addHashedImageFeature(out, featureCount, "channel", channel, 32);
+      continue;
+    }
+    const bin = token >= IMAGE_BASE && token < IMAGE_BASE + IMAGE_BINS ? token - IMAGE_BASE : token;
+    addHashedImageFeature(out, featureCount, "ipos", `${channel}:${position}:${bin}`, 64);
+    addHashedImageFeature(out, featureCount, "itok", `${channel}:${bin}`, 8);
+    if (position % signatureGrid === 0) {
+      addHashedImageFeature(out, featureCount, "irow", `${channel}:${Math.floor(position / signatureGrid)}:${bin}`, 6);
+    }
+    position += 1;
+  }
+  return [...out.entries()];
+}
+
+function addHashedImageFeature(out, featureCount, namespace, value, amount) {
+  const hash = fnv32(`${namespace}\xff${value}`);
+  const index = hash % featureCount;
+  const sign = hash & 0x80000000 ? -1 : 1;
+  out.set(index, Math.max(-127, Math.min(127, (out.get(index) || 0) + sign * amount)));
 }
 
 function targetRank(
@@ -1115,6 +1587,15 @@ function timestamp() {
   return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
 
+function fnv32(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index) & 0xff;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash >>> 0;
+}
+
 function hashParts(parts) {
   let hash = 2166136261 >>> 0;
   for (const part of parts) {
@@ -1126,6 +1607,23 @@ function hashParts(parts) {
     hash = Math.imul(hash, 16777619) >>> 0;
   }
   return (hash | 1) >>> 0;
+}
+
+function fnv64FileHex(filePath) {
+  return fnv64BytesHex(fs.readFileSync(filePath));
+}
+
+function fnv64TextHex(value) {
+  return fnv64BytesHex(Buffer.from(String(value), "utf8"));
+}
+
+function fnv64BytesHex(bytes) {
+  let hash = FNV64_OFFSET;
+  for (const byte of bytes) {
+    hash ^= BigInt(Number(byte) & 0xff);
+    hash = (hash * FNV64_PRIME) & FNV64_MASK;
+  }
+  return `0x${hash.toString(16).padStart(16, "0")}`;
 }
 
 main();
