@@ -16,6 +16,37 @@ const evidenceNames = new Set([
   "pipeline-complete.json",
 ]);
 
+const headlineEvalContract = {
+  schema: "nsrl.multimodal_llm_eval.v0",
+  id: "nsrl-mme-v0",
+  label: "NSRL-MME v0 multimodal LLM eval",
+  headline_metric:
+    "minimum per-mille score across model-native multimodal task families",
+  target_score_per_mille: 700,
+  minimum_rows_per_family: 72,
+  policy:
+    "Sampler, replay, browser-probe, and memory-assisted sample metrics are diagnostics only; they do not define the headline score.",
+};
+
+const headlineDirectionalFamilies = [
+  {
+    key: "text_prompt_to_image_plan",
+    label: "text prompt -> symbolic image plan",
+  },
+  {
+    key: "seal_image_to_text",
+    label: "seal image -> identity / attributes / source text",
+  },
+  {
+    key: "text_and_seal_to_explanation",
+    label: "text + seal -> grounded explanation / match",
+  },
+  {
+    key: "identity_source_binding",
+    label: "prompt/name -> identity / source binding",
+  },
+];
+
 const knownArtifacts = [
   {
     id: "denoiser",
@@ -392,6 +423,229 @@ function collectProductEvidence() {
   };
 }
 
+function collectHeadlineEval(productEvidence) {
+  const qualityReport = latestFileInfo(productEvidence.quality_reports);
+  const objectiveCoverage = latestFileInfo(productEvidence.objective_coverage);
+  const quality = qualityReport.present ? maybeReadJson(qualityReport.path) : null;
+  const confidence = quality?.confidence_trace || null;
+  const missingEvidence = [];
+
+  if (!qualityReport.present) {
+    missingEvidence.push("quality-report.json with confidence_trace");
+  }
+  if (!objectiveCoverage.present) {
+    missingEvidence.push("objective-coverage.json");
+  }
+  if (qualityReport.present && quality?.schema !== "nsrl.solomon_v2_quality_report.v1") {
+    missingEvidence.push("quality report schema nsrl.solomon_v2_quality_report.v1");
+  }
+  if (qualityReport.present && (!confidence || typeof confidence !== "object" || Array.isArray(confidence))) {
+    missingEvidence.push("quality report confidence_trace");
+  }
+
+  const metricComponents = confidence ? [
+    ...headlineDirectionalFamilies.map((family) => directionalHeadlineComponent(confidence, family)),
+    hardNegativeHeadlineComponent(confidence),
+  ] : [];
+  const gates = confidence ? [
+    sourceGroundingGate(confidence),
+    generatedOutputGate(confidence, quality),
+  ] : [];
+
+  const measuredMetrics = metricComponents.filter((component) => component.score_per_mille !== null);
+  const allMetricsMeasured = metricComponents.length > 0
+    && measuredMetrics.length === metricComponents.length
+    && metricComponents.every((component) => component.rows >= headlineEvalContract.minimum_rows_per_family);
+  const gatesGreen = gates.length > 0 && gates.every((gate) => gate.ok === true);
+  const score = allMetricsMeasured
+    ? Math.min(...metricComponents.map((component) => component.score_per_mille))
+    : null;
+  const weakest = score === null
+    ? null
+    : metricComponents
+        .map((component) => ({ key: component.key, label: component.label, score_per_mille: component.score_per_mille }))
+        .sort((left, right) => left.score_per_mille - right.score_per_mille || left.key.localeCompare(right.key))[0];
+
+  let status = "missing";
+  if (qualityReport.present && confidence) {
+    status = allMetricsMeasured ? "failed" : "incomplete";
+    if (
+      allMetricsMeasured
+      && gatesGreen
+      && score >= headlineEvalContract.target_score_per_mille
+      && quality.ok === true
+    ) {
+      status = "passed";
+    }
+  }
+
+  return {
+    ...headlineEvalContract,
+    status,
+    score_per_mille: score,
+    target_met: status === "passed",
+    weakest_component: weakest,
+    evidence: {
+      quality_report: qualityReport,
+      objective_coverage: objectiveCoverage,
+      quality_report_ok: quality?.ok === true,
+      confidence_label: confidence?.label || "",
+    },
+    metric_components: metricComponents,
+    gates,
+    missing_evidence: missingEvidence,
+  };
+}
+
+function latestFileInfo(paths) {
+  const infos = (paths || []).map(fileInfo).filter((info) => info.present);
+  if (infos.length === 0) {
+    return { path: "", present: false };
+  }
+  return infos.sort((left, right) => right.modified_at.localeCompare(left.modified_at))[0];
+}
+
+function directionalHeadlineComponent(confidence, family) {
+  const group = confidence.directional_native_eval?.groups?.[family.key] || {};
+  const stats = group.stats || {};
+  const rows = Number(group.targets || stats.targets || 0);
+  const score = numberOrNull(stats.top5_accuracy_per_mille);
+  const errors = Array.isArray(group.errors) ? group.errors.slice(0, 4) : [];
+  if (rows < headlineEvalContract.minimum_rows_per_family) {
+    errors.push(`rows ${rows} < ${headlineEvalContract.minimum_rows_per_family}`);
+  }
+  if (score === null) {
+    errors.push("missing top5_accuracy_per_mille");
+  }
+  if (Number(group.invalid_contexts || stats.invalid_contexts || 0) !== 0) {
+    errors.push(`invalid_contexts ${Number(group.invalid_contexts || stats.invalid_contexts || 0)} != 0`);
+  }
+  return {
+    key: family.key,
+    label: family.label,
+    kind: "model_native_directional_task",
+    score_metric: "top5_accuracy_per_mille",
+    score_per_mille: score,
+    rows,
+    ok: errors.length === 0 && group.ok === true,
+    source: `confidence_trace.directional_native_eval.groups.${family.key}.stats`,
+    errors: [...new Set(errors)],
+  };
+}
+
+function hardNegativeHeadlineComponent(confidence) {
+  const cross = confidence.cross_modal_agreement || {};
+  const metrics = [
+    ["match_yes", "match yes"],
+    ["match_no", "match no"],
+    ["wrong_image_negatives", "wrong-image hard negatives"],
+    ["wrong_prompt_negatives", "wrong-prompt hard negatives"],
+  ].map(([key, label]) => {
+    const metric = cross[key] || {};
+    return {
+      key,
+      label,
+      rows: Number(metric.count || 0),
+      top1: Number(metric.top1 || 0),
+      score_per_mille: confidenceTop1PerMille(metric),
+      min_margin: numberOrNull(metric.min_margin),
+    };
+  });
+  const scores = metrics.map((metric) => metric.score_per_mille).filter((value) => value !== null);
+  const rows = metrics.length > 0 ? Math.min(...metrics.map((metric) => metric.rows)) : 0;
+  const errors = [];
+  for (const metric of metrics) {
+    if (metric.rows < headlineEvalContract.minimum_rows_per_family) {
+      errors.push(`${metric.label} rows ${metric.rows} < ${headlineEvalContract.minimum_rows_per_family}`);
+    }
+    if (metric.score_per_mille === null) {
+      errors.push(`${metric.label} missing top1 score`);
+    }
+    if (metric.rows > 0 && metric.top1 !== metric.rows) {
+      errors.push(`${metric.label} top1 ${metric.top1} != rows ${metric.rows}`);
+    }
+    if (metric.min_margin !== null && metric.min_margin <= 0) {
+      errors.push(`${metric.label} min_margin ${metric.min_margin} <= 0`);
+    }
+  }
+  return {
+    key: "hard_negative_match",
+    label: "match / no-match hard-negative agreement",
+    kind: "model_native_cross_modal_agreement",
+    score_metric: "minimum top1_per_mille across match yes/no and hard negatives",
+    score_per_mille: scores.length === metrics.length ? Math.min(...scores) : null,
+    rows,
+    ok: errors.length === 0,
+    source: "confidence_trace.cross_modal_agreement",
+    submetrics: metrics,
+    errors: [...new Set(errors)],
+  };
+}
+
+function sourceGroundingGate(confidence) {
+  const source = confidence.source_grounding || {};
+  const checks = {
+    grounded_corpus_present: source.grounded_corpus_present === true,
+    grounded_corpus_ok: source.grounded_corpus_ok === true,
+    grounded_source_provenance: source.grounded_source_provenance === true,
+    text_queries_have_source_text: source.text_queries_have_source_text === true,
+    image_queries_have_source_text: source.image_queries_have_source_text === true,
+    sample_queries_have_source_text: source.sample_queries_have_source_text === true,
+    sample_source_text_evidence: source.sample_source_text_evidence === true,
+    generated_text_source_evidence: source.generated_text_source_evidence === true,
+    generated_text_image_agreement: source.generated_text_image_agreement === true,
+    expected_generated_text_agreement: source.expected_generated_text_agreement === true,
+  };
+  const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([key]) => key);
+  return {
+    key: "source_grounding",
+    label: "source-grounded text/image evidence",
+    kind: "gate",
+    ok: failed.length === 0,
+    source: "confidence_trace.source_grounding",
+    failed,
+  };
+}
+
+function generatedOutputGate(confidence, quality) {
+  const generation = confidence.product_generation || {};
+  const integrity = quality?.generation_integrity || {};
+  const checks = {
+    product_generation_present: generation.present === true,
+    heldout_partition_ready: generation.heldout_partition_ready === true,
+    trace_integrity_ok: generation.trace_integrity_ok === true && integrity.ok !== false,
+    product_floor_ok: generation.product_floor_ok === true,
+  };
+  const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([key]) => key);
+  return {
+    key: "generated_output_integrity",
+    label: "held-out generated output integrity",
+    kind: "gate",
+    ok: failed.length === 0,
+    source: "confidence_trace.product_generation + generation_integrity",
+    sample_count: Number(generation.sample_count || 0),
+    best_retrieval_top1_per_mille: numberOrNull(generation.best_retrieval_top1_per_mille),
+    failed,
+  };
+}
+
+function confidenceTop1PerMille(metric) {
+  const count = Number(metric?.count || 0);
+  const top1 = Number(metric?.top1 || 0);
+  if (count <= 0) {
+    return null;
+  }
+  return Math.floor((top1 * 1000) / count);
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function collectPromptEvidence() {
   const prompts = fileInfo("data/processed/key-solomon-goetia-latent-v1/prompts.jsonl");
   const expanded = fileInfo("data/processed/key-solomon-goetia-latent-v1/prompts-expanded.jsonl");
@@ -478,6 +732,14 @@ function deriveStatus(report) {
   if (report.hygiene.run && !report.hygiene.ok) {
     blockers.push("hygiene checks are not green");
   }
+  if (report.headline_eval.status === "missing") {
+    blockers.push("headline multimodal LLM eval (NSRL-MME v0) is not measured");
+  } else if (report.headline_eval.status !== "passed") {
+    const score = report.headline_eval.score_per_mille === null
+      ? "unscored"
+      : `${report.headline_eval.score_per_mille} per mille`;
+    blockers.push(`headline multimodal LLM eval (NSRL-MME v0) is ${report.headline_eval.status}: ${score}`);
+  }
   if (report.product_evidence.quality_reports.length === 0) {
     blockers.push("no Solomon quality-report.json found under data/");
   }
@@ -520,6 +782,7 @@ function deriveStatus(report) {
 }
 
 function buildReport(config) {
+  const productEvidence = collectProductEvidence();
   const report = {
     schema,
     generated_at: new Date().toISOString(),
@@ -528,7 +791,8 @@ function buildReport(config) {
     hygiene: collectHygiene(config.runHygiene),
     prompts: collectPromptEvidence(),
     artifacts: collectArtifacts(),
-    product_evidence: collectProductEvidence(),
+    product_evidence: productEvidence,
+    headline_eval: collectHeadlineEval(productEvidence),
     diagnostic: collectDiagnostic(config),
   };
   report.status = deriveStatus(report);
@@ -538,6 +802,9 @@ function buildReport(config) {
 
 function nextCommands(report) {
   const commands = [];
+  if (report.headline_eval.status === "missing") {
+    commands.push("node scripts/check-solomon-v2-quality-report.mjs --help");
+  }
   if (!report.hygiene.run) {
     commands.push("node scripts/nsrl-status.mjs --run-hygiene");
   }
@@ -575,8 +842,35 @@ function renderMarkdown(report) {
   lines.push(`- Working tree: ${report.git.dirty ? `${report.git.change_count} changed paths` : "clean"}`);
   lines.push(`- Hygiene: ${renderHygiene(report.hygiene)}`);
   lines.push(`- Product diagnostic: ${renderDiagnosticOneLine(report.diagnostic)}`);
+  lines.push(`- Headline eval: ${renderHeadlineOneLine(report.headline_eval)}`);
   lines.push(`- Product proof files: ${report.product_evidence.files.length} found`);
   lines.push(`- Held-out prompt rows: ${report.prompts.expanded_prompts.rows ?? "missing"} expanded, ${report.prompts.prompts.rows ?? "missing"} base`);
+  lines.push("");
+
+  lines.push("## Headline Eval");
+  lines.push("");
+  lines.push(`- Contract: **${report.headline_eval.label}** (\`${report.headline_eval.schema}\`)`);
+  lines.push(`- Score: ${renderHeadlineScore(report.headline_eval)}; target ${report.headline_eval.target_score_per_mille} per mille`);
+  lines.push(`- Metric: ${report.headline_eval.headline_metric}`);
+  lines.push(`- Policy: ${report.headline_eval.policy}`);
+  lines.push(`- Evidence: ${renderHeadlineEvidence(report.headline_eval)}`);
+  if (report.headline_eval.missing_evidence.length > 0) {
+    lines.push(`- Missing evidence: ${report.headline_eval.missing_evidence.join(", ")}`);
+  }
+  if (report.headline_eval.metric_components.length > 0) {
+    lines.push("");
+    lines.push("Metric components:");
+    for (const component of report.headline_eval.metric_components) {
+      lines.push(`- ${component.label}: ${renderComponentScore(component)} (${component.rows} rows)`);
+    }
+  }
+  if (report.headline_eval.gates.length > 0) {
+    lines.push("");
+    lines.push("Required gates:");
+    for (const gate of report.headline_eval.gates) {
+      lines.push(`- ${gate.label}: ${gate.ok ? "green" : `not green (${gate.failed.join(", ")})`}`);
+    }
+  }
   lines.push("");
 
   lines.push("## Blockers");
@@ -637,6 +931,41 @@ function renderMarkdown(report) {
   }
   lines.push("");
   return `${lines.join("\n")}\n`;
+}
+
+function renderHeadlineOneLine(headline) {
+  const score = renderHeadlineScore(headline);
+  const weakest = headline.weakest_component
+    ? `; weakest: ${headline.weakest_component.label}`
+    : "";
+  return `${headline.status} (${score}; target ${headline.target_score_per_mille} per mille${weakest})`;
+}
+
+function renderHeadlineScore(headline) {
+  if (headline.score_per_mille === null || headline.score_per_mille === undefined) {
+    return "not measured";
+  }
+  return `${headline.score_per_mille} per mille`;
+}
+
+function renderHeadlineEvidence(headline) {
+  const quality = headline.evidence.quality_report.present
+    ? `quality \`${headline.evidence.quality_report.path}\``
+    : "quality missing";
+  const objective = headline.evidence.objective_coverage.present
+    ? `objective \`${headline.evidence.objective_coverage.path}\``
+    : "objective missing";
+  const ok = headline.evidence.quality_report_ok ? "quality ok" : "quality not ok";
+  return `${quality}; ${objective}; ${ok}`;
+}
+
+function renderComponentScore(component) {
+  const score = component.score_per_mille === null ? "not measured" : `${component.score_per_mille} per mille`;
+  if (component.ok) {
+    return score;
+  }
+  const errors = component.errors?.length ? `; ${component.errors.join("; ")}` : "";
+  return `${score}, not green${errors}`;
 }
 
 function renderHygiene(hygiene) {

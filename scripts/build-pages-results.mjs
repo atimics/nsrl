@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
@@ -161,6 +170,21 @@ const sampleAssets = [
   },
 ];
 
+const headlineContract = {
+  id: "nsrl-mme-v0",
+  label: "NSRL-MME v0",
+  schema: "nsrl.multimodal_llm_eval.v0",
+  targetScorePerMille: 700,
+  minimumRowsPerFamily: 72,
+};
+
+const headlineDirectionalFamilies = [
+  ["text_prompt_to_image_plan", "Text prompt -> symbolic image plan"],
+  ["seal_image_to_text", "Seal image -> identity / source text"],
+  ["text_and_seal_to_explanation", "Text + seal -> grounded explanation"],
+  ["identity_source_binding", "Prompt/name -> identity binding"],
+];
+
 const probes = config.skipProbes
   ? []
   : [
@@ -218,6 +242,7 @@ const report = {
         ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
         : null,
   },
+  headline: buildHeadlineSummary(),
   assets: assetResults,
   sampleAssets: sampleAssetResults,
   probes: probeResults,
@@ -436,6 +461,198 @@ function lowestRow(rows, column) {
     }
   }
   return best;
+}
+
+function buildHeadlineSummary() {
+  const qualityReport = latestEvidenceFile("quality-report.json");
+  const objectiveCoverage = latestEvidenceFile("objective-coverage.json");
+  const quality = qualityReport ? safeReadJson(qualityReport.absolutePath) : null;
+  const confidence = quality?.confidence_trace || null;
+  const components = confidence
+    ? [
+        ...headlineDirectionalFamilies.map(([key, label]) =>
+          headlineDirectionalComponent(confidence, key, label),
+        ),
+        headlineHardNegativeComponent(confidence),
+      ]
+    : [];
+  const gates = confidence
+    ? [
+        headlineGate(
+          "source-grounding",
+          "Source grounding",
+          sourceGroundingReady(confidence.source_grounding || {}),
+        ),
+        headlineGate(
+          "generated-output-integrity",
+          "Generated output integrity",
+          generatedOutputReady(confidence.product_generation || {}, quality?.generation_integrity || {}),
+        ),
+      ]
+    : [];
+  const measured = components.length > 0
+    && components.every(
+      (component) =>
+        component.scorePerMille !== null &&
+        component.rows >= headlineContract.minimumRowsPerFamily,
+    );
+  const score = measured ? Math.min(...components.map((component) => component.scorePerMille)) : null;
+  const gatesGreen = gates.length > 0 && gates.every((gate) => gate.ok);
+  const status = !qualityReport || !confidence
+    ? "missing"
+    : measured && gatesGreen && quality?.ok === true && score >= headlineContract.targetScorePerMille
+      ? "passed"
+      : measured
+        ? "failed"
+        : "incomplete";
+
+  return {
+    ...headlineContract,
+    status,
+    scorePerMille: score,
+    scoreLabel: score === null ? "not measured" : formatPerMille(score),
+    targetLabel: formatPerMille(headlineContract.targetScorePerMille),
+    hero: status === "passed"
+      ? "NSRL-MME v0 Is Passing"
+      : "Headline Multimodal LLM Eval Is Not Measured",
+    summary:
+      "The public rows below are diagnostics until a green quality-report confidence trace produces the NSRL-MME v0 floor score.",
+    policy:
+      "Sampler, replay, browser-probe, latent-prior, and denoiser metrics are useful diagnostics; they are not the headline multimodal LLM score.",
+    evidence: {
+      qualityReport: evidencePublicPath(qualityReport),
+      objectiveCoverage: evidencePublicPath(objectiveCoverage),
+      qualityReportOk: quality?.ok === true,
+      confidenceLabel: confidence?.label || "",
+    },
+    components,
+    gates,
+  };
+}
+
+function latestEvidenceFile(fileName) {
+  const dataRoot = path.join(rootDir, "data");
+  if (!existsSync(dataRoot)) {
+    return null;
+  }
+  const matches = [];
+  walk(dataRoot, (absolutePath) => {
+    if (path.basename(absolutePath) === fileName) {
+      const stat = statSync(absolutePath);
+      matches.push({
+        absolutePath,
+        relativePath: path.relative(rootDir, absolutePath),
+        modifiedAt: stat.mtime.toISOString(),
+      });
+    }
+  });
+  matches.sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt));
+  return matches[0] || null;
+}
+
+function walk(dir, visit) {
+  let entries = [];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.name === ".git" || entry.name === "target" || entry.name === "node_modules") {
+      continue;
+    }
+    const absolutePath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walk(absolutePath, visit);
+    } else if (entry.isFile()) {
+      visit(absolutePath);
+    }
+  }
+}
+
+function safeReadJson(filePath) {
+  try {
+    return JSON.parse(readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function evidencePublicPath(file) {
+  return file ? file.relativePath : "";
+}
+
+function headlineDirectionalComponent(confidence, key, label) {
+  const group = confidence.directional_native_eval?.groups?.[key] || {};
+  const stats = group.stats || {};
+  return {
+    id: key,
+    label,
+    kind: "directional",
+    rows: Number(group.targets || stats.targets || 0),
+    scorePerMille: numberOrNull(stats.top5_accuracy_per_mille),
+    source: `confidence_trace.directional_native_eval.groups.${key}`,
+  };
+}
+
+function headlineHardNegativeComponent(confidence) {
+  const cross = confidence.cross_modal_agreement || {};
+  const fields = ["match_yes", "match_no", "wrong_image_negatives", "wrong_prompt_negatives"];
+  const metrics = fields.map((field) => cross[field] || {});
+  const scores = metrics.map(confidenceTop1PerMille).filter((value) => value !== null);
+  const rows = metrics.length > 0 ? Math.min(...metrics.map((metric) => Number(metric.count || 0))) : 0;
+  return {
+    id: "hard_negative_match",
+    label: "Match/no-match hard negatives",
+    kind: "agreement",
+    rows,
+    scorePerMille: scores.length === metrics.length ? Math.min(...scores) : null,
+    source: "confidence_trace.cross_modal_agreement",
+  };
+}
+
+function sourceGroundingReady(source) {
+  return [
+    source.grounded_corpus_present,
+    source.grounded_corpus_ok,
+    source.grounded_source_provenance,
+    source.text_queries_have_source_text,
+    source.image_queries_have_source_text,
+    source.sample_queries_have_source_text,
+    source.sample_source_text_evidence,
+    source.generated_text_source_evidence,
+    source.generated_text_image_agreement,
+    source.expected_generated_text_agreement,
+  ].every((value) => value === true);
+}
+
+function generatedOutputReady(generation, integrity) {
+  return generation.present === true
+    && generation.heldout_partition_ready === true
+    && generation.trace_integrity_ok === true
+    && generation.product_floor_ok === true
+    && integrity.ok !== false;
+}
+
+function headlineGate(id, label, ok) {
+  return { id, label, ok };
+}
+
+function confidenceTop1PerMille(metric) {
+  const count = Number(metric?.count || 0);
+  const top1 = Number(metric?.top1 || 0);
+  if (count <= 0) {
+    return null;
+  }
+  return Math.floor((top1 * 1000) / count);
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function buildModelSummaries(report) {
@@ -1060,7 +1277,7 @@ function resultHtml(report) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>NSRL Model Evals</title>
+    <title>NSRL Diagnostic Evals</title>
     <meta name="description" content="Published NSRL Solomon model performance on NSRL's own evaluation suite." />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -1072,14 +1289,16 @@ function resultHtml(report) {
           <a href="./results.json">JSON</a>
         </nav>
         <p class="eyebrow">NSRL MODEL EVALS</p>
-        <h1>How Solomon Models Perform</h1>
-        <p class="lede">Current published scores on NSRL's own replayable Solomon evals. These are internal gates and probes, not external benchmarks.</p>
+        <h1>${escapeHtml(report.headline.hero)}</h1>
+        <p class="lede">${escapeHtml(report.headline.summary)}</p>
         <dl class="build-meta">
           <div><dt>Generated</dt><dd>${escapeHtml(report.generatedAt)}</dd></div>
           <div><dt>Commit</dt><dd>${escapeHtml(shortCommit(report.commit))}</dd></div>
           <div><dt>Workflow</dt><dd>${report.run.url ? `<a href="${escapeHtml(report.run.url)}">run ${escapeHtml(report.run.number || report.run.id)}</a>` : "local"}</dd></div>
         </dl>
       </header>
+
+      ${headlineSection(report.headline)}
 
       <section class="section" aria-labelledby="model-title">
         <div class="section-head">
@@ -1147,6 +1366,73 @@ function resultHtml(report) {
   </body>
 </html>
 `;
+}
+
+function headlineSection(headline) {
+  const components = headline.components.length > 0
+    ? headline.components
+        .map(
+          (component) => `<article>
+            <dt>${escapeHtml(component.label)}</dt>
+            <dd>${component.scorePerMille === null ? "n/a" : escapeHtml(formatPerMille(component.scorePerMille))}</dd>
+            <p>${escapeHtml(component.rows)} rows / ${escapeHtml(component.source)}</p>
+          </article>`,
+        )
+        .join("\n")
+    : `<article>
+        <dt>Measured components</dt>
+        <dd>0</dd>
+        <p>No quality-report confidence trace is present in the published build.</p>
+      </article>`;
+  const gates = headline.gates.length > 0
+    ? headline.gates
+        .map(
+          (gate) => `<article>
+            <dt>${escapeHtml(gate.label)}</dt>
+            <dd>${gate.ok ? "green" : "not green"}</dd>
+            <p>Required gate for passing ${escapeHtml(headline.label)}.</p>
+          </article>`,
+        )
+        .join("\n")
+    : "";
+  return `<section class="section" aria-labelledby="headline-title">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">HEADLINE</p>
+        <h2 id="headline-title">${escapeHtml(headline.label)} Multimodal LLM Eval</h2>
+      </div>
+      <span>${escapeHtml(headline.status)}</span>
+    </div>
+    <article class="headline-card">
+      <dl class="metric-grid">
+        <div class="metric">
+          <dt>Headline score</dt>
+          <dd>${escapeHtml(headline.scoreLabel)}</dd>
+          <span>Floor across model-native multimodal task families.</span>
+        </div>
+        <div class="metric">
+          <dt>Target</dt>
+          <dd>${escapeHtml(headline.targetLabel)}</dd>
+          <span>All required gates must also be green.</span>
+        </div>
+        <div class="metric">
+          <dt>Quality report</dt>
+          <dd>${headline.evidence.qualityReport ? "present" : "missing"}</dd>
+          <span>${escapeHtml(headline.evidence.qualityReport || "data/**/quality-report.json not found")}</span>
+        </div>
+        <div class="metric">
+          <dt>Objective coverage</dt>
+          <dd>${headline.evidence.objectiveCoverage ? "present" : "missing"}</dd>
+          <span>${escapeHtml(headline.evidence.objectiveCoverage || "data/**/objective-coverage.json not found")}</span>
+        </div>
+      </dl>
+      <p>${escapeHtml(headline.policy)}</p>
+    </article>
+    <div class="coverage-grid">
+      ${components}
+      ${gates}
+    </div>
+  </section>`;
 }
 
 function modelCard(model) {
@@ -1281,6 +1567,7 @@ function compactSampleSource(value) {
 
 function evalCoverage(report) {
   const rows = [
+    ["Headline NSRL-MME v0", report.headline.scoreLabel, "Floor score across model-native multimodal task families; missing until quality-report confidence_trace exists."],
     ["Honesty guard", report.honesty.status, "CI fails when claimed model coverage lacks checked-in rows, probes, assets, or samples."],
     ["Prompt sample gallery", `${rowsForTable(report, "sample-gallery")} rows`, "Fixed NSRLLMM1 prompt samples with copied PNGs and a TSV trace."],
     ["Attention artifact probes", `${report.probes.filter((probe) => probe.status === "passed").length}/${report.probes.length} passed`, "Prompt/text/image checks run against the browser artifact."],
@@ -1561,6 +1848,20 @@ dd {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.headline-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.headline-card > p {
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .model-card {
