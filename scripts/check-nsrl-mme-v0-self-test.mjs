@@ -131,6 +131,7 @@ function syntheticQuality(options = {}) {
 }
 
 function syntheticConfidenceTrace(options = {}) {
+  const generatedSampleCount = options.generatedSampleCount ?? 72;
   const scores = {
     text_prompt_to_image_plan: options.weakFamily === "text_prompt_to_image_plan" ? 600 : 800,
     seal_image_to_text: options.weakFamily === "seal_image_to_text" ? 600 : 800,
@@ -170,7 +171,24 @@ function syntheticConfidenceTrace(options = {}) {
       heldout_partition_ready: true,
       trace_integrity_ok: true,
       product_floor_ok: true,
-      sample_count: 72,
+      sample_count: generatedSampleCount,
+      prompt_provenance: {
+        selected_prompt_eligible_rows: generatedSampleCount,
+        selected_prompt_eligible_rows_match: true,
+        selected_prompt_eligible_unique_targets: generatedSampleCount,
+        selected_prompt_eligible_unique_targets_match: true,
+        selected_prompt_hash_match: true,
+        sample_prompt_sets_match: true,
+      },
+      output_identity: {
+        required: true,
+        rows: generatedSampleCount,
+        scored_rows: generatedSampleCount,
+        identity_rows: generatedSampleCount,
+        positive_margin_rows: generatedSampleCount,
+        min_margin: 1,
+        ok: true,
+      },
       best_retrieval_top1_per_mille: 800,
     },
     cross_modal_agreement: {
@@ -251,6 +269,14 @@ function main() {
         expectedStatusCode: 0,
         expectedStatus: "passed",
         expectedScore: 800,
+      }),
+      runCase(root, "tiny-generated-output", {
+        quality: syntheticQuality({ generatedSampleCount: 2 }),
+        objective: syntheticObjective(),
+        expectedStatusCode: 1,
+        expectedStatus: "failed",
+        expectedScore: 800,
+        expectedErrors: ["generated_output_integrity gate is not green"],
       }),
       runCase(root, "weak-floor-score", {
         quality: syntheticQuality({ weakFamily: "identity_source_binding" }),

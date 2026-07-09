@@ -212,7 +212,7 @@ function buildReport(config, inputs) {
     qualityReportGate(inputs.quality, quality),
     objectiveCoverageGate(inputs.objective, objective),
     sourceGroundingGate(confidence),
-    generatedOutputGate(confidence, quality),
+    generatedOutputGate(confidence, quality, config),
   ];
 
   const allMetricsMeasured = metricComponents.length > 0
@@ -447,14 +447,28 @@ function sourceGroundingGate(confidence) {
   };
 }
 
-function generatedOutputGate(confidence, quality) {
+function generatedOutputGate(confidence, quality, config) {
   const generation = confidence?.product_generation || {};
   const integrity = quality?.generation_integrity || {};
+  const promptProvenance = generation.prompt_provenance || {};
+  const outputIdentity = generation.output_identity || {};
+  const sampleCount = Number(generation.sample_count || 0);
+  const selectedEligibleRows = Number(promptProvenance.selected_prompt_eligible_rows || 0);
+  const selectedEligibleUniqueTargets = Number(promptProvenance.selected_prompt_eligible_unique_targets || 0);
   const checks = {
     product_generation_present: generation.present === true,
     heldout_partition_ready: generation.heldout_partition_ready === true,
+    generated_sample_count_ready: sampleCount >= config.minimumRowsPerFamily,
+    selected_prompt_rows_ready: selectedEligibleRows >= config.minimumRowsPerFamily,
+    selected_unique_targets_ready: selectedEligibleUniqueTargets >= config.minimumRowsPerFamily,
+    selected_prompt_provenance_ok:
+      promptProvenance.selected_prompt_eligible_rows_match === true &&
+      promptProvenance.selected_prompt_eligible_unique_targets_match === true &&
+      promptProvenance.selected_prompt_hash_match === true &&
+      promptProvenance.sample_prompt_sets_match === true,
     trace_integrity_ok: generation.trace_integrity_ok === true && integrity.ok !== false,
     product_floor_ok: generation.product_floor_ok === true,
+    generated_output_identity_ok: outputIdentity.required === true ? outputIdentity.ok === true : true,
   };
   const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([key]) => key);
   return {
@@ -463,7 +477,10 @@ function generatedOutputGate(confidence, quality) {
     kind: "gate",
     ok: failed.length === 0,
     source: "confidence_trace.product_generation + generation_integrity",
-    sample_count: Number(generation.sample_count || 0),
+    sample_count: sampleCount,
+    minimum_rows_per_family: config.minimumRowsPerFamily,
+    selected_prompt_eligible_rows: selectedEligibleRows,
+    selected_prompt_eligible_unique_targets: selectedEligibleUniqueTargets,
     best_retrieval_top1_per_mille: numberOrNull(generation.best_retrieval_top1_per_mille),
     failed,
   };

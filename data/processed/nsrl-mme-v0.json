@@ -2,7 +2,7 @@
   "schema": "nsrl.multimodal_llm_eval.v0",
   "id": "nsrl-mme-v0",
   "label": "NSRL-MME v0 multimodal LLM eval",
-  "generated_at": "2026-07-09T08:08:48.740Z",
+  "generated_at": "2026-07-09T08:33:40.146Z",
   "status": "failed",
   "ok": false,
   "headline_score_per_mille": 371,
@@ -152,11 +152,9 @@
       "key": "source_grounding",
       "label": "source-grounded text/image evidence",
       "kind": "gate",
-      "ok": false,
+      "ok": true,
       "source": "confidence_trace.source_grounding",
-      "failed": [
-        "grounded_corpus_ok"
-      ]
+      "failed": []
     },
     {
       "key": "generated_output_integrity",
@@ -165,9 +163,16 @@
       "ok": false,
       "source": "confidence_trace.product_generation + generation_integrity",
       "sample_count": 70,
+      "minimum_rows_per_family": 72,
+      "selected_prompt_eligible_rows": 0,
+      "selected_prompt_eligible_unique_targets": 0,
       "best_retrieval_top1_per_mille": 0,
       "failed": [
         "heldout_partition_ready",
+        "generated_sample_count_ready",
+        "selected_prompt_rows_ready",
+        "selected_unique_targets_ready",
+        "selected_prompt_provenance_ok",
         "trace_integrity_ok"
       ]
     }
@@ -175,8 +180,7 @@
   "missing_evidence": [],
   "errors": [
     "quality_report gate is not green: ok",
-    "source_grounding gate is not green: grounded_corpus_ok",
-    "generated_output_integrity gate is not green: heldout_partition_ready, trace_integrity_ok",
+    "generated_output_integrity gate is not green: heldout_partition_ready, generated_sample_count_ready, selected_prompt_rows_ready, selected_unique_targets_ready, selected_prompt_provenance_ok, trace_integrity_ok",
     "headline score 371 < target 700"
   ]
 }
