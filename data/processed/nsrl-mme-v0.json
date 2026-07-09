@@ -2,7 +2,7 @@
   "schema": "nsrl.multimodal_llm_eval.v0",
   "id": "nsrl-mme-v0",
   "label": "NSRL-MME v0 multimodal LLM eval",
-  "generated_at": "2026-07-09T08:33:40.146Z",
+  "generated_at": "2026-07-09T08:47:33.799Z",
   "status": "failed",
   "ok": false,
   "headline_score_per_mille": 371,
@@ -18,12 +18,12 @@
   "headline_metric": "minimum per-mille score across model-native multimodal task families",
   "policy": "Sampler, replay, browser-probe, and memory-assisted sample metrics are diagnostics only; they do not define the headline score.",
   "inputs": {
-    "quality_report": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report.json",
+    "quality_report": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report-clean-72-eval500-v2.json",
     "objective_coverage": "data/processed/objective-coverage.json"
   },
   "evidence": {
     "quality_report": {
-      "path": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report.json",
+      "path": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report-clean-72-eval500-v2.json",
       "present": true,
       "schema": "nsrl.solomon_v2_quality_report.v1",
       "ok": false
@@ -135,7 +135,7 @@
       "label": "green quality report with confidence trace",
       "kind": "gate",
       "ok": false,
-      "source": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report.json",
+      "source": "data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z/quality-report-clean-72-eval500-v2.json",
       "failed": [
         "ok"
       ]
@@ -162,25 +162,21 @@
       "kind": "gate",
       "ok": false,
       "source": "confidence_trace.product_generation + generation_integrity",
-      "sample_count": 70,
+      "sample_count": 72,
       "minimum_rows_per_family": 72,
-      "selected_prompt_eligible_rows": 0,
-      "selected_prompt_eligible_unique_targets": 0,
-      "best_retrieval_top1_per_mille": 0,
+      "selected_prompt_eligible_rows": 72,
+      "selected_prompt_eligible_unique_targets": 72,
+      "best_retrieval_top1_per_mille": 27,
       "failed": [
-        "heldout_partition_ready",
-        "generated_sample_count_ready",
-        "selected_prompt_rows_ready",
-        "selected_unique_targets_ready",
-        "selected_prompt_provenance_ok",
-        "trace_integrity_ok"
+        "product_floor_ok",
+        "generated_output_identity_ok"
       ]
     }
   ],
   "missing_evidence": [],
   "errors": [
     "quality_report gate is not green: ok",
-    "generated_output_integrity gate is not green: heldout_partition_ready, generated_sample_count_ready, selected_prompt_rows_ready, selected_unique_targets_ready, selected_prompt_provenance_ok, trace_integrity_ok",
+    "generated_output_integrity gate is not green: product_floor_ok, generated_output_identity_ok",
     "headline score 371 < target 700"
   ]
 }
