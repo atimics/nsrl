@@ -464,6 +464,12 @@ function lowestRow(rows, column) {
 }
 
 function buildHeadlineSummary() {
+  const headlineReport = latestEvidenceFile("nsrl-mme-v0.json");
+  const storedHeadline = headlineReport ? safeReadJson(headlineReport.absolutePath) : null;
+  if (storedHeadline?.schema === headlineContract.schema) {
+    return headlineSummaryFromArtifact(storedHeadline, headlineReport);
+  }
+
   const qualityReport = latestEvidenceFile("quality-report.json");
   const objectiveCoverage = latestEvidenceFile("objective-coverage.json");
   const quality = qualityReport ? safeReadJson(qualityReport.absolutePath) : null;
@@ -520,6 +526,7 @@ function buildHeadlineSummary() {
     policy:
       "Sampler, replay, browser-probe, latent-prior, and denoiser metrics are useful diagnostics; they are not the headline multimodal LLM score.",
     evidence: {
+      artifact: evidencePublicPath(headlineReport),
       qualityReport: evidencePublicPath(qualityReport),
       objectiveCoverage: evidencePublicPath(objectiveCoverage),
       qualityReportOk: quality?.ok === true,
@@ -527,6 +534,47 @@ function buildHeadlineSummary() {
     },
     components,
     gates,
+  };
+}
+
+function headlineSummaryFromArtifact(report, file) {
+  const score = report.score_per_mille ?? report.headline_score_per_mille ?? null;
+  const target = Number(report.target_score_per_mille ?? headlineContract.targetScorePerMille);
+  const status = report.status || "missing";
+  return {
+    ...headlineContract,
+    targetScorePerMille: target,
+    minimumRowsPerFamily: Number(report.minimum_rows_per_family ?? headlineContract.minimumRowsPerFamily),
+    status,
+    scorePerMille: score,
+    scoreLabel: score === null ? "not measured" : formatPerMille(score),
+    targetLabel: formatPerMille(target),
+    hero: status === "passed"
+      ? "NSRL-MME v0 Is Passing"
+      : "Headline Multimodal LLM Eval Is Not Measured",
+    summary:
+      "The public rows below are diagnostics until a green NSRL-MME v0 artifact produces the floor score.",
+    policy: report.policy || "Sampler, replay, browser-probe, latent-prior, and denoiser metrics are useful diagnostics; they are not the headline multimodal LLM score.",
+    evidence: {
+      artifact: evidencePublicPath(file),
+      qualityReport: report.evidence?.quality_report?.path || report.inputs?.quality_report || "",
+      objectiveCoverage: report.evidence?.objective_coverage?.path || report.inputs?.objective_coverage || "",
+      qualityReportOk: report.evidence?.quality_report?.ok === true,
+      confidenceLabel: report.evidence?.confidence_label || "",
+    },
+    components: (report.metric_components || []).map((component) => ({
+      id: component.key || component.id || "",
+      label: component.label || component.key || component.id || "",
+      kind: component.kind || "",
+      rows: Number(component.rows || 0),
+      scorePerMille: numberOrNull(component.score_per_mille),
+      source: component.source || "",
+    })),
+    gates: (report.gates || []).map((gate) => ({
+      id: gate.key || gate.id || "",
+      label: gate.label || gate.key || gate.id || "",
+      ok: gate.ok === true,
+    })),
   };
 }
 
@@ -1414,6 +1462,11 @@ function headlineSection(headline) {
           <dt>Target</dt>
           <dd>${escapeHtml(headline.targetLabel)}</dd>
           <span>All required gates must also be green.</span>
+        </div>
+        <div class="metric">
+          <dt>MME artifact</dt>
+          <dd>${headline.evidence.artifact ? "present" : "missing"}</dd>
+          <span>${escapeHtml(headline.evidence.artifact || "data/**/nsrl-mme-v0.json not found")}</span>
         </div>
         <div class="metric">
           <dt>Quality report</dt>

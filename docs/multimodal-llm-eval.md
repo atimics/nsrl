@@ -57,6 +57,7 @@ diagnostic, not a headline multimodal LLM eval.
 Use the status surface for the current answer:
 
 ```bash
+node scripts/check-nsrl-mme-v0.mjs --out data/processed/nsrl-mme-v0.json
 node scripts/nsrl-status.mjs
 node scripts/nsrl-status.mjs --json
 ```

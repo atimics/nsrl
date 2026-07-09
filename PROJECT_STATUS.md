@@ -70,16 +70,22 @@ must be born into the integer/base-2 attention contract.
 The practical sequence is:
 
 1. Keep `node scripts/nsrl-status.mjs` green enough that project state is obvious.
-2. Produce a measured `NSRL-MME v0` quality report with confidence-trace
-   evidence.
-3. Repair the failing product-proof/self-test surface.
-4. Run the Graviton product path:
+2. Produce `data/processed/nsrl-mme-v0.json` with:
+
+   ```bash
+   node scripts/check-nsrl-mme-v0.mjs --out data/processed/nsrl-mme-v0.json
+   ```
+
+3. Feed the scorer a measured `quality-report.json` with confidence-trace
+   evidence plus objective coverage.
+4. Repair the failing product-proof/self-test surface.
+5. Run the Graviton product path:
 
    ```bash
    NSRL_S3_URI=s3://BUCKET/PREFIX scripts/aws/run-solomon-end-to-end.sh
    ```
 
-5. Prove the completed run:
+6. Prove the completed run:
 
    ```bash
    scripts/aws/prove-solomon-product-run.sh \
@@ -88,5 +94,5 @@ The practical sequence is:
      --require-launch-dir
    ```
 
-6. Promote the first narrow NSRL-born `NSRLLMM1` expert before scaling outward
+7. Promote the first narrow NSRL-born `NSRLLMM1` expert before scaling outward
    into routed expert swarms.

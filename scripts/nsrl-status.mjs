@@ -10,6 +10,7 @@ const schema = "nsrl.project_status.v1";
 const defaultFastDiagnosticPath = "/tmp/nsrl-solomon-product-diagnostic-fast.json";
 
 const evidenceNames = new Set([
+  "nsrl-mme-v0.json",
   "quality-report.json",
   "objective-coverage.json",
   "release-proof.json",
@@ -416,6 +417,7 @@ function collectProductEvidence() {
   }
   return {
     files,
+    headline_reports: byName["nsrl-mme-v0.json"],
     quality_reports: byName["quality-report.json"],
     objective_coverage: byName["objective-coverage.json"],
     release_proofs: byName["release-proof.json"],
@@ -424,6 +426,14 @@ function collectProductEvidence() {
 }
 
 function collectHeadlineEval(productEvidence) {
+  const headlineReport = latestFileInfo(productEvidence.headline_reports);
+  if (headlineReport.present) {
+    const stored = maybeReadJson(headlineReport.path);
+    if (stored?.schema === headlineEvalContract.schema) {
+      return normalizeStoredHeadlineEval(stored, headlineReport);
+    }
+  }
+
   const qualityReport = latestFileInfo(productEvidence.quality_reports);
   const objectiveCoverage = latestFileInfo(productEvidence.objective_coverage);
   const quality = qualityReport.present ? maybeReadJson(qualityReport.path) : null;
@@ -484,6 +494,7 @@ function collectHeadlineEval(productEvidence) {
     status,
     score_per_mille: score,
     target_met: status === "passed",
+    artifact: headlineReport,
     weakest_component: weakest,
     evidence: {
       quality_report: qualityReport,
@@ -493,7 +504,40 @@ function collectHeadlineEval(productEvidence) {
     },
     metric_components: metricComponents,
     gates,
-    missing_evidence: missingEvidence,
+    missing_evidence: ["nsrl-mme-v0.json", ...missingEvidence],
+  };
+}
+
+function normalizeStoredHeadlineEval(report, artifact) {
+  const score = report.score_per_mille ?? report.headline_score_per_mille ?? null;
+  const evidence = report.evidence || {};
+  return {
+    ...headlineEvalContract,
+    ...report,
+    status: report.status || "missing",
+    score_per_mille: score,
+    headline_score_per_mille: score,
+    target_score_per_mille: report.target_score_per_mille ?? headlineEvalContract.target_score_per_mille,
+    minimum_rows_per_family: report.minimum_rows_per_family ?? headlineEvalContract.minimum_rows_per_family,
+    target_met: report.target_met === true || report.ok === true,
+    artifact,
+    weakest_component: report.weakest_component || null,
+    evidence: {
+      quality_report: evidence.quality_report || {
+        path: report.inputs?.quality_report || "",
+        present: Boolean(report.inputs?.quality_report),
+      },
+      objective_coverage: evidence.objective_coverage || {
+        path: report.inputs?.objective_coverage || "",
+        present: Boolean(report.inputs?.objective_coverage),
+      },
+      quality_report_ok: evidence.quality_report?.ok === true,
+      confidence_label: evidence.confidence_label || "",
+    },
+    metric_components: report.metric_components || [],
+    gates: report.gates || [],
+    missing_evidence: report.missing_evidence || [],
+    errors: report.errors || [],
   };
 }
 
@@ -803,7 +847,7 @@ function buildReport(config) {
 function nextCommands(report) {
   const commands = [];
   if (report.headline_eval.status === "missing") {
-    commands.push("node scripts/check-solomon-v2-quality-report.mjs --help");
+    commands.push("node scripts/check-nsrl-mme-v0.mjs --out data/processed/nsrl-mme-v0.json");
   }
   if (!report.hygiene.run) {
     commands.push("node scripts/nsrl-status.mjs --run-hygiene");
@@ -949,6 +993,9 @@ function renderHeadlineScore(headline) {
 }
 
 function renderHeadlineEvidence(headline) {
+  const artifact = headline.artifact?.present
+    ? `artifact \`${headline.artifact.path}\`; `
+    : "";
   const quality = headline.evidence.quality_report.present
     ? `quality \`${headline.evidence.quality_report.path}\``
     : "quality missing";
@@ -956,7 +1003,7 @@ function renderHeadlineEvidence(headline) {
     ? `objective \`${headline.evidence.objective_coverage.path}\``
     : "objective missing";
   const ok = headline.evidence.quality_report_ok ? "quality ok" : "quality not ok";
-  return `${quality}; ${objective}; ${ok}`;
+  return `${artifact}${quality}; ${objective}; ${ok}`;
 }
 
 function renderComponentScore(component) {
