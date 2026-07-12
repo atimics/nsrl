@@ -12,7 +12,7 @@ const defaults = {
   minTargetInkCells: 8,
   maxTargetInkCells: 224,
   minEvalClassTop1: 1,
-  expectedTargetSource: "class-layout-code",
+  expectedTargetSource: "decoded-latent",
 };
 
 const expectedPrompts = new Map([

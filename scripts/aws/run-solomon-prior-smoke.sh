@@ -16,8 +16,6 @@ Common knobs:
   NSRL_SOLOMON_SEED_VARIANTS=a,b,c
   NSRL_SOLOMON_SAMPLER_WORKERS=4
   NSRL_SOLOMON_SYNC_AFTER_SAMPLE=1
-  NSRL_SOLOMON_LATENT_TARGET_MODE=class-layout-code
-  NSRL_SOLOMON_LATENT_CLASS_BLEND_Q8=192
   NSRL_SOLOMON_TEXT_WEIGHT=96
   NSRL_SOLOMON_MAX_INTRA_PROMPT_DISTANCE=8192
   NSRL_SOLOMON_MAX_TARGET_DISTANCE=24576
@@ -65,8 +63,6 @@ diversity_weight="${NSRL_SOLOMON_DIVERSITY_WEIGHT:-1}"
 passes="${NSRL_SOLOMON_PASSES:-2}"
 sampler_workers="${NSRL_SOLOMON_SAMPLER_WORKERS:-}"
 sync_after_sample="${NSRL_SOLOMON_SYNC_AFTER_SAMPLE:-1}"
-latent_target_mode="${NSRL_SOLOMON_LATENT_TARGET_MODE:-class-layout-code}"
-latent_class_blend_q8="${NSRL_SOLOMON_LATENT_CLASS_BLEND_Q8:-192}"
 text_weight="${NSRL_SOLOMON_TEXT_WEIGHT:-96}"
 seed_prefix="${NSRL_SOLOMON_SEED_PREFIX:-solomon-prior-smoke-v1}"
 seed_variants="${NSRL_SOLOMON_SEED_VARIANTS:-a,b,c}"
@@ -76,22 +72,9 @@ min_inter_class_distance="${NSRL_SOLOMON_MIN_INTER_CLASS_DISTANCE:-1024}"
 min_target_ink_cells="${NSRL_SOLOMON_MIN_TARGET_INK_CELLS:-8}"
 max_target_ink_cells="${NSRL_SOLOMON_MAX_TARGET_INK_CELLS:-224}"
 min_eval_class_top1="${NSRL_SOLOMON_MIN_EVAL_CLASS_TOP1:-1}"
-case "$latent_target_mode" in
-  class|class-layout-code)
-    latent_target_mode="class-layout-code"
-    ;;
-  decoded|decoded-latent)
-    latent_target_mode="decoded-latent"
-    ;;
-  blend|blended|blended-class-text-code)
-    latent_target_mode="blended-class-text-code"
-    ;;
-  *)
-    echo "unknown NSRL_SOLOMON_LATENT_TARGET_MODE: $latent_target_mode" >&2
-    exit 2
-    ;;
-esac
-expected_target_source="${NSRL_SOLOMON_EXPECTED_TARGET_SOURCE:-$latent_target_mode}"
+# The sampler's only latent target source is the decoded latent path (the
+# NSRLCLS class-head checkpoint extension had no writer and has been removed).
+expected_target_source="${NSRL_SOLOMON_EXPECTED_TARGET_SOURCE:-decoded-latent}"
 IFS=',' read -r -a seed_variant_list <<< "$seed_variants"
 seed_variant_values=()
 for seed_variant in "${seed_variant_list[@]}"; do
@@ -118,8 +101,7 @@ sync_artifacts() {
   fi
 }
 
-echo "[0/6] checking Solomon generation path honesty"
-node scripts/check-solomon-generation-honesty.mjs
+echo "[0/6] checking Solomon denoiser model"
 node scripts/check-solomon-denoiser-model.mjs --model "$denoise_model"
 
 echo "[1/6] building Solomon prior binaries"
@@ -181,7 +163,7 @@ node scripts/run-solomon-prior-gate.mjs \
 sync_artifacts
 
 manifest="${run_dir}/manifest.tsv"
-printf 'prompt_slug\tseed_variant\tprompt\tout_dir\tpgm\tpng\tlatent_target_source\tlatent_target_mode\tlatent_class_blend_q8\ttext_weight\tlatent_target_number\tlatent_target_name\tlatent_target_score\n' > "$manifest"
+printf 'prompt_slug\tseed_variant\tprompt\tout_dir\tpgm\tpng\tlatent_target_source\ttext_weight\tlatent_target_number\tlatent_target_name\tlatent_target_score\n' > "$manifest"
 
 prompt_specs=(
   "crocell|Crocell"
@@ -191,7 +173,7 @@ prompt_specs=(
   "astronomy-herbs-teacher|astronomy and herbs teacher"
 )
 
-echo "[5/6] sampling fixed prompt panel through latent ${latent_target_mode} path"
+echo "[5/6] sampling fixed prompt panel through latent ${expected_target_source} path"
 for prompt_spec in "${prompt_specs[@]}"; do
   IFS='|' read -r slug prompt <<< "$prompt_spec"
   for seed_variant in "${seed_variant_list[@]}"; do
@@ -210,8 +192,6 @@ for prompt_spec in "${prompt_specs[@]}"; do
       --preview-columns "$samples" \
       --seed "${seed_prefix}-${slug}-${seed_variant}" \
       --init noise \
-      --latent-target-mode "$latent_target_mode" \
-      --latent-class-blend-q8 "$latent_class_blend_q8" \
       --text-weight "$text_weight"
     )
     if [[ -n "$sampler_workers" ]]; then
@@ -244,8 +224,6 @@ print("\t".join([
     str(pathlib.Path(out_dir, "samples.pgm")),
     png,
     str(trace.get("latent_target_source", "")),
-    str(trace.get("latent_target_mode", "")),
-    str(trace.get("latent_class_blend_q8", "")),
     str(trace.get("text_weight", "")),
     str(trace.get("latent_target_number", "")),
     str(trace.get("latent_target_name", "")),

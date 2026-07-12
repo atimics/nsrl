@@ -59,6 +59,14 @@ The checked-in 72-prompt diagnostic row in
 identity under oracle plans but weak rendered-image retrieval identity, so the
 next model work should first improve learned prompt-to-signature planning.
 
+The v2 quality report treats this as product-generation evidence only when the
+run directory includes `summary.tsv`, `config.json`, and `samples.tsv`; those
+sidecars prove the samples came from the held-out `eval` partition with
+`decoded-latent` sampler targets. Add `--retrieval-head PATH` to also score the
+rendered held-out bitmaps with the v2 image retrieval head, or let v2 attention
+post-score the existing generative eval run once it has trained
+`retrieval-head.json`.
+
 Build the coarse joint text/image-token model:
 
 ```bash
@@ -74,10 +82,178 @@ Build the attention-based joint text/image-token model:
 scripts/run-solomon-attention-smoke.sh
 ```
 
-This emits an `NSRLLMM1` native causal mini-transformer artifact. The smoke run
-uses a small attention-training window budget with accumulated integer batches,
-then samples with prompt-conditioned corpus decoding from `examples.jsonl`. The
-smoke gates coherent Bael/Stolas text and 256-token image plans.
+This emits an `NSRLLMM1` native causal mini-transformer artifact. The compiled
+integer core now uses the promoted width (`d_model=128`, two heads, hidden dim
+256) and a two-block stacked forward trunk. Lower stacked blocks initialize as
+no-op residual blocks, and the serial and map-reduce host trainers
+backpropagate through stacked blocks with conservative lower-layer warm-up. The
+map-reduce path now accumulates per-layer gradients for stacked Graviton-style
+batches. The smoke run uses a small attention-training window budget with
+accumulated integer batches, then samples with
+prompt-conditioned corpus decoding from `examples.jsonl`. The smoke gates
+coherent Bael/Stolas text and 256-token image plans.
+For local experiments set `NSRL_SOLOMON_ATTENTION_BATCH_MODE=map-reduce` and
+`NSRL_SOLOMON_ATTENTION_MAP_REDUCE_WORKERS=0` to use the same auto-worker
+batched path that the AWS end-to-end runner selects by default.
+
+Set `NSRL_SOLOMON_ATTENTION_CORPUS_VERSION=v2` to build the task-marked
+bidirectional binding corpus. It adds identify, text-to-image, image-to-text,
+image-to-explain, text-image-explain, image-to-attributes, explain,
+description-to-image, positive match, wrong-seal no-match, and
+wrong-prompt/name no-match records while
+preserving canonical joint examples for sampling memory. The attention eval
+trace reports a `tasks` object for these records. Supervised v2 task prompts
+are identity-bearing; a generic canonical prompt like `king solomon seal` is
+normalized to a spirit-specific prompt before it is used for retrieval or match
+training. V2 also emits explicit identity binding rows for primary names,
+aliases, and seal-ID prompts, and the retrieval spine requires each one as both
+`identify` and `text-to-image` evidence. V2 defaults to
+`--image-token-profile symbolic16`, which serializes ink, edge,
+component/topology, radial-position, and stroke-direction channels using the
+same 16 image-bin tokens.
+For v2 runs, the attention smoke scripts call
+`scripts/check-solomon-attention-task-eval.mjs` and
+`scripts/check-solomon-v2-retrieval-spine.mjs`; these gates require all task
+groups to be present, reject skipped or invalid contexts by default, verify
+72-spirit task coverage, require the `symbolic16` image-token profile/channels
+by default, check held-out prompt retrieval when the prompt corpus is
+available, and prove both no-match directions bind to the intended spirit
+pair.
+By default v2 runners require held-out prompt evidence
+(`NSRL_SOLOMON_V2_REQUIRE_HELDOUT_PROMPTS=1`,
+`NSRL_SOLOMON_V2_MIN_HELDOUT_PROMPT_ROWS=72`) from
+`NSRL_SOLOMON_ATTENTION_HELDOUT_PROMPTS` or the checked-in expanded prompt
+corpus, so promotion-style reports cannot pass with held-out retrieval omitted.
+The no-match rows include both wrong-seal examples and mirrored wrong-prompt/name
+examples so the retrieval spine learns mismatch direction, not only distance to
+the nearest seal.
+Product runners expose the no-match floors as `NSRL_SOLOMON_V2_MIN_MATCH_NO_IMAGE_TOP1`
+and `NSRL_SOLOMON_V2_MIN_MATCH_NO_PROMPT_TOP1`, both defaulting to `72`.
+They also train and gate `retrieval-head.json`, a sparse integer auxiliary
+text/image class head that records explicit identity-anchor scores and provides
+a model artifact for the retrieval spine before generation.
+Generated sample binding uses that retrieval head to classify the generated
+16x16 plan back to a spirit, so the gate proves image-to-text identity as well
+as nearest target-signature distance.
+For staged curriculum runs, set
+`NSRL_SOLOMON_ATTENTION_V2_CURRICULUM_STAGES=identity,image,text-to-image,description-to-image,image-to-text,explain,hard-negative,native-bind`;
+the runner uses `scripts/filter-solomon-multimodal-corpus.mjs` to derive ordered
+task corpora from the same v2 stream, then continues into the final full joint
+pass. The final `native-bind` stage defaults to
+`NSRL_SOLOMON_ATTENTION_V2_NATIVE_BIND_EPOCHS=2`; product gates require that
+extra binding pressure unless explicitly disabled for experiments. The AWS
+end-to-end runner uses that v2 curriculum stage order by default.
+Staged runs also write `curriculum-stages.json`,
+which gates the filtered manifests, stage train traces, stage order, and filter
+recipes before the final quality report. Filtered manifests carry
+identity-binding hashes, and the stage checker requires identity-sensitive
+stages to preserve the source alias and seal-ID binding rows. The image-to-text
+stage includes seal-to-name, seal-to-source-description,
+text+seal-to-source-description, and seal-to-attributes records.
+Generated known-prompt samples are then checked by
+`scripts/check-solomon-attention-sample-binding.mjs`, which ranks the emitted
+`image.ink16.u8` plan against the target signatures and verifies retrieval-head
+image identity. The saved `sample-binding.json`/`prior-sample-binding.json`
+traces include rank margins and text/image agreement flags, giving each sample
+a compact retrieval confidence trace. The smoke scripts also persist
+`identity-inference.json` from `scripts/infer-solomon-v2-identity.mjs`, which
+uses the same sparse integer retrieval head as a reusable text-to-identity,
+seal-plan-to-identity, and sample agreement report with required source-text
+evidence.
+They also persist
+`generation-integrity.json` from
+`scripts/check-solomon-generation-integrity.mjs`; this fails if generated
+sample traces expose target-pixel/oracle guidance, retrieval-hybrid target
+sources, or display-time cleanup/postprocess fields. Finally,
+`scripts/check-solomon-v2-quality-report.mjs` writes `quality-report.json`,
+joining task eval, retrieval-head eval, sample binding, identity inference, and
+generation integrity. Set `NSRL_SOLOMON_V2_MIN_TOTAL_TOP5_PER_MILLE`,
+`NSRL_SOLOMON_V2_MIN_TEXT_TOP5_PER_MILLE`, or
+`NSRL_SOLOMON_V2_MIN_IMAGE_TOP5_PER_MILLE` to ratchet native model-only top-5
+quality on larger runs. Set
+`NSRL_SOLOMON_V2_MIN_TASK_TARGETS=all=72` to require each task bucket to
+evaluate at least a full 72-spirit target set. Product AWS runs combine that
+with `NSRL_SOLOMON_ATTENTION_EVAL_MAX_EXAMPLES=none` and
+`NSRL_SOLOMON_V2_MIN_PHASE_TARGETS=all=72`, requiring the same breadth across
+special/control, prompt, text, and image eval phases.
+Set
+`NSRL_SOLOMON_V2_MIN_TASK_TOP5_PER_MILLE=all=1` to require every v2 task bucket
+to clear a native top-5 floor, with task-specific overrides such as
+`image-to-text=500`. Set `NSRL_SOLOMON_V2_MIN_SOURCE_OVERLAP_TOKENS` and
+`NSRL_SOLOMON_V2_MIN_ATTRIBUTE_SOURCE_OVERLAP_TOKENS` to ratchet source text
+overlap for explanation/source rows and image-to-attributes rows; product AWS
+defaults are `2` and `8`. `NSRL_SOLOMON_V2_MAX_SOURCE_PLACEHOLDER_ROWS`
+defaults to `0`, rejecting generic source placeholder prose from grounded
+source tasks. Use `NSRL_SOLOMON_V2_MIN_MATCH_YES_TOP1`,
+`NSRL_SOLOMON_V2_MIN_MATCH_NO_TOP1`, `NSRL_SOLOMON_V2_MIN_MATCH_NO_IMAGE_TOP1`,
+and `NSRL_SOLOMON_V2_MIN_MATCH_NO_PROMPT_TOP1` to ratchet positive and
+negative match rows; product AWS defaults each to `72`. Use
+`NSRL_SOLOMON_V2_MIN_RETRIEVAL_MARGIN` to require score separation from the
+nearest wrong spirit; product AWS defaults it to `1`. When
+`NSRL_SOLOMON_V2_GENERATIVE_EVAL` is supplied, the
+report also verifies the generative eval `config.json` and `samples.tsv`
+sidecars before setting `product_generation_ready`; generated retrieval columns
+can be ratcheted with
+`NSRL_SOLOMON_V2_MIN_GENERATED_RETRIEVAL_TOP1_PER_MILLE` and
+`NSRL_SOLOMON_V2_MIN_GENERATED_RETRIEVAL_TOP5_PER_MILLE`, plus
+`NSRL_SOLOMON_V2_MIN_GENERATED_RETRIEVAL_MARGIN`; the final report
+recomputes those generated retrieval ranks from raw sample bytes before
+accepting them. Product runs also
+default `NSRL_SOLOMON_V2_REQUIRE_GENERATIVE_OUTPUT_IDENTITY=1`, which requires
+the matching product-floor model to have every held-out generated 128x128 sample
+identify top-1 with a positive retrieval margin after report-side recomputation. Supplying that
+artifact also implies a minimal generated-signature floor:
+`effective_min_generated_top5_16_per_mille` is at least `1`, so zero-hit
+generated 16x16 signature runs remain incomplete evidence. The same report records the architecture profile and
+head split: `NSRLLMM1` token heads for text chars, image-plan bins, and text
+chunks, plus the auxiliary 72-way retrieval class head. Set
+`NSRL_SOLOMON_V2_REQUIRE_ARCHITECTURE_PROFILE=1`,
+`NSRL_SOLOMON_V2_MIN_D_MODEL`, `NSRL_SOLOMON_V2_MIN_HEADS`,
+`NSRL_SOLOMON_V2_MIN_HIDDEN_DIM`, `NSRL_SOLOMON_V2_MIN_TRANSFORMER_LAYERS`, and
+`NSRL_SOLOMON_V2_MIN_CONTEXT_SEQ_LEN` to ratchet promoted runs toward the target
+small-model shape. The base-2 softmax path requires a power-of-four per-head
+dimension; with two heads, the valid promoted width is `d_model=128`
+(`head_dim=64`), while `d_model=64` would produce invalid `head_dim=32`. Set
+`NSRL_SOLOMON_V2_REQUIRE_PROMOTED_SMALL_PROFILE=1` for promotion-grade runs;
+that gate requires `d_model=128`, two heads, hidden dim 256-512, 2-4
+transformer layers, and context length 384-768.
+Use `NSRL_SOLOMON_V2_REQUIRE_IDENTITY_INFERENCE=1`,
+`NSRL_SOLOMON_V2_REQUIRE_CURRICULUM_STAGES=1`, and
+`NSRL_SOLOMON_V2_REQUIRE_DENOISE_BRIDGE=1` when a run should fail unless the
+full bidirectional binding, staged curriculum, and denoise product-path
+artifacts are present. V2 smokes also default
+`NSRL_SOLOMON_V2_REQUIRE_CONFIDENCE_TRACE=1`, which requires the final
+`quality-report.json` to show prompt retrieval, image retrieval, hard-negative
+match checks, source evidence, generated sample agreement, and any required
+denoise bridge agreeing in one cross-modal trace.
+Set `NSRL_SOLOMON_ATTENTION_DENOISER_MODEL` to add the optional product-path
+bridge: the smoke passes each generated `image.ink16.u8` plan to
+`nsrl-bitmap-sample --attention-plan`, then
+`scripts/check-solomon-attention-denoise-bridge.mjs` verifies that the 128x128
+denoiser trace used `latent_target_source:"attention-plan"` and exactly the
+generated plan bytes. The checker also hashes the denoiser model named by the
+sampler `trace.model`, and the final quality report recomputes that hash so a
+bridge cannot swap in a stale or unrelated denoiser endpoint. The AWS
+end-to-end runner wires this automatically from the pipeline denoiser model
+when the `denoiser` stage or an explicit
+`NSRL_SOLOMON_DENOISE_MODEL` is present; set
+`NSRL_SOLOMON_ATTENTION_DENOISER_MODEL=none` for an attention-only rerun that
+skips bridge sampling. It also downsamples the 128x128 raw samples back to a
+16x16 signature, records plan distance, rejects flat output with no ink range,
+and, for v2 runs with a retrieval head, requires that downsampled output to
+identify as the prompted spirit. The bridge checker also recomputes the
+retrieval head `model_hash`, so a stale or forged image scorer cannot bless a
+denoised output. The final quality report recomputes those bridge output stats
+from raw denoiser bytes before accepting the bridge sidecar.
+Set
+`NSRL_SOLOMON_ATTENTION_DENOISE_MAX_OUTPUT_SIGNATURE_DISTANCE` after
+an initial measuring run to make plan/output distance a hard gate; use
+`NSRL_SOLOMON_ATTENTION_DENOISE_MIN_OUTPUT_INK_RANGE` to raise the non-flat
+output floor above the default of 1. Use
+`NSRL_SOLOMON_ATTENTION_DENOISE_MIN_UNIQUE_TARGETS` to require distinct expected
+spirit coverage in the bridge artifact; product Graviton runs default this to
+`2` today and should ratchet toward all 72 Solomon targets as the denoise bridge
+sample set grows.
 
 Use the native eval command to measure the model-only attention path:
 
@@ -135,7 +311,9 @@ be measured directly.
 body-token output rows during the final scaffold repair.
 `--solomon-body-scaffold` adds a deterministic raw-attention body sentence after
 the prompt-bound opening. It is a quality floor for no-memory samples, not a
-replacement for the embedded source-specific prose path.
+replacement for the embedded source-specific prose path. It is limited to
+<=64d diagnostic builds; promoted-width runs should use
+`--solomon-body-opening-repair` plus retrieval/binding gates instead.
 `--solomon-body-opening-repair` uses embedded text memory to add an
 attention-native first-body-token lane after `Solomon selects <Name>: `. The
 repair keeps scaffold-owned tokens additive so the no-memory fallback remains
@@ -243,14 +421,31 @@ per-batch loss-regression guard for larger experiments.
 ## Gates
 
 ```bash
+node scripts/check-solomon-product-diagnostic.mjs
 node scripts/check-solomon-denoiser-model.mjs --model PATH
-node scripts/check-solomon-generation-honesty.mjs
 scripts/check-solomon-eval-replay.sh
 node scripts/check-solomon-prior-smoke.mjs --run-dir PATH
+node scripts/check-solomon-generation-integrity.mjs --sample-dir PATH
+node scripts/check-solomon-attention-denoise-bridge-self-test.mjs
+node scripts/check-solomon-attention-denoise-bridge.mjs --pair ATTENTION:DENOISE
+node scripts/check-solomon-heldout-retrieval-proof.mjs
+node scripts/check-solomon-v2-quality-report.mjs --eval PATH --retrieval-head-eval PATH
+node scripts/check-solomon-native-directional-eval-smoke.mjs
 scripts/run-solomon-multimodal-smoke.sh
 scripts/run-solomon-attention-smoke.sh
 scripts/run-solomon-attention-curriculum-smoke.sh
 ```
+
+Use `check-solomon-product-diagnostic.mjs` as the end-to-end local proof before
+promoting a run. It wraps the denoise bridge self-test together with corpus,
+held-out retrieval, native eval, generative provenance, promotion bundle, and AWS
+dry-run plan evidence; `--fast` keeps only the quicker checks for iteration.
+
+The native directional eval smoke builds the real v2 symbolic corpus and trains
+the integer attention model at 384-token context. It is intentionally small, but
+it still requires the promoted-width `d_model=128`, two-head, two-layer shape,
+measured special/text/image output heads, and all four product directional
+groups before passing.
 
 If samples are weak, the result is weak. Tune the model, dataset, or prior; do
 not add target-pixel guidance or display-time cleanup.

@@ -46,7 +46,7 @@ if [[ ! -f "$model" ]]; then
   exit 2
 fi
 if [[ -z "$latent_model" ]]; then
-  echo "NSRL_SOLOMON_LATENT_MODEL is required; use a class-head latent model from the prior smoke" >&2
+  echo "NSRL_SOLOMON_LATENT_MODEL is required; use a latent model from the prior smoke" >&2
   exit 2
 fi
 if [[ ! -f "$latent_model" ]]; then
@@ -110,8 +110,8 @@ for prompt_spec in "${prompt_specs[@]}"; do
   )
   "${sample_cmd[@]}"
   target_source="$(jq -r '.latent_target_source // ""' "${out_dir}/trace.json")"
-  if [[ "$target_source" != "class-layout-code" ]]; then
-    echo "${out_dir}: sampler target source was '${target_source}', expected class-layout-code" >&2
+  if [[ "$target_source" != "decoded-latent" ]]; then
+    echo "${out_dir}: sampler target source was '${target_source}', expected decoded-latent" >&2
     exit 3
   fi
 
@@ -127,7 +127,7 @@ for prompt_spec in "${prompt_specs[@]}"; do
     --arg label "$label" \
     --arg prompt "$prompt" \
     --arg init "noise" \
-    --arg latent_target "class-layout-code" \
+    --arg latent_target "decoded-latent" \
     --arg out_dir "$out_dir" \
     --arg png "$png" \
     '[

@@ -50,7 +50,8 @@ Purpose: record deterministic construction of the joint Solomon stream over
 prompt bytes, generated text bytes, and 16x16 image-bin tokens.
 
 Outputs include `corpus.tokens.u16` for `NSRLMOD1` and `corpus.tokens.u8` for
-the byte-vocab attention model.
+the byte-vocab attention model. `token_hash` is the FNV-1a hash of
+`corpus.tokens.u8`, matching the native attention trainer/evaluator trace.
 `prompt_profile` records whether prompts were built from `generic`, `names`,
 `seal-names`, or `all`; `seal-names` keeps only `seal of <primary_name>`
 prompts for prompt-binding probes. `sequence_profile` may be `joint`,
@@ -60,6 +61,23 @@ sequences.
 When `text_token_profile` is `chunked`, `text_chunk_base` and `text_chunks`
 describe the reserved byte-token range. The current table uses 96 chunks:
 common Solomon phrases plus all normalized primary spirit names.
+When `corpus_version` is `v2`, the artifact also includes task-marked binding
+records. Reserved byte tokens identify `text-to-image`, `image-to-text`,
+`match`, `explain`, and `identify` tasks, with optional image-channel markers
+for 16x16 ink, edge, component/topology, radial-position, and stroke-direction
+channels. `image-to-text` emits the primary name from image tokens while
+carrying source provenance metadata, so reverse image identity remains tied to
+the same source index as explanation rows. `<TASK_EXPLAIN>` supports name-to-source explanation,
+image-to-source explanation, text+image-to-source explanation, and
+image-to-attributes extraction with a generic `seal attributes` prompt; the
+attention evaluator reports image-first
+explanation records as `image-to-explain`, prompt+image records as
+`text-image-explain`, and image+attribute-query records as
+`image-to-attributes`. V2 defaults to
+`image_token_profile: "symbolic16"`; explicit
+`ink16` and `ink-edge16` profiles remain available for smaller experiments.
+Canonical joint examples remain present so sampling memory can still extract
+text-before-image records.
 
 ## `nsrl.solomon_multimodal_train_trace.v1`
 
@@ -106,24 +124,47 @@ target-frequency weighting fields
 argmax margin term (`argmax_margin_weight_q15`), the target segment filter
 (`target_segment`, for example `all`, `generated-text`, `name-opening`,
 `name-opening-tail`, `body-after-he`, `body-first-after-he`,
-`body-first-after-opening`, or `image` in Solomon traces),
-sequence length, stride, window offset, window count, examined windows,
+`body-first-after-opening`, or `image` in Solomon traces), epoch count,
+sequence length, stride, window offset, configured max-window limit, window count, examined windows,
 accepted/rejected batches, rollback count, rejected window count, and final
-integer accuracy/error metrics. Train traces also include
+integer accuracy/error metrics. Train traces also include `batch_mode`,
+`map_reduce_workers`, `effective_map_reduce_workers`, and
+`available_parallelism`, so Graviton product runs can prove whether
+`0-auto` map-reduce workers resolved to the visible online CPU count. They also
+include native corpus coverage fields: `corpus_coverage_source`,
+`corpus_examples_path`, `corpus_examples_hash`, `corpus_examples`,
+`corpus_skipped_examples`, `corpus_prefix_pad_tokens`, `corpus_orphan_tokens`,
+`tasks`, and `task_phases`. When a run passes `--conditioning-examples`, those
+train coverage groups use and hash the exact v2 task labels from
+`examples.jsonl`, so `description-to-image`, hard-negative `match`,
+image-first explanation, and identity-binding slices stay visible at the Rust
+training boundary.
+They also
+include
 `initial_probability_error_q15`,
 `final_probability_error_q15`, and `probability_error_delta_i64`; smoke scripts
 use those fields to reject runs whose final probability error is higher than
 the initial error. The Solomon attention curriculum smoke also rejects joint
 train traces whose `updates` or `accepted_batches` are zero, so the joint stage
-cannot pass as a no-op.
+cannot pass as a no-op. For v2 staged curriculum runs,
+`check-solomon-v2-curriculum-stages.mjs` also requires the native train task
+coverage to resolve to and hash the filtered stage `examples.jsonl`, to match
+each manifest task record count, and to have zero skipped examples or orphan
+tokens.
 
 Artifact magic: `NSRLLMM1`.
 
-The artifact wraps an `NSRLMT4\n` mini-transformer model plus the Solomon token
+The artifact wraps an `NSRLMT4\n` or `NSRLMT5\n` mini-transformer model plus the Solomon token
 layout, token hash, attention kind, position policy, text token profile, and
 optional compact prompt/text/image memory examples. Version 4 memory entries
 include the 256 image tokens; version 3 memory entries remain readable as
-text-only memory.
+text-only memory. Version 5 writes the promoted-width integer core
+(`d_model=128`, two heads, hidden dim 256) with a two-block stacked forward
+trunk. Lower stacked blocks initialize as no-op residual blocks, and the serial
+and map-reduce host trainers backpropagate through stacked blocks with
+conservative lower-layer warm-up. The stacked map-reduce path accumulates
+per-layer gradients so lower blocks and embeddings train in batched Graviton
+runs too.
 
 ## `nsrl.solomon_attention_sample_trace.v1`
 
@@ -178,6 +219,1247 @@ the artifact text token profile. Rank and margin expose whether probability
 error improvements are moving the true next token near argmax. This is the
 quality signal for model-only attention behavior, separate from
 prompt-conditioned sampling.
+The trace also emits `output_heads.special_head`, `output_heads.text_head`, and
+`output_heads.image_head`. These are measured output-token surfaces over the
+shared `NSRLLMM1` token head: each records token classes/ranges, allowed-token
+count, and stats for task/control markers, prompt+text tokens, and symbolic
+image-channel/image-bin tokens.
+`scripts/check-solomon-native-directional-eval-smoke.mjs` runs this path on the
+real v2 symbolic corpus at 384-token context and requires the promoted-width
+128d/2-head/2-layer shape, the measured output heads, and all product
+directional groups. The smoke summary preserves each product direction's
+aggregate `stats` block, including targets, accuracy, top-5, top-10, rank, and
+margin, and requires a native per-direction top-5 floor of `all=1`. It also
+emits `eval_scope` so downstream proof can distinguish a capped local
+directional smoke from the full 72-target task/phase breadth required by the
+AWS product plan.
+For v2 corpora, `tasks` reports the same metrics grouped by task name so
+identity binding, text-to-image, image-to-text, image-to-explain,
+text-image-explain, image-to-attributes, match, and explanation quality can
+move independently instead of hiding inside one aggregate. `task_phases`
+preserves the same native metrics split by each task's output phase, so product
+gates can reject a nominally present task whose real text or image target
+coverage disappeared.
+
+## `nsrl.solomon_attention_task_eval_check.v1`
+
+Emitted by `scripts/check-solomon-attention-task-eval.mjs`.
+
+Purpose: gate v2 Solomon attention traces by requiring task-level eval stats,
+zero skipped examples by default, zero invalid contexts by default, and nonzero
+targets for canonical joint, identify, text-to-image, image-to-text,
+image-to-explain, text-image-explain, image-to-attributes, explain,
+description-to-image, and match records. When supplied `examples.jsonl`, it also
+checks that the required tasks cover all expected spirits and that match records
+include positive rows plus wrong-seal and wrong-prompt/name negative rows with
+valid hard-negative spirit ids and roles. No-match rows also carry
+`negative_selection=nearest-image-token`, `negative_image_token_distance`, and
+`negative_image_token_rank=1`; retrieval-spine checks recompute the nearest
+non-self seal from the serialized image-token vectors, so hard negatives are
+near-neighbor binding tests instead of arbitrary wrong names. The coverage summary exposes
+`coverage.tasks.match.labels.no.roles.image` and
+`coverage.tasks.match.labels.no.roles.prompt`; both role groups must cover the
+expected spirit count, so a corpus cannot satisfy the gate with only generic
+no-match rows. V2 supervised task prompts are
+identity-bearing; non-identifying generic prompts from the canonical stream are
+normalized to prompts such as `seal of Bael` before they become retrieval or
+match records.
+Product runners surface hard-negative floors through
+`NSRL_SOLOMON_V2_MIN_MATCH_YES_TOP1`, `NSRL_SOLOMON_V2_MIN_MATCH_NO_TOP1`,
+`NSRL_SOLOMON_V2_MIN_MATCH_NO_IMAGE_TOP1`, and
+`NSRL_SOLOMON_V2_MIN_MATCH_NO_PROMPT_TOP1`; all default to `72`.
+When `examples.jsonl` and a token file are supplied, the checker also verifies
+the eval trace's recorded examples path, token path, token count, and corpus
+token hash against those files, so stale eval metrics cannot be paired with a
+fresh v2 corpus.
+`scripts/check-solomon-attention-task-eval-self-test.mjs` emits
+`nsrl.solomon_attention_task_eval_self_test.v1`; it builds a tiny synthetic v2
+fixture with every required task, symbolic image-channel payloads, match yes/no
+rows, wrong-image and wrong-prompt negatives, output heads, and product
+directional groups. The directional groups require conditioning and output
+phase evidence: prompt+image for text-to-image, image+text for reverse image
+tasks, and prompt+image+text for text+seal explanation/match tasks. The
+self-test then mutates the fixture to prove the gate rejects missing
+conditioning/output directional phase evidence, weak per-direction top-k
+quality, partial coverage, corrupt task markers, invalid task modality order,
+missing hard-negative role coverage, missing serialized image-channel markers,
+weak channel stats, duplicate channel payload collapse, output-head accounting
+drift, and stale eval/corpus provenance.
+When supplied `--manifest`, `--require-corpus-version`,
+`--require-image-token-profile`, or `--require-image-token-channels`, the same
+checker also gates the v2 corpus contract. The attention smoke defaults require
+`corpus_version: "v2"` and the richer `symbolic16` image profile with ink, edge,
+component, radial, and direction channels. Product gates also pass
+`--require-image-channel-token-stats`, which requires `manifest.json` to include
+`image_token_channel_stats` evidence that each required channel has one 16x16
+block per source seal, activates every source seal, and spans at least
+`--min-image-channel-distinct-bins` bins. Product gates also require every
+required channel to report one unique source-record payload hash per source seal
+and zero duplicate source-record hashes, so a declared channel cannot collapse
+to the same symbolic surface across spirits. When `examples.jsonl` is checked
+against a manifest or explicit `--tokens PATH`, the report also emits
+`task_marker_integrity`: every example's `token_offset`/`token_count` slice must
+fit inside the serialized corpus, match the row's `token_hash`, and begin with
+the expected task marker pattern such as `[BOS,TASK_TEXT_TO_IMAGE,PROMPT]`,
+`[BOS,TASK_IMAGE_TO_TEXT,IMAGE]`, or `[BOS,TASK_MATCH,PROMPT]`. It also emits
+`task_modality_integrity`, which checks the full marker order implied by each
+bidirectional task: prompt-to-image rows must be `PROMPT -> IMAGE`,
+image-to-text/explain rows must be `IMAGE -> TEXT`, text+image explanation and
+match rows must be `PROMPT -> IMAGE -> TEXT`, and image-attribute rows must be
+`IMAGE -> PROMPT -> TEXT` with a generic attribute prompt. It also emits
+`source_provenance` for source-bound rows, including `image-to-text` identity
+rows whose output is only the name while full source text appears in explanation
+tasks. Source-bound rows also expose `source_query_kind` so product evidence can
+distinguish identity-to-image, image-identity, image-source,
+text-image-source, image-attributes, primary-name, and source-description
+directions. The contract records per-task `source_query_kind_rows`,
+`source_query_kind_ok_rows`, and `source_query_kinds`, plus
+`image_channel_marker_integrity`: image-bearing v2 examples must contain each
+required symbolic channel marker after `IMAGE`, in order, followed by a
+256-token payload in the configured image-bin range.
+By default the checker also requires `output_heads.special_head`,
+`output_heads.text_head`, and `output_heads.image_head`, verifies their measured
+target counts match the native phase summaries, and includes them in
+`output_heads`; pass `--no-require-output-heads` only for legacy traces.
+Optional thresholds can require minimum per-task target counts, top-1/top-5/
+top-10 accuracy, and total accuracy.
+
+## `nsrl.solomon_v2_grounded_corpus_check.v1`
+
+Emitted by `scripts/check-solomon-v2-grounded-corpus.mjs`.
+
+Purpose: gate the source-grounded content inside v2 examples before training.
+The checker compares `explain`, `image-to-explain`, `text-image-explain`, and
+`description-to-image` rows against the source text index, requiring all
+expected spirits and source-token overlap for every row. It also requires
+`explain` rows to use the primary name as their prompt by default, preserving
+the explicit `Name -> source description` training direction instead of
+allowing generic seal prompts to stand in. It also requires `description-to-image`
+rows to use a prompt with source-description overlap by default, preserving the
+explicit `source description -> seal tokens` direction instead of allowing
+generic name prompts to stand in. It also requires
+row-level source provenance by default: each grounded row must carry
+`source_spirit_id`, `source_text_hash`, `source_excerpt`, and
+`source_excerpt_hash`, and the hashes and excerpt containment must match the
+source text index. It also checks `image-to-attributes` rows for the generic
+`seal attributes` prompt shape, rejects prompts that leak the primary name, and
+requires explicit rank/appearance/office fields, source-token overlap, and no
+generic legion or rank placeholder. The report is written as `grounded-corpus.json` by v2
+attention smokes and is included in `quality-report.json` when present. It
+records `examples_hash` and `text_index_hash`; the final quality report compares
+`examples` and optional `examples_hash` against the promoted corpus examples and
+compares `text_index_hash` against the promoted manifest `source_text_index`.
+It requires `expect_spirits` to match the promoted manifest row count. It records
+`min_source_overlap_tokens` and
+`min_attribute_source_overlap_tokens`; product runs default these floors to `2`
+and `8`, respectively. It records `require_source_provenance` plus per-task
+`source_provenance_rows`, `source_provenance_hash_mismatches`, and
+`source_excerpt_hash_mismatches`; quality and promotion gates require complete
+source provenance for grounded tasks. It records `require_name_source_explain`
+plus per-task `name_source_prompt_rows` and `name_source_prompt_ok_rows`; product
+gates require all `explain` rows to pass that name-source prompt check. It
+records `require_description_source_image` plus per-task
+`description_source_prompt_rows` and `description_source_prompt_ok_rows`; product
+gates require all `description-to-image` rows to pass that source-description
+prompt check. It records `require_image_attribute_generic_prompt` plus per-task
+`image_attribute_prompt_rows` and `image_attribute_prompt_ok_rows`; product
+gates require all `image-to-attributes` rows to use a generic, non-name-leaking
+attribute prompt. It also records
+`max_source_placeholder_rows`, which
+product runners default to `0` so generic source placeholders cannot satisfy
+the source/explanation tasks, and `max_attribute_generic_rank_rows`, which
+defaults to `0` so `image-to-attributes` rows must carry source-derived rank or
+title text.
+
+## `nsrl.solomon_v2_grounded_corpus_self_test.v1`
+
+Emitted by `scripts/check-solomon-v2-grounded-corpus-self-test.mjs`.
+
+Purpose: fast local contract coverage for the grounded corpus checker. The
+self-test builds synthetic source text and v2 example fixtures, then requires
+`scripts/check-solomon-v2-grounded-corpus.mjs` to accept complete grounded
+source/explanation and `image-to-attributes` rows while rejecting weak source
+overlap, source placeholder text, generic attribute-rank fallbacks, bad
+source-text hashes, non-name explain prompts, non-source description image
+prompts, name-leaking attribute prompts, and missing grounded attribute task
+coverage.
+
+## `nsrl.solomon_v2_retrieval_spine_check.v1`
+
+Emitted by `scripts/check-solomon-v2-retrieval-spine.mjs`.
+
+Purpose: gate the v2 multimodal corpus as a retrieval/classification spine
+before free-running generation. The checker builds an integer feature profile
+for each known spirit from the text index and v2 examples, then verifies that
+known prompt records retrieve the correct spirit, optional held-out prompt
+rows retrieve top-1/top-5,
+image-to-text/image-to-explain/text-image-explain/image-to-attributes task
+records rank the correct seal by image-token distance, positive match rows rank
+the intended seal, and no-match rows cover both wrong-seal and wrong-prompt/name
+directions. The `match.no_by_role.image` and `match.no_by_role.prompt` metrics
+are thresholded separately by `--min-match-no-image-top1` and
+`--min-match-no-prompt-top1`, both defaulting to all 72 spirits.
+The checker also requires explicit `identity_binding` v2 rows for primary
+names, `seal of <primary>`, every distinct non-primary alias and `seal of
+<alias>`, plus `seal id N`, `spirit N`, and `goetic spirit N`. Each required
+binding must appear as both `identify` and `text-to-image` evidence, and the
+report exposes `identity_bindings.required_prompts`, per-task coverage, and
+`identity_bindings.by_kind`.
+With `--require-heldout-prompts` and `--min-heldout-prompt-rows`, missing or
+too-small held-out prompt corpora fail the gate instead of producing a null
+optional metric. Held-out prompt evaluation uses only non-canonical prompt rows
+whose `tier` contains `holdout` or `novel`; reports include
+`prompt_rows_total`, `heldout_prompt_rows`, `heldout_prompt_tiers`,
+`heldout_prompt_sources`, and `heldout_prompt_unique_targets`, and required
+held-out runs must cover all 72 spirits.
+This is a corpus-and-binding gate, separate from model next-token accuracy.
+
+## `nsrl.solomon_multimodal_corpus_filter.v1`
+
+Emitted by `scripts/filter-solomon-multimodal-corpus.mjs`.
+
+Purpose: derive stage-specific Solomon training corpora from an existing
+`examples.jsonl` plus `corpus.tokens.u8` pair while preserving the serialized
+stream format. The filter selects tasks such as `identify`, `image-to-text`,
+`image-to-explain`, `text-image-explain`, `image-to-attributes`, `text-to-image`,
+`description-to-image`, and `match`, optionally narrowing match rows by label
+or hard-negative role, then rewrites `token_offset`,
+`padding_before`, `token_count`, and token hashes against the new compact token
+file. Filtered manifests include `source_identity_bindings` and
+`identity_bindings` summaries with per-task/per-kind counts and binding-set
+hashes, so staged training can prove it did not drop alias or seal-ID binding
+rows while narrowing tasks. Filtered manifests also include `source_task_coverage`
+and `task_coverage` summaries with per-task records, spirit coverage, identity
+binding rows, and match label/role coverage. The v2 attention curriculum uses this to run
+ordered identity, image,
+text-to-image, description-to-image,
+image-to-text/image-to-explain/text-image-explain/image-to-attributes, explain,
+hard-negative, and final native-bind passes before the full joint pass without
+creating a separate data definition. The native-bind pass revisits canonical
+joint, identity, text-to-image, description-to-image, image-to-text,
+image-grounding, attribute, and explain records after hard negatives so the
+native transformer gets a concentrated bidirectional binding update.
+
+## `nsrl.solomon_v2_curriculum_stage_check.v1`
+
+Emitted by `scripts/check-solomon-v2-curriculum-stages.mjs`.
+
+Purpose: gate ordered v2 curriculum passes. The checker reads each filtered
+stage directory, validates its `nsrl.solomon_multimodal_corpus_filter.v1`
+manifest, compares the stage train trace token hash against the filtered corpus
+hash, and requires accepted batches, accepted updates, examined windows, and
+non-increasing probability error by default. When supplied
+`--require-stage-names`, it also verifies stage order and expected filter shape
+for the selected recipe. The checker also requires the final `native-bind`
+stage to carry at least two training epochs by default, matching the AWS
+product curriculum's extra binding pass. Each stage emits
+`task_marker_integrity`: every
+filtered example's `token_offset`/`token_count` slice must fit the stage token
+file, begin with the expected task marker, and match its row `token_hash`. Each
+stage also emits `task_modality_integrity`, proving the filtered serialized bytes
+preserve each task's expected marker order, such as `PROMPT -> IMAGE`,
+`IMAGE -> TEXT`, `PROMPT -> IMAGE -> TEXT`, or `IMAGE -> PROMPT -> TEXT`. Each
+stage also emits `image_channel_marker_integrity` for symbolic image profiles:
+image-bearing filtered examples must carry the required channel marker bytes and
+256-token image-bin payloads in the serialized stage token file. The final
+quality report requires these blocks for supplied curriculum stages. Each stage
+records `source_examples`,
+`source_examples_hash`, `source_tokens`, and `source_tokens_hash` from the
+unfiltered corpus, and the root `source_corpus_provenance` block requires those
+source paths and hashes to be consistent across all stages. Each stage's native
+train task coverage must also resolve to the stage `examples.jsonl` and match
+its hash, preventing stale task-count traces from passing as fresh curriculum
+runs. Identity-sensitive
+stages also compare selected
+identity-binding hashes against the source corpus: `identity` must preserve all
+`identify` binding rows, while `image`, `text-to-image`, `native-bind`, and
+`all` must preserve all `text-to-image` binding rows. Each checked stage also exposes
+`stage_evidence` derived from manifest `task_coverage`; the `image` stage must
+include `text-to-image`, `description-to-image`, and `image-to-text` rows across
+the full source spirit set, proving image-plan reconstruction and image-to-text
+classification are both present in that curriculum pass. The `native-bind` stage
+must include canonical joint, identity, image-plan, image-classification,
+image-grounding, attribute, and explanation records. The attention curriculum runner writes
+`curriculum-stages.json` when
+`NSRL_SOLOMON_ATTENTION_V2_CURRICULUM_STAGES` is set, and the v2 quality report
+includes it as `curriculum_stages` with a root `curriculum_ready` flag. When
+`NSRL_SOLOMON_ATTENTION_DENOISER_MODEL` is set, the curriculum runner also
+samples the generated Bael 16x16 plan through the 128x128 denoiser, writes
+`denoise-bridge.json`, and feeds that bridge into the same quality report.
+
+## `nsrl.solomon_v2_retrieval_head.v1`
+
+Emitted by `scripts/train-solomon-v2-retrieval-head.mjs`.
+
+Purpose: store a tiny sparse integer 72-way retrieval head for the v2 Solomon
+binding corpus. The artifact has shared spirit labels plus separate text and
+image heads. The text head uses sparse hashed text features plus an explicit
+name/alias/seal-ID identity anchor recorded in the artifact; the image head uses
+sparse hashed symbolic-image-token features. This is an auxiliary class/retrieval
+spine for prompt/image identity confidence before the transformer grows a native
+classification head. Product consumers require `labels` to cover spirit IDs
+`1..72` exactly once; malformed or duplicate label sets are rejected before
+generated-image retrieval scoring. New artifacts also record the retrieval corpus examples
+and token file paths plus FNV64 byte hashes under `corpus`.
+
+## `nsrl.solomon_v2_retrieval_head_eval.v1`
+
+Emitted by `scripts/train-solomon-v2-retrieval-head.mjs`.
+
+Purpose: gate the retrieval-head artifact. It reports training row counts,
+mistake counts, feature count, model hash, corpus examples/token paths and
+optional FNV64 byte hashes, known-prompt top-1/top-5, optional held-out prompt
+path plus FNV64 byte hash, held-out prompt top-1/top-5 over the non-canonical
+`holdout`/`novel` prompt subset,
+`identity_bindings.total`, required
+`identity_bindings.by_kind` buckets for `primary-name`, `primary-seal`, `alias`,
+`alias-seal`, and `seal-id`, aggregate image-to-text/source top-1/top-5,
+per-task `image_tasks` for forward plan rows (`text-to-image`,
+`description-to-image`) and reverse image rows (`image-to-text`,
+`image-to-explain`, `text-image-explain`, and `image-to-attributes`), positive
+match accuracy, combined wrong-seal/wrong-prompt no-match accuracy, and
+`match.no_by_role.image` / `match.no_by_role.prompt` role-level accuracy. The
+script exits nonzero when configured thresholds are missed, including any
+missing or imperfect identity-binding bucket. Promotion-style runs use
+`--require-heldout-prompts` and `--min-heldout-prompt-rows` so held-out
+paraphrase evidence is mandatory; provenance checks recompute the eligible
+held-out row count and unique-target coverage from the prompt file instead of
+trusting the eval trace alone. When the final quality report is also given
+`--examples`, `--manifest`, or `--tokens`, it rejects retrieval-head evals whose
+recorded corpus references do not match those final corpus inputs; if the eval
+records `examples_hash` or `tokens_hash`, those hashes must match the final
+corpus files too. When held-out prompts are required or evaluated, the final
+report also resolves the recorded prompt JSONL, recomputes `prompts_hash`, and
+requires its valid prompt-row count to match `heldout_prompt_rows`.
+
+## `nsrl.solomon_v2_retrieval_head_provenance_check.v1`
+
+Emitted by `scripts/check-solomon-v2-retrieval-head-provenance.mjs`.
+
+Purpose: expose the retrieval-head/eval/corpus binding as a lightweight gate
+before the full quality report exists. The checker loads
+`nsrl.solomon_v2_retrieval_head_eval.v1`, verifies `ok`, recomputes the promoted
+`examples.jsonl` and corpus token FNV64 byte hashes, resolves the recorded
+corpus paths, optionally checks held-out prompt path/hash/row-count provenance,
+loads `nsrl.solomon_v2_retrieval_head.v1`, recomputes its `model_hash`, and
+requires that hash to match the eval trace. It also requires the expected
+Solomon spirit label set, nonempty integer text/image heads, and perfect top-1
+identity binding across known prompts, primary names, primary seals, aliases,
+alias seals, seal IDs, image-to-text/image-explanation/image-attribute tasks,
+and match yes/no hard-negative roles.
+
+## `nsrl.solomon_v2_identity_inference.v1`
+
+Emitted by `scripts/infer-solomon-v2-identity.mjs`.
+
+Purpose: expose the v2 retrieval head as a small bidirectional inference
+surface. The script accepts text queries, raw `image.ink16.u8` plans, and
+generated attention sample directories. It ranks text with the sparse integer
+text head plus recorded name/alias/seal-ID anchors, ranks images by
+reconstructing the same symbolic16 image channels used during retrieval-head
+training, and also reports nearest target signatures by L1 distance. Sample
+reports include prompt
+text, generated text, image-plan, signature, and expected-spirit agreement
+flags plus top-k candidates with source-text excerpts. With
+`--require-sample-agreement`, the script exits nonzero when generated samples
+do not keep prompt text, generated text, image, signature, and expected prompt
+identity aligned. With `--require-source-evidence`, it also requires the
+inferred prompt/generated-text/image/signature candidates to carry source-text
+evidence. V2 smoke runs write
+`identity-inference.json` with at least one text query, one raw image query, and
+one generated sample query; `quality-report.json` now treats any missing query
+mode as incomplete bidirectional identity evidence. The trace records the
+retrieval head `model_hash` and `text_index_hash`; the final quality report
+compares the retrieval-head hash against the retrieval-head eval hash when
+present and compares the source-index hash against the promoted manifest
+`source_text_index`.
+
+## `nsrl.solomon_attention_sample_binding_check.v1`
+
+Emitted by `scripts/check-solomon-attention-sample-binding.mjs`.
+
+Purpose: gate generated `NSRLLMM1` sample directories. The checker reads
+`sample.json` and `image.ink16.u8`, infers the intended spirit from the prompt,
+ranks the generated 16x16 image plan against all known target signatures, and,
+when supplied `retrieval-head.json`, reconstructs symbolic image channels and
+asks the retrieval image head to identify the generated sample. The resulting
+`image_to_text_identification` flag is true only when the generated image plan
+is classified as the expected spirit by the retrieval image head. It also
+reports retrieval text-head rank for both the prompt and the model's generated
+text. `generated_text_identification` is true only when the generated text is
+non-empty and retrieves the expected spirit top-1 with positive margin. Each
+sample carries a `confidence` object with signature rank/margin, retrieval image
+rank/margin, prompt text rank/margin, generated text rank/margin, generated
+image-to-text identity, and prompt/generated-text/image/signature agreement
+flags. Each persisted result includes the generated `image_ink16_u8`
+path so product reports can prove later denoise bridges consumed a checked
+sample plan. The checker prints the trace and can persist it with
+`--out PATH`; v2 attention smoke writes
+`sample-binding.json`, while v2 curriculum smoke writes
+`prior-sample-binding.json`. New traces also record
+`retrieval_head_model_hash` so the final quality report can prove generated
+sample binding used the same retrieval head as the retrieval-head eval.
+
+## `nsrl.solomon_attention_sample_binding_self_test.v1`
+
+Emitted by `scripts/check-solomon-attention-sample-binding-self-test.mjs`.
+
+Purpose: provide a fast fixture proof for the generated sample-binding gate.
+The self-test builds tiny Bael/Stolas attention sample directories, a fixture
+text index, and a fixture retrieval head, then proves
+`check-solomon-attention-sample-binding.mjs` accepts aligned generated
+image/text identity while rejecting wrong generated text and wrong generated
+image identity. It also runs `check-solomon-generation-integrity.mjs` against
+the same fixture shape and proves cleanup/postprocess trace fields are rejected.
+This is a checker-contract test; real native generation coverage remains in the
+attention smoke/product runs that emit `sample-binding.json`.
+
+## `nsrl.solomon_generation_integrity_check.v1`
+
+Emitted by `scripts/check-solomon-generation-integrity.mjs`.
+
+Purpose: gate generated Solomon sample traces for source integrity. The checker
+accepts `nsrl.bitmap_sampler_trace.v1` and
+`nsrl.solomon_attention_sample_trace.v1` traces from `--trace PATH` or
+`--sample-dir PATH`, records generation source fields such as
+`latent_target_source`, `text_prior_source`, and `image_prior_source`, and
+fails on target-pixel/oracle target lookup, retrieval-hybrid guidance, or
+display-time cleanup/postprocess fields. Bitmap sampler traces must also name
+raw sample bytes that resolve to `samples.ink${image_size}.u8` in the same
+sample directory. When
+`--expected-latent-target-source decoded-latent` is supplied for bitmap prior
+samples, the trace must prove that the denoiser condition came from the learned
+latent prior instead of a target bitmap lookup. Attention smokes write
+`generation-integrity.json` beside their sample traces.
+
+## `nsrl.solomon_generation_integrity_self_test.v1`
+
+Emitted by `scripts/check-solomon-generation-integrity-self-test.mjs`.
+
+Purpose: fast fixture coverage for the generation-integrity checker. The
+self-test builds clean bitmap-prior and attention-sample traces, then proves the
+checker rejects legacy `target_source` fields, target-pixel guidance keys,
+oracle source values, display cleanup, raw-sample path drift, missing raw bytes,
+and expected latent-source drift. Product diagnostics and objective coverage
+require these cases so generated sample quality remains bound to learned
+latent/prompt state rather than answer leakage or display-time repair.
+
+## `nsrl.solomon_attention_denoise_bridge_check.v1`
+
+Emitted by `scripts/check-solomon-attention-denoise-bridge.mjs`.
+
+Purpose: prove the product path from an `NSRLLMM1` generated 16x16 image plan
+to a 128x128 `NSRLTCH` denoiser sample. The checker pairs an attention sample
+directory with a bitmap denoiser output directory, verifies that
+`trace.json.latent_target_source` is `attention-plan`, that
+`latent_target_plan` points to the generated `image.ink16.u8`, that the
+`latent_target_signature` exactly matches those 256 plan bytes, and that the
+denoiser wrote non-flat 128x128 raw samples plus a preview PGM. The checker
+also downsamples each 128x128 output into a 16x16 signature, records the minimum
+L1 distance to the generated attention plan as `min_output_signature_distance`,
+records the minimum output ink range as `min_output_ink_range`, and, when
+`--retrieval-head PATH` is supplied, classifies that downsampled output with the
+v2 image retrieval head. Retrieval-head bridge runs record
+`output_image_to_text_identification`, `min_output_retrieval_image_margin`, and
+per-sample retrieval ranks, plus `retrieval_head_model_hash` for final-report
+provenance. The checker also resolves the denoiser sampler `trace.model`,
+records `denoise_model_hash`, and requires every bridge pair to share one
+consistent denoiser model hash. Use `--max-output-signature-distance` to make
+plan/output alignment a hard gate, `--max-output-retrieval-rank` to ratchet
+denoised-output identity, and `--min-output-retrieval-margin` to ratchet its
+margin. Use `--min-unique-targets` to ratchet the bridge beyond "some pairs
+exist"; the artifact records `expected_spirit_ids`,
+`unique_expected_spirit_ids`, `expected_unique_targets`, and
+`missing_expected_spirit_ids` across the 72 Solomon targets. The artifact also
+records aggregate `trace_integrity_ok` and per-result
+`trace_integrity`, rejecting target-pixel, oracle, guidance, postprocess, or
+display-cleanup fields in the denoiser trace. In product quality reports,
+`--require-denoise-output-identity` makes the aggregate output identity and each
+result's output identity mandatory, while any missing or failed
+`trace_integrity` fails the denoise bridge. The final quality report recomputes
+the denoiser model file hash from each bridge result and rejects missing,
+forged, or mixed denoiser-model provenance. It also recomputes
+`denoise_bridge.output_provenance` from each bridge result's raw denoiser bytes,
+attention plan, and retrieval head, rejecting forged output distance, ink-range,
+retrieval-identity, margin, or sample-detail fields. It also
+compares every bridge `attention_plan` against the supplied sample-binding
+results, so a denoise bridge cannot satisfy product evidence with an unrelated
+attention sample. The same provenance check compares the bridge expected
+spirit/name and every output sample-detail expected spirit/name against the
+matched sample-binding result, so a bridge cannot pair one checked image plan
+with another identity. Promotion bundle checks require those same
+`denoise_model_provenance`, `sample_binding_provenance`, and
+`output_provenance` summaries to be present both on `denoise_bridge` and
+`confidence_trace.generation_bridge`, including verified retrieval-head hashes
+and positive recomputed output retrieval margins.
+`scripts/check-solomon-attention-denoise-bridge-self-test.mjs` builds fixture
+attention/denoiser pairs and proves the bridge checker rejects cleanup fields,
+wrong latent target sources, forged latent signatures, flat output bytes, and
+rank-1 denoised outputs whose image-to-text retrieval margin is not positive.
+This is not target-pixel guidance; the plan is generated by the attention model
+and recorded as the conditioning source. Optional attention smoke bridge runs
+write `denoise-bridge.json`.
+
+## `nsrl.solomon_v2_quality_report.v1`
+
+Emitted by `scripts/check-solomon-v2-quality-report.mjs`.
+The companion `scripts/check-solomon-v2-quality-report-self-test.mjs` builds a
+small synthetic v2 fixture and verifies that this report accepts complete
+symbolic image-token, retrieval, source-grounding, and curriculum evidence while
+rejecting weak retrieval margins, broken symbolic channel evidence, missing
+source grounding, weak native per-task confidence, weak generated-output
+identity margins, and broken curriculum identity-binding preservation.
+
+Purpose: provide one scoreboard for v2 small-model readiness. The report joins
+`nsrl.solomon_attention_eval_trace.v1`,
+`nsrl.solomon_v2_retrieval_head_eval.v1`,
+`nsrl.solomon_attention_sample_binding_check.v1`,
+`nsrl.solomon_v2_identity_inference.v1`, and
+`nsrl.solomon_generation_integrity_check.v1`. When supplied
+`--grounded-corpus PATH`, it also includes
+`nsrl.solomon_v2_grounded_corpus_check.v1` and records
+`grounded_corpus_ready`; grounded-corpus examples provenance must match the
+supplied final corpus contract inputs, and grounded/identity source-text index
+hashes must match the supplied manifest `source_text_index`. When supplied `--curriculum-stages PATH`,
+it validates `source_corpus_provenance`, so the staged curriculum source
+examples/token paths and byte hashes must match the supplied final corpus
+contract inputs. When supplied
+`--retrieval-head PATH`, or when the retrieval eval records a model path, the
+report loads `nsrl.solomon_v2_retrieval_head.v1`, recomputes its `model_hash`,
+requires that hash to match the eval trace, and requires valid 72-label text and
+image heads before `class_retrieval_head` can report readiness. The same report
+emits `retrieval_head_eval.corpus_provenance` and
+`retrieval_head_eval.heldout_prompt_provenance`; it requires the eval's recorded
+examples/token file references, optional byte hashes, held-out prompt path, prompt
+byte hash, and prompt row count to match the supplied final corpus contract and
+retrieval eval inputs. Downstream generated sample binding, identity
+inference, and denoise bridge artifacts expose `retrieval_head_provenance` in
+the report; any recorded retrieval-head hash must match the retrieval eval hash.
+When a denoise bridge is supplied, it also exposes
+`denoise_bridge.sample_binding_provenance`; bridge attention plans must match
+the generated `image_ink16_u8` plans recorded by `sample-binding.json`.
+When supplied
+`--generative-eval PATH`, it also reads `summary.tsv` from
+`scripts/run-solomon-generative-eval.mjs` and records
+`product_generation_ready` plus a `generative_eval` section. The generative eval
+path must include the sibling `config.json` and `samples.tsv` artifacts so the
+report can verify the product samples came from the held-out `eval` partition
+and used `decoded-latent` sampler targets rather than target lookup.
+`generative_eval.evidence.prompt_provenance` records the prompt JSONL path,
+resolved prompt file hash, counted prompt rows, deterministic selected prompt
+count/hash, selected unique target count, selected eligible prompt count,
+selected eligible unique target count, missing target IDs, retrieval held-out
+prompt hash agreement when available, and per-model `samples.tsv` prompt-set and
+unique-target coverage. For product `partition=eval` runs, the selector prefers
+non-canonical prompt rows whose tier contains `holdout` or `novel`, falling back
+to the legacy bucket split only when a tiny fixture lacks enough eligible target
+coverage. Promotion checks require the selected eligible-row and unique-target
+fields to be present and matching, not merely recomputable from the prompt JSONL.
+`generative_eval.evidence.latent_model_provenance` records each latent-prior
+label/path, the hash from `config.json.latentModelProvenance`, the hash from
+`summary.tsv.latent_model_hash`, the recomputed file hash, and each sample
+trace's `trace.json.latent_model` hash; missing, forged, mixed, or unresolvable
+latent-prior model evidence fails product generation.
+`generative_eval.evidence.sampler_model_provenance` records
+`config.json.samplerModel`, `samplerModelHash`, each sample trace's
+`trace.model`, the recomputed sampler file hashes, and the required `NSRLTCH`
+model format; missing, forged, mixed, or unresolvable renderer evidence fails
+product generation. The report
+also opens each sample `trace.json`, requires the trace to be
+`nsrl.bitmap_sampler_trace.v1` with `latent_target_source=decoded-latent`,
+requires generated raw sample bytes at the sampler-written
+`samples.ink${image_size}.u8` path inside that sample's `out_dir`, and records
+`generative_eval.evidence.trace_integrity` plus
+`confidence_trace.product_generation.trace_integrity_ok`. It fails
+when required task eval groups are absent or have invalid contexts, when the retrieval head misses any
+known prompt, held-out prompt, image-to-text, positive match row, wrong-seal
+negative row, or wrong-prompt/name negative row,
+when generated sample binding loses generated image-to-text identification,
+generated-text identity, generated-text/image agreement, or
+signature/retrieval/text agreement, or when identity inference loses generated
+text/image/source agreement, or when generation integrity finds target-pixel
+guidance or display cleanup. It also emits `confidence_trace`, a
+compact cross-modal agreement view over known prompt binding, held-out prompt
+binding, identity-binding retrieval by kind, per-task image binding, match
+yes/no agreement, wrong-image and wrong-prompt hard negatives, generated sample
+rank margins, identity-inference prompt/generated-text margins, native forward
+image-plan task metrics for `text-to-image` and
+`description-to-image`, native confidence metrics for every required v2 task,
+weakest native task top-5 and margin summaries, all named product directional
+groups, symbolic image-token byte evidence, source-text grounding,
+grounded source/attribute corpus evidence, attribute binding, optional denoise
+bridge evidence, and optional
+product-generation evidence from the prior/generative eval. `--require-confidence-trace`
+makes that agreement view a hard promotion gate and sets
+`confidence_trace_ready` only when the trace is complete. The
+report independently validates any supplied `curriculum-stages.json` identity
+binding summaries and exposes them as `confidence_trace.identity_curriculum`,
+including selected/source rows, per-stage task hashes, and `preserved` flags for
+alias and seal-ID binding rows. Promotion-bundle checks also inspect this compact
+trace directly: known prompt, held-out prompt, identity-binding, image-to-text,
+per-image-task, forward image-plan, every native task confidence metric, native
+weakest-task summaries, match yes/no, wrong-image, wrong-prompt, all four native
+directional groups, and generated sample agreement summaries must be present, complete, and
+positive-margin instead of relying only on the `confidence_trace.label` string.
+Promotion also rechecks the raw `retrieval_head_eval` metrics for those
+retrieval buckets, including every identity-binding kind, every forward/reverse
+image task (`text-to-image` must cover 576 plan rows; the other image tasks must
+cover 72 rows each), and both hard-negative roles, so a stale confidence summary
+cannot hide a broken retrieval spine.
+Promotion repeats raw `grounded_corpus` task checks too: all required
+source/explanation and attribute tasks must cover 72 spirits, meet source-token
+overlap floors, carry source provenance for every row, and have zero tolerated
+source placeholder or generic attribute-rank rows. The promoted grounded corpus
+must also require the primary-name `explain` direction and report every
+`explain` row as a passing name-source prompt row. It must also require the
+source-description `description-to-image` direction and report every
+`description-to-image` row as a passing description-source prompt row. It must
+also require generic `image-to-attributes` prompts and report every
+`image-to-attributes` row as a passing image-attribute prompt row.
+They also require `confidence_trace.symbolic_image_tokens` to prove the
+`symbolic16` ink, edge, component, radial, and direction channel markers in both
+the promoted corpus and curriculum-stage evidence. Grounding is checked directly
+too: `confidence_trace.source_grounding` must prove source text for text, image,
+and sample queries, generated text/source agreement, grounded source-task
+coverage for `explain`, `image-to-explain`, `text-image-explain`, and
+`description-to-image`, prompt/generated-text retrieval margins, plus grounded
+attribute coverage for `image-to-attributes`.
+When supplied `--manifest` and `--examples`, the report also emits
+`corpus_contract`, validating `--require-corpus-version`,
+`--require-image-token-profile`, and `--require-image-token-channels` against
+both manifest metadata and every v2 example row. Product runners use this to
+prove the `symbolic16` ink/edge/component/radial/direction contract in the final
+promotion artifact, not only in the separate task-eval checker. It also proves
+the examples cover every required task bucket across `manifest.rows` spirits,
+including positive match rows plus both wrong-image and wrong-prompt hard
+negatives. The same section also resolves `manifest.corpus_tokens_u8`/
+`corpus_tokens_u16`, or an explicit `--tokens PATH`, and records
+`corpus_contract.task_marker_integrity`; v2 example token slices must fit in the
+serialized corpus, match their `token_hash`, and begin with the expected
+`BOS,TASK_*,...` marker. It also records
+`corpus_contract.task_modality_integrity`, so each task's serialized bytes must
+carry the expected modality order (`PROMPT -> IMAGE`, `IMAGE -> TEXT`,
+`PROMPT -> IMAGE -> TEXT`, or `IMAGE -> PROMPT -> TEXT`). When image channels
+are required, it also records
+`corpus_contract.image_channel_marker_integrity`, proving image-bearing slices
+contain the configured symbolic channel marker bytes and 256-token image-bin
+payloads after `IMAGE`.
+Promotion repeats those raw corpus-contract checks so a stale symbolic-token
+confidence summary cannot hide weak channel stats, broken task markers, wrong
+modality order, or missing symbolic channel payloads.
+The
+optional `--min-total-top5-per-mille`, `--min-text-top5-per-mille`, and
+`--min-image-top5-per-mille` thresholds ratchet native model-only next-token
+quality without weakening the binding/integrity gates.
+`--min-task-top5-per-mille all=N[,TASK=N...]` adds the same floor per required
+v2 task bucket and records the active `min_top5_per_mille` alongside each task
+summary. `--min-task-targets all=N[,TASK=N...]` requires each task to expose
+enough native eval targets and records the active `min_targets` next to the
+task summary. `--min-phase-targets all=N[,PHASE=N...]` requires native eval
+coverage for the `special`, `prompt`, `text`, and `image` phase summaries and
+records the active floor in `eval.phases`. The final report also validates
+`eval.output_heads`, requiring measured special, text, and image output-token
+surfaces before architecture readiness can be trusted.
+`--require-curriculum-stage-names LIST` requires
+`curriculum-stages.json` to contain that exact ordered stage list and makes the
+same floor visible as `model_only_quality_floor.require_curriculum_stage_names`.
+`--min-grounded-source-overlap-tokens` and
+`--min-grounded-attribute-source-overlap-tokens` reject grounded-corpus
+artifacts produced with weaker source-overlap floors than the product run
+requires. `--max-grounded-source-placeholder-rows` rejects source/explanation
+tasks with generic source placeholders, defaulting to zero tolerated rows in
+product runners. `--max-grounded-attribute-generic-rank-rows` rejects
+`image-to-attributes` artifacts with generic rank fallbacks, also defaulting to
+zero tolerated rows in product runners. `--min-match-yes-top1`, `--min-match-no-top1`,
+`--min-match-no-image-top1`, and `--min-match-no-prompt-top1` make positive
+match, combined no-match, wrong-seal, and wrong-prompt/name retrieval-head
+top-1 counts hard floors and record the active thresholds in
+`model_only_quality_floor`. `--min-retrieval-margin` requires each text,
+image, identity-binding, held-out, and match retrieval bucket to keep a positive
+target-vs-nearest-wrong score gap, and the summaries expose `min_margin` and
+`mean_margin`. The
+generative-eval ratchets `--min-generated-top5-per-mille`,
+`--min-generated-top5-16-per-mille`, `--min-generated-top5-px-per-mille`,
+`--min-generated-retrieval-top1-per-mille`,
+`--min-generated-retrieval-top5-per-mille`, `--min-latent-top5-per-mille`,
+`--max-generated-mean-rank-q8`,
+`--max-generated-mean-rank-16-q8`, and
+`--max-generated-mean-rank-px-q8` apply to at least one evaluated latent model;
+`--max-generated-mean-target-distance-q8`,
+`--max-generated-mean-target-distance-16-q8`, and
+`--max-generated-mean-target-distance-px-q8` cap the corresponding generated
+target-distance columns from `summary.tsv`, making the signature-distance
+quality gate explicit instead of relying only on rank buckets.
+`--require-generative-eval` makes the artifact mandatory. The generated
+retrieval thresholds require `summary.tsv` columns produced by
+`run-solomon-generative-eval.mjs --retrieval-head PATH` or
+`score-solomon-generative-eval-retrieval.mjs --generative-eval PATH
+--retrieval-head PATH`, which classify rendered held-out bitmaps through the v2
+image retrieval head and stamp `config.json.retrievalHeadModelHash`. The runner
+and post-scorer read only the sampler-written `samples.ink${image_size}.u8`
+bytes inside each sample `out_dir`; missing traces, non-`decoded-latent` traces,
+target/oracle/cleanup side-channel traces, traces that point `raw_samples`
+elsewhere, or empty raw byte files fail before retrieval scores are written.
+Both paths reject retrieval heads whose label set is not exactly the 72 Solomon
+spirit IDs, so a missing target cannot collapse into a false rank-1 identity.
+Retrieval-based product-generation gates require that hash to match the
+retrieval-head eval hash. The quality report also recomputes
+`generative_eval.evidence.generated_retrieval_provenance` from each sample's raw
+bytes and rejects mismatched rank, identity, margin, top-1 spirit, or summary
+aggregate columns. `--require-generative-output-identity` makes that
+retrieval evidence a hard per-sample gate for the product-floor matching model:
+all held-out rows for that model must carry `generated_retrieval_identity=1`
+with positive recomputed `generated_retrieval_margin`; set
+`--min-generated-retrieval-margin` to raise that floor. The same supplied run must have
+clean per-sample traces; stale `samples.tsv` rows without `out_dir/trace.json`
+or traces with target-pixel/oracle/cleanup side channels fail the report. Any
+supplied or required generative eval also activates a
+minimal generated-seal rank floor: `effective_min_generated_top5_16_per_mille`
+is at least `1`, so a product run with zero generated 16x16 signature top-5
+hits cannot pass merely because its sidecars exist. Promotion bundle validation
+also requires a positive generated 16x16 target-distance cap and verifies the
+product-floor matching model's generated-signature top-5 and mean target
+distance against those configured floors.
+`--require-heldout-prompts` and `--min-heldout-prompt-rows` flags make held-out
+paraphrase retrieval evidence mandatory in the retrieval-head section. The report also includes
+an architecture profile sourced from attention eval (`d_model`, heads,
+`head_dim`, whether `head_dim` is a power of four, `hidden_dim`,
+`transformer_layers`, and `context_seq_len`), token-head ranges for text chars,
+image-plan tokens, and text chunks, plus the auxiliary `retrieval-head.json`
+text/image class head loaded and hash-checked by the report. The power-of-four head-dimension check matches the
+integer base-2 softmax attention kernel; with two heads, `d_model=128`
+(`head_dim=64`) is a valid promoted target while `d_model=64` (`head_dim=32`) is
+not. `--require-architecture-profile`, `--min-d-model`, `--min-heads`,
+`--min-hidden-dim`,
+`--min-transformer-layers`, and `--min-context-seq-len` turn that profile into
+a promoted-run gate. `--require-promoted-small-profile` applies the current
+Solomon promotion target directly: `d_model=128`, two heads, `head_dim=64`,
+hidden dim 256-512, 2-4 transformer layers, and context length 384-768. The
+root `promoted_small_profile_ready` flag is true only when that shape and the
+text/image class head are present. The promotion bundle checker repeats the
+numeric shape checks and the 72-label class retrieval-head checks so a stale or
+forged ready flag cannot promote a larger model or a report without valid
+text/image retrieval heads. When supplied `--identity-inference PATH`,
+the report requires source-text evidence and sets `identity_inference_ready`;
+v2 smokes pass this artifact by default. `--require-identity-inference`,
+`--require-curriculum-stages`, `--require-denoise-bridge`,
+`--require-denoise-output-identity`, and `--require-confidence-trace`, plus
+`--require-generative-eval` when
+`--generative-eval` is supplied, make those otherwise optional artifacts mandatory
+for promotion-grade product-path runs.
+When supplied `--denoise-bridge PATH`, the quality report also requires
+`nsrl.solomon_attention_denoise_bridge_check.v1` to pass, including output
+signature, ink-range, and denoiser trace-integrity evidence. If the bridge
+includes retrieval-head output identity, the report requires that identity to be
+true, carries `output_image_to_text_identification` and
+`min_output_retrieval_image_margin` into `confidence_trace.generation_bridge`,
+includes `denoise_model_provenance`, `sample_binding_provenance`, and
+`output_provenance`, plus the bridge target-coverage fields, and sets
+`denoise_bridge_ready`. `--min-denoise-bridge-unique-targets` writes the
+required distinct-target floor into `model_only_quality_floor`; product AWS
+runs currently default it to `2`. Promotion bundle checks
+require those provenance summaries to remain present and internally matched
+between `denoise_bridge` and `confidence_trace.generation_bridge`. With
+`--require-denoise-output-identity`, those
+fields must be present and true/positive; the confidence trace marks this with
+`generation_bridge.output_identity_required`. V2 attention smokes write
+`quality-report.json`.
+
+## `nsrl.solomon_heldout_retrieval_proof.v1`
+
+Emitted by `scripts/check-solomon-heldout-retrieval-proof.mjs`.
+
+Purpose: prove the text side of the retrieval-first product spine against the
+checked-in held-out prompt panel. The checker builds the real v2 symbolic corpus,
+trains `nsrl.solomon_v2_retrieval_head.v1` with the configured
+`prompts-expanded.jsonl`, then runs
+`check-solomon-v2-retrieval-head-provenance.mjs` against the exact
+`examples.jsonl`, token file, retrieval-head artifact, and prompt JSONL. It
+requires all 72 labels, valid text and image class heads, held-out prompt row
+coverage, all-72 unique target coverage, held-out top-1/top-5 floors, positive
+retrieval margins, and prompt path/hash/row-count provenance. Its summary also
+carries known-prompt, identity-binding, image-to-text, per-image-task, match
+yes/no, wrong-image, and wrong-prompt metrics.
+
+## `nsrl.solomon_heldout_retrieval_proof_self_test.v1`
+
+Emitted by `scripts/check-solomon-heldout-retrieval-proof-self-test.mjs`.
+
+Purpose: fast local contract coverage for the held-out retrieval proof. The
+self-test builds synthetic retrieval eval, retrieval-head, prompt, example, and
+token artifacts, then requires
+`scripts/check-solomon-v2-retrieval-head-provenance.mjs` to accept a complete
+fixture while rejecting stale prompt hashes, held-out prompt row-count drift,
+weak held-out top-1 evidence, weak held-out retrieval margins, missing image
+scorers, and stale retrieval-head model hashes.
+
+## `nsrl.solomon_token_layout_self_test.v1`
+
+Emitted by `scripts/check-solomon-token-layout-self-test.mjs`.
+
+Purpose: prove Solomon's reserved integer vocabulary did not drift across the
+JS v2 corpus builder, the Rust native attention binary, JS fallback gate
+layouts, retrieval/scoring consumers, and the shared symbolic image encoder
+defaults. The self-test checks control markers, task markers, symbolic image
+channel markers, text/image token ranges, and shared `symbolic16` marker
+offsets, then mutates fixture layouts to prove marker/base mismatches are
+rejected.
+
+## `nsrl.solomon_product_diagnostic_check.v1`
+
+Emitted by `scripts/check-solomon-product-diagnostic.mjs`.
+
+Purpose: provide the local one-command proof that Solomon still looks like the
+small multimodal product path. The default run executes the v2 symbolic corpus
+contract, checked-in held-out retrieval proof, promoted-context native
+directional eval smoke, symbolic-image encoder self-test, token-layout
+self-test, held-out retrieval contract self-test, grounded-corpus
+contract self-test, generative-eval provenance self-test, generation-integrity
+guardrail self-test, generated
+sample-binding self-test, denoise bridge self-test, promotion bundle self-test,
+AWS completed-run artifact self-test, AWS completed-run fetch self-test, AWS
+release-proof wrapper self-test, release-candidate handoff self-test, AWS
+Graviton dry-run plan check, EC2 launch-plan check, and no-spend
+prelaunch-readiness check, plus the live-launch-readiness self-test that
+requires explicit S3/artifact handoff inputs and the launch execute-guard
+self-test that proves a bad execute manifest fails before AWS is called. Its
+`checks` array records each command, duration, schema, status, and summary
+evidence; `evidence` groups the same corpus, retrieval/class-head,
+held-out-prompt, held-out retrieval self-test cases, grounded-corpus self-test
+cases, architecture, output-head, native task and task-phase,
+directional-group,
+provenance-case, generation-integrity-case, sample-binding-case, promotion-case, AWS run-artifact
+self-test cases, AWS run-fetch self-test cases, AWS release-proof self-test
+cases, release-candidate self-test cases, AWS plan facts including native
+per-task target/top-5 and per-phase target ratchets, AWS launch facts,
+AWS prelaunch facts, AWS live-launch-readiness cases, and AWS launch
+execute-guard cases by check name. The corpus
+contract evidence includes `retrieval_head`, a compact summary of the 72-way
+integer class head: label coverage, feature count, text/image head presence,
+nonzero weight counts, known prompt identity binding, image-to-text binding,
+per-image-task retrieval, match yes/no, wrong-image, and wrong-prompt metrics.
+The `generative-eval-provenance` evidence includes clean and post-hoc scored
+sample summaries with decoded-latent sampler routing plus matching
+`summary.tsv`/`config.json` latent-prior model path and hash fields.
+`full_product_proof` and `local_product_proof` are true only when every default
+local/no-spend check ran and passed. `--aws-run-dir PATH` adds a real completed
+run artifact check using `scripts/check-solomon-aws-run-artifacts.mjs`, and
+`--require-aws-run` makes the command fail unless that live-run evidence is
+provided and passes. `release_product_proof` is true only when the local proof
+and the supplied real Graviton artifact proof both pass. `live_product_evidence`
+summarizes the optional run-directory check, and `remaining_product_evidence`
+lists missing evidence such as an absent synced real Graviton run.
+`--fast`, `--skip-corpus-contract`, `--skip-heldout-retrieval`,
+`--skip-native`, `--skip-aws-plan`, and `--skip-aws-launch` keep local
+iteration cheap while making the skipped proof explicit.
+
+## `nsrl.solomon_objective_coverage_check.v1`
+
+Emitted by `scripts/check-solomon-objective-coverage.mjs`.
+
+Purpose: map a product diagnostic JSON back to the narrow Solomon objective:
+grounded bidirectional v2 corpus records for all named v2 tasks, symbolic image
+channel stats, task-marker/modality/image-channel integrity summaries,
+hard-negative and source-provenance summaries, corpus negative-contract
+coverage for task markers, modality order, hard negatives, source provenance,
+train examples provenance, and symbolic profile drift, promoted small integer architecture, separate token heads, the 72-way retrieval/class
+score head with separate text/image scorers, the retrieval/class spine with
+identity-kind, image-task, and hard-negative count floors, held-out prompt retrieval with row-count-matched top-1/top-5 coverage, held-out retrieval contract coverage, exact native task and task-phase eval metrics plus directional multimodal product groups
+identity-kind, image-task, and hard-negative count floors, held-out prompt retrieval with row-count-matched top-1/top-5 coverage, held-out retrieval contract coverage, grounded source/attribute contract coverage, exact native task and task-phase eval metrics plus directional multimodal product groups
+with target coverage,
+per-direction and per-task quality-ratchet plan evidence, ordered product curriculum stages,
+task-eval provenance coverage, quality-report contract failures including
+required denoise-bridge output identity and generated-output identity/provenance,
+generation-integrity/sample-binding/denoise/promotion guardrails including generated
+sample retrieval rank/identity evidence and denoised-output retrieval margin
+failures, AWS Graviton
+CPU-scaling plan evidence including promoted layer/context ratchets and the generated 16x16 signature-distance cap,
+release-proof wrapper cases, live-launch-readiness cases, and the
+execute-before-AWS guard, release-candidate handoff coverage, and optional
+synced release-run proof. The report distinguishes `local_objective_proof` from `release_objective_proof` so a
+green local/no-spend diagnostic cannot be mistaken for a completed product
+release. Pass `--require-release` when missing or failed `--aws-run-dir`
+evidence should make the objective coverage command fail.
+
+## `nsrl.solomon_objective_coverage_self_test.v1`
+
+Emitted by `scripts/check-solomon-objective-coverage-self-test.mjs`.
+
+Purpose: fast local coverage for the objective coverage checker. The self-test
+builds synthetic product diagnostics and requires the checker to accept complete
+local objective evidence, accept complete release evidence when
+`--require-release` is used, reject stale quality-report self-test evidence
+including generated text/image agreement, generated text/source evidence,
+final-report denoised-output identity failures, and generated-output
+identity/provenance failures,
+reject stale task-eval provenance coverage, reject stale held-out retrieval
+contract coverage, reject stale grounded source contract coverage, reject missing native per-task
+metrics, task-phase metrics, per-direction stats, native top-5 floors, named directional groups, or conditioning/output task-phase target
+coverage, reject missing named v2 task coverage, reject stale corpus negative
+contracts for task markers, modality order, hard negatives, symbolic channel
+drift and duplicate payload collapse,
+train examples provenance, and source provenance, reject tiny or stale held-out retrieval metric counts,
+reject stale generated retrieval rank/identity summaries, post-hoc provenance,
+sample-binding, denoise-bridge, or source-grounded
+promotion guardrail coverage, reject
+missing class/retrieval score heads, reject missing curriculum stages, reject stale
+AWS runtime architecture ratchets, reject stale
+release-candidate handoff coverage including native task and architecture-profile handoff ratchets and
+live-readiness next-action proof, reject stale completed-run artifact checker coverage,
+and reject release-required audits when the
+diagnostic lacks a synced Graviton run.
+
+## `nsrl.solomon_release_candidate_check.v1`
+
+Emitted by `scripts/check-solomon-release-candidate.mjs`.
+
+Purpose: produce the no-spend operator handoff artifact between local product
+proof and the real Graviton release run. The checker reads a product diagnostic,
+runs `scripts/check-solomon-objective-coverage.mjs` unless `--objective PATH`
+is supplied, and requires the full local diagnostic, local objective proof,
+AWS product plan, launch plan, and prelaunch readiness to be green. It also
+requires the ordered Solomon v2 curriculum including the final native-bind pass,
+Graviton map-reduce CPU scaling,
+`promotion-bundle-check` plan evidence, and the per-direction top-5 ratchet
+`all=1`. It also requires the AWS attention plan to keep native task targets at
+`all=72`, native task top-5 at `all=1`, and phase targets at `all=72`, plus the generated 16x16 signature-distance ceiling used by the
+quality report. The AWS handoff also requires the release-proof wrapper
+self-test cases and the launch execute-guard self-test case, so dry-run launch
+manifests cannot stand in for executed release evidence. Its handoff evidence
+preserves the launch/prelaunch `post_run_proof_command` so the same artifact
+points to the required completed-run proof invocation. Local candidate handoffs
+set `next_operator_action` to run
+`scripts/check-solomon-aws-live-launch-readiness.sh` before
+`scripts/aws/launch-solomon-product-run.sh --execute`, preserve the executed
+launch directory with `launch.json` and `launch-result.json`, and then run
+`scripts/aws/prove-solomon-product-run.sh --s3-pipeline-uri ... --launch-dir ... --require-launch-dir`
+after the S3 run completes. This gives the current operator environment one
+final no-spend readiness check before launch and makes the completed-run proof
+bind back to the executed EC2 response instead of a dry-run manifest. By default
+`ok` may be true with
+`candidate_state` set to
+`local-release-candidate` only when the remaining release evidence is exactly
+the missing synced real Graviton run. Pass `--require-release` when the same
+artifact should fail unless `release_product_proof` and
+`release_objective_proof` are both true.
+
+## `nsrl.solomon_release_candidate_self_test.v1`
+
+Emitted by `scripts/check-solomon-release-candidate-self-test.mjs`.
+
+Purpose: fast local coverage for the release-candidate handoff checker. The
+self-test builds synthetic product diagnostics and requires the checker to
+accept complete local no-spend evidence and complete release evidence, then
+reject skipped local checks, broken objective coverage, broken prelaunch
+readiness, weakened native task and architecture-profile handoff ratchets, stale generation-integrity
+evidence, stale generated sample-binding evidence, stale denoise-bridge output
+evidence, stale grounded-source evidence, stale task-eval hard-negative role
+evidence, stale completed-run artifact checker evidence, stale post-run proof-command handoff evidence, missing live-readiness
+next-action guidance through the
+`good-local-live-readiness-next-action` case, missing `launch-result.json` and
+`--s3-pipeline-uri`/`--launch-dir`/`--require-launch-dir` proof guidance, stale
+release-proof/launch-guard evidence, extra hidden release gaps, and
+`--require-release` audits without a synced Graviton run.
+
+## `nsrl.solomon_aws_product_plan_check.v1`
+
+Emitted by `scripts/check-solomon-aws-product-plan.mjs`.
+
+Purpose: gate the cloud preflight plan before starting a Graviton training run.
+The checker reads `run.env` and dry-run `plan.tsv` from
+`scripts/aws/run-solomon-end-to-end.sh --dry-run`, then verifies the default
+product path resolves to
+`dataset,denoiser,prior,generative-eval,attention-curriculum`, followed by the
+implicit `promotion-bundle-check` product gate. It requires the attention
+curriculum command to carry `corpus_version=v2`, chunked text tokens,
+`symbolic16` image tokens and channel gates, held-out prompt retrieval, identity
+inference, grounded source-corpus evidence, the ordered v2 curriculum stages
+including the final native-bind pass,
+384-768 context, map-reduce `0-auto` worker scaling over online processors,
+confidence trace, denoise bridge, generative eval, generated output identity,
+nonzero generated 16x16 signature and rendered-image retrieval floors, full
+product eval breadth, native per-task target/top-5 floors, native per-phase
+target floors, source-grounding overlap floors, hard-negative match floors,
+denoised-output retrieval identity rank/margin floors, a 72-row held-out
+generated prompt panel, and promoted small-profile gates. The final
+plan row must invoke `check-solomon-promotion-bundle.mjs` against the resolved
+promotion manifest and write `promotion-bundle-check.json`. This
+keeps the normal AWS entrypoint aligned with the narrow
+retrieval/binding/product evidence path without launching training during CI.
+The report includes `attention.cpu_scaling` with `policy`,
+`auto_workers`, `processor_count`, and `effective_map_reduce_workers`; for the
+default product contract, effective map-reduce workers must match the online
+processor count when `NSRL_SOLOMON_ATTENTION_MAP_REDUCE_WORKERS=0`.
+The report also exposes `attention.heldout_prompt_artifact`, resolving the
+configured prompt JSONL, verifying the product prompt path, counting valid prompt
+rows, and recording the prompt FNV64 byte hash that the later retrieval-head eval
+must emit as `prompts_hash`. Its `generative_eval.prompt_artifact` resolves the
+generative eval prompt JSONL, verifies it matches the held-out prompt source,
+counts rows, and pairs that with the configured `generative_eval.eval_permille`
+and `generative_eval.limit`. Product-plan prompt summaries use the same
+held-out/novel selector as `run-solomon-generative-eval.mjs`, then report
+`eligible_prompt_rows`, `eligible_unique_targets`,
+`selected_prompt_eligible_rows`, `selected_eligible_unique_targets`,
+`selected_prompt_tiers`, and `selected_prompt_sources`; product plans fail when
+the selected held-out rows or unique targets fall below the generated prompt
+floor. Product diagnostics surface those selected held-out counts as
+`generated_prompt_rows` and `generated_unique_targets`, and objective/release
+handoff checks require both to cover all 72 targets before launch evidence is
+considered green.
+
+## `nsrl.solomon_aws_product_launch_plan.v1`
+
+Emitted by `scripts/aws/launch-solomon-product-run.sh`.
+
+Purpose: persist the EC2 launch contract for a real Solomon product run before
+spending money. The launcher defaults to dry-run and writes `launch.json` plus
+`user-data.sh`; `--execute` is required to call `aws ec2 run-instances`. The
+manifest records the product run name, S3 artifact source, S3 pipeline
+destination, Graviton instance type, IAM profile, user-data path/hash, and the
+environment that will run `scripts/aws/run-solomon-end-to-end.sh` on the
+instance. The launch/prelaunch checks require the manifest `user_data` path and
+the EC2 command's `--user-data file://...` argument to point at that same hashed
+script. It also records `post_run_proof_command`, the exact
+`scripts/aws/prove-solomon-product-run.sh` invocation bound to the same S3
+pipeline URI and launch directory, so the completed-run release proof handoff
+is preserved with the launch evidence. The required launch environment keeps
+the same narrow product spine as the local preflight:
+`dataset,denoiser,prior,generative-eval,attention-curriculum`,
+`NSRL_SOLOMON_REQUIRE_GRAVITON=1`, durable S3 artifacts, and map-reduce
+`0-auto` CPU scaling. In execute mode the launcher first runs
+`scripts/check-solomon-aws-prelaunch-readiness.mjs --allow-execute-plan`, writes
+`prelaunch-readiness-check.json`, and exits before `aws ec2 run-instances` if
+that proof is not green. After a successful execute call, it writes the full
+EC2 `run-instances` JSON response to `launch-result.json`, records that file's
+SHA-256 in `launch.json`, and uses `Instances[0].InstanceId` as the manifest
+`instance_id`. The later release proof treats both the `user-data.sh` hash and
+`launch-result.json` hash as part of the executed launch evidence.
+
+## `nsrl.solomon_aws_product_launch_plan_check.v1`
+
+Emitted by `scripts/check-solomon-aws-launch-plan.mjs`.
+
+Purpose: verify a Solomon EC2 launch dry-run without touching AWS. The checker
+loads `launch.json` and `user-data.sh`, verifies the user-data SHA-256, requires
+a Graviton instance family, requires S3-backed repo and pipeline artifacts,
+requires the product stage list, checks the launch environment for Graviton/S3
+requirements, explicit `NSRL_SOLOMON_REQUIRE_EC2_METADATA=1`, and map-reduce
+`0-auto` CPU scaling, requires the launch command's critical EC2 flag values
+(`--image-id`, `--instance-type`, IAM profile, IMDSv2 metadata options,
+shutdown behavior, output mode, `--region`, optional `--profile`, `--user-data`, and `--tag-specifications`) to
+match the manifest and checked user-data script, requires the post-run proof
+command to target the same S3 pipeline URI and launch directory, and confirms user-data invokes
+`scripts/aws/run-solomon-end-to-end.sh`. `scripts/check-solomon-aws-launch-plan.sh`
+also creates a negative fixture with an x86 instance family, missing EC2
+metadata requirement, and serial workers, then requires the checker to reject
+it.
+
+## `nsrl.solomon_aws_prelaunch_readiness_check.v1`
+
+Emitted by `scripts/check-solomon-aws-prelaunch-readiness.mjs`.
+
+Purpose: verify the EC2 launch manifest is ready for a real Solomon product run
+without starting an instance. This is stricter than the generic launch-plan
+check: it rejects the execute placeholder AMI, requires a real-looking
+`ami-...` value, requires a Graviton instance family, validates the IAM instance
+profile name, validates optional subnet and security group IDs, requires the
+recorded command to carry those exact optional networking values, requires S3
+artifact and pipeline paths, requires IMDSv2 and the exact EC2 tag specification
+in the recorded `aws ec2 run-instances` command, requires the launched user-data
+to set `NSRL_SOLOMON_REQUIRE_EC2_METADATA=1`, and checks the product stage list
+plus map-reduce `0-auto` CPU scaling. It also requires `post_run_proof_command` to
+invoke the release-proof wrapper for the same S3 pipeline URI and launch
+directory. The shell wrapper
+`scripts/check-solomon-aws-prelaunch-readiness.sh` creates a good no-spend
+fixture and a broken fixture with placeholder AMI, x86 instance type, missing
+IAM profile, missing EC2 metadata requirement, bad S3 paths, bad security group,
+missing or mismatched exact EC2 tag specification, and mismatched security-group
+command values, then requires the checker to reject the broken manifest.
+
+## `nsrl.solomon_aws_launch_execute_guard_self_test.v1`
+
+Emitted by `scripts/check-solomon-aws-launch-execute-guard-self-test.mjs`.
+
+Purpose: prove the EC2 launcher cannot accidentally spend before its execute
+handoff is explicit and its execute manifest passes prelaunch readiness. The
+self-test puts a fake `aws` binary at the front of `PATH`, invokes
+`scripts/aws/launch-solomon-product-run.sh --execute` without explicit
+`NSRL_S3_URI` or without explicit `NSRL_ARTIFACT_S3_URI`, and requires both
+commands to fail before the fake `aws` binary is touched. It also invokes the
+launcher with a real-looking AMI but an intentionally non-Graviton instance
+type, and requires the command to fail with `prelaunch-readiness-check.json`
+reporting the non-Graviton rejection while the fake `aws` binary remains
+untouched. This keeps the launcher contract tied to the no-spend proof path
+instead of relying on an operator to run the checker manually. It also runs a
+good fake-AWS execute case that returns a synthetic EC2 JSON response and
+requires the launcher to write `launch-result.json`, hash it in `launch.json`,
+and record the returned instance id.
+
+## `nsrl.solomon_aws_live_launch_readiness_check.v1`
+
+Emitted by `scripts/check-solomon-aws-live-launch-readiness.sh`.
+
+Purpose: verify the current shell environment is ready for a real Solomon EC2
+launch without calling AWS. The wrapper runs
+`scripts/aws/launch-solomon-product-run.sh --dry-run` with the caller's actual
+environment, captures the generated `launch.json` and `user-data.sh`, then runs
+the strict prelaunch readiness checker. The summary reports launch dry-run
+status, prelaunch status/errors, the resolved AMI, Graviton instance type, IAM
+profile, S3 artifact and pipeline URIs, product stages, map-reduce CPU scaling,
+and which launch-related environment variables were supplied. `ok` is false
+until a real `NSRL_AMI_ID`, explicit `NSRL_S3_URI`, and explicit
+`NSRL_ARTIFACT_S3_URI` are supplied, so the operator readiness proof is bound
+to the intended artifact and S3 pipeline prefix instead of launcher defaults.
+Missing subnet and security-group env vars are still surfaced as recommended
+operator inputs when a default VPC may be acceptable.
+
+## `nsrl.solomon_aws_live_launch_readiness_self_test.v1`
+
+Emitted by `scripts/check-solomon-aws-live-launch-readiness-self-test.mjs`.
+
+Purpose: fast no-spend coverage for the live launch readiness wrapper. The
+self-test runs the wrapper with a real-looking AMI plus explicit S3 pipeline
+and artifact URIs and requires it to pass, then runs it again without explicit
+S3/artifact env vars and requires the report to fail with
+`NSRL_S3_URI` and `NSRL_ARTIFACT_S3_URI` in `required_env_missing`, even though
+the underlying launcher defaults are sufficient for a dry-run manifest.
+
+## `nsrl.solomon_aws_pipeline_complete.v1`
+
+Emitted by `scripts/aws/run-solomon-end-to-end.sh`.
+
+Purpose: mark the end of a Solomon AWS product pipeline run. The report is
+written to `pipeline-complete.json` after the final promotion-bundle stage and
+before the final S3 sync. It records `run_name`, `run_dir`, `dry_run`,
+`product_stages`, all completed `stages`, runner kernel/architecture/processor
+facts plus EC2 IMDS provenance, S3 prefix and pipeline URI, the promotion
+manifest, promotion-bundle check, quality report, artifact manifest, run env,
+plan, per-stage status file paths, and `product_config.attention` with the
+resolved v2 corpus, `symbolic16` image-token profile, required curriculum
+stages, and map-reduce `auto-online-processors` worker settings. A real product
+run should have `dry_run=false`, a Linux ARM64 runner, Graviton
+`runner.ec2.instance_type`, S3 fields populated, and a
+`promotion-bundle-check` stage.
+
+## `nsrl.solomon_aws_run_artifacts_check.v1`
+
+Emitted by `scripts/check-solomon-aws-run-artifacts.mjs`.
+
+Purpose: verify a completed Solomon AWS product run after its S3 pipeline prefix
+has been synced locally. By default the checker requires `run.env`,
+`plan.tsv`, `artifacts.tsv`, `promotion.tsv`, `promotion-bundle-check.json`,
+`pipeline-complete.json`, and the promoted quality/model/retrieval artifacts.
+It rejects dry-run metadata, non-Linux/non-ARM64 runner metadata, missing or
+non-Graviton EC2 IMDS provenance, missing S3 provenance, incomplete plan stages,
+missing or failed per-stage status files, missing completion markers, and failed
+promotion bundle checks. It also rejects completed runs whose `run.env` or
+`pipeline-complete.json` no longer prove the v2/symbolic16 curriculum,
+required generated-eval/output-identity floors, and map-reduce
+`auto-online-processors` CPU scaling contract, or whose two product-config
+records drift apart. The report also summarizes the synced quality report's
+native product eval and generated product evidence; generated product evidence
+must include recorded/recomputed selected held-out prompt rows and unique
+targets covering the configured product floor before a synced run counts as
+release proof. Pass
+`--allow-missing-ec2-metadata` only for an intentional non-EC2 diagnostic.
+Unless `--skip-promotion-bundle-validation` is passed, it reruns
+`scripts/check-solomon-promotion-bundle.mjs` against the synced `promotion.tsv`,
+so the deep `quality-report.json` gates are revalidated from the transferred
+artifact bundle.
+
+## `nsrl.solomon_aws_run_artifacts_self_test.v1`
+
+Emitted by `scripts/check-solomon-aws-run-artifacts-self-test.mjs`.
+
+Purpose: fast local coverage for the completed-run artifact checker. The
+self-test builds synthetic run directories and requires the checker to accept a
+good real-run shell while rejecting dry-run metadata, non-Graviton metadata,
+missing EC2 metadata, missing stage status files, fixed-worker CPU scaling,
+wrong CPU scaling policy, wrong image-token profile, `run.env` versus
+`pipeline-complete.json` product-config drift including generated-retrieval
+floor drift, bad generated-product held-out coverage in the synced quality
+report, bad S3 provenance, and a failed `promotion-bundle-check.json`. It
+also writes a stale-good
+`promotion-bundle-check.json`, corrupts the synced `quality-report.json`, and
+requires the checker's default promotion-bundle rerun to reject the run.
+
+## `nsrl.solomon_aws_run_fetch_check.v1`
+
+Emitted by `scripts/aws/fetch-solomon-product-run.sh`.
+
+Purpose: fetch a completed Solomon product pipeline prefix from S3 and verify
+the transferred bundle in one command. The wrapper accepts either
+`--s3-pipeline-uri s3://.../pipelines/RUN_NAME` or `--run-name RUN_NAME` with
+`NSRL_S3_URI`, syncs the prefix into a local run directory unless `--skip-sync`
+is passed, then runs `scripts/check-solomon-aws-run-artifacts.mjs` and writes
+both `aws-run-artifacts-check.json` and `fetch-report.json` in the run
+directory. The report records the S3 pipeline URI, inferred run name, local run
+directory, sync status, artifact-check status, artifact-check schema, and any
+artifact-check errors. It also cross-checks the verified artifact metadata
+against the requested `s3://.../pipelines/RUN_NAME`; this matters for
+`--skip-sync`, where the local directory could otherwise be a valid run from a
+different S3 prefix.
+
+## `nsrl.solomon_aws_product_release_proof.v1`
+
+Emitted by `scripts/aws/prove-solomon-product-run.sh`.
+
+Purpose: produce the operator-facing release proof for a completed Solomon
+Graviton product run. The wrapper fetches or verifies the run directory with
+`scripts/aws/fetch-solomon-product-run.sh`, runs
+`scripts/check-solomon-product-diagnostic.mjs --aws-run-dir ... --require-aws-run`,
+then runs `scripts/check-solomon-objective-coverage.mjs --require-release`,
+and writes `release-proof.json` beside the synced artifacts unless `--out` is
+provided. The report records the S3 pipeline URI, run name, local run
+directory, fetch status and report path, completed-run artifact-check summary,
+diagnostic status, `local_product_proof`, `release_product_proof`, objective
+coverage status, `local_objective_proof`, `release_objective_proof`, remaining
+evidence, and optional launch/prelaunch readiness summary, including whether
+launch evidence was required and the launch manifest's
+`post_run_proof_command`. Pass `--require-launch-dir` to fail unless
+`--launch-dir` is supplied. When `--launch-dir` is passed, the wrapper also
+requires the launch manifest check to pass, requires executed launch evidence
+(`dry_run=false`, a nonempty EC2 `instance_id`, a matching `user-data.sh`
+path/hash/command binding, and a captured `launch-result.json` whose SHA-256,
+`Instances[0].InstanceId`, `ImageId`, `InstanceType`, requested `SubnetId`, and
+requested security-group ids match the launch manifest), and cross-checks
+`launch.json` plus `post_run_proof_command` against the fetched run name, S3
+pipeline URI, and launch directory.
+The wrapper inherits the fetch report's requested-S3 cross-check and repeats it
+against `aws-run-artifacts-check.json` before marking `ok`; it also requires
+`release_objective_proof` before marking `ok`.
+
+## `nsrl.solomon_aws_product_release_proof_self_test.v1`
+
+Emitted by `scripts/check-solomon-aws-release-proof-self-test.mjs`.
+
+Purpose: fast local coverage for the release-proof wrapper without touching
+AWS. The default self-test builds synthetic completed-run directories, invokes
+`scripts/aws/prove-solomon-product-run.sh --skip-sync`, and requires it to
+reject a valid local run whose recorded S3 pipeline URI/run name differs from
+the requested prefix, a bundle with a missing required stage status, and
+invalid `--launch-dir` evidence that is still a dry-run, is missing an
+`instance_id`, has tampered user-data or launch-result hashes, points the EC2
+`--user-data` command at a different file, is missing the executed EC2
+`launch-result.json`, has a mismatched EC2 image id, tag specification, subnet, key-name, region, profile,
+or security-group command values, has mismatched launch-result AMI, instance
+type, subnet, or security-group fields, or has a `post_run_proof_command` aimed at the wrong run. The
+artifact-failure cases must fail before the expensive
+product diagnostic runs, and the emitted `release-proof.json` must explain that
+the diagnostic was skipped because fetch/artifact verification failed.
+`--include-slow-positive` also runs a full positive synthetic release proof
+through the product diagnostic.
+
+## `nsrl.solomon_aws_run_fetch_self_test.v1`
+
+Emitted by `scripts/check-solomon-aws-run-fetch-self-test.mjs`.
+
+Purpose: fast local coverage for the S3 fetch wrapper without touching AWS. The
+self-test builds synthetic completed-run directories, invokes the wrapper with
+`--skip-sync`, covers both direct `--s3-pipeline-uri` and derived
+`NSRL_S3_URI + --run-name` invocation, and requires it to accept good bundles
+while rejecting a bundle with a missing stage status and a bundle whose stored
+promotion check is stale relative to the transferred `quality-report.json`.
 
 ## `nsrl.solomon_sample_gallery.v1`
 
@@ -260,3 +1542,13 @@ Emitted by `scripts/check-solomon-prior-smoke.mjs`.
 
 Purpose: gate a full prior-smoke run by checking expected files, latent/eval
 metrics, sampler traces, target-source honesty, and prompt panel artifacts.
+
+## `nsrl.solomon_prior_smoke_self_test.v1`
+
+Emitted by `scripts/check-solomon-prior-smoke-self-test.mjs`.
+
+Purpose: fast local contract coverage for the prompt-to-layout prior smoke
+checker. The self-test builds synthetic prior-smoke run directories and requires
+`scripts/check-solomon-prior-smoke.mjs` to accept a good prompt panel while
+rejecting target-bitmap lookup, missing seed variants, collapsed inter-class
+layouts, and weak held-out class-eval evidence.
