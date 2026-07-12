@@ -27,6 +27,19 @@ that validates the numeric foundation: quantized QK attention, base-2 softmax,
 static residual scales, integer RMSNorm, gated nonlinear blocks, integer
 training, and exhaustive tests for fixed-point behavior.
 
+## Active Promotion Milestone
+
+The only headline promotion milestone is `integer-transformer-proof-v1`,
+defined in `docs/integer-transformer-proof-v1.md` and enforced by `nsrl-eval`.
+One NSRL-born integer transformer must beat retrieval, byte n-gram, and an
+independently produced floating-point reference on the same frozen evaluation
+partition. It must win aggregate Q15 probability error strictly and cannot
+regress mistake count against any required baseline.
+
+Literary routing and Solomon multimodal generation are experiment suites. They
+may produce candidate architectures and product evidence, but they do not
+replace or redefine the substrate promotion milestone.
+
 ## Vision
 
 NSRL should not become a smaller imitation of a general cloud LLM. It should

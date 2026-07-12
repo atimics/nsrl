@@ -24,6 +24,13 @@ node scripts/nsrl-status.mjs --refresh-fast-diagnostic
 As of 2026-07-10, NSRL is not release-ready. The integer runtime and research
 artifacts exist, but the Solomon product proof is incomplete.
 
+The repository now has one substrate promotion contract:
+`integer-transformer-proof-v1`. Run `cargo run -p nsrl-eval -- contract` to
+inspect it and `cargo run -p nsrl-eval -- check --results PATH` to validate a
+candidate/baseline matrix. No passing frozen matrix is checked in yet, so the
+substrate milestone remains open. Solomon and literary results are experiment
+evidence rather than alternate headline criteria.
+
 The project headline is `NSRL-MME v0`, a model-native multimodal LLM eval
 defined in `docs/multimodal-llm-eval.md`. The current local score is **371 per
 mille**, below the 700 target. The quality report and generated-output integrity

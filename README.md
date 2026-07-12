@@ -1,8 +1,14 @@
-# NSRL — Integer-Only Multimodal Training
+# NSRL — Deterministic Integer Transformer Research
 
-NSRL is a pure-Rust integer-only training stack. The active pipeline trains a
-text-conditioned bitmap generator for Solomon seal targets without floating
-point arithmetic in training or sampling.
+NSRL is a pure-Rust integer-only training stack for deterministic CPU and WASM
+models. The active promotion milestone is an executable substrate proof: one
+NSRL-born transformer must beat retrieval, byte n-gram, and independently
+produced floating-point reference baselines on a frozen next-token task.
+
+Solomon multimodal generation and literary expert routing are experiment suites
+that exercise the shared substrate. Their results inform candidate design, but
+they do not replace the frozen proof contract in
+[`docs/integer-transformer-proof-v1.md`](docs/integer-transformer-proof-v1.md).
 
 ![72 text-conditioned seals sampled from the integer denoiser](docs/assets/solomon-text-conditioned-seals.png)
 
@@ -41,6 +47,7 @@ lookup during generation.
 crates/
   nsrl-core/       no_std integer inference and numeric kernels
   nsrl-corpus/     corpus utilities retained for deterministic preprocessing
+  nsrl-eval/       frozen proof contracts and comparison policy
   nsrl-train-core/ no_std training kernels shared by the host trainer
   nsrl-train/      Solomon training, eval, and sampling binaries
   nsrl-web-wasm/   wasm Solomon sampler parity surface
@@ -924,11 +931,12 @@ flags.
 
 ## Current Focus
 
-The active work is model quality inside the Solomon pipeline:
+The active work is `integer-transformer-proof-v1`:
 
-- improve the denoiser without procedural cleanup,
-- improve prompt-to-layout generalization on held-out prompts,
-- keep native and wasm sampling byte-aligned,
-- grow the joint `NSRLMOD1` and `NSRLLMM1` paths from coarse image plans toward
-  richer symbolic image tokens and stronger text,
-- make every claim replayable through checked integer traces.
+- freeze one next-token evaluation corpus and hash,
+- produce retrieval, byte n-gram, and independent floating-point reference
+  rows under the typed `nsrl-eval` contract,
+- evaluate one `NSRLMT5` candidate on the identical target set,
+- promote only if it wins Q15 probability error without increasing mistakes,
+- keep literary and Solomon work isolated as experiment suites that nominate
+  candidate improvements rather than redefine success.

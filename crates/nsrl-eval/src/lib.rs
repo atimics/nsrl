@@ -1,5 +1,7 @@
 #![deny(unsafe_code)]
 
+pub mod contract;
+
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::Write;

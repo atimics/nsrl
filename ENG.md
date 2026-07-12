@@ -47,6 +47,7 @@ crates/
   nsrl-core/      no_std integer-only inference runtime
   nsrl-corpus/    deterministic corpus and tokenizer tooling
   nsrl-demo/      deterministic trace and benchmark binary
+  nsrl-eval/      frozen proof contracts and comparison policy
   nsrl-train-core/no_std borrowed-workspace training steps
   nsrl-train/     calibration and training tools that mirror runtime math
 ```
@@ -895,7 +896,7 @@ Status: complete for the forward runtime.
 
 Status: forward execution, deterministic trace output, `bench-1m`, corpus
 tooling, and integer-native training are implemented as research
-infrastructure.
+infrastructure. Promotion remains blocked on `integer-transformer-proof-v1`.
 
 - End-to-end integer model execution.
 - Deterministic output tests.
@@ -905,6 +906,12 @@ infrastructure.
 - `nsrl-train` calibration path.
 - Byte, MLP, attention, embedding, and mini-transformer training traces.
 - i64 batch accumulators and rollback safety.
+- Typed `nsrl-eval` proof contract and strict multi-baseline checker.
+
+Completion requires one frozen candidate/result matrix in which the integer
+transformer strictly beats retrieval, byte n-gram, and floating-point reference
+probability error without increasing mistakes. Solomon and literary experiments
+do not close this milestone independently.
 
 ### Milestone 5: Agentic Expert Packaging
 

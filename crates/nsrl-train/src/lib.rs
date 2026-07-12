@@ -25,63 +25,35 @@ use nsrl_core::{
     self_attention_i16_q15_checked, sqrt_power_of_four_shift,
 };
 
+pub mod artifact_contract;
 pub mod solomon_latent;
 
-pub const MINI_TRANSFORMER_MLP_SCHEMA: &str = "nsrl.training_mini_transformer_mlp_trace.v1";
-pub const MINI_TRANSFORMER_ADAM_SCHEMA: &str =
-    "nsrl.training_mini_transformer_integer_adam_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_SCHEMA: &str = "nsrl.training_mini_transformer_swarm_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_WORKER_SCHEMA: &str =
-    "nsrl.training_mini_transformer_swarm_worker_artifact.v1";
-pub const MINI_TRANSFORMER_SWARM_PROGRESS_SCHEMA: &str =
-    "nsrl.training_mini_transformer_swarm_progress.v1";
-pub const MINI_TRANSFORMER_SWARM_SCALING_SCHEMA: &str =
-    "nsrl.training_mini_transformer_swarm_scaling_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_EXPERT_MANIFEST_SCHEMA: &str =
-    "nsrl.mini_transformer_swarm_expert_manifest.v1";
-pub const MINI_TRANSFORMER_SWARM_ROUTE_SCHEMA: &str = "nsrl.mini_transformer_swarm_route_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_ROUTED_GENERATION_SCHEMA: &str =
-    "nsrl.mini_transformer_swarm_routed_generation_trace.v1";
-pub const MINI_TRANSFORMER_GENERATION_SCHEMA: &str = "nsrl.mini_transformer_generation_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_GENERATION_SCHEMA: &str =
-    "nsrl.mini_transformer_swarm_generation_trace.v1";
-pub const MINI_TRANSFORMER_BINARY_TRACE_SCHEMA: &str =
-    "nsrl.training_mini_transformer_mlp_binary_trace.v1";
+pub use artifact_contract::{
+    ASCII_LOWER_TOKENIZER_ID, AUTHORITY, BYTE_TOKENIZER_ID, GENERATION_AUTHORITY,
+    MINI_TRANSFORMER_ADAM_SCHEMA, MINI_TRANSFORMER_ADAM_STATE_MAGIC,
+    MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN,
+    MINI_TRANSFORMER_BINARY_FINAL_SUMMARY_RECORD_LEN,
+    MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN, MINI_TRANSFORMER_BINARY_TAG_ADAPTIVE_SHIFT,
+    MINI_TRANSFORMER_BINARY_TAG_FINAL_SUMMARY, MINI_TRANSFORMER_BINARY_TAG_STEP_SAMPLE,
+    MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN, MINI_TRANSFORMER_BINARY_TRACE_MAGIC,
+    MINI_TRANSFORMER_BINARY_TRACE_SCHEMA, MINI_TRANSFORMER_BINARY_TRACE_SCHEMA_ID,
+    MINI_TRANSFORMER_BINARY_TRACE_VERSION, MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC,
+    MINI_TRANSFORMER_GENERATION_SCHEMA, MINI_TRANSFORMER_MLP_SCHEMA, MINI_TRANSFORMER_MLP_TASK,
+    MINI_TRANSFORMER_MODEL_ID, MINI_TRANSFORMER_MODEL_MAGIC,
+    MINI_TRANSFORMER_SWARM_CAPABILITY_TAGS, MINI_TRANSFORMER_SWARM_EXPERT_MANIFEST_SCHEMA,
+    MINI_TRANSFORMER_SWARM_GENERATION_SCHEMA, MINI_TRANSFORMER_SWARM_MODEL_ID,
+    MINI_TRANSFORMER_SWARM_MODEL_MAGIC, MINI_TRANSFORMER_SWARM_PROGRESS_SCHEMA,
+    MINI_TRANSFORMER_SWARM_ROUTE_SCHEMA, MINI_TRANSFORMER_SWARM_ROUTED_GENERATION_SCHEMA,
+    MINI_TRANSFORMER_SWARM_SCALING_SCHEMA, MINI_TRANSFORMER_SWARM_SCHEMA,
+    MINI_TRANSFORMER_SWARM_WORKER_ARTIFACT_MAGIC, MINI_TRANSFORMER_SWARM_WORKER_SCHEMA,
+};
+use artifact_contract::{
+    MINI_TRANSFORMER_LEGACY_MODEL_MAGIC, MINI_TRANSFORMER_LEGACY_V4_D_MODEL,
+    MINI_TRANSFORMER_LEGACY_V4_HEADS, MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM,
+};
+
 pub const DEFAULT_MINI_TRANSFORMER_STREAMING_TTT_LEARNING_RATE_SHIFT: u8 = 8;
 pub const LEXEME_DECODE_TOKEN_SET_CAP: usize = 64;
-pub const AUTHORITY: &str = "deterministic_training_replay";
-pub const GENERATION_AUTHORITY: &str = "deterministic_integer_generation";
-pub const MINI_TRANSFORMER_MLP_TASK: &str = "wiki_bard_mini_transformer_mlp_first";
-pub const BYTE_TOKENIZER_ID: &str = "byte_identity_u8_v1";
-pub const ASCII_LOWER_TOKENIZER_ID: &str = "byte_ascii_lower_text_u8_v1";
-pub const MINI_TRANSFORMER_MODEL_ID: &str = "mini_transformer_byte_qkvo_mlp_v1";
-pub const MINI_TRANSFORMER_MODEL_MAGIC: &[u8; 8] = b"NSRLMT5\n";
-const MINI_TRANSFORMER_LEGACY_MODEL_MAGIC: &[u8; 8] = b"NSRLMT4\n";
-const MINI_TRANSFORMER_LEGACY_V4_D_MODEL: usize = 32;
-const MINI_TRANSFORMER_LEGACY_V4_HEADS: usize = 2;
-const MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM: usize = 64;
-pub const MINI_TRANSFORMER_ADAM_STATE_MAGIC: &[u8; 8] = b"NSRLAD2\n";
-pub const MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC: &[u8; 8] = b"NSRLBE2\n";
-pub const MINI_TRANSFORMER_SWARM_MODEL_ID: &str = "mini_transformer_swarm_qkvo_mlp_v1";
-pub const MINI_TRANSFORMER_SWARM_MODEL_MAGIC: &[u8; 8] = b"NSRLSW1\n";
-pub const MINI_TRANSFORMER_SWARM_WORKER_ARTIFACT_MAGIC: &[u8; 8] = b"NSRLWK1\n";
-pub const MINI_TRANSFORMER_SWARM_CAPABILITY_TAGS: &[&str] = &[
-    "byte_generation",
-    "mini_transformer_mlp",
-    "integer_q15",
-    "swarm_ensemble",
-    "deterministic_router_candidate",
-];
-pub const MINI_TRANSFORMER_BINARY_TRACE_MAGIC: &[u8; 4] = b"NSRL";
-pub const MINI_TRANSFORMER_BINARY_TRACE_VERSION: u8 = 1;
-pub const MINI_TRANSFORMER_BINARY_TRACE_SCHEMA_ID: u8 = 1;
-pub const MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN: usize = 16;
-pub const MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN: usize = 32;
-pub const MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN: usize = 22;
-pub const MINI_TRANSFORMER_BINARY_FINAL_SUMMARY_RECORD_LEN: usize = 561;
-pub const MINI_TRANSFORMER_BINARY_TAG_STEP_SAMPLE: u8 = 0x01;
-pub const MINI_TRANSFORMER_BINARY_TAG_ADAPTIVE_SHIFT: u8 = 0x02;
-pub const MINI_TRANSFORMER_BINARY_TAG_FINAL_SUMMARY: u8 = 0x7f;
 pub const BYTE_VOCAB: usize = 256;
 pub const BYTE_D_MODEL: usize = 257;
 // Single source of truth: the transformer dims, scale tables, and embedding
@@ -947,6 +919,21 @@ pub struct MiniTransformerBlockExpertTrainStats {
     pub weight_delta_l1: u64,
     pub weight_saturation_count: usize,
     pub hidden_saturation_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiniTransformerBlockExpertObjective {
+    CrossEntropy,
+    ProbabilityError,
+}
+
+impl MiniTransformerBlockExpertObjective {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CrossEntropy => "cross_entropy",
+            Self::ProbabilityError => "probability_error",
+        }
+    }
 }
 
 /// Versioned optimizer state stored separately from inference weights.
@@ -17337,11 +17324,9 @@ fn block_expert_backward_rows(
             };
             for rank in 0..expert.rank {
                 let weight_index = dim * expert.rank + rank;
-                gradients[weight_index] =
-                    gradients[weight_index].saturating_add(round_shift_rhu_i64(
-                        grad.saturating_mul(i64::from(cache.latent_q15[latent_start + rank])),
-                        Q15_SHIFT.saturating_add(expert.residual_shift),
-                    ));
+                gradients[weight_index] = gradients[weight_index].saturating_add(
+                    grad.saturating_mul(i64::from(cache.latent_q15[latent_start + rank])),
+                );
                 grad_latent[rank] = grad_latent[rank].saturating_add(round_shift_rhu_i64(
                     grad.saturating_mul(i64::from(weights[weight_index])),
                     Q15_SHIFT.saturating_add(expert.residual_shift),
@@ -17488,6 +17473,7 @@ pub fn train_mini_transformer_block_expert_with_layer_scope(
         learning_rate_shift,
         train_layer,
         false,
+        MiniTransformerBlockExpertObjective::CrossEntropy,
     )
 }
 
@@ -17502,6 +17488,7 @@ pub fn train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
     learning_rate_shift: u8,
     train_layer: Option<usize>,
     bidirectional_loss_guard: bool,
+    objective: MiniTransformerBlockExpertObjective,
 ) -> Result<MiniTransformerBlockExpertTrainStats, TrainError> {
     expert.validate_for_model(model)?;
     if config.epochs == 0
@@ -17550,6 +17537,16 @@ pub fn train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
                     .saturating_add(cache.hidden_saturation_count);
                 let mut grad_output =
                     byte_vocab_softmax_gradient_q15(&cache.probabilities_q15, tokens[end]);
+                if objective == MiniTransformerBlockExpertObjective::ProbabilityError {
+                    let target_probability =
+                        i64::from(cache.probabilities_q15[usize::from(tokens[end])].max(0));
+                    for gradient in &mut grad_output {
+                        *gradient = (i64::from(*gradient).saturating_mul(target_probability)
+                            / i64::from(i16::MAX))
+                        .clamp(i64::from(i32::MIN), i64::from(i32::MAX))
+                            as i32;
+                    }
+                }
                 apply_byte_argmax_margin_gradient_q15(
                     &mut grad_output,
                     &cache.logits_q8,
@@ -17591,9 +17588,13 @@ pub fn train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
                     grad_adapted = backward.grad_input;
                 }
             }
+            let gradient_shift = learning_rate_shift
+                .checked_add(Q15_SHIFT)
+                .and_then(|shift| shift.checked_add(expert.residual_shift))
+                .ok_or(TrainError::InvalidConfig)?;
             let denominator = i64::try_from(batch.len())
                 .map_err(|_| TrainError::InvalidConfig)?
-                .checked_shl(u32::from(learning_rate_shift))
+                .checked_shl(u32::from(gradient_shift))
                 .ok_or(TrainError::InvalidConfig)?;
             let parameters_per_layer = MINI_TRANSFORMER_D_MODEL
                 .checked_mul(expert.rank)
@@ -17613,11 +17614,13 @@ pub fn train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
                     if train_layer.is_some_and(|layer| index / parameters_per_layer != layer) {
                         continue;
                     }
-                    let numerator = gradients[index].saturating_add(original_residuals[index]);
+                    let numerator = gradients[index]
+                        .saturating_mul(learning_rate)
+                        .saturating_add(original_residuals[index]);
                     let averaged = round_div_signed_i64(numerator, denominator)?;
                     next_residuals[index] =
                         numerator.saturating_sub(averaged.saturating_mul(denominator));
-                    let update = averaged.saturating_mul(learning_rate);
+                    let update = averaged;
                     let previous = i64::from(original_weights[index]);
                     let forward_raw = previous.saturating_sub(update);
                     let reverse_raw = previous.saturating_add(update);
@@ -17673,11 +17676,13 @@ pub fn train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
                     if train_layer.is_some_and(|layer| index / parameters_per_layer != layer) {
                         continue;
                     }
-                    let numerator = gradients[index].saturating_add(update_residuals[index]);
+                    let numerator = gradients[index]
+                        .saturating_mul(learning_rate)
+                        .saturating_add(update_residuals[index]);
                     let averaged = round_div_signed_i64(numerator, denominator)?;
                     update_residuals[index] =
                         numerator.saturating_sub(averaged.saturating_mul(denominator));
-                    let update = averaged.saturating_mul(learning_rate);
+                    let update = averaged;
                     let previous = expert.expansion_weights_q15[index];
                     let raw = i64::from(previous).saturating_sub(update);
                     let next = saturate_i16(raw);
