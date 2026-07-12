@@ -5,6 +5,8 @@ import path from "node:path";
 
 const root = process.argv[2]
   ?? "data/experiments/literary-h8-gradient-block-curriculum-v1";
+const dataDirectory = process.argv[3]
+  ?? (fs.existsSync(path.join(root, "data-projected")) ? "data-projected" : "data-hidden");
 const sweepDir = path.join(root, "regret-sweeps");
 const candidates = fs.readdirSync(sweepDir, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
@@ -28,7 +30,7 @@ const states = Object.fromEntries(["calibration", "final"].map((split) => [split
       "utf8",
     )),
     mappings: parseMap(fs.readFileSync(
-      path.join(root, "data-hidden", granularity, `${split}-map.tsv`),
+      path.join(root, dataDirectory, granularity, `${split}-map.tsv`),
       "utf8",
     )),
   }])),
@@ -79,6 +81,7 @@ for (const [key, values] of Object.entries(groups)) {
 const report = {
   schema: "nsrl.literary_expected_regret_router_sweep.v1",
   objective: "expected_regret",
+  feature_data_directory: dataDirectory,
   selection_split: "router_calibration_only",
   final_split_used_for_selection: false,
   selected,

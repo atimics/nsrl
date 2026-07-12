@@ -5,17 +5,20 @@ import path from "node:path";
 
 const root = process.argv[2];
 if (!root) throw new Error("usage: select-literary-router-sweeps.mjs ROOT");
+const dataDirectory = process.argv[3]
+  ?? (fs.existsSync(path.join(root, "data-projected")) ? "data-projected" : "data-hidden");
 const views = ["hidden-a", "hidden-b", "full"];
 const report = {
   schema: "nsrl.literary_router_sweep_selection.v1",
   selection_split: "router_calibration_only",
   final_split_used_for_selection: false,
+  feature_data_directory: dataDirectory,
   granularities: {},
 };
 for (const granularity of ["token", "span"]) {
   const details = parseDetails(fs.readFileSync(path.join(root, "oracles", "calibration-details.tsv"), "utf8"));
   const mappings = parseMap(fs.readFileSync(
-    path.join(root, "data-hidden", granularity, "calibration-map.tsv"),
+    path.join(root, dataDirectory, granularity, "calibration-map.tsv"),
     "utf8",
   ));
   report.granularities[granularity] = {};

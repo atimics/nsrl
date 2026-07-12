@@ -12,8 +12,8 @@ const featureSource = process.argv[6] ?? "context";
 if (!Number.isInteger(spanLen) || spanLen < 1 || !Number.isInteger(historyLen) || historyLen < 1) {
   throw new Error("span and history lengths must be positive integers");
 }
-if (!["context", "hidden"].includes(featureSource)) {
-  throw new Error("feature source must be context or hidden");
+if (!["context", "hidden", "projected"].includes(featureSource)) {
+  throw new Error("feature source must be context, hidden, or projected");
 }
 
 const splits = {
@@ -135,7 +135,14 @@ function routerLine(routeId, losses, features) {
 }
 
 const oracleDir = path.join(experimentDir, "oracles");
-const dataDir = path.join(experimentDir, featureSource === "hidden" ? "data-hidden" : "data");
+const dataDir = path.join(
+  experimentDir,
+  featureSource === "hidden"
+    ? "data-hidden"
+    : featureSource === "projected"
+      ? "data-projected"
+      : "data",
+);
 await mkdir(path.join(dataDir, "token"), { recursive: true });
 await mkdir(path.join(dataDir, "span"), { recursive: true });
 
@@ -167,6 +174,14 @@ const manifest = {
         current_target_excluded: true,
         rolling_history_uses_prior_observed_tokens_only: true,
       }
+    : featureSource === "projected"
+      ? {
+          count: 41,
+          signed_projected_contextual_hidden_channels: 32,
+          rolling_probe_features: 9,
+          current_target_excluded: true,
+          rolling_history_uses_prior_observed_tokens_only: true,
+        }
     : {
         count: 41,
         context_bigram_buckets: 24,
@@ -198,7 +213,7 @@ for (const split of Object.keys(splits)) {
       }
       const history = rows.slice(Math.max(0, index - historyLen), index);
       const context = prompt.subarray(Math.max(0, row.offset - 32), row.offset);
-      const baseFeatures = featureSource === "hidden"
+      const baseFeatures = featureSource === "hidden" || featureSource === "projected"
         ? row.hiddenFeaturesQ15
         : contextFeaturesQ15(context);
       const features = [...baseFeatures, ...probeFeaturesQ15(history, priors)];
@@ -215,7 +230,7 @@ for (const split of Object.keys(splits)) {
       const last = rows[end - 1];
       const history = rows.slice(Math.max(0, start - historyLen), start);
       const context = prompt.subarray(Math.max(0, first.offset - 32), first.offset);
-      const baseFeatures = featureSource === "hidden"
+      const baseFeatures = featureSource === "hidden" || featureSource === "projected"
         ? first.hiddenFeaturesQ15
         : contextFeaturesQ15(context);
       const features = [...baseFeatures, ...probeFeaturesQ15(history, priors)];
@@ -254,7 +269,11 @@ for (const split of Object.keys(splits)) {
 
 const manifestPath = path.join(
   experimentDir,
-  featureSource === "hidden" ? "dataset-manifest-hidden.json" : "dataset-manifest.json",
+  featureSource === "hidden"
+    ? "dataset-manifest-hidden.json"
+    : featureSource === "projected"
+      ? "dataset-manifest-projected.json"
+      : "dataset-manifest.json",
 );
 await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(JSON.stringify({ manifest: manifestPath, splits: manifest.splits }));
