@@ -1,0 +1,80 @@
+{
+  "schema": "nsrl.production_model_scaling_plan.v1",
+  "contract_id": "production-model-v1",
+  "corpus_checkpoint": {
+    "path": "benchmarks/production-corpus-v1/checkpoint.json",
+    "sha256": "2d77bfe66489755b3332f9db513ec8c55b19665c8b586314c8726ea1abfaf9c8",
+    "train_token_hash_fnv64": "0x97e5254c31c27bda",
+    "dev_token_hash_fnv64": "0xda195778ceb603ab",
+    "test_token_hash_fnv64": "0xaa9e97e34df7cd03"
+  },
+  "tokenizer": {
+    "id": "deterministic_byte_bpe_v1",
+    "vocab_size": 8192,
+    "artifact_hash_fnv64": "0xf4fe71d93c438c1a"
+  },
+  "architecture": {
+    "family": "causal_decoder_rmsnorm_gated_mlp",
+    "embedding_tying": "untied",
+    "attention_projections_per_layer": 4,
+    "mlp_projections_per_layer": 3,
+    "rms_vectors_per_layer": 2,
+    "final_rms_vectors": 1,
+    "output_bias": true
+  },
+  "points": [
+    {
+      "id": "p10m",
+      "d_model": 256,
+      "heads": 8,
+      "layers": 6,
+      "hidden_dim": 768,
+      "context_tokens": 256,
+      "parameter_count": 9317632,
+      "pair": ["integer", "float"]
+    },
+    {
+      "id": "p20m",
+      "d_model": 384,
+      "heads": 8,
+      "layers": 8,
+      "hidden_dim": 1152,
+      "context_tokens": 256,
+      "parameter_count": 21641600,
+      "pair": ["integer", "float"]
+    },
+    {
+      "id": "p30m",
+      "d_model": 448,
+      "heads": 8,
+      "layers": 8,
+      "hidden_dim": 1344,
+      "context_tokens": 256,
+      "parameter_count": 28229056,
+      "pair": ["integer", "float"]
+    }
+  ],
+  "run_order": ["p10m", "p20m", "p30m"],
+  "comparison_contract": {
+    "same_initial_seed": true,
+    "same_token_order": true,
+    "same_context_and_batch_schedule": true,
+    "same_train_dev_test_splits": true,
+    "integer_has_no_retrieval_or_suffix_memory": true,
+    "headline_generation_is_unassisted": true
+  },
+  "promotion_gates": {
+    "finite_or_valid_integer_forward_rate_per_mille": 1000,
+    "integer_dev_bits_per_byte_regression_vs_float_max_per_mille": 150,
+    "heldout_loss_improves_with_scale": true,
+    "open_generation_v1_required": true
+  },
+  "implementation_status": {
+    "corpus_and_tokenizer_ready": true,
+    "variable_vocab_artifact_ready": false,
+    "u32_training_runtime_ready": false,
+    "float_twin_runner_ready": false,
+    "training_started": false,
+    "next_gate": "variable_vocab_artifact_and_u32_training_runtime"
+  }
+}

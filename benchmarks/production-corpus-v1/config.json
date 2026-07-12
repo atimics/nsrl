@@ -1,0 +1,110 @@
+{
+  "schema": "nsrl.production_corpus_config.v1",
+  "contract_id": "production-corpus-v1",
+  "document": {
+    "min_bytes": 256,
+    "max_bytes": 16384
+  },
+  "near_dedup": {
+    "shingle_words": 5,
+    "signature_size": 24,
+    "bands": 6,
+    "threshold_per_mille": 850
+  },
+  "contamination": {
+    "shingle_words": 5,
+    "min_direct_bytes": 64,
+    "prompt_overlap_per_mille": 500,
+    "panels": [
+      {
+        "id": "open-generation-v1-development",
+        "path": "benchmarks/open-generation-v1/development-panel.tsv",
+        "format": "open_generation_tsv",
+        "expected_sha256": "c50d6fdd75c4f93cacf521c4512057d38e3a2551da51e91bd88e7d2b63d3bef4"
+      },
+      {
+        "id": "open-generation-v1-hidden",
+        "path": "data/private/open-generation-v1/hidden-panel.txt",
+        "format": "lines",
+        "expected_sha256": "b7be1577444b77b9b2c0aecb8955655cfa8003a0f1600649a2039e72b3a6c53d"
+      }
+    ]
+  },
+  "split": {
+    "seed": "nsrl-production-corpus-v1-split-2026-07-12",
+    "permyriad": {
+      "train": 9800,
+      "dev": 100,
+      "test": 100
+    },
+    "require_nonempty": true
+  },
+  "tokenizer_training": {
+    "source_split": "train",
+    "max_bytes": 1048576,
+    "target_vocab_size": 8192,
+    "min_pair_frequency": 2
+  },
+  "sources": [
+    {
+      "id": "shakespeare-gutenberg-100",
+      "input_path": "data/raw/shakespeare-gutenberg-100.txt",
+      "expected_sha256": "3cf4b3d44ee14cff4e14e78e2ad3318eff76f3f7f2afc3cee6bb925879110a37",
+      "format": "gutenberg_text",
+      "source_url": "https://www.gutenberg.org/ebooks/100",
+      "license_id": "LicenseRef-Public-Domain-US-Project-Gutenberg",
+      "rights_basis_url": "https://www.gutenberg.org/policy/permission",
+      "rights_status": "approved",
+      "rights_scope": "research build; confirm deployment jurisdiction and Project Gutenberg trademark terms before distribution",
+      "attribution": "The Complete Works of William Shakespeare, Project Gutenberg ebook 100"
+    },
+    {
+      "id": "blake-poems-gutenberg-574",
+      "input_path": "data/raw/blake-poems-pg574.txt",
+      "expected_sha256": "7e40d6eee71365362973c0083a3117bc11d49c1feaf5566163109d54bd573a24",
+      "format": "gutenberg_text",
+      "source_url": "https://www.gutenberg.org/ebooks/574",
+      "license_id": "LicenseRef-Public-Domain-US-Project-Gutenberg",
+      "rights_basis_url": "https://www.gutenberg.org/policy/permission",
+      "rights_status": "approved",
+      "rights_scope": "research build; confirm deployment jurisdiction and Project Gutenberg trademark terms before distribution",
+      "attribution": "Poems of William Blake, Project Gutenberg ebook 574"
+    },
+    {
+      "id": "blake-marriage-gutenberg-45315",
+      "input_path": "data/raw/blake-marriage-heaven-hell-pg45315.txt",
+      "expected_sha256": "fc9a76619fcb76c58273d7fc9e034108b0d7fffed3780ad5b8226954a12b289a",
+      "format": "gutenberg_text",
+      "source_url": "https://www.gutenberg.org/ebooks/45315",
+      "license_id": "LicenseRef-Public-Domain-US-Project-Gutenberg",
+      "rights_basis_url": "https://www.gutenberg.org/policy/permission",
+      "rights_status": "approved",
+      "rights_scope": "research build; confirm deployment jurisdiction and Project Gutenberg trademark terms before distribution",
+      "attribution": "The Marriage of Heaven and Hell by William Blake, Project Gutenberg ebook 45315"
+    },
+    {
+      "id": "simplewiki-pages-2026-06-20",
+      "input_path": "data/processed/wiki-bard-corpus.txt",
+      "expected_sha256": "06bae5941d17b6a863a317930cc6d044828c6997ede80a196f3c7b734e0ac489",
+      "format": "nsrl_simplewiki_pages",
+      "max_documents": 20000,
+      "source_url": "https://dumps.wikimedia.org/simplewiki/latest/",
+      "license_id": "CC-BY-SA-4.0 OR GFDL-1.3-or-later",
+      "rights_basis_url": "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use/en",
+      "rights_status": "approved",
+      "rights_scope": "research build and compliant reuse; preserve attribution and share-alike obligations for redistributed corpus text",
+      "attribution": "Simple English Wikipedia contributors; page titles are retained in records and source URLs resolve through simple.wikipedia.org",
+      "upstream": {
+        "path": "data/raw/simplewiki-latest-pages-articles.xml.bz2",
+        "sha256": "464bf7332bd7d43a3a9ae5c1190fa00a9145de9c1ccc64b77a110e23237605bc",
+        "extraction": "nsrl-corpus extract-simplewiki"
+      },
+      "provenance_files": [
+        {
+          "path": "data/processed/wiki-bard-corpus.trace.jsonl",
+          "expected_sha256": "f48f7ef86f60f2d65b917733ad2f5fdfed2b68bc79aa3655179079349a7ab113"
+        }
+      ]
+    }
+  ]
+}
