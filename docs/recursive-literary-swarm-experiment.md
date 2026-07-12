@@ -571,6 +571,39 @@ retrain routers only after that process widens the conditional utility gap.
 Consolidated evidence is
 `data/experiments/literary-h8-gradient-block-swarm-v1/report.json`.
 
+### Short-run expert curriculum and direct regret routing
+
+The promoted gradient leaves were continued through two independently gated
+micro-swarm stages. Stage 1 starts at cluster-token offset 23,552; stage 2 at
+47,168, beyond the previous sequence-64 window band. Each stage tests two
+rates per leaf. Selection minimizes the complete triad's target-aware token
+oracle on router calibration, while the untouched final split remains closed
+until all three stage-2 artifacts are frozen.
+
+On final data, the best fixed expert moves from 1,408 to 5,506 Q15 better than
+the trunk. The token oracle moves from 8,462 to 18,360 better, leaving 12,854
+Q15 beyond the fixed winner. Calibration conditional room beyond fixed more
+than doubles from 11,311 to 23,090. This promotes the swarm-of-short-runs
+training policy and stage-2 cluster 1. No next-byte mistakes change.
+
+The larger ceiling is still not captured by the original routers. The best
+child span route is 737 Q15 worse than fixed, and the best recursive root is
+961 worse. Inspection found a precision mismatch in `utility-soft`: regret is
+shifted before becoming a Q8 softmax logit, so common one-digit loss differences
+produce nearly uniform targets. The router now has an `expected-regret`
+objective whose gradient differentiates expected child loss directly. A
+regression test locks a nonzero signed gradient for losses `[1000,1001,1002]`.
+
+A bounded shift/epoch/view sweep selects the span `hidden-b` route. It beats
+fixed by 199 Q15 on calibration and uses only two switches, but misses fixed by
+109 on final. This is substantially closer than the classification and
+recursive routers but is not promoted. The next target-blind feature view
+should replace contiguous four-channel averages with signed projections of the
+full 128-channel hidden state, then distill the calibrated policy into the
+transformer block. Generation still fails the prose gate. Consolidated
+evidence is
+`data/experiments/literary-h8-gradient-block-curriculum-v1/report.json`.
+
 ## Promotion gates
 
 - Recursive top-two must beat the best single leaf on frozen final data.

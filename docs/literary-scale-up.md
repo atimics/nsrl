@@ -335,6 +335,32 @@ still collapses toward spaces and a few letters, so prose is also rejected.
 Evidence is in
 `data/experiments/literary-h8-gradient-block-swarm-v1/report.json`.
 
+The short-run continuation gate is now measured as well. Each promoted leaf
+was resumed on two successive non-overlapping bands of its own gradient
+cluster. Two learning rates per leaf were tested at each stage; candidates
+were selected by the complete triad's token-oracle loss on router calibration,
+not by local training loss. This is the intended scale unit: many bounded runs
+with independent acceptance rather than one long optimization trajectory.
+
+The result generalizes. The best frozen expert improves the untouched-final
+trunk by 5,506 total Q15, versus 1,408 before the curriculum. The final token
+oracle improves the trunk by 18,360 and retains 12,854 beyond the new best
+fixed expert. Calibration's token-oracle gap beyond fixed grows from 11,311 to
+23,090. Next-byte mistakes are unchanged, so this is a probability-quality
+gain rather than a prose claim.
+
+Classification-style child and recursive routers still miss the fixed leaf by
+737 and 961 Q15. Their utility-soft targets were found to erase most small
+loss differences in a Q8 softmax. A new expected-regret objective differentiates
+the router's expected child loss directly and preserves even one-unit integer
+regret. It closes the frozen-final router gap to 109 Q15, but still does not
+beat the fixed expert. The remaining bottleneck is target-blind observability:
+the current router averages each four adjacent contextual channels into one.
+The next router view should use signed projections of the full hidden state.
+Generation remains space-heavy and fails every prose gate. Consolidated
+evidence is in
+`data/experiments/literary-h8-gradient-block-curriculum-v1/report.json`.
+
 ## Next experiment ladder
 
 After each phase, use the same corpus and frozen holdout:
@@ -368,8 +394,15 @@ After each phase, use the same corpus and frozen holdout:
    completed. All fixed gradient experts beat the trunk; the learned recursive
    routes improve the trunk but do not beat the best fixed leaf.
 12. Resume metric-aligned gradient experts through short, independently gated
-   stages to widen conditional utility before fitting another router swarm.
-13. Expand source data again before a 64K aggregate experiment; do not
+   stages to widen conditional utility before fitting another router swarm:
+   two stages completed and promoted; fixed and oracle gains generalize.
+13. Train routers with direct expected regret instead of quantized soft utility:
+   implemented and measured; it closes most of the router gap but finishes 109
+   Q15 behind the best fixed expert.
+14. Replace contiguous four-channel hidden averaging with deterministic signed
+   projections of all 128 contextual channels and integrate the winning router
+   as a block-local top-one/top-two dispatcher.
+15. Expand source data again before a 64K aggregate experiment; do not
    manufacture scale through repeated overlapping windows alone.
 
 Four single-trunk expert runtimes are complete. Bias, diagonal hidden,

@@ -22,6 +22,7 @@ const UTILITY_LOSS_LOGIT_SHIFT: u8 = 3;
 enum RouterObjective {
     HardLabel,
     UtilitySoft,
+    ExpectedRegret,
 }
 
 impl RouterObjective {
@@ -29,6 +30,7 @@ impl RouterObjective {
         match self {
             Self::HardLabel => "hard_label",
             Self::UtilitySoft => "utility_soft",
+            Self::ExpectedRegret => "expected_regret",
         }
     }
 }
@@ -64,6 +66,7 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
     let mut epochs = 64_usize;
     let mut seed = 1_u64;
     let mut objective = RouterObjective::HardLabel;
+    let mut regret_gradient_shift = 3_u8;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--train" => train_path = Some(PathBuf::from(required(&mut args, "--train")?)),
@@ -82,14 +85,23 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
                 objective = match required(&mut args, "--objective")?.as_str() {
                     "hard-label" => RouterObjective::HardLabel,
                     "utility-soft" => RouterObjective::UtilitySoft,
-                    _ => return Err("--objective requires hard-label or utility-soft".into()),
+                    "expected-regret" => RouterObjective::ExpectedRegret,
+                    _ => {
+                        return Err(
+                            "--objective requires hard-label, utility-soft, or expected-regret"
+                                .into(),
+                        );
+                    }
                 }
+            }
+            "--regret-gradient-shift" => {
+                regret_gradient_shift = required(&mut args, "--regret-gradient-shift")?.parse()?
             }
             other => return Err(format!("unknown train argument: {other}").into()),
         }
     }
-    if epochs == 0 {
-        return Err("--epochs must be positive".into());
+    if epochs == 0 || regret_gradient_shift > 30 {
+        return Err("--epochs must be positive and --regret-gradient-shift at most 30".into());
     }
     let train_path = train_path.ok_or("--train is required")?;
     let calibration_path = calibration_path.ok_or("--calibration is required")?;
@@ -101,7 +113,13 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
     let mut model = RouterModel::new(feature_indices, seed);
     let initial_train = evaluate(&model, &train_rows)?;
     let initial_calibration = evaluate(&model, &calibration_rows)?;
-    let update = train(&mut model, &train_rows, epochs, objective)?;
+    let update = train(
+        &mut model,
+        &train_rows,
+        epochs,
+        objective,
+        regret_gradient_shift,
+    )?;
     let final_train = evaluate(&model, &train_rows)?;
     let final_calibration = evaluate(&model, &calibration_rows)?;
     fs::write(&model_out, model.to_bytes()?)?;
@@ -111,6 +129,7 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
             &model,
             epochs,
             objective,
+            regret_gradient_shift,
             update,
             initial_train,
             final_train,
@@ -156,7 +175,7 @@ fn run_eval(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::e
 fn print_help() {
     println!("Usage:");
     println!(
-        "  nsrl-router train --train DATA.tsv --calibration DATA.tsv --features 0-23|24-40|0-40 --epochs N --seed N [--objective hard-label|utility-soft] --model-out PATH --trace PATH [--predictions-out PATH]"
+        "  nsrl-router train --train DATA.tsv --calibration DATA.tsv --features 0-23|24-40|0-40 --epochs N --seed N [--objective hard-label|utility-soft|expected-regret] [--regret-gradient-shift N] --model-out PATH --trace PATH [--predictions-out PATH]"
     );
     println!(
         "  nsrl-router eval --data DATA.tsv --model PATH --trace PATH [--predictions-out PATH]"
@@ -412,6 +431,7 @@ fn train(
     rows: &[RouterRow],
     epochs: usize,
     objective: RouterObjective,
+    regret_gradient_shift: u8,
 ) -> Result<RouterUpdateStats, Box<dyn std::error::Error>> {
     let mut input_carry = vec![0_i64; model.input_weights.len()];
     let mut output_carry = [0_i64; HIDDEN_DIM * OUTPUT_DIM];
@@ -427,31 +447,37 @@ fn train(
         for row in rows {
             let forward = model.forward(&row.features_q15)?;
             let soft_targets = match objective {
-                RouterObjective::HardLabel => None,
+                RouterObjective::HardLabel | RouterObjective::ExpectedRegret => None,
                 RouterObjective::UtilitySoft => Some(utility_target_probabilities(row)?),
             };
-            let mut errors_q15 = [0_i32; OUTPUT_DIM];
-            for output_index in 0..OUTPUT_DIM {
-                let target = soft_targets.as_ref().map_or_else(
-                    || {
-                        if output_index == row.target {
-                            i32::from(i16::MAX)
-                        } else {
-                            0
+            let errors_q15 = if objective == RouterObjective::ExpectedRegret {
+                expected_regret_errors_q15(row, &forward.probabilities_q15, regret_gradient_shift)?
+            } else {
+                let mut errors = [0_i32; OUTPUT_DIM];
+                for output_index in 0..OUTPUT_DIM {
+                    let target = soft_targets.as_ref().map_or_else(
+                        || {
+                            if output_index == row.target {
+                                i32::from(i16::MAX)
+                            } else {
+                                0
+                            }
+                        },
+                        |targets| i32::from(targets[output_index]),
+                    );
+                    let raw_error = i32::from(forward.probabilities_q15[output_index]) - target;
+                    errors[output_index] = match objective {
+                        RouterObjective::HardLabel => {
+                            let class_weight =
+                                max_label_count.div_ceil(label_counts[row.target].max(1));
+                            raw_error.saturating_mul(class_weight as i32)
                         }
-                    },
-                    |targets| i32::from(targets[output_index]),
-                );
-                let raw_error = i32::from(forward.probabilities_q15[output_index]) - target;
-                errors_q15[output_index] = match objective {
-                    RouterObjective::HardLabel => {
-                        let class_weight =
-                            max_label_count.div_ceil(label_counts[row.target].max(1));
-                        raw_error.saturating_mul(class_weight as i32)
-                    }
-                    RouterObjective::UtilitySoft => raw_error,
-                };
-            }
+                        RouterObjective::UtilitySoft => raw_error,
+                        RouterObjective::ExpectedRegret => unreachable!(),
+                    };
+                }
+                errors
+            };
             let output_weights_before = model.output_weights;
             let mut hidden_grad_q15 = [0_i64; HIDDEN_DIM];
             for hidden_index in 0..HIDDEN_DIM {
@@ -533,6 +559,34 @@ fn utility_target_probabilities(
     base2_softmax_i32_q15(&utility_logits_q8, &mut probabilities_q15)
         .ok_or("utility target softmax failed")?;
     Ok(probabilities_q15)
+}
+
+fn expected_regret_errors_q15(
+    row: &RouterRow,
+    probabilities_q15: &[i16; OUTPUT_DIM],
+    gradient_shift: u8,
+) -> Result<[i32; OUTPUT_DIM], Box<dyn std::error::Error>> {
+    let probability_sum = probabilities_q15
+        .iter()
+        .map(|&probability| i64::from(probability.max(0)))
+        .sum::<i64>();
+    if probability_sum == 0 {
+        return Err("expected-regret probabilities sum to zero".into());
+    }
+    let weighted_loss = probabilities_q15
+        .iter()
+        .zip(row.child_losses_q15.iter())
+        .map(|(&probability, &loss)| i64::from(probability.max(0)).saturating_mul(loss as i64))
+        .sum::<i64>();
+    let expected_loss = weighted_loss.saturating_add(probability_sum / 2) / probability_sum;
+    let mut errors = [0_i32; OUTPUT_DIM];
+    for output_index in 0..OUTPUT_DIM {
+        let difference = (row.child_losses_q15[output_index] as i64).saturating_sub(expected_loss);
+        let scaled = i64::from(probabilities_q15[output_index].max(0)).saturating_mul(difference)
+            >> gradient_shift;
+        errors[output_index] = scaled.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    }
+    Ok(errors)
 }
 
 fn apply_i8_gradient(
@@ -668,6 +722,7 @@ fn training_trace_json(
     model: &RouterModel,
     epochs: usize,
     objective: RouterObjective,
+    regret_gradient_shift: u8,
     update: RouterUpdateStats,
     initial_train: RouterMetrics,
     final_train: RouterMetrics,
@@ -675,7 +730,7 @@ fn training_trace_json(
     final_calibration: RouterMetrics,
 ) -> String {
     format!(
-        "{{\"schema\":\"nsrl.router_training.v1\",\"model\":{{\"artifact\":\"NSRLRT1\",\"model_hash\":\"0x{:016x}\",\"seed\":{},\"input_dim\":{},\"hidden_dim\":{},\"output_dim\":{},\"feature_indices\":[{}]}},\"training\":{{\"epochs\":{},\"optimizer\":\"integer_error_feedback_sgd\",\"objective\":\"{}\",\"class_balanced\":{},\"utility_loss_logit_shift\":{},\"output_logit_shift\":{},\"output_weight_grad_shift\":{},\"input_weight_grad_shift\":{},\"updates\":{{\"input_weights\":{},\"output_weights\":{},\"hidden_bias\":{},\"output_bias\":{},\"saturation_count\":{}}}}},\"initial_train\":{},\"final_train\":{},\"initial_calibration\":{},\"final_calibration\":{}}}\n",
+        "{{\"schema\":\"nsrl.router_training.v2\",\"model\":{{\"artifact\":\"NSRLRT1\",\"model_hash\":\"0x{:016x}\",\"seed\":{},\"input_dim\":{},\"hidden_dim\":{},\"output_dim\":{},\"feature_indices\":[{}]}},\"training\":{{\"epochs\":{},\"optimizer\":\"integer_error_feedback_sgd\",\"objective\":\"{}\",\"class_balanced\":{},\"utility_loss_logit_shift\":{},\"regret_gradient_shift\":{},\"output_logit_shift\":{},\"output_weight_grad_shift\":{},\"input_weight_grad_shift\":{},\"updates\":{{\"input_weights\":{},\"output_weights\":{},\"hidden_bias\":{},\"output_bias\":{},\"saturation_count\":{}}}}},\"initial_train\":{},\"final_train\":{},\"initial_calibration\":{},\"final_calibration\":{}}}\n",
         model.model_hash().unwrap_or(0),
         model.seed,
         model.feature_indices.len(),
@@ -691,6 +746,7 @@ fn training_trace_json(
         objective.as_str(),
         objective == RouterObjective::HardLabel,
         UTILITY_LOSS_LOGIT_SHIFT,
+        regret_gradient_shift,
         OUTPUT_LOGIT_SHIFT,
         OUTPUT_WEIGHT_GRAD_SHIFT,
         INPUT_WEIGHT_GRAD_SHIFT,
@@ -809,8 +865,9 @@ mod tests {
         let mut left = RouterModel::new((0..32).collect(), 11);
         let mut right = left.clone();
         let before = left.model_hash().expect("before");
-        let left_stats = train(&mut left, &rows, 16, RouterObjective::HardLabel).expect("left");
-        let right_stats = train(&mut right, &rows, 16, RouterObjective::HardLabel).expect("right");
+        let left_stats = train(&mut left, &rows, 16, RouterObjective::HardLabel, 3).expect("left");
+        let right_stats =
+            train(&mut right, &rows, 16, RouterObjective::HardLabel, 3).expect("right");
         assert_eq!(left, right);
         assert_eq!(
             left_stats.output_weight_updates,
@@ -829,5 +886,19 @@ mod tests {
         assert!(probabilities[0] > probabilities[1]);
         assert!(probabilities[1] > probabilities[2]);
         assert!(i32::from(probabilities[0]) - i32::from(probabilities[1]) < 4096);
+    }
+
+    #[test]
+    fn expected_regret_gradient_preserves_one_unit_utility_differences() {
+        let mut row = fixture_rows().remove(0);
+        row.child_losses_q15 = [1000, 1001, 1002];
+        let probabilities = [10_923, 10_922, 10_922];
+        let errors =
+            expected_regret_errors_q15(&row, &probabilities, 3).expect("expected regret errors");
+
+        assert!(errors[0] < 0);
+        assert_eq!(errors[1], 0);
+        assert!(errors[2] > 0);
+        assert!(errors.iter().any(|&error| error != 0));
     }
 }

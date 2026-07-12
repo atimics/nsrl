@@ -16,6 +16,24 @@ use nsrl_train::{
 };
 
 const DEFAULT_PROJECTION_SEED: u64 = 0x424c_4f43_4b45_5850;
+const DEFAULT_ROUTER_FEATURE_PROJECTION_SEED: u64 = 0x5254_5250_524f_4a31;
+const DEFAULT_ROUTER_FEATURE_PROJECTION_SHIFT: u8 = 4;
+const ROUTER_FEATURE_COUNT: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RouterFeatureKind {
+    Pooled,
+    SignedProjection,
+}
+
+impl RouterFeatureKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Pooled => "pooled",
+            Self::SignedProjection => "signed_projection",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 struct RouteAggregate {
@@ -504,6 +522,9 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
     let mut stride = 1_usize;
     let mut span_len = 16_usize;
     let mut max_samples = None;
+    let mut router_feature_kind = RouterFeatureKind::Pooled;
+    let mut router_feature_projection_seed = DEFAULT_ROUTER_FEATURE_PROJECTION_SEED;
+    let mut router_feature_projection_shift = DEFAULT_ROUTER_FEATURE_PROJECTION_SHIFT;
     let mut attention_kind = MiniTransformerAttentionKind::Base2Softmax;
     let mut position_policy = MiniTransformerPositionPolicy::LearnedAbsolute;
     while let Some(arg) = args.next() {
@@ -518,6 +539,21 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
             "--stride" => stride = required(&mut args, "--stride")?.parse()?,
             "--span-len" => span_len = required(&mut args, "--span-len")?.parse()?,
             "--max-samples" => max_samples = Some(required(&mut args, "--max-samples")?.parse()?),
+            "--router-features" => {
+                router_feature_kind = match required(&mut args, "--router-features")?.as_str() {
+                    "pooled" => RouterFeatureKind::Pooled,
+                    "signed" | "signed-projection" => RouterFeatureKind::SignedProjection,
+                    _ => return Err("--router-features requires pooled or signed".into()),
+                }
+            }
+            "--router-feature-seed" => {
+                router_feature_projection_seed =
+                    required(&mut args, "--router-feature-seed")?.parse()?
+            }
+            "--router-feature-shift" => {
+                router_feature_projection_shift =
+                    required(&mut args, "--router-feature-shift")?.parse()?
+            }
             "--attention" => {
                 attention_kind = parse_attention(&required(&mut args, "--attention")?)?
             }
@@ -525,7 +561,12 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
             other => return Err(format!("unknown score argument: {other}").into()),
         }
     }
-    if expert_specs.len() != 3 || stride == 0 || span_len == 0 || max_samples == Some(0) {
+    if expert_specs.len() != 3
+        || stride == 0
+        || span_len == 0
+        || max_samples == Some(0)
+        || router_feature_projection_shift > 30
+    {
         return Err("score requires three experts and positive bounds".into());
     }
     let input_path = input_path.ok_or("--input is required")?;
@@ -641,6 +682,14 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
             token_routes[index] = choice;
         }
         for (index, record) in records.iter().enumerate() {
+            let router_features = match router_feature_kind {
+                RouterFeatureKind::Pooled => record.router_hidden_features_q15,
+                RouterFeatureKind::SignedProjection => signed_router_features_q15(
+                    &record.last_hidden_q15,
+                    router_feature_projection_seed,
+                    router_feature_projection_shift,
+                ),
+            };
             writeln!(
                 details,
                 "{}\t{}\t{:02x}\t{},{},{}\t{},{},{}\t{}\t{}\t{}\t{}",
@@ -653,8 +702,7 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
                 mistakes[index][0],
                 mistakes[index][1],
                 mistakes[index][2],
-                record
-                    .router_hidden_features_q15
+                router_features
                     .iter()
                     .map(i16::to_string)
                     .collect::<Vec<_>>()
@@ -680,9 +728,25 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
         })
         .ok_or("no fixed expert")?;
     let mut output = BufWriter::new(fs::File::create(output_path.ok_or("--out is required")?)?);
+    let schema = if router_feature_kind == RouterFeatureKind::Pooled {
+        "nsrl.shared_trunk_block_low_rank_routing_ablation.v1"
+    } else {
+        "nsrl.shared_trunk_block_low_rank_routing_ablation.v2"
+    };
+    let router_feature_json = if router_feature_kind == RouterFeatureKind::Pooled {
+        String::new()
+    } else {
+        format!(
+            ",\"router_features\":{{\"kind\":\"{}\",\"count\":32,\"projection_seed\":{},\"projection_shift\":{}}}",
+            router_feature_kind.as_str(),
+            router_feature_projection_seed,
+            router_feature_projection_shift,
+        )
+    };
     writeln!(
         output,
-        "{{\"schema\":\"nsrl.shared_trunk_block_low_rank_routing_ablation.v1\",\"dataset\":{{\"path\":{},\"hash\":\"0x{:016x}\",\"samples\":{},\"windows\":{},\"stride\":{}}},\"trunk\":{{\"model_hash\":\"0x{:016x}\",\"feature_forward_count\":{},\"expert_forward_count\":{}}},\"experts\":{{\"ids\":[{},{},{}],\"artifact_hashes\":[\"0x{:016x}\",\"0x{:016x}\",\"0x{:016x}\"],\"rank\":{},\"residual_shift\":{},\"parameter_count_each\":{}}},\"fixed_experts\":[{},{},{}],\"best_fixed_expert\":{},\"oracle_routes\":{{\"prompt\":{},\"span\":{},\"token\":{}}},\"attention\":\"{}\",\"position\":\"{}\",\"known_non_claims\":[\"target_aware_oracle_ceiling\",\"expert_forwards_not_shared_after_first_adapted_block\",\"does_not_claim_language_model_quality\"]}}",
+        "{{\"schema\":\"{}\",\"dataset\":{{\"path\":{},\"hash\":\"0x{:016x}\",\"samples\":{},\"windows\":{},\"stride\":{}}},\"trunk\":{{\"model_hash\":\"0x{:016x}\",\"feature_forward_count\":{},\"expert_forward_count\":{}}},\"experts\":{{\"ids\":[{},{},{}],\"artifact_hashes\":[\"0x{:016x}\",\"0x{:016x}\",\"0x{:016x}\"],\"rank\":{},\"residual_shift\":{},\"parameter_count_each\":{}}},\"fixed_experts\":[{},{},{}],\"best_fixed_expert\":{},\"oracle_routes\":{{\"prompt\":{},\"span\":{},\"token\":{}}},\"attention\":\"{}\",\"position\":\"{}\"{},\"known_non_claims\":[\"target_aware_oracle_ceiling\",\"expert_forwards_not_shared_after_first_adapted_block\",\"does_not_claim_language_model_quality\"]}}",
+        schema,
         json_string(&input_path.to_string_lossy()),
         fnv64(&input_bytes),
         sample_count,
@@ -709,6 +773,7 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
         route_json(&token),
         attention_kind.as_str(),
         position_policy.as_str(),
+        router_feature_json,
     )?;
     output.flush()?;
     Ok(())
@@ -925,6 +990,34 @@ fn metrics_json(metrics: MiniTransformerBlockExpertMetrics) -> String {
     )
 }
 
+fn signed_router_features_q15(
+    hidden_q15: &[i16],
+    seed: u64,
+    projection_shift: u8,
+) -> [i16; ROUTER_FEATURE_COUNT] {
+    core::array::from_fn(|feature| {
+        let sum = hidden_q15
+            .iter()
+            .enumerate()
+            .map(|(channel, &value)| {
+                i64::from(value) * router_projection_sign(seed, feature, channel)
+            })
+            .sum::<i64>();
+        let divisor = 1_i64 << projection_shift;
+        (sum / divisor).clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16
+    })
+}
+
+fn router_projection_sign(seed: u64, feature: usize, channel: usize) -> i64 {
+    let mut value = seed
+        ^ (feature as u64 + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (channel as u64 + 1).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^= value >> 31;
+    if value & 1 == 0 { -1 } else { 1 }
+}
+
 fn fnv64(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
@@ -980,7 +1073,28 @@ fn help() {
          train --tokens PATH --model PATH --out PATH --trace PATH [--resume-expert PATH] [--rank N] [--residual-shift N] [--train-layer all|final|N] [--bidirectional-loss-guard] [--objective cross-entropy|probability-error] [--epochs N] [--token-offset N] [--stride N] [--max-windows N] [--batch-windows N] [--learning-rate N] [--learning-rate-shift N] [--attention base2|linear] [--position learned|nope]\n\
          eval --tokens PATH --model PATH --expert PATH --trace PATH [--stride N] [--max-windows N] [--attention base2|linear] [--position learned|nope]\n\
          signature --input PATH --model PATH --out PATH --trace PATH [--stride N] [--max-samples N] [--attention base2|linear] [--position learned|nope]\n\
-         score --input PATH --model PATH --expert ID=PATH --expert ID=PATH --expert ID=PATH --out PATH --details-out PATH [--stride N] [--span-len N] [--max-samples N] [--attention base2|linear] [--position learned|nope]\n\
+         score --input PATH --model PATH --expert ID=PATH --expert ID=PATH --expert ID=PATH --out PATH --details-out PATH [--stride N] [--span-len N] [--max-samples N] [--router-features pooled|signed] [--router-feature-seed N] [--router-feature-shift N] [--attention base2|linear] [--position learned|nope]\n\
          generate --model PATH --expert PATH --prompt TEXT --text-out PATH --trace PATH [--max-new-tokens N] [--top-k N] [--sample-seed N] [--printable-only] [--attention base2|linear] [--position learned|nope]"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signed_router_projection_is_deterministic_and_retains_within_bucket_signal() {
+        let mut hidden = [0_i16; 128];
+        hidden[0] = 512;
+        hidden[1] = -512;
+
+        let left = signed_router_features_q15(&hidden, 17, 4);
+        let right = signed_router_features_q15(&hidden, 17, 4);
+        let other_seed = signed_router_features_q15(&hidden, 19, 4);
+
+        assert_eq!(left, right);
+        assert!(left.iter().any(|&feature| feature != 0));
+        assert_ne!(left, other_seed);
+        assert_eq!((i32::from(hidden[0]) + i32::from(hidden[1])) / 2, 0);
+    }
 }
