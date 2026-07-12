@@ -29,6 +29,39 @@ jobs:
       - name: Run Checks
         run: ./scripts/check.sh
 
+  solomon-aws-product-plan:
+    name: Solomon AWS Product Plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check v2 corpus contract
+        run: node scripts/check-solomon-v2-corpus-contract.mjs
+
+      - name: Check native directional eval
+        run: node scripts/check-solomon-native-directional-eval-smoke.mjs
+
+      - name: Check generative eval provenance
+        run: node scripts/check-solomon-generative-eval-provenance.mjs
+
+      - name: Check AWS product plan
+        run: bash scripts/check-solomon-aws-product-plan.sh
+
+      - name: Check product diagnostic wrapper
+        run: node scripts/check-solomon-product-diagnostic.mjs --fast
+
   pages-results:
     name: Pages Results
     runs-on: ubuntu-latest
@@ -52,6 +85,9 @@ jobs:
           node --check scripts/check-solomon-generative-eval-provenance.mjs
           node --check scripts/lib/solomon-symbolic-image.mjs
           node scripts/check-solomon-generative-eval-provenance.mjs
+
+      - name: Check browser model compatibility
+        run: node scripts/check-solomon-attention-web-model-self-test.mjs
 
       - name: Check fixed sample gallery
         run: |

@@ -47,6 +47,7 @@ crates/
   nsrl-core/      no_std integer-only inference runtime
   nsrl-corpus/    deterministic corpus and tokenizer tooling
   nsrl-demo/      deterministic trace and benchmark binary
+  nsrl-eval/      frozen proof contracts and comparison policy
   nsrl-train-core/no_std borrowed-workspace training steps
   nsrl-train/     calibration and training tools that mirror runtime math
 ```
@@ -564,8 +565,7 @@ implemented for the small research lanes. The next engineering shape is:
 
 The remaining research questions are:
 
-- whether the same arithmetic scales cleanly to larger lexeme and transformer
-  experts,
+- whether the same arithmetic scales cleanly to larger transformer experts,
 - how to reduce dependence on source-grounded composition without losing
   coherence,
 - and whether linear attention plus integer test-time state updates can close
@@ -895,8 +895,8 @@ Status: complete for the forward runtime.
 ### Milestone 4: Tiny Model, Trace, Benchmark, And Native Training
 
 Status: forward execution, deterministic trace output, `bench-1m`, corpus
-tooling, lexeme lanes, and integer-native training are implemented as research
-infrastructure.
+tooling, and integer-native training are implemented as research
+infrastructure. Promotion remains blocked on `integer-transformer-proof-v1`.
 
 - End-to-end integer model execution.
 - Deterministic output tests.
@@ -904,8 +904,14 @@ infrastructure.
 - Small demo task.
 - `bench-1m` 1,048,576-i8-weight forward benchmark.
 - `nsrl-train` calibration path.
-- Byte, lexeme, MLP, attention, embedding, and mini-transformer training traces.
+- Byte, MLP, attention, embedding, and mini-transformer training traces.
 - i64 batch accumulators and rollback safety.
+- Typed `nsrl-eval` proof contract and strict multi-baseline checker.
+
+Completion requires one frozen candidate/result matrix in which the integer
+transformer strictly beats retrieval, byte n-gram, and floating-point reference
+probability error without increasing mistakes. Solomon and literary experiments
+do not close this milestone independently.
 
 ### Milestone 5: Agentic Expert Packaging
 

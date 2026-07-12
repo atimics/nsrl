@@ -1,0 +1,2 @@
+model	latent_model	latent_model_hash	source_samples	source_model	prompts	top1	top5	top1_per_mille	top5_per_mille	mean_rank_q8	mean_target_distance_q8
+ld128tf1024	/Users/ratimics/develop/nsrl/data/processed/key-solomon-goetia-latent-16x16-v2-sharp/n1425-ld128-tf1024-e60/model.nsrllat	0xa620d349f9f336ad	/Users/ratimics/develop/nsrl/data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z-inputs/generative-eval-clean/local-clean-72-eval500-v2/samples.tsv		72	3	6	41	83	9255	4265852

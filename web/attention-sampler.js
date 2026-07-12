@@ -1,6 +1,6 @@
 const MODEL_MAGIC = "NSRLLMM1";
-const MODEL_VERSION = 4;
-const TRANSFORMER_MAGIC = "NSRLMT4\n";
+const MODEL_VERSION = 5;
+const TRANSFORMER_MAGICS = new Set(["NSRLMT4\n", "NSRLMT5\n"]);
 const PAD = 0;
 const BOS = 1;
 const PROMPT = 2;
@@ -116,12 +116,22 @@ const TEXT_CHUNKS = [
 const SIGNATURE_GRID = 16;
 const SIGNATURE_BINS = SIGNATURE_GRID * SIGNATURE_GRID;
 const VOCAB_SIZE = 256;
-const D_MODEL = 32;
-const HEADS = 2;
-const HEAD_DIM = D_MODEL / HEADS;
-const HIDDEN_DIM = 64;
 const OUTPUT_SHIFT = 8;
 const Q15_SHIFT = 15;
+const RMS_NORM_EPSILON = 1;
+const INV_SQRT_2_Q15 = 23170;
+const RSQRT_LUT_8BIT = [
+  32767, 32641, 32515, 32391, 32268, 32146, 32026, 31907, 31790, 31673, 31558, 31445, 31332,
+  31221, 31111, 31002, 30894, 30787, 30682, 30577, 30474, 30371, 30270, 30169, 30070, 29972,
+  29874, 29778, 29682, 29587, 29494, 29401, 29309, 29217, 29127, 29038, 28949, 28861, 28774,
+  28688, 28602, 28518, 28434, 28350, 28268, 28186, 28105, 28024, 27945, 27866, 27787, 27709,
+  27632, 27556, 27480, 27405, 27330, 27256, 27183, 27110, 27038, 26966, 26895, 26825, 26755,
+  26686, 26617, 26548, 26481, 26413, 26346, 26280, 26214, 26149, 26084, 26020, 25956, 25893,
+  25830, 25767, 25705, 25644, 25583, 25522, 25462, 25402, 25342, 25283, 25225, 25167, 25109,
+  25051, 24994, 24938, 24882, 24826, 24770, 24715, 24660, 24606, 24552, 24498, 24445, 24392,
+  24339, 24287, 24235, 24184, 24132, 24081, 24031, 23980, 23930, 23881, 23831, 23782, 23733,
+  23685, 23637, 23589, 23541, 23494, 23447, 23400, 23354, 23307, 23262, 23216,
+];
 const DEFAULT_EMBEDDED_TEXT_LM_ORDER = 12;
 const DEFAULT_EMBEDDED_TEXT_LM_MIN_ORDER = 3;
 const FNV_OFFSET = 0xcbf29ce484222325n;
@@ -400,17 +410,27 @@ export class SolomonAttentionSampler {
   }
 }
 
-class MiniTransformerModel {
+export class MiniTransformerModel {
   constructor(bytes) {
     const reader = new BinaryReader(bytes);
     const magic = reader.readAscii(8);
-    if (magic !== TRANSFORMER_MAGIC) {
+    if (!TRANSFORMER_MAGICS.has(magic)) {
       throw new Error("bad mini-transformer magic");
     }
     expectU32(reader, VOCAB_SIZE, "mini-transformer vocab");
-    expectU32(reader, D_MODEL, "mini-transformer d_model");
-    expectU32(reader, HEADS, "mini-transformer heads");
-    expectU32(reader, HIDDEN_DIM, "mini-transformer hidden_dim");
+    this.dModel = reader.readU32();
+    this.heads = reader.readU32();
+    this.hiddenDim = reader.readU32();
+    if (
+      this.dModel <= 0 ||
+      this.heads <= 0 ||
+      this.hiddenDim <= 0 ||
+      this.dModel % this.heads !== 0
+    ) {
+      throw new Error("invalid mini-transformer geometry");
+    }
+    this.headDim = this.dModel / this.heads;
+    this.attentionScaleShift = powerOfFourSqrtShift(this.headDim);
     this.contextSeqLen = reader.readU32();
     const embeddingCount = Number(reader.readU64());
     const positionEmbeddingCount = Number(reader.readU64());
@@ -431,16 +451,19 @@ class MiniTransformerModel {
     this.outputHash = reader.readU64();
     this.modelHash = reader.readU64();
 
-    expectCount(embeddingCount, VOCAB_SIZE * D_MODEL, "embedding count");
-    expectCount(positionEmbeddingCount, this.contextSeqLen * D_MODEL, "position embedding count");
-    expectCount(qCount, D_MODEL * D_MODEL, "q count");
-    expectCount(kCount, D_MODEL * D_MODEL, "k count");
-    expectCount(vCount, D_MODEL * D_MODEL, "v count");
-    expectCount(oCount, D_MODEL * D_MODEL, "o count");
-    expectCount(upCount, D_MODEL * HIDDEN_DIM, "up count");
-    expectCount(gateCount, D_MODEL * HIDDEN_DIM, "gate count");
-    expectCount(downCount, HIDDEN_DIM * D_MODEL, "down count");
-    expectCount(outputCount, VOCAB_SIZE * D_MODEL, "output count");
+    expectCount(embeddingCount, VOCAB_SIZE * this.dModel, "embedding count");
+    expectCount(positionEmbeddingCount, this.contextSeqLen * this.dModel, "position embedding count");
+    const attentionWeightsPerLayer = this.dModel * this.dModel;
+    const upWeightsPerLayer = this.dModel * this.hiddenDim;
+    const downWeightsPerLayer = this.hiddenDim * this.dModel;
+    this.layers = exactLayerCount(qCount, attentionWeightsPerLayer, "q count");
+    expectCount(kCount, this.layers * attentionWeightsPerLayer, "k count");
+    expectCount(vCount, this.layers * attentionWeightsPerLayer, "v count");
+    expectCount(oCount, this.layers * attentionWeightsPerLayer, "o count");
+    expectCount(upCount, this.layers * upWeightsPerLayer, "up count");
+    expectCount(gateCount, this.layers * upWeightsPerLayer, "gate count");
+    expectCount(downCount, this.layers * downWeightsPerLayer, "down count");
+    expectCount(outputCount, VOCAB_SIZE * this.dModel, "output count");
 
     this.embeddings = reader.readI16Array(embeddingCount);
     this.positionEmbeddings = reader.readI16Array(positionEmbeddingCount);
@@ -452,6 +475,16 @@ class MiniTransformerModel {
     this.gateWeights = reader.readI8Array(gateCount);
     this.downWeights = reader.readI8Array(downCount);
     this.outputWeights = reader.readI8Array(outputCount);
+    const rmsCount = this.layers * this.dModel;
+    if (reader.remaining() === rmsCount * 4) {
+      this.attentionRmsWeights = reader.readI16Array(rmsCount);
+      this.mlpRmsWeights = reader.readI16Array(rmsCount);
+    } else if (reader.remaining() === 0) {
+      this.attentionRmsWeights = null;
+      this.mlpRmsWeights = null;
+    } else {
+      throw new Error("invalid mini-transformer RMSNorm payload");
+    }
     if (!reader.isDone()) {
       throw new Error("trailing bytes in mini-transformer model");
     }
@@ -459,62 +492,123 @@ class MiniTransformerModel {
 
   forward(context, positionPolicy) {
     const seqLen = context.length;
-    const total = seqLen * D_MODEL;
+    const total = seqLen * this.dModel;
     const embeddings = new Int16Array(total);
     for (let index = 0; index < seqLen; index += 1) {
       const token = context[index];
-      const tokenStart = token * D_MODEL;
-      const positionStart = index * D_MODEL;
-      const outputStart = index * D_MODEL;
-      for (let dim = 0; dim < D_MODEL; dim += 1) {
+      const tokenStart = token * this.dModel;
+      const positionStart = index * this.dModel;
+      const outputStart = index * this.dModel;
+      for (let dim = 0; dim < this.dModel; dim += 1) {
         const positionValue = positionPolicy === 0 ? this.positionEmbeddings[positionStart + dim] : 0;
         embeddings[outputStart + dim] = saturateI16(this.embeddings[tokenStart + dim] + positionValue);
       }
     }
 
-    const q = linearSequence(embeddings, this.qWeights, seqLen, D_MODEL, D_MODEL, 0);
-    const k = linearSequence(embeddings, this.kWeights, seqLen, D_MODEL, D_MODEL, 0);
-    const v = linearSequence(embeddings, this.vWeights, seqLen, D_MODEL, D_MODEL, 0);
-    const contextRows = new Int16Array(total);
-    const scaleShift = 2;
-
-    for (let token = 0; token < seqLen; token += 1) {
-      for (let head = 0; head < HEADS; head += 1) {
-        const headOffset = head * HEAD_DIM;
-        const logits = new Int32Array(token + 1);
-        for (let keyIndex = 0; keyIndex <= token; keyIndex += 1) {
-          let acc = 0;
-          const qStart = token * D_MODEL + headOffset;
-          const kStart = keyIndex * D_MODEL + headOffset;
-          for (let dim = 0; dim < HEAD_DIM; dim += 1) {
-            acc += q[qStart + dim] * k[kStart + dim];
-          }
-          logits[keyIndex] = floorShift(acc, scaleShift);
-        }
-        const probabilities = softmaxQ15(logits);
-        const ctxStart = token * D_MODEL + headOffset;
-        for (let dim = 0; dim < HEAD_DIM; dim += 1) {
-          let acc = 0;
-          for (let keyIndex = 0; keyIndex <= token; keyIndex += 1) {
-            acc += probabilities[keyIndex] * v[keyIndex * D_MODEL + headOffset + dim];
-          }
-          contextRows[ctxStart + dim] = saturateI16(roundShift(acc, Q15_SHIFT));
-        }
+    const attentionWeightsPerLayer = this.dModel * this.dModel;
+    const upWeightsPerLayer = this.dModel * this.hiddenDim;
+    const downWeightsPerLayer = this.hiddenDim * this.dModel;
+    let layerInput = embeddings;
+    for (let layer = 0; layer < this.layers; layer += 1) {
+      const attentionStart = layer * attentionWeightsPerLayer;
+      const attentionEnd = attentionStart + attentionWeightsPerLayer;
+      const upStart = layer * upWeightsPerLayer;
+      const upEnd = upStart + upWeightsPerLayer;
+      const downStart = layer * downWeightsPerLayer;
+      const downEnd = downStart + downWeightsPerLayer;
+      const rmsStart = layer * this.dModel;
+      const rmsEnd = rmsStart + this.dModel;
+      const attentionInput = this.attentionRmsWeights
+        ? rmsNormSequence(
+          layerInput,
+          this.attentionRmsWeights.subarray(rmsStart, rmsEnd),
+          seqLen,
+          this.dModel,
+        )
+        : layerInput;
+      const q = linearSequence(
+        attentionInput,
+        this.qWeights.subarray(attentionStart, attentionEnd),
+        seqLen,
+        this.dModel,
+        this.dModel,
+        0,
+      );
+      const k = linearSequence(
+        attentionInput,
+        this.kWeights.subarray(attentionStart, attentionEnd),
+        seqLen,
+        this.dModel,
+        this.dModel,
+        0,
+      );
+      const v = linearSequence(
+        attentionInput,
+        this.vWeights.subarray(attentionStart, attentionEnd),
+        seqLen,
+        this.dModel,
+        this.dModel,
+        0,
+      );
+      const contextRows = causalAttention(
+        q,
+        k,
+        v,
+        seqLen,
+        this.dModel,
+        this.heads,
+        this.headDim,
+        this.attentionScaleShift,
+      );
+      const attentionOutput = linearSequence(
+        contextRows,
+        this.oWeights.subarray(attentionStart, attentionEnd),
+        seqLen,
+        this.dModel,
+        this.dModel,
+        0,
+      );
+      const attentionResidual = addResidual(layerInput, attentionOutput);
+      const mlpInput = this.mlpRmsWeights
+        ? rmsNormSequence(
+          attentionResidual,
+          this.mlpRmsWeights.subarray(rmsStart, rmsEnd),
+          seqLen,
+          this.dModel,
+        )
+        : attentionResidual;
+      const up = linearSequence(
+        mlpInput,
+        this.upWeights.subarray(upStart, upEnd),
+        seqLen,
+        this.dModel,
+        this.hiddenDim,
+        0,
+      );
+      const gate = linearSequence(
+        mlpInput,
+        this.gateWeights.subarray(upStart, upEnd),
+        seqLen,
+        this.dModel,
+        this.hiddenDim,
+        0,
+      );
+      const gated = new Int16Array(seqLen * this.hiddenDim);
+      for (let index = 0; index < gated.length; index += 1) {
+        gated[index] = gatedActivation(up[index], gate[index]);
       }
+      const mlpOutput = linearSequence(
+        gated,
+        this.downWeights.subarray(downStart, downEnd),
+        seqLen,
+        this.hiddenDim,
+        this.dModel,
+        0,
+      );
+      layerInput = addResidual(attentionResidual, mlpOutput);
     }
-
-    const attentionOutput = linearSequence(contextRows, this.oWeights, seqLen, D_MODEL, D_MODEL, 0);
-    const attentionResidual = addResidual(embeddings, attentionOutput);
-    const up = linearSequence(attentionResidual, this.upWeights, seqLen, D_MODEL, HIDDEN_DIM, 0);
-    const gate = linearSequence(attentionResidual, this.gateWeights, seqLen, D_MODEL, HIDDEN_DIM, 0);
-    const gated = new Int16Array(seqLen * HIDDEN_DIM);
-    for (let index = 0; index < gated.length; index += 1) {
-      gated[index] = gatedActivation(up[index], gate[index]);
-    }
-    const mlpOutput = linearSequence(gated, this.downWeights, seqLen, HIDDEN_DIM, D_MODEL, 0);
-    const blockOutput = addResidual(attentionResidual, mlpOutput);
-    const last = blockOutput.subarray((seqLen - 1) * D_MODEL, seqLen * D_MODEL);
-    const logits = linearRow(last, this.outputWeights, D_MODEL, VOCAB_SIZE, OUTPUT_SHIFT);
+    const last = layerInput.subarray((seqLen - 1) * this.dModel, seqLen * this.dModel);
+    const logits = linearRow(last, this.outputWeights, this.dModel, VOCAB_SIZE, OUTPUT_SHIFT);
     return { logits, probabilities: softmaxQ15(logits) };
   }
 }
@@ -528,6 +622,10 @@ class BinaryReader {
 
   isDone() {
     return this.offset === this.bytes.length;
+  }
+
+  remaining() {
+    return this.bytes.length - this.offset;
   }
 
   readAscii(count) {
@@ -612,6 +710,99 @@ class BinaryReader {
       throw new Error("truncated model");
     }
   }
+}
+
+function exactLayerCount(count, perLayer, label) {
+  if (perLayer <= 0 || count <= 0 || count % perLayer !== 0) {
+    throw new Error(`${label} ${count} is not a positive multiple of ${perLayer}`);
+  }
+  return count / perLayer;
+}
+
+function powerOfFourSqrtShift(headDim) {
+  let value = headDim;
+  let shift = 0;
+  while (value > 1 && value % 4 === 0) {
+    value /= 4;
+    shift += 1;
+  }
+  if (value !== 1) {
+    throw new Error(`mini-transformer head dimension ${headDim} is not a power of four`);
+  }
+  return shift;
+}
+
+function causalAttention(q, k, v, seqLen, dModel, heads, headDim, scaleShift) {
+  const contextRows = new Int16Array(seqLen * dModel);
+  for (let token = 0; token < seqLen; token += 1) {
+    for (let head = 0; head < heads; head += 1) {
+      const headOffset = head * headDim;
+      const logits = new Int32Array(token + 1);
+      for (let keyIndex = 0; keyIndex <= token; keyIndex += 1) {
+        let acc = 0;
+        const qStart = token * dModel + headOffset;
+        const kStart = keyIndex * dModel + headOffset;
+        for (let dim = 0; dim < headDim; dim += 1) {
+          acc += q[qStart + dim] * k[kStart + dim];
+        }
+        logits[keyIndex] = floorShift(acc, scaleShift);
+      }
+      const probabilities = softmaxQ15(logits);
+      const ctxStart = token * dModel + headOffset;
+      for (let dim = 0; dim < headDim; dim += 1) {
+        let acc = 0;
+        for (let keyIndex = 0; keyIndex <= token; keyIndex += 1) {
+          acc += probabilities[keyIndex] * v[keyIndex * dModel + headOffset + dim];
+        }
+        contextRows[ctxStart + dim] = saturateI16(roundShift(acc, Q15_SHIFT));
+      }
+    }
+  }
+  return contextRows;
+}
+
+function rmsNormSequence(input, weights, seqLen, dModel) {
+  const out = new Int16Array(input.length);
+  for (let row = 0; row < seqLen; row += 1) {
+    const start = row * dModel;
+    let sumSquares = 0;
+    for (let dim = 0; dim < dModel; dim += 1) {
+      const value = input[start + dim];
+      sumSquares += value * value;
+    }
+    const meanSquares = Math.floor(sumSquares / dModel) + RMS_NORM_EPSILON;
+    const inverseRmsQ30 = integerRsqrtQ30(meanSquares);
+    for (let dim = 0; dim < dModel; dim += 1) {
+      const scaled = input[start + dim] * weights[dim] * inverseRmsQ30;
+      out[start + dim] = saturateI16(roundShift(scaled, 30));
+    }
+  }
+  return out;
+}
+
+function integerRsqrtQ30(value) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error("invalid RMSNorm magnitude");
+  }
+  const msb = Math.floor(Math.log2(value));
+  let mantissa;
+  let exponent;
+  if (msb >= 7) {
+    exponent = msb - 7;
+    mantissa = Math.floor(value / 2 ** exponent);
+  } else {
+    exponent = -(7 - msb);
+    mantissa = value * 2 ** -exponent;
+  }
+  let inverse = RSQRT_LUT_8BIT[mantissa - 128] * 2 ** 15;
+  const scaledExponent = exponent + 7;
+  if (scaledExponent % 2 !== 0) {
+    inverse = roundShift(inverse * INV_SQRT_2_Q15, 15);
+  }
+  const halfExponent = Math.floor(scaledExponent / 2);
+  return halfExponent >= 0
+    ? Math.floor(inverse / 2 ** halfExponent)
+    : inverse * 2 ** -halfExponent;
 }
 
 function linearSequence(input, weights, seqLen, inputDim, outputDim, shift) {

@@ -21,23 +21,33 @@ node scripts/nsrl-status.mjs --refresh-fast-diagnostic
 
 ## Current Read
 
-As of the first status-surface pass, NSRL is not release-ready. The integer
-runtime and research artifacts exist, but the Solomon product proof is
-incomplete.
+As of 2026-07-10, NSRL is not release-ready. The integer runtime and research
+artifacts exist, but the Solomon product proof is incomplete.
 
-The project headline is now `NSRL-MME v0`, a model-native multimodal LLM eval
-defined in `docs/multimodal-llm-eval.md`. The current headline score is **not
-measured**. Existing sampler, replay, browser-probe, latent-prior, and denoiser
-numbers are diagnostics only until they feed a green `quality-report.json` with
-confidence-trace evidence for the headline task families.
+The repository now has one substrate promotion contract:
+`integer-transformer-proof-v1`. Run `cargo run -p nsrl-eval -- contract` to
+inspect it and `cargo run -p nsrl-eval -- check --manifest MANIFEST --results
+PATH` to validate a candidate/baseline matrix. The frozen manifest contains 5,896 held-out targets
+with dataset hash `0x8fe7b86378f81951`; deterministic retrieval, byte n-gram,
+and offline floating-point reference rows are checked in. No candidate row or
+passing full matrix is checked in yet, so the substrate milestone remains open.
+Solomon and literary results are experiment evidence rather than alternate
+headline criteria.
+
+The project headline is `NSRL-MME v0`, a model-native multimodal LLM eval
+defined in `docs/multimodal-llm-eval.md`. The current local score is **371 per
+mille**, below the 700 target. The quality report and generated-output integrity
+gates remain red, so this is measured diagnostic evidence rather than a passing
+headline result.
 
 Known facts from the status command:
 
 - the working tree is dirty,
-- the headline multimodal LLM eval is missing,
+- the headline multimodal LLM eval is measured but failing at 371 per mille,
 - the checked-in attention artifacts are smoke-scale, not promoted-profile,
-- no `quality-report.json`, `objective-coverage.json`, `release-proof.json`, or
-  completed Solomon `pipeline-complete.json` is present under `data/`,
+- local quality-report and objective-coverage artifacts exist,
+- no `release-proof.json` or completed Solomon `pipeline-complete.json` is
+  present under `data/`,
 - raw/free-running attention text is still diagnostic-only,
 - coherent Solomon text currently comes from prompted or memory-assisted paths.
 

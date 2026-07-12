@@ -1,0 +1,166 @@
+{
+  "schema": "nsrl.integer_transformer_candidate_health.v1",
+  "ok": true,
+  "policy": {
+    "expectedProfile": "small-h8-d128-ff256",
+    "expectedQuantizationProfile": "calibrated-v2-suffix-memory",
+    "requireRmsNorm": true,
+    "minTransformerLayers": 2,
+    "requireAttentionDeltas": true,
+    "requireLossImprovement": true,
+    "maxRejectedBatches": 0,
+    "maxMlpSaturations": 262144,
+    "maxAttentionSaturations": 262144,
+    "maxResidualSaturations": 16777216,
+    "minUniquePredictions": 8,
+    "maxPredictionSharePerMille": 900
+  },
+  "metrics": {
+    "examined_windows": 491,
+    "saturation_per_examined_window": {
+      "mlp": 7.130346232179226,
+      "attention": 2.164969450101833,
+      "residual": 16674.77800407332
+    },
+    "evaluation": {
+      "unique_predicted_tokens": 41,
+      "most_predicted_token": 32,
+      "most_predicted_token_count": 1061,
+      "most_predicted_token_share_per_mille": 179
+    }
+  },
+  "checks": [
+    {
+      "key": "schema",
+      "ok": true,
+      "actual": "nsrl.training_mini_transformer_integer_adam_trace.v1",
+      "expected": "nsrl.training_mini_transformer_integer_adam_trace.v1"
+    },
+    {
+      "key": "architecture_profile",
+      "ok": true,
+      "actual": "small-h8-d128-ff256",
+      "expected": "small-h8-d128-ff256"
+    },
+    {
+      "key": "quantization_profile",
+      "ok": true,
+      "actual": "calibrated-v2-suffix-memory",
+      "expected": "calibrated-v2-suffix-memory"
+    },
+    {
+      "key": "transformer_layers",
+      "ok": true,
+      "actual": 2,
+      "expected": ">= 2"
+    },
+    {
+      "key": "rms_norm_enabled",
+      "ok": true,
+      "actual": true,
+      "expected": true
+    },
+    {
+      "key": "train_scope",
+      "ok": true,
+      "actual": "all",
+      "expected": "all"
+    },
+    {
+      "key": "accepted_windows",
+      "ok": true,
+      "actual": 491,
+      "expected": "> 0"
+    },
+    {
+      "key": "accepted_batches",
+      "ok": true,
+      "actual": 31,
+      "expected": "> 0"
+    },
+    {
+      "key": "rejected_batches",
+      "ok": true,
+      "actual": 0,
+      "expected": "<= 0"
+    },
+    {
+      "key": "probability_error_improved",
+      "ok": true,
+      "actual": {
+        "initial": 32156298,
+        "final": 15091250
+      },
+      "expected": "final < initial"
+    },
+    {
+      "key": "attention_q_delta_l1",
+      "ok": true,
+      "actual": 10289,
+      "expected": "> 0"
+    },
+    {
+      "key": "attention_k_delta_l1",
+      "ok": true,
+      "actual": 21433,
+      "expected": "> 0"
+    },
+    {
+      "key": "attention_v_delta_l1",
+      "ok": true,
+      "actual": 14586,
+      "expected": "> 0"
+    },
+    {
+      "key": "attention_o_delta_l1",
+      "ok": true,
+      "actual": 27030,
+      "expected": "> 0"
+    },
+    {
+      "key": "mlp_saturation_count",
+      "ok": true,
+      "actual": 3501,
+      "expected": "<= 262144"
+    },
+    {
+      "key": "attention_saturation_count",
+      "ok": true,
+      "actual": 1063,
+      "expected": "<= 262144"
+    },
+    {
+      "key": "residual_saturation_count",
+      "ok": true,
+      "actual": 8187316,
+      "expected": "<= 16777216"
+    },
+    {
+      "key": "eval_schema",
+      "ok": true,
+      "actual": "nsrl.mini_transformer_eval.v1",
+      "expected": "nsrl.mini_transformer_eval.v1"
+    },
+    {
+      "key": "eval_invalid_forward_count",
+      "ok": true,
+      "actual": 0,
+      "expected": "0"
+    },
+    {
+      "key": "unique_predicted_tokens",
+      "ok": true,
+      "actual": 41,
+      "expected": ">= 8"
+    },
+    {
+      "key": "most_predicted_token_share_per_mille",
+      "ok": true,
+      "actual": 179,
+      "expected": "<= 900"
+    }
+  ],
+  "errors": [],
+  "trace": "/Users/ratimics/develop/nsrl/data/experiments/integer-transformer-proof-v1/candidate-default/train.trace.jsonl",
+  "evaluation": "/Users/ratimics/develop/nsrl/data/experiments/integer-transformer-proof-v1/candidate-default/candidate.eval.json"
+}

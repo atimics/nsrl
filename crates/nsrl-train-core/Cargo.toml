@@ -10,3 +10,8 @@ path = "src/lib.rs"
 
 [dependencies]
 nsrl-core = { path = "../nsrl-core" }
+
+[features]
+default = []
+mini-heads-8 = []
+mini-calibrated = []

@@ -86,6 +86,23 @@ const tables = [
     highlights: ["top1_per_mille", "top5_per_mille", "latent_top1_per_mille"],
   },
   {
+    id: "latent-planner-eval",
+    title: "Latent Planner Eval",
+    path: "docs/solomon-latent-planner-eval.tsv",
+    columns: [
+      "run_id",
+      "model",
+      "prompts",
+      "top1_per_mille",
+      "top5_per_mille",
+      "mean_rank_q8",
+      "mean_target_distance_q8",
+      "latent_model_hash",
+      "conclusion",
+    ],
+    highlights: ["top1_per_mille", "top5_per_mille"],
+  },
+  {
     id: "oracle-condition-diagnostic",
     title: "Oracle Conditioning Diagnostic",
     path: "docs/solomon-oracle-condition-diagnostic.tsv",
@@ -761,6 +778,7 @@ function buildModelSummaries(report) {
   const assetById = new Map(report.assets.map((asset) => [asset.id, asset]));
   const priorScaling = tableById.get("prior-scaling");
   const textShape = tableById.get("text-feature-shape");
+  const latentPlanner = tableById.get("latent-planner-eval");
   const generative = tableById.get("generative-eval");
   const oracleDiagnostic = tableById.get("oracle-condition-diagnostic");
   const multimodal = tableById.get("multimodal-eval");
@@ -835,8 +853,18 @@ function buildModelSummaries(report) {
       role: "prompt-to-layout latent prior",
       status: hasRows(priorScaling) || hasRows(textShape) ? "published evals" : "no rows",
       summary:
-        "Prompt/layout prior measured on checked-in train/eval/gold prompt partitions. Scores are internal top-k routing accuracy, reported per mille.",
+        "Prompt/layout prior measured on checked-in train/eval/gold prompt partitions and the clean 72 held-out generation prompt set. The clean-72 row is the fast planner target to improve before rerunning bitmap generation.",
       metrics: [
+        perMilleMetric(
+          "Clean-72 planner top-1",
+          bestRow(latentPlanner?.rows || [], "top1_per_mille"),
+          "top1_per_mille",
+        ),
+        perMilleMetric(
+          "Clean-72 planner top-5",
+          bestRow(latentPlanner?.rows || [], "top5_per_mille"),
+          "top5_per_mille",
+        ),
         perMilleMetric(
           "Best eval top-1",
           bestRow(priorScaling?.rows || [], "eval_top1_per_mille"),
@@ -859,6 +887,7 @@ function buildModelSummaries(report) {
         ),
       ],
       evidence: [
+        "docs/solomon-latent-planner-eval.tsv",
         "docs/solomon-eval-scaling-curve.tsv",
         "docs/solomon-text-feature-shape-probe.tsv",
       ],

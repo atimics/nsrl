@@ -14,7 +14,7 @@ resolver = "3"
 [workspace.package]
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://example.invalid/nsrl"
+repository = "https://github.com/atimics/nsrl"
 
 # Compute-bound integer kernels live or die on autovectorization and cross-crate
 # inlining. Default release codegen (16 units, no LTO) leaves that on the floor.

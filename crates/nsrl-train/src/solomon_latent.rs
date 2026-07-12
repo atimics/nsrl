@@ -7,7 +7,6 @@ pub const PROMPT_SCHEMA: &str = "nsrl.solomon_prompt.v1";
 pub const DEFAULT_PROMPT_SPLIT_SEED: &str = "solomon-prompt-split-v1";
 pub const DEFAULT_EVAL_PERMILLE: usize = 180;
 pub const MODEL_MAGIC: &[u8; 8] = b"NSRLLAT1";
-pub const MODEL_CLASS_EXTENSION_MAGIC: &[u8; 8] = b"NSRLCLS1";
 pub const SIGNATURE_GRID: usize = 16;
 pub const SIGNATURE_BINS: usize = SIGNATURE_GRID * SIGNATURE_GRID;
 const LAYOUT_INK_FLOOR: u16 = 32;
@@ -54,16 +53,6 @@ pub struct LatentTextModel {
     pub image_biases: Vec<i16>,
     pub decoder_weights: Vec<i8>,
     pub decoder_biases: [i16; SIGNATURE_BINS],
-    pub class_head: Option<LatentClassHead>,
-}
-
-#[derive(Debug, Clone)]
-pub struct LatentClassHead {
-    pub numbers: Vec<usize>,
-    pub names: Vec<String>,
-    pub codes: Vec<Vec<i16>>,
-    pub weights: Vec<i8>,
-    pub biases: Vec<i16>,
 }
 
 impl LatentTextModel {
@@ -107,40 +96,6 @@ impl LatentTextModel {
             *out_value = u16::try_from(value).unwrap_or(0);
         }
         out
-    }
-
-    pub fn predict_class(&self, features: &[i16]) -> Option<(usize, i64)> {
-        self.class_head
-            .as_ref()
-            .map(|head| head.predict(features, self.text_feature_count))
-    }
-}
-
-impl LatentClassHead {
-    pub fn predict(&self, features: &[i16], feature_count: usize) -> (usize, i64) {
-        let active_features: Vec<(usize, i16)> = features
-            .iter()
-            .copied()
-            .enumerate()
-            .take(feature_count)
-            .filter(|(_, value)| *value != 0)
-            .collect();
-        let mut best_index = 0_usize;
-        let mut best_score = i64::MIN;
-        for class_index in 0..self.numbers.len() {
-            let mut score = i64::from(self.biases[class_index]);
-            for &(feature, value) in &active_features {
-                let weight = self.weights[class_index * feature_count + feature];
-                score = score.saturating_add(i64::from(weight) * i64::from(value));
-            }
-            if score > best_score
-                || (score == best_score && self.numbers[class_index] < self.numbers[best_index])
-            {
-                best_score = score;
-                best_index = class_index;
-            }
-        }
-        (best_index, best_score)
     }
 }
 
@@ -333,44 +288,9 @@ fn read_latent_model_bytes(
     let decoder_bias_vec = cursor.read_i16_vec(SIGNATURE_BINS)?;
     let mut decoder_biases = [0_i16; SIGNATURE_BINS];
     decoder_biases.copy_from_slice(&decoder_bias_vec);
-    let class_head = if cursor.remaining() == 0 {
-        None
-    } else {
-        let extension_magic = cursor.read_bytes(MODEL_CLASS_EXTENSION_MAGIC.len())?;
-        if extension_magic != MODEL_CLASS_EXTENSION_MAGIC {
-            return Err(
-                format!("{} has unsupported latent model extension", path.display()).into(),
-            );
-        }
-        let class_count = usize::try_from(cursor.read_u32()?)?;
-        if class_count == 0 {
-            return Err(format!("{} has empty class extension", path.display()).into());
-        }
-        let mut numbers = Vec::with_capacity(class_count);
-        let mut names = Vec::with_capacity(class_count);
-        let mut codes = Vec::with_capacity(class_count);
-        for _ in 0..class_count {
-            numbers.push(usize::try_from(cursor.read_u32()?)?);
-            let name_len = usize::try_from(cursor.read_u32()?)?;
-            names.push(String::from_utf8(cursor.read_bytes(name_len)?.to_vec())?);
-            codes.push(cursor.read_i16_vec(latent_dim)?);
-        }
-        let class_weight_count = class_count
-            .checked_mul(text_feature_count)
-            .ok_or("latent class weight count overflow")?;
-        let weights = cursor.read_i8_vec(class_weight_count)?;
-        let biases = cursor.read_i16_vec(class_count)?;
-        if cursor.remaining() != 0 {
-            return Err(format!("{} has trailing latent model bytes", path.display()).into());
-        }
-        Some(LatentClassHead {
-            numbers,
-            names,
-            codes,
-            weights,
-            biases,
-        })
-    };
+    if cursor.remaining() != 0 {
+        return Err(format!("{} has trailing latent model bytes", path.display()).into());
+    }
     Ok(LatentTextModel {
         latent_dim,
         text_feature_count,
@@ -383,7 +303,6 @@ fn read_latent_model_bytes(
         image_biases,
         decoder_weights,
         decoder_biases,
-        class_head,
     })
 }
 
@@ -642,9 +561,7 @@ fn normalize_token(token: &str) -> String {
         "science" | "sciences" => return "science".to_string(),
         _ => {}
     }
-    if token.len() > 5 && token.ends_with("eth") {
-        token[..token.len() - 3].to_string()
-    } else if token.len() > 5 && token.ends_with("ing") {
+    if token.len() > 5 && (token.ends_with("eth") || token.ends_with("ing")) {
         token[..token.len() - 3].to_string()
     } else if token.len() > 4 && token.ends_with("es") {
         token[..token.len() - 2].to_string()

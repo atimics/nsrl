@@ -320,15 +320,9 @@ fn evaluate_prompts(
         let features = text_features(&prompt.prompt.text, model.text_feature_count);
         let text_latent = model.encode_text(&features)?;
         let text_prediction = model.decode_signature(&text_latent);
-        let class_hit = model
-            .predict_class(&features)
-            .and_then(|(class_index, _score)| {
-                model
-                    .class_head
-                    .as_ref()
-                    .and_then(|head| head.numbers.get(class_index).copied())
-            })
-            .is_some_and(|number| number == prompt.prompt.spirit_id);
+        // NSRLCLS class-head checkpoints are no longer produced or read (dead
+        // format, no writer ever existed); class-hit accuracy is unavailable.
+        let class_hit = false;
         let positive_score = dot_i16(&text_latent, &image_latents[target_index]);
         let mut rank = 1_usize;
         for (candidate_index, image_latent) in image_latents.iter().enumerate() {

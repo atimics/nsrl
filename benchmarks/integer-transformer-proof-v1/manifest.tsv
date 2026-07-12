@@ -1,0 +1,2 @@
+schema	contract	train	eval	context	stride	min_targets	dataset_hash
+nsrl.integer_transformer_proof_manifest.v1	integer-transformer-proof-v1	train.txt	eval.txt	64	1	1024	0x8fe7b86378f81951

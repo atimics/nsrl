@@ -12,6 +12,7 @@ on:
       - "docs/solomon-*.tsv"
       - "data/processed/nsrl-mme-v0.json"
       - "scripts/build-pages-results.mjs"
+      - "scripts/check-solomon-attention-web-model-self-test.mjs"
       - "scripts/check-solomon-attention-web-quality.mjs"
       - "scripts/probe-solomon-attention-body-start-rank.mjs"
       - "scripts/probe-solomon-attention-raw-rank.mjs"
@@ -52,6 +53,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Check browser model compatibility
+        run: node scripts/check-solomon-attention-web-model-self-test.mjs
 
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0

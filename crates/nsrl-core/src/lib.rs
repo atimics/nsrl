@@ -5,7 +5,6 @@
 extern crate std;
 
 pub mod attention;
-pub mod calibration;
 pub mod linear;
 pub mod lut;
 pub mod mlp;
@@ -26,22 +25,14 @@ pub use attention::{
     linear_attention_i16_q15_with_linear_kernel_checked, linear_attention_state_lengths,
     linear_attention_step_i16_q15_checked,
     linear_attention_step_i16_q15_with_linear_kernel_checked,
-    linear_attention_step_with_decay_i16_q15_checked,
-    linear_attention_step_with_decay_i16_q15_with_linear_kernel_checked,
     linear_attention_ttt_delta_state_i16_q15_checked, linear_attention_ttt_step_i16_q15_checked,
     linear_attention_ttt_step_i16_q15_with_linear_kernel_checked,
-    linear_attention_with_decay_i16_q15_checked,
-    linear_attention_with_decay_i16_q15_with_linear_kernel_checked,
     prenorm_attention_residual_block_i16_q15_checked,
     prenorm_attention_residual_block_i16_q15_with_linear_kernel_checked, reciprocal_sum_q31,
     self_attention_i16_q15_checked, self_attention_i16_q15_with_linear_kernel_checked,
     sqrt_power_of_four_shift,
 };
 
-pub use calibration::{
-    MAGNITUDE_BUCKETS, MagnitudeHistogram, bit_length_u64, calibrate_fixed_scale,
-    solve_fixed_scale_ratio,
-};
 pub use linear::{
     LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
     LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
@@ -75,7 +66,7 @@ pub use numeric::{
     saturating_add_i16,
 };
 pub use rms_norm::{
-    INV_SQRT_2_Q15, RMSNORM_INV_RMS_SHIFT, integer_rsqrt_q30, rms_norm_i16_q15_checked,
-    sum_squares_i16_u64_checked,
+    INV_SQRT_2_Q15, RMSNORM_INV_RMS_SHIFT, RmsNormBackwardWorkspace, integer_rsqrt_q30,
+    rms_norm_backward_i16_q15_checked, rms_norm_i16_q15_checked, sum_squares_i16_u64_checked,
 };
 pub use tensor::TensorView;

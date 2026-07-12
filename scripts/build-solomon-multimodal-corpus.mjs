@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import * as solomonImage from "./lib/solomon-symbolic-image.mjs";
 
 const defaults = {
   textIndex: "web/assets/solomon-spirit-text-signatures.tsv",
@@ -13,6 +14,8 @@ const defaults = {
   nameInitialRepeats: 0,
   nameOpeningRepeats: 0,
   textTokenProfile: "char",
+  corpusVersion: "v1",
+  imageTokenProfile: "ink16",
 };
 
 const schema = "nsrl.solomon_multimodal_corpus.v1";
@@ -22,6 +25,16 @@ const PROMPT = 2;
 const TEXT = 3;
 const IMAGE = 4;
 const EOS = 5;
+const TASK_TEXT_TO_IMAGE = 6;
+const TASK_IMAGE_TO_TEXT = 7;
+const TASK_MATCH = 8;
+const TASK_EXPLAIN = 9;
+const TASK_IDENTIFY = 10;
+const IMAGE_CHANNEL_INK = 11;
+const IMAGE_CHANNEL_EDGE = 12;
+const IMAGE_CHANNEL_COMPONENT = 13;
+const IMAGE_CHANNEL_RADIAL = 14;
+const IMAGE_CHANNEL_DIRECTION = 15;
 const TEXT_BASE = 16;
 const TEXT_COUNT = 128;
 const IMAGE_BASE = TEXT_BASE + TEXT_COUNT;
@@ -138,9 +151,13 @@ function usage() {
       "       [--text-only-repeats N] [--name-initial-repeats N]",
       "       [--name-opening-repeats N]",
       "       [--text-token-profile char|chunked]",
+      "       [--corpus-version v1|v2] [--image-token-profile ink16|ink-edge16|symbolic16]",
       "",
       "Builds a discrete joint Solomon corpus:",
       "<BOS> <PROMPT> prompt bytes <TEXT> text bytes <IMAGE> 16x16 image-bin tokens <EOS>.",
+      "With --corpus-version v2, also emits task-marked binding records for",
+      "text-to-image, image-to-text, image-to-explain, text-image-explain, image-to-attributes, match, explain, and identify training.",
+      "V2 also adds explicit primary-name, alias, and seal-ID identity bindings.",
       "Optional --pad-context inserts PAD tokens before each example so fixed-window",
       "attention training sees early record positions.",
       "Optional --text-only-repeats adds prompt/text/EOS training-only sequences",
@@ -157,6 +174,7 @@ function usage() {
 
 function parseArgs(argv) {
   const config = { ...defaults };
+  let imageTokenProfileExplicit = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--help" || arg === "-h") {
@@ -191,12 +209,26 @@ function parseArgs(argv) {
       if (!["char", "chunked"].includes(config.textTokenProfile)) {
         throw new Error("--text-token-profile requires char or chunked");
       }
+    } else if (arg === "--corpus-version") {
+      config.corpusVersion = requireValue(argv, ++index, arg);
+      if (!["v1", "v2"].includes(config.corpusVersion)) {
+        throw new Error("--corpus-version requires v1 or v2");
+      }
+    } else if (arg === "--image-token-profile") {
+      config.imageTokenProfile = requireValue(argv, ++index, arg);
+      imageTokenProfileExplicit = true;
+      if (!["ink16", "ink-edge16", "symbolic16"].includes(config.imageTokenProfile)) {
+        throw new Error("--image-token-profile requires ink16, ink-edge16, or symbolic16");
+      }
     } else {
       throw new Error(`unknown option: ${arg}`);
     }
   }
   if (TEXT_CHUNKS.length > VOCAB_SIZE - TEXT_CHUNK_BASE) {
     throw new Error(`TEXT_CHUNKS has ${TEXT_CHUNKS.length} entries, max ${VOCAB_SIZE - TEXT_CHUNK_BASE}`);
+  }
+  if (config.corpusVersion === "v2" && !imageTokenProfileExplicit) {
+    config.imageTokenProfile = "symbolic16";
   }
   return config;
 }
@@ -301,8 +333,83 @@ function promptsForRow(row, profile) {
 
 function textForRow(row, maxTextChars) {
   const name = normalizeText(row.primary_name);
-  const selected = selectSentence(row.text) || normalizeText(row.text);
+  const selected = descriptionForRow(row);
   return truncateText(`Solomon selects ${name}: ${selected}`, maxTextChars);
+}
+
+function descriptionForRow(row) {
+  return selectSentence(row.text) || normalizeText(row.text);
+}
+
+function attributesForRow(row, maxTextChars) {
+  const name = normalizeText(row.primary_name);
+  const source = normalizeText(row.text);
+  const rank = compactFact(rankForRow(row, source) || "not stated in source", 32);
+  const legions = compactFact(cleanFact(firstMatch(source, [
+    /\b[^.;]*\b(?:[0-9]+|sixty-six|thirty-one|twenty-six|thirty|forty|fifty|twenty|six)\s+legions?\b[^.;]*/i,
+  ])) || "legions recorded in source", 40);
+  const appearance = compactFact(selectNeedleSentence(source, [
+    "appeareth",
+    "appears",
+    "form",
+    "shape",
+    "voice",
+    "riding",
+    "carrying",
+  ]) || `${name} has an appearance described in the source`, 44);
+  const office = compactFact(selectNeedleSentence(source, [
+    "office",
+    "maketh",
+    "teaches",
+    "teacheth",
+    "giveth",
+    "gives",
+    "declare",
+    "discover",
+    "causeth",
+    "bringeth",
+    "heal",
+    "languages",
+    "knowledge",
+    "invisible",
+  ]) || descriptionForRow(row), 48);
+  const render = (budgets) => {
+    const [rankMax, legionsMax, appearanceMax, officeMax] = budgets;
+    return `${name} attributes: rank ${compactFact(rank, rankMax)}; legions ${compactFact(legions, legionsMax)}; appearance ${compactFact(appearance, appearanceMax)}; office ${compactFact(office, officeMax)}`;
+  };
+  const budgets = [32, 40, 44, 48];
+  let rendered = render(budgets);
+  while (rendered.length > maxTextChars && Math.max(...budgets) > 24) {
+    const index = budgets.indexOf(Math.max(...budgets));
+    budgets[index] -= 4;
+    rendered = render(budgets);
+  }
+  return truncateText(rendered, maxTextChars);
+}
+
+function sourceEvidenceForRow(row, maxTextChars) {
+  const sourceText = normalizeText(row.text);
+  const excerpt = truncateText(descriptionForRow(row), maxTextChars);
+  return {
+    source_spirit_id: row.number,
+    source_text_hash: fnv64TextHex(sourceText),
+    source_excerpt: excerpt,
+    source_excerpt_hash: fnv64TextHex(excerpt),
+  };
+}
+
+function rankForRow(row, source) {
+  const name = normalizeText(row.primary_name);
+  const rankWord = "(?:king|duke|prince|marquis|president|earl|count|knight)";
+  const namePattern = escapeRegExp(name).replace(/\s+/g, "\\s+");
+  return cleanFact(firstMatch(source, [
+    new RegExp(`\\bis\\s+${namePattern}\\s*,\\s*((?:a|an)\\s+[^.;,]*?\\b${rankWord}\\b[^.;,]*)`, "i"),
+    new RegExp(`\\b(?:he|it|this\\s+spirit)?\\s*(?:is|was)\\s+([^.;]*?\\b${rankWord}\\b)`, "i"),
+    new RegExp(`\\bbeing\\s+himself\\s+([^.;]*?\\b${rankWord}\\b)`, "i"),
+    new RegExp(`\\b(?:is|called)\\s+((?:a|an)\\s+[^.;,]*?\\b${rankWord}\\b[^.;,]*)`, "i"),
+    new RegExp(`\\b(?:is|called)\\s+([^.;,]*?\\b${rankWord}\\b[^.;,]*)`, "i"),
+    new RegExp(`\\border\\s+is\\s+((?:a|an)?\\s*[^.;,]*?\\b${rankWord}\\b[^.;,]*)`, "i"),
+  ]));
 }
 
 function nameOpeningForRow(row) {
@@ -348,6 +455,47 @@ function selectSentence(text) {
   return scored[0]?.sentence ?? "";
 }
 
+function selectNeedleSentence(text, needles) {
+  const sentences = normalizeText(text)
+    .split(/(?<=[.!?])\s+|;\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 16);
+  for (const sentence of sentences) {
+    const folded = sentence.toLowerCase();
+    if (needles.some((needle) => folded.includes(needle))) {
+      return sentence;
+    }
+  }
+  return "";
+}
+
+function firstMatch(text, regexes) {
+  for (const regex of regexes) {
+    const match = regex.exec(text);
+    if (match) {
+      return match[1] || match[0];
+    }
+  }
+  return "";
+}
+
+function cleanFact(text) {
+  return normalizeText(text)
+    .replace(/^[,;:. -]+|[,;:. -]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactFact(text, maxChars) {
+  const compact = cleanFact(text);
+  if (compact.length <= maxChars) {
+    return compact;
+  }
+  const clipped = compact.slice(0, maxChars);
+  const lastSpace = clipped.lastIndexOf(" ");
+  return (lastSpace > 16 ? clipped.slice(0, lastSpace) : clipped).replace(/[,:;]+$/g, "").trim();
+}
+
 function truncateText(text, maxChars) {
   const compact = normalizeText(text);
   if (compact.length <= maxChars) {
@@ -369,6 +517,10 @@ function normalizeText(value) {
     .replace(/[^ -~]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function unique(values) {
@@ -424,15 +576,71 @@ function matchTextChunk(text, index) {
 }
 
 function imageTokens(signature) {
-  return signature.map((value) => IMAGE_BASE + Math.min(IMAGE_BINS - 1, Math.floor((value * IMAGE_BINS) / 256)));
+  return solomonImage.imageTokens(signature, symbolicImageOptions());
+}
+
+function imageTaskTokens(signature, profile) {
+  return solomonImage.imageTaskTokens(signature, profile, symbolicImageOptions());
+}
+
+function imageTokenChannels(profile) {
+  return solomonImage.imageTokenChannels(profile);
+}
+
+function imageTokenChannelStats(rows, profile) {
+  return solomonImage.imageTokenChannelStats(rows.map((row) => row.signature), profile, symbolicImageOptions());
+}
+
+function imageChannelTokens(signature, channel) {
+  return solomonImage.imageChannelTokens(signature, channel, symbolicImageOptions());
+}
+
+function symbolicImageOptions() {
+  return {
+    grid: SIGNATURE_GRID,
+    imageBase: IMAGE_BASE,
+    imageBins: IMAGE_BINS,
+    channelTokens: {
+      ink: IMAGE_CHANNEL_INK,
+      edge: IMAGE_CHANNEL_EDGE,
+      component: IMAGE_CHANNEL_COMPONENT,
+      radial: IMAGE_CHANNEL_RADIAL,
+      direction: IMAGE_CHANNEL_DIRECTION,
+    },
+  };
 }
 
 function buildExamples(rows, config) {
   const examples = [];
   let tokenOffset = 0;
+  const addSequence = (tokens, example) => {
+    const padding = Array(config.padContext).fill(PAD);
+    tokenOffset += padding.length;
+    const entry = {
+      example: example
+        ? {
+            ...example,
+            token_offset: tokenOffset,
+            token_count: tokens.length,
+            token_hash: fnv64Hex(tokens),
+            padding_before: padding.length,
+          }
+        : null,
+      tokens,
+      corpusTokens: [...padding, ...tokens],
+    };
+    examples.push(entry);
+    tokenOffset += tokens.length;
+  };
+
   for (const row of rows) {
     const text = textForRow(row, config.maxTextChars);
     const image = imageTokens(row.signature);
+    if (config.corpusVersion === "v2") {
+      for (const task of identityBindingSequencesForRow(row, config)) {
+        addSequence(task.tokens, task.example);
+      }
+    }
     for (const prompt of promptsForRow(row, config.promptProfile)) {
       const tokens = [
         BOS,
@@ -445,65 +653,381 @@ function buildExamples(rows, config) {
         EOS,
       ];
       if (config.sequenceProfile === "joint" || config.sequenceProfile === "joint-and-text") {
-        const padding = Array(config.padContext).fill(PAD);
-        tokenOffset += padding.length;
-        const example = {
+        addSequence(tokens, {
           schema: "nsrl.solomon_multimodal_example.v1",
+          task: "canonical-joint",
           spirit_id: row.number,
           primary_name: normalizeText(row.primary_name),
           prompt,
           text,
           image_grid: SIGNATURE_GRID,
           image_bins: IMAGE_BINS,
-          token_offset: tokenOffset,
-          token_count: tokens.length,
-          token_hash: fnv64Hex(tokens),
-          padding_before: padding.length,
-        };
-        examples.push({ example, tokens, corpusTokens: [...padding, ...tokens] });
-        tokenOffset += tokens.length;
+        });
       }
       const textOnlyCount =
         (config.sequenceProfile === "text-only" || config.sequenceProfile === "joint-and-text" ? 1 : 0) +
         config.textOnlyRepeats;
       for (let repeatIndex = 0; repeatIndex < textOnlyCount; repeatIndex += 1) {
         const textOnlyTokens = textOnlySequence(prompt, text, config.textTokenProfile);
-        const textOnlyPadding = Array(config.padContext).fill(PAD);
-        tokenOffset += textOnlyPadding.length;
-        examples.push({
-          example: null,
-          tokens: textOnlyTokens,
-          corpusTokens: [...textOnlyPadding, ...textOnlyTokens],
-        });
-        tokenOffset += textOnlyTokens.length;
+        addSequence(textOnlyTokens, null);
       }
       for (let repeatIndex = 0; repeatIndex < config.nameInitialRepeats; repeatIndex += 1) {
         const initialTokens = textOnlySequence(prompt, nameInitialForRow(row), config.textTokenProfile);
-        const initialPadding = Array(config.padContext).fill(PAD);
-        tokenOffset += initialPadding.length;
-        examples.push({
-          example: null,
-          tokens: initialTokens,
-          corpusTokens: [...initialPadding, ...initialTokens],
-        });
-        tokenOffset += initialTokens.length;
+        addSequence(initialTokens, null);
       }
       const nameOpeningCount =
         (config.sequenceProfile === "name-opening" ? 1 : 0) + config.nameOpeningRepeats;
       for (let repeatIndex = 0; repeatIndex < nameOpeningCount; repeatIndex += 1) {
         const openingTokens = textOnlySequence(prompt, nameOpeningForRow(row), config.textTokenProfile);
-        const openingPadding = Array(config.padContext).fill(PAD);
-        tokenOffset += openingPadding.length;
-        examples.push({
-          example: null,
-          tokens: openingTokens,
-          corpusTokens: [...openingPadding, ...openingTokens],
-        });
-        tokenOffset += openingTokens.length;
+        addSequence(openingTokens, null);
+      }
+      if (config.corpusVersion === "v2") {
+        for (const task of taskSequencesForRow(rows, row, prompt, config)) {
+          addSequence(task.tokens, task.example);
+        }
       }
     }
   }
   return examples;
+}
+
+function identityBindingSequencesForRow(row, config) {
+  const name = normalizeText(row.primary_name);
+  const description = truncateText(descriptionForRow(row), config.maxTextChars);
+  const sourceEvidence = sourceEvidenceForRow(row, config.maxTextChars);
+  const image = imageTaskTokens(row.signature, config.imageTokenProfile);
+  const base = {
+    schema: "nsrl.solomon_multimodal_example.v2",
+    spirit_id: row.number,
+    primary_name: name,
+    identity_binding: true,
+    image_grid: SIGNATURE_GRID,
+    image_bins: IMAGE_BINS,
+    image_token_profile: config.imageTokenProfile,
+    image_token_channels: imageTokenChannels(config.imageTokenProfile),
+  };
+  const sequences = [];
+  for (const binding of identityBindingPromptsForRow(row)) {
+    sequences.push(
+      {
+        example: {
+          ...base,
+          task: "identify",
+          binding_kind: binding.kind,
+          prompt: binding.prompt,
+          text: name,
+        },
+        tokens: taskTextSequence(TASK_IDENTIFY, binding.prompt, name, config.textTokenProfile),
+      },
+      {
+        example: {
+          ...base,
+          ...sourceEvidence,
+          task: "text-to-image",
+          binding_kind: binding.kind,
+          prompt: binding.prompt,
+          source_query_kind: "identity-to-image",
+          text: description,
+        },
+        tokens: taskImageSequence(TASK_TEXT_TO_IMAGE, binding.prompt, image, config.textTokenProfile),
+      },
+    );
+  }
+  return sequences;
+}
+
+function identityBindingPromptsForRow(row) {
+  const prompts = [];
+  const seen = new Set();
+  const add = (kind, prompt) => {
+    const normalized = normalizeText(prompt);
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    prompts.push({ kind, prompt: normalized });
+  };
+  const name = normalizeText(row.primary_name);
+  add("primary-name", name);
+  add("primary-seal", `seal of ${name}`);
+  for (const alias of String(row.aliases || "").split("|").map((value) => normalizeText(value)).filter(Boolean)) {
+    add("alias", alias);
+    add("alias-seal", `seal of ${alias}`);
+  }
+  add("seal-id", `seal id ${row.number}`);
+  add("seal-id", `spirit ${row.number}`);
+  add("seal-id", `goetic spirit ${row.number}`);
+  return prompts;
+}
+
+function taskSequencesForRow(rows, row, prompt, config) {
+  const name = normalizeText(row.primary_name);
+  const taskPrompt = identityTaskPromptForRow(row, prompt);
+  const text = truncateText(textForRow(row, config.maxTextChars), config.maxTextChars);
+  const description = truncateText(descriptionForRow(row), config.maxTextChars);
+  const attributes = attributesForRow(row, config.maxTextChars);
+  const sourceEvidence = sourceEvidenceForRow(row, config.maxTextChars);
+  const image = imageTaskTokens(row.signature, config.imageTokenProfile);
+  const negative = hardNegativeRow(rows, row, taskPrompt, config.imageTokenProfile);
+  const wrong = negative.row;
+  const wrongImage = imageTaskTokens(wrong.signature, config.imageTokenProfile);
+  const wrongPrompt = hardNegativePrompt(wrong, taskPrompt);
+  const negativeEvidence = {
+    negative_selection: negative.selection,
+    negative_image_token_distance: negative.image_token_distance,
+    negative_image_token_rank: negative.image_token_rank,
+  };
+  const attributePrompt = "seal attributes";
+  const base = {
+    schema: "nsrl.solomon_multimodal_example.v2",
+    spirit_id: row.number,
+    primary_name: name,
+    prompt: taskPrompt,
+    image_grid: SIGNATURE_GRID,
+    image_bins: IMAGE_BINS,
+    image_token_profile: config.imageTokenProfile,
+    image_token_channels: imageTokenChannels(config.imageTokenProfile),
+  };
+  return [
+    {
+      example: { ...base, task: "identify", text: name },
+      tokens: taskTextSequence(TASK_IDENTIFY, taskPrompt, name, config.textTokenProfile),
+    },
+    {
+      example: { ...base, ...sourceEvidence, task: "text-to-image", source_query_kind: "identity-to-image", text: description },
+      tokens: taskImageSequence(TASK_TEXT_TO_IMAGE, taskPrompt, image, config.textTokenProfile),
+    },
+    {
+      example: { ...base, ...sourceEvidence, task: "image-to-text", source_query_kind: "image-identity", text: name },
+      tokens: taskImageToTextSequence(TASK_IMAGE_TO_TEXT, image, name, config.textTokenProfile),
+    },
+    {
+      example: { ...base, ...sourceEvidence, task: "image-to-explain", source_query_kind: "image-source", text },
+      tokens: taskImageToTextSequence(TASK_EXPLAIN, image, text, config.textTokenProfile),
+    },
+    {
+      example: { ...base, ...sourceEvidence, task: "text-image-explain", source_query_kind: "text-image-source", text },
+      tokens: taskPromptImageToTextSequence(TASK_EXPLAIN, taskPrompt, image, text, config.textTokenProfile),
+    },
+    {
+      example: {
+        ...base,
+        ...sourceEvidence,
+        task: "image-to-attributes",
+        prompt: attributePrompt,
+        source_query_kind: "image-attributes",
+        text: attributes,
+      },
+      tokens: taskImagePromptToTextSequence(TASK_EXPLAIN, image, attributePrompt, attributes, config.textTokenProfile),
+    },
+    {
+      example: { ...base, ...sourceEvidence, task: "explain", prompt: name, source_query_kind: "primary-name", text },
+      tokens: taskTextSequence(TASK_EXPLAIN, name, text, config.textTokenProfile),
+    },
+    {
+      example: {
+        ...base,
+        ...sourceEvidence,
+        task: "description-to-image",
+        prompt: description,
+        source_query_kind: "source-description",
+        text: description,
+      },
+      tokens: taskImageSequence(TASK_TEXT_TO_IMAGE, description, image, config.textTokenProfile),
+    },
+    {
+      example: { ...base, task: "match", text: "yes", match_label: "yes" },
+      tokens: taskMatchSequence(taskPrompt, image, "yes", config.textTokenProfile),
+    },
+    {
+      example: {
+        ...base,
+        task: "match",
+        text: "no",
+        match_label: "no",
+        negative_role: "image",
+        negative_spirit_id: wrong.number,
+        negative_primary_name: normalizeText(wrong.primary_name),
+        ...negativeEvidence,
+      },
+      tokens: taskMatchSequence(taskPrompt, wrongImage, "no", config.textTokenProfile),
+    },
+    {
+      example: {
+        ...base,
+        task: "match",
+        prompt: wrongPrompt,
+        text: "no",
+        match_label: "no",
+        negative_role: "prompt",
+        negative_spirit_id: wrong.number,
+        negative_primary_name: normalizeText(wrong.primary_name),
+        ...negativeEvidence,
+      },
+      tokens: taskMatchSequence(wrongPrompt, image, "no", config.textTokenProfile),
+    },
+  ];
+}
+
+function identityTaskPromptForRow(row, prompt) {
+  if (promptMentionsRowIdentity(row, prompt)) {
+    return normalizeText(prompt);
+  }
+  return `seal of ${normalizeText(row.primary_name)}`;
+}
+
+function promptMentionsRowIdentity(row, prompt) {
+  const query = phraseKey(prompt);
+  if (!query) {
+    return false;
+  }
+  const names = unique([
+    row.primary_name,
+    ...String(row.aliases || "").split("|"),
+  ]);
+  return names.some((name) => containsPhraseKey(query, phraseKey(name)));
+}
+
+function containsPhraseKey(haystack, needle) {
+  return Boolean(needle) && (` ${haystack} `).includes(` ${needle} `);
+}
+
+function phraseKey(value) {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function taskTextSequence(taskToken, prompt, text, profile) {
+  return [
+    BOS,
+    taskToken,
+    PROMPT,
+    ...encodeTextTokens(prompt, profile),
+    TEXT,
+    ...encodeTextTokens(text, profile),
+    EOS,
+  ];
+}
+
+function taskImageSequence(taskToken, prompt, image, profile) {
+  return [
+    BOS,
+    taskToken,
+    PROMPT,
+    ...encodeTextTokens(prompt, profile),
+    IMAGE,
+    ...image,
+    EOS,
+  ];
+}
+
+function taskImageToTextSequence(taskToken, image, text, profile) {
+  return [
+    BOS,
+    taskToken,
+    IMAGE,
+    ...image,
+    TEXT,
+    ...encodeTextTokens(text, profile),
+    EOS,
+  ];
+}
+
+function taskPromptImageToTextSequence(taskToken, prompt, image, text, profile) {
+  return [
+    BOS,
+    taskToken,
+    PROMPT,
+    ...encodeTextTokens(prompt, profile),
+    IMAGE,
+    ...image,
+    TEXT,
+    ...encodeTextTokens(text, profile),
+    EOS,
+  ];
+}
+
+function taskImagePromptToTextSequence(taskToken, image, prompt, text, profile) {
+  return [
+    BOS,
+    taskToken,
+    IMAGE,
+    ...image,
+    PROMPT,
+    ...encodeTextTokens(prompt, profile),
+    TEXT,
+    ...encodeTextTokens(text, profile),
+    EOS,
+  ];
+}
+
+function taskMatchSequence(prompt, image, label, profile) {
+  return [
+    BOS,
+    TASK_MATCH,
+    PROMPT,
+    ...encodeTextTokens(prompt, profile),
+    IMAGE,
+    ...image,
+    TEXT,
+    ...encodeTextTokens(label, profile),
+    EOS,
+  ];
+}
+
+function hardNegativeRow(rows, row, prompt, imageTokenProfile) {
+  const sourceImage = imageTaskTokens(row.signature, imageTokenProfile);
+  const salt = hashString(`${row.number}:${prompt}:hard-negative`);
+  const candidates = rows
+    .filter((candidate) => candidate.number !== row.number)
+    .map((candidate) => ({
+      row: candidate,
+      image_token_distance: imageTokenDistance(sourceImage, imageTaskTokens(candidate.signature, imageTokenProfile)),
+      tie_breaker: hashString(`${salt}:${candidate.number}:nearest-image-token`),
+    }))
+    .sort((left, right) =>
+      left.image_token_distance - right.image_token_distance ||
+      left.tie_breaker - right.tie_breaker ||
+      left.row.number - right.row.number,
+    );
+  if (candidates.length === 0) {
+    throw new Error(`no hard-negative candidate for spirit ${row.number}`);
+  }
+  return {
+    row: candidates[0].row,
+    selection: "nearest-image-token",
+    image_token_distance: candidates[0].image_token_distance,
+    image_token_rank: 1,
+  };
+}
+
+function imageTokenDistance(left, right) {
+  const count = Math.min(left.length, right.length);
+  let distance = Math.abs(left.length - right.length) * IMAGE_BINS;
+  for (let index = 0; index < count; index += 1) {
+    distance += Math.abs((left[index] || 0) - (right[index] || 0));
+  }
+  return distance;
+}
+
+function hardNegativePrompt(row, sourcePrompt) {
+  const name = normalizeText(row.primary_name);
+  const options = unique([
+    name,
+    `seal of ${name}`,
+    `${name} goetic seal`,
+  ]);
+  const index = hashString(`${row.number}:${sourcePrompt}:hard-negative-prompt`) % options.length;
+  return options[index];
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index) & 0xff;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash >>> 0;
 }
 
 function textOnlySequence(prompt, text, profile) {
@@ -546,6 +1070,16 @@ function writeVocab(outPath) {
     [TEXT, "TEXT"],
     [IMAGE, "IMAGE"],
     [EOS, "EOS"],
+    [TASK_TEXT_TO_IMAGE, "TASK_TEXT_TO_IMAGE"],
+    [TASK_IMAGE_TO_TEXT, "TASK_IMAGE_TO_TEXT"],
+    [TASK_MATCH, "TASK_MATCH"],
+    [TASK_EXPLAIN, "TASK_EXPLAIN"],
+    [TASK_IDENTIFY, "TASK_IDENTIFY"],
+    [IMAGE_CHANNEL_INK, "IMAGE_CHANNEL_INK"],
+    [IMAGE_CHANNEL_EDGE, "IMAGE_CHANNEL_EDGE"],
+    [IMAGE_CHANNEL_COMPONENT, "IMAGE_CHANNEL_COMPONENT"],
+    [IMAGE_CHANNEL_RADIAL, "IMAGE_CHANNEL_RADIAL"],
+    [IMAGE_CHANNEL_DIRECTION, "IMAGE_CHANNEL_DIRECTION"],
   ]);
   for (let token = 0; token < VOCAB_SIZE; token += 1) {
     if (specials.has(token)) {
@@ -574,9 +1108,21 @@ function fnv64Hex(tokens) {
   const prime = 0x100000001b3n;
   const mask = 0xffffffffffffffffn;
   for (const token of tokens) {
+    if (Number(token) < 0 || Number(token) > 255) {
+      throw new Error(`token ${token} is outside byte range`);
+    }
     hash ^= BigInt(token & 0xff);
     hash = (hash * prime) & mask;
-    hash ^= BigInt((token >> 8) & 0xff);
+  }
+  return `0x${hash.toString(16).padStart(16, "0")}`;
+}
+
+function fnv64TextHex(value) {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+  const mask = 0xffffffffffffffffn;
+  for (const byte of Buffer.from(String(value), "utf8")) {
+    hash ^= BigInt(Number(byte) & 0xff);
     hash = (hash * prime) & mask;
   }
   return `0x${hash.toString(16).padStart(16, "0")}`;
@@ -614,6 +1160,8 @@ function main() {
         training_sequences: examples.length,
         prompt_profile: config.promptProfile,
         sequence_profile: config.sequenceProfile,
+        corpus_version: config.corpusVersion,
+        image_token_profile: config.imageTokenProfile,
         text_only_repeats: config.textOnlyRepeats,
         name_initial_repeats: config.nameInitialRepeats,
         name_opening_repeats: config.nameOpeningRepeats,
@@ -626,6 +1174,8 @@ function main() {
         signature_grid: SIGNATURE_GRID,
         signature_bins: SIGNATURE_BINS,
         image_bins: IMAGE_BINS,
+        image_token_channels: imageTokenChannels(config.imageTokenProfile),
+        image_token_channel_stats: imageTokenChannelStats(rows, config.imageTokenProfile),
         vocab_size: VOCAB_SIZE,
         token_layout: {
           pad: PAD,
@@ -634,6 +1184,16 @@ function main() {
           text: TEXT,
           image: IMAGE,
           eos: EOS,
+          task_text_to_image: TASK_TEXT_TO_IMAGE,
+          task_image_to_text: TASK_IMAGE_TO_TEXT,
+          task_match: TASK_MATCH,
+          task_explain: TASK_EXPLAIN,
+          task_identify: TASK_IDENTIFY,
+          image_channel_ink: IMAGE_CHANNEL_INK,
+          image_channel_edge: IMAGE_CHANNEL_EDGE,
+          image_channel_component: IMAGE_CHANNEL_COMPONENT,
+          image_channel_radial: IMAGE_CHANNEL_RADIAL,
+          image_channel_direction: IMAGE_CHANNEL_DIRECTION,
           text_base: TEXT_BASE,
           text_count: TEXT_COUNT,
           image_base: IMAGE_BASE,
@@ -656,6 +1216,7 @@ function main() {
     JSON.stringify({
       schema,
       out_dir: config.outDir,
+      corpus_version: config.corpusVersion,
       examples: jointExamples.length,
       training_sequences: examples.length,
       token_count: tokens.length,

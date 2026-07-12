@@ -1,5 +1,5 @@
 import init, { SolomonSampler } from "./pkg/nsrl_web_wasm.js";
-import { SolomonAttentionSampler } from "./attention-sampler.js?v=3";
+import { SolomonAttentionSampler } from "./attention-sampler.js?v=4";
 import { SolomonMultimodalSampler } from "./multimodal-sampler.js";
 
 const ASSETS = {

@@ -1,0 +1,63 @@
+At dawn the harbor master opens the eastern gate and records the tide against the old stone marker. The ledger names the wind, the cloud cover, the height of the water, and the first vessel to cross the channel. Every entry uses the same order so that a later reader can compare one morning with another without guessing what the columns mean.
+
+In the workshop a brass wheel turns three smaller wheels. The first wheel counts whole revolutions, the second marks the remainder, and the third rings a bell whenever both marks return to zero. An apprentice checks the mechanism by turning the handle forward, copying the count, and then turning it backward until the original state appears.
+
+The hill library keeps maps in shallow cedar drawers. Blue labels identify rivers, green labels identify forests, and red labels identify roads that close during winter. A map may be copied for travel, but the copy carries the drawer number and revision date so that a damaged bridge is never mistaken for an open crossing.
+
+Before sunset the garden keeper walks the north path. She measures the soil near the wall, waters the beds whose markers are dry, and leaves the shaded beds untouched. The next keeper repeats the route in reverse and signs the same page, making disagreement visible before any plant is watered twice.
+
+The observatory clock releases a narrow shutter once each minute. A sensor counts the bright pulses, another sensor counts the dark intervals, and a small controller rejects a reading when the two counts do not agree. Accepted readings are written with the instrument name, the minute index, and a checksum of the raw marks.
+
+Along the western road, milestones alternate between circles and squares. A traveler moving toward the city sees circle, square, circle, square, while a traveler leaving the city sees the same stones in reverse. The pattern alone does not reveal direction; the engraved distance must be read as well.
+
+The river station uses three flags. White means the ferry may cross, amber means cargo must wait, and black means every boat must remain tied. The station clerk changes only one flag at a time and writes the previous color beside the new color. This simple history prevents a gust of wind from becoming an unexplained command.
+
+At the print room, letters are sorted into wooden trays before a page is composed. Common letters fill wide trays and rare marks fill narrow ones, but every tray has a fixed address. When type is returned after printing, the compositor reads the address rather than trusting the shape of a reversed letter.
+
+The mountain shelter stores food in numbered bins. Each arrival removes the oldest sealed packet, records its weight, and places new supplies behind the remaining stock. A weekly count compares the paper ledger with the physical bins. Any mismatch is investigated before another packet moves.
+
+A signal tower stands where the valley bends. The lower lamp reports the road, the middle lamp reports the bridge, and the upper lamp reports the pass. Two short flashes request attention; one long flash confirms that the previous message was understood. Silence is not confirmation and must never be recorded as one.
+
+The coastal survey divides a long beach into equal spans. Within every span, a marker records stone, sand, grass, or water. The surveyor walks the spans in increasing order and never fills a missing observation from memory. Unknown remains a valid mark until a measured value replaces it.
+
+In the archive, a document enters through intake, review, and sealing. Intake assigns an identifier, review checks every required field, and sealing writes a digest across the final bytes. If review changes a field, the old seal is discarded. A seal proves the reviewed form, not an earlier draft with the same title.
+
+The northern orchard is arranged as eight rows of eight trees. Workers count from the southwest corner, moving east within a row and north between rows. A damaged tree is named by row and column. Descriptions such as near the middle are useful for conversation but are forbidden in the repair ledger.
+
+Every evening the weather room combines four observations: pressure, wind, rain, and visibility. Each observation has a bounded integer scale and a distinct missing code. The daily summary is accepted only when the scale and missing-code rules are checked before totals are calculated.
+
+The canal lock has an upper gate and a lower gate. The controller will not open either gate while the other is open, and it will not move a gate while water levels differ beyond the safe mark. Operators can request an action, but the interlock owns the final decision and records every rejected request.
+
+At the schoolhouse, students practice a call-and-response exercise. The teacher reads a question, waits for a complete answer, and then reveals the reference line. Answers are scored against the hidden line rather than against the loudest student. The same questions return later in a different order.
+
+The town bakery prepares three batches before sunrise. Flour and water are measured first, salt is added second, and yeast is added only after the bowl is labeled. If a bowl lacks a label, it is emptied rather than guessed. Reproducible bread begins with reproducible preparation.
+
+An engineer testing a bridge places equal loads at fixed intervals. Deflection is read from left to right, then again from right to left. The two series are stored separately before comparison. Averaging them too early would hide a sensor that drifts with time.
+
+The messenger network assigns a sequence number to every packet. A receiver accepts the next number, ignores a repeated number, and requests recovery when a number is skipped. The message body may be identical across packets, so content alone cannot establish order.
+
+During the winter census, each household receives one card. A clerk checks the address, counts the residents, and marks the card complete. Duplicate addresses are placed in a review box instead of being merged automatically. The final total includes only complete, unique cards.
+
+The clockmaker keeps springs in drawers ordered by length and stiffness. A repair note names both properties and the drawer address. Similar springs can look identical on the bench, but exchanging them changes the rate of the clock. Measurement takes precedence over appearance.
+
+At the ferry dock, tickets are punched with day, route, and crossing number. The collector validates all three marks before boarding. A ticket from the correct route but the wrong day is still invalid, just as a correct checksum cannot rescue a message from the wrong protocol.
+
+The forest watch records smoke reports as observations, not conclusions. A report contains direction, apparent distance, color, and time. Two reports may be joined only after their time ranges overlap. A confident voice does not replace a compatible measurement.
+
+Inside the mill, grain passes through cleaning, grinding, and sifting. Sensors count the input and output of every stage. When a stage loses material beyond its allowance, the line stops at that boundary. Later stages are not blamed for loss that began earlier.
+
+The lighthouse lens rotates at a fixed rate. A keeper records the interval between flashes with an integer counter and tests the counter against a mechanical reference. The lamp may appear steady in fog, but the recorded interval remains the identifying signal.
+
+The city register stores names beside stable numeric identifiers. Spelling corrections update the visible name without changing the identifier. Reports join records by identifier, never by a name that may have several forms. Human-readable labels remain important, but they are not primary keys.
+
+At the quarry, blocks are weighed before and after cutting. The difference is assigned to dust, chips, and retained samples. If those categories do not sum to the measured loss, the batch stays open. A balanced account is a requirement, not a decorative report.
+
+The field radio uses a short preamble before every message. The receiver searches for the preamble, reads the declared length, and checks the final code. Noise before the preamble is ignored. Noise inside the declared message causes rejection rather than creative repair.
+
+In the music room, a mechanical drum repeats a cycle of twelve beats. Pins can raise a bell on selected beats, but the drum position always advances exactly once. A missing bell does not pause the cycle. Timing state and audible output are related but separate.
+
+The laboratory labels every sample with source, preparation, and trial number. A measurement file repeats those fields in its header and includes the instrument revision. Results without matching labels may be inspected, but they cannot enter the comparison table.
+
+The railway board publishes departure time, platform, and destination in fixed columns. When a platform changes, the old value remains visible with a strike mark until the train departs. Travelers see both the update and its history, reducing the chance that a silent rewrite sends them to the wrong side.
+
+The reservoir gauge is read at noon each day. The observer writes the raw mark before applying the calibration table. If the table changes, old raw marks can be recalculated; old corrected values without raw marks cannot. Evidence should survive improvements in interpretation.

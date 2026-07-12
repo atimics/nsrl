@@ -1,90 +1,61 @@
 #![deny(unsafe_code)]
 #![cfg(feature = "core-runtime")]
 
+use core::ops::Range;
+
+#[cfg(test)]
+use nsrl_core::FixedScale;
 use nsrl_core::{
-    FixedScale, GatedMlpBackwardScales, GatedMlpBackwardWorkspace, GatedMlpI16Params,
+    GatedMlpBackwardScales, GatedMlpBackwardWorkspace, GatedMlpI16Params,
     GatedMlpWeightUpdateParams, GatedMlpWeightUpdateStats, GatedMlpWeightUpdateWorkspace,
     GatedMlpWorkspace, LinearAttentionState, LinearAttentionStepWorkspace,
     LinearAttentionTttStepWorkspace, LinearAttentionWorkspace, LinearBackwardInputI16I8Params,
     LinearBackwardInputWorkspace, LinearBackwardWeightUpdateI8Params,
     LinearBackwardWeightUpdateWorkspace, LinearI16I8Params, LinearWeightUpdateStats,
-    MAX_RIGHT_SHIFT, Q15_SHIFT, SelfAttentionI16Params, SelfAttentionWorkspace,
-    attention_dot_q_k_i16_i32_checked, base2_softmax_i32_q15, clear_linear_attention_state_checked,
-    gated_mlp_backward_input_i16_q15_checked, gated_mlp_backward_weight_update_i8_checked,
-    gated_mlp_i16_q15_checked, linear_attention_i16_q15_checked, linear_attention_state_lengths,
+    MAX_RIGHT_SHIFT, Q15_SHIFT, RmsNormBackwardWorkspace, SelfAttentionI16Params,
+    SelfAttentionWorkspace, attention_dot_q_k_i16_i32_checked, base2_softmax_i32_q15,
+    clear_linear_attention_state_checked, gated_mlp_backward_input_i16_q15_checked,
+    gated_mlp_backward_weight_update_i8_checked, gated_mlp_i16_q15_checked,
+    linear_attention_i16_q15_checked, linear_attention_state_lengths,
     linear_attention_step_i16_q15_checked, linear_attention_ttt_step_i16_q15_checked,
     linear_backward_input_i16_i8_i16_per_channel_checked,
     linear_backward_prescale_grad_output_i16_i32_checked, linear_backward_weight_update_i8_checked,
-    linear_i16_i8_i16_per_channel_checked, round_shift_rhu_i64, saturate_i8, saturate_i16,
+    linear_i16_i8_i16_per_channel_checked, rms_norm_backward_i16_q15_checked,
+    rms_norm_i16_q15_checked, round_shift_rhu_i64, saturate_i8, saturate_i16,
     self_attention_i16_q15_checked, sqrt_power_of_four_shift,
 };
 
+pub mod artifact_contract;
+pub mod mt6;
 pub mod solomon_latent;
 
-pub const LEXEME_EMBEDDING_SCHEMA: &str = "nsrl.training_lexeme_embedding_trace.v1";
-pub const LEXEME_SOFTMAX_SCHEMA: &str = "nsrl.training_lexeme_softmax_trace.v1";
-pub const LEXEME_SOFTMAX_REDUCE_SCHEMA: &str = "nsrl.lexeme_softmax_reduce_trace.v1";
-pub const LEXEME_GENERATION_SCHEMA: &str = "nsrl.lexeme_generation_trace.v1";
-pub const MINI_TRANSFORMER_MLP_SCHEMA: &str = "nsrl.training_mini_transformer_mlp_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_SCHEMA: &str = "nsrl.training_mini_transformer_swarm_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_WORKER_SCHEMA: &str =
-    "nsrl.training_mini_transformer_swarm_worker_artifact.v1";
-pub const MINI_TRANSFORMER_SWARM_PROGRESS_SCHEMA: &str =
-    "nsrl.training_mini_transformer_swarm_progress.v1";
-pub const MINI_TRANSFORMER_SWARM_SCALING_SCHEMA: &str =
-    "nsrl.training_mini_transformer_swarm_scaling_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_EXPERT_MANIFEST_SCHEMA: &str =
-    "nsrl.mini_transformer_swarm_expert_manifest.v1";
-pub const MINI_TRANSFORMER_SWARM_ROUTE_SCHEMA: &str = "nsrl.mini_transformer_swarm_route_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_ROUTED_GENERATION_SCHEMA: &str =
-    "nsrl.mini_transformer_swarm_routed_generation_trace.v1";
-pub const MINI_TRANSFORMER_GENERATION_SCHEMA: &str = "nsrl.mini_transformer_generation_trace.v1";
-pub const MINI_TRANSFORMER_SWARM_GENERATION_SCHEMA: &str =
-    "nsrl.mini_transformer_swarm_generation_trace.v1";
-pub const MINI_TRANSFORMER_BINARY_TRACE_SCHEMA: &str =
-    "nsrl.training_mini_transformer_mlp_binary_trace.v1";
+pub use artifact_contract::{
+    ASCII_LOWER_TOKENIZER_ID, AUTHORITY, BYTE_TOKENIZER_ID, GENERATION_AUTHORITY,
+    MINI_TRANSFORMER_ADAM_SCHEMA, MINI_TRANSFORMER_ADAM_STATE_MAGIC,
+    MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN,
+    MINI_TRANSFORMER_BINARY_FINAL_SUMMARY_RECORD_LEN,
+    MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN, MINI_TRANSFORMER_BINARY_TAG_ADAPTIVE_SHIFT,
+    MINI_TRANSFORMER_BINARY_TAG_FINAL_SUMMARY, MINI_TRANSFORMER_BINARY_TAG_STEP_SAMPLE,
+    MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN, MINI_TRANSFORMER_BINARY_TRACE_MAGIC,
+    MINI_TRANSFORMER_BINARY_TRACE_SCHEMA, MINI_TRANSFORMER_BINARY_TRACE_SCHEMA_ID,
+    MINI_TRANSFORMER_BINARY_TRACE_VERSION, MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC,
+    MINI_TRANSFORMER_GENERATION_SCHEMA, MINI_TRANSFORMER_MLP_SCHEMA, MINI_TRANSFORMER_MLP_TASK,
+    MINI_TRANSFORMER_MODEL_ID, MINI_TRANSFORMER_MODEL_MAGIC,
+    MINI_TRANSFORMER_SWARM_CAPABILITY_TAGS, MINI_TRANSFORMER_SWARM_EXPERT_MANIFEST_SCHEMA,
+    MINI_TRANSFORMER_SWARM_GENERATION_SCHEMA, MINI_TRANSFORMER_SWARM_MODEL_ID,
+    MINI_TRANSFORMER_SWARM_MODEL_MAGIC, MINI_TRANSFORMER_SWARM_PROGRESS_SCHEMA,
+    MINI_TRANSFORMER_SWARM_ROUTE_SCHEMA, MINI_TRANSFORMER_SWARM_ROUTED_GENERATION_SCHEMA,
+    MINI_TRANSFORMER_SWARM_SCALING_SCHEMA, MINI_TRANSFORMER_SWARM_SCHEMA,
+    MINI_TRANSFORMER_SWARM_WORKER_ARTIFACT_MAGIC, MINI_TRANSFORMER_SWARM_WORKER_SCHEMA,
+    MINI_TRANSFORMER_V6_MODEL_MAGIC,
+};
+use artifact_contract::{
+    MINI_TRANSFORMER_LEGACY_MODEL_MAGIC, MINI_TRANSFORMER_LEGACY_V4_D_MODEL,
+    MINI_TRANSFORMER_LEGACY_V4_HEADS, MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM,
+};
+
 pub const DEFAULT_MINI_TRANSFORMER_STREAMING_TTT_LEARNING_RATE_SHIFT: u8 = 8;
-pub const LEXEME_SENTENCE_STOP_TOKEN_CAP: usize = 16;
 pub const LEXEME_DECODE_TOKEN_SET_CAP: usize = 64;
-pub const AUTHORITY: &str = "deterministic_training_replay";
-pub const GENERATION_AUTHORITY: &str = "deterministic_integer_generation";
-pub const LEXEME_EMBEDDING_TASK: &str = "wiki_bard_lexeme_context_embedding_pretrain";
-pub const LEXEME_SOFTMAX_TASK: &str = "wiki_bard_lexeme_next_token_output_head";
-pub const LEXEME_SOFTMAX_REDUCE_TASK: &str = "wiki_bard_lexeme_softmax_model_reduce";
-pub const MINI_TRANSFORMER_MLP_TASK: &str = "wiki_bard_mini_transformer_mlp_first";
-pub const BYTE_TOKENIZER_ID: &str = "byte_identity_u8_v1";
-pub const ASCII_LOWER_TOKENIZER_ID: &str = "byte_ascii_lower_text_u8_v1";
-pub const LEXEME_TOKENIZER_ID: &str = "lexeme_ascii_lower_u16_v1";
-pub const LEXEME_EMBEDDING_MODEL_ID: &str = "lexeme_context_embedding_i16_v1";
-pub const LEXEME_EMBEDDING_MODEL_MAGIC: &[u8; 8] = b"NSRLLX1\n";
-pub const LEXEME_SOFTMAX_MODEL_ID: &str = "lexeme_softmax_embedding_head_v1";
-pub const LEXEME_SOFTMAX_MODEL_MAGIC_V2: &[u8; 8] = b"NSRLLM2\n";
-pub const LEXEME_SOFTMAX_MODEL_MAGIC_V3: &[u8; 8] = b"NSRLLM3\n";
-pub const LEXEME_SOFTMAX_MODEL_MAGIC_V4: &[u8; 8] = b"NSRLLM4\n";
-pub const LEXEME_SOFTMAX_MODEL_MAGIC_V5: &[u8; 8] = b"NSRLLM5\n";
-pub const LEXEME_SOFTMAX_MODEL_MAGIC: &[u8; 8] = b"NSRLLM6\n";
-pub const MINI_TRANSFORMER_MODEL_ID: &str = "mini_transformer_byte_qkvo_mlp_v1";
-pub const MINI_TRANSFORMER_MODEL_MAGIC: &[u8; 8] = b"NSRLMT4\n";
-pub const MINI_TRANSFORMER_SWARM_MODEL_ID: &str = "mini_transformer_swarm_qkvo_mlp_v1";
-pub const MINI_TRANSFORMER_SWARM_MODEL_MAGIC: &[u8; 8] = b"NSRLSW1\n";
-pub const MINI_TRANSFORMER_SWARM_WORKER_ARTIFACT_MAGIC: &[u8; 8] = b"NSRLWK1\n";
-pub const MINI_TRANSFORMER_SWARM_CAPABILITY_TAGS: &[&str] = &[
-    "byte_generation",
-    "mini_transformer_mlp",
-    "integer_q15",
-    "swarm_ensemble",
-    "deterministic_router_candidate",
-];
-pub const MINI_TRANSFORMER_BINARY_TRACE_MAGIC: &[u8; 4] = b"NSRL";
-pub const MINI_TRANSFORMER_BINARY_TRACE_VERSION: u8 = 1;
-pub const MINI_TRANSFORMER_BINARY_TRACE_SCHEMA_ID: u8 = 1;
-pub const MINI_TRANSFORMER_BINARY_TRACE_HEADER_LEN: usize = 16;
-pub const MINI_TRANSFORMER_BINARY_STEP_SAMPLE_RECORD_LEN: usize = 32;
-pub const MINI_TRANSFORMER_BINARY_ADAPTIVE_SHIFT_RECORD_LEN: usize = 22;
-pub const MINI_TRANSFORMER_BINARY_FINAL_SUMMARY_RECORD_LEN: usize = 561;
-pub const MINI_TRANSFORMER_BINARY_TAG_STEP_SAMPLE: u8 = 0x01;
-pub const MINI_TRANSFORMER_BINARY_TAG_ADAPTIVE_SHIFT: u8 = 0x02;
-pub const MINI_TRANSFORMER_BINARY_TAG_FINAL_SUMMARY: u8 = 0x7f;
 pub const BYTE_VOCAB: usize = 256;
 pub const BYTE_D_MODEL: usize = 257;
 // Single source of truth: the transformer dims, scale tables, and embedding
@@ -93,45 +64,19 @@ pub const BYTE_D_MODEL: usize = 257;
 // zeroed mini-transformer training via InvalidShape; see the nsrl-train-core
 // MINI_TRANSFORMER_D_MODEL doc comment.)
 pub use nsrl_train_core::{
-    MINI_TRANSFORMER_D_MODEL, MINI_TRANSFORMER_HEADS, MINI_TRANSFORMER_HIDDEN_DIM,
+    IntegerAdamConfig, MINI_TRANSFORMER_ARCHITECTURE_PROFILE, MINI_TRANSFORMER_D_MODEL,
+    MINI_TRANSFORMER_HEADS, MINI_TRANSFORMER_HIDDEN_DIM,
 };
 use nsrl_train_core::{
-    MINI_TRANSFORMER_D_MODEL_SCALES, MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT,
+    MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES, MINI_TRANSFORMER_D_MODEL_SCALES,
+    MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT, MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
     MINI_TRANSFORMER_HIDDEN_SCALES, MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES,
     MINI_TRANSFORMER_OUTPUT_SCALES,
 };
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
-const DEFAULT_LEXEME_EMBEDDING_EPOCHS: usize = 1;
-const DEFAULT_LEXEME_EMBEDDING_CONTEXT_RADIUS: usize = 2;
-const DEFAULT_LEXEME_EMBEDDING_STRIDE: usize = 1;
-const DEFAULT_LEXEME_EMBEDDING_MAX_WINDOWS: usize = 4096;
-const DEFAULT_LEXEME_EMBEDDING_VOCAB_SIZE: usize = 2048;
-const DEFAULT_LEXEME_EMBEDDING_DIM: usize = 16;
-const DEFAULT_LEXEME_EMBEDDING_LEARNING_RATE: i32 = 1;
-const DEFAULT_LEXEME_EMBEDDING_LEARNING_RATE_SHIFT: u8 = 9;
-const DEFAULT_LEXEME_FREQUENCY_WEIGHT_CAP: u32 = 0;
 const DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15: i16 = 4096;
-const DEFAULT_PROMPT_TOPIC_ANCHOR_FREQUENCY_CAP: u32 = 8192;
-const LEXEME_POSITIVE_DOT_MARGIN_I64: i64 = 1_000_000;
-const LEXEME_NEGATIVE_DOT_MARGIN_I64: i64 = 0;
-const DEFAULT_LEXEME_SOFTMAX_EPOCHS: usize = 1;
-const DEFAULT_LEXEME_SOFTMAX_SEQ_LEN: usize = 1;
-const DEFAULT_LEXEME_SOFTMAX_STRIDE: usize = 1;
-const DEFAULT_LEXEME_SOFTMAX_MAX_WINDOWS: usize = 4096;
-const DEFAULT_LEXEME_SOFTMAX_LEARNING_RATE: i32 = 1;
-const DEFAULT_LEXEME_SOFTMAX_LEARNING_RATE_SHIFT: u8 = 22;
-const DEFAULT_LEXEME_SOFTMAX_MAX_WEIGHT_DELTA: i32 = 1;
-const DEFAULT_LEXEME_SOFTMAX_LR_SHIFT_DECAY_WINDOWS: usize = 0;
-const DEFAULT_LEXEME_SOFTMAX_LR_SHIFT_DECAY_STEP: u8 = 1;
-const DEFAULT_LEXEME_SOFTMAX_MAX_LEARNING_RATE_SHIFT: u8 =
-    DEFAULT_LEXEME_SOFTMAX_LEARNING_RATE_SHIFT;
-const DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT: u8 = 24;
-const DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA: i32 = 1;
-const DEFAULT_LEXEME_SOFTMAX_HIDDEN_LEARNING_RATE_SHIFT: u8 = 18;
-const DEFAULT_LEXEME_SOFTMAX_MAX_HIDDEN_WEIGHT_DELTA: i32 = 1;
-const LEXEME_LOGIT_RIGHT_SHIFT: u8 = 8;
 const DEFAULT_MINI_TRANSFORMER_EPOCHS: usize = 1;
 const DEFAULT_MINI_TRANSFORMER_SEQ_LEN: usize = 4;
 const DEFAULT_MINI_TRANSFORMER_STRIDE: usize = 1;
@@ -143,70 +88,55 @@ const DEFAULT_MINI_TRANSFORMER_MLP_LEARNING_RATE_SHIFT: u8 = 16;
 const DEFAULT_MINI_TRANSFORMER_EMBEDDING_LEARNING_RATE_SHIFT: u8 = 14;
 const DEFAULT_MINI_TRANSFORMER_ATTENTION_LEARNING_RATE_SHIFT: u8 = 24;
 const DEFAULT_MINI_TRANSFORMER_ATTENTION_QK_LEARNING_RATE_SHIFT: u8 = 18;
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_NGRAM_CACHE_MAGIC: [u8; 8] = *b"NSRLNG1\0";
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_NGRAM_CACHE_HEADER_BYTES: usize = 296;
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER: usize = 4;
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC: [u8; 8] = *b"NSRLSM1\0";
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES: usize = 16;
 const DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES: usize = 128;
+const DEFAULT_MINI_TRANSFORMER_RMS_GAMMA_Q15: i16 = 16_384;
+const MINI_TRANSFORMER_RMS_EPSILON: u64 = 1;
+const DEFAULT_MINI_TRANSFORMER_LAYERS: usize = 2;
+const MINI_TRANSFORMER_ATTENTION_VO_ORACLE_MAX_D_MODEL: usize = 64;
 const MINI_TRANSFORMER_ADAPTIVE_RULE_TRACE_EVENT_LIMIT: usize = 256;
 const MINI_TRANSFORMER_RULE_SATURATION_PRESSURE_DIVISOR: usize = 512;
 const MINI_TRANSFORMER_RULE_ZERO_PRESSURE_NUMERATOR: usize = 31;
 const MINI_TRANSFORMER_RULE_ZERO_PRESSURE_DENOMINATOR: usize = 32;
 const DEFAULT_CORPUS_PRIOR_LOGIT_SHIFT: u8 = 8;
 const DEFAULT_CORPUS_PRIOR_ORDER: u8 = 1;
-const MAX_CORPUS_PRIOR_ORDER: u8 = 3;
-const MAX_LEXEME_MEMORY_CONTEXT_ORDER: u8 = 12;
 const DEFAULT_LEXEME_MEMORY_LOGIT_SHIFT: u8 = 5;
-const MAX_INITIAL_NGRAM_CAPACITY: usize = 1 << 20;
 const MINI_TRANSFORMER_ROLLBACK_HISTORY_LIMIT: usize = 8;
 const PARALLEL_EVAL_MIN_ITEMS: usize = 512;
 const PARALLEL_EVAL_MIN_ITEMS_PER_THREAD: usize = 128;
 const BASE2_SOFTMAX_LN2_Q15: i32 = 22_713;
-const LEXEME_EMBEDDING_KNOWN_NON_CLAIMS: [&str; 5] = [
-    "not_language_model_training_yet",
-    "not_dynamic_vocabulary",
-    "does_not_train_output_head_or_grammar",
-    "negative_pairs_are_deterministic_not_sampled",
-    "does_not_claim_semantic_quality",
-];
-const LEXEME_SOFTMAX_KNOWN_NON_CLAIMS: [&str; 5] = [
-    "lexeme_output_head_only",
-    "embeddings_are_frozen",
-    "mean_pooled_context_not_attention",
-    "not_full_transformer_backprop_yet",
-    "does_not_claim_final_language_quality",
-];
-const LEXEME_SOFTMAX_REDUCE_KNOWN_NON_CLAIMS: [&str; 4] = [
-    "equal_weight_average_not_federated_optimizer",
-    "does_not_validate_heldout_loss",
-    "requires_matching_model_shape",
-    "does_not_claim_final_language_quality",
-];
-const LEXEME_GENERATION_KNOWN_NON_CLAIMS: [&str; 4] = [
-    "lexeme_head_model_only",
-    "mean_pooled_context_not_attention",
-    "vocab_local_to_corpus",
-    "not_final_spelling_or_grammar_layer",
-];
 const MINI_TRANSFORMER_GENERATION_KNOWN_NON_CLAIMS: [&str; 5] = [
-    "single_mini_transformer_block_only",
+    "fixed_small_integer_transformer_only",
     "learned_absolute_position_embeddings_not_rope",
     "no_kv_cache_yet",
     "no_temperature_nucleus_or_beam_decode_yet",
     "does_not_claim_language_model_quality",
 ];
 const MINI_TRANSFORMER_NOPE_GENERATION_KNOWN_NON_CLAIMS: [&str; 5] = [
-    "single_mini_transformer_block_only",
+    "fixed_small_integer_transformer_only",
     "nope_no_learned_position_embeddings",
     "no_kv_cache_yet",
     "no_temperature_nucleus_or_beam_decode_yet",
     "does_not_claim_language_model_quality",
 ];
 const MINI_TRANSFORMER_STREAMING_GENERATION_KNOWN_NON_CLAIMS: [&str; 5] = [
-    "single_mini_transformer_block_only",
+    "single_layer_streaming_path_only",
     "streaming_nope_ignores_learned_position_embeddings",
     "linear_attention_requires_native_training_for_quality",
     "no_temperature_nucleus_or_beam_decode_yet",
     "does_not_claim_language_model_quality",
 ];
 const MINI_TRANSFORMER_MLP_KNOWN_NON_CLAIMS: [&str; 5] = [
-    "single_mini_transformer_block_only",
+    "no_optimizer_moments_or_adam_state",
     "embedding_table_updated_without_optimizer_state",
     "fixed_two_head_attention_only",
     "does_not_backpropagate_through_rmsnorm_yet",
@@ -219,215 +149,6 @@ const MINI_TRANSFORMER_SWARM_SCALING_KNOWN_NON_CLAIMS: [&str; 5] = [
     "does_not_claim_language_model_quality",
     "single_process_native_threads_only",
 ];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LexemeEmbeddingTrainConfig {
-    pub epochs: usize,
-    pub context_radius: usize,
-    pub stride: usize,
-    pub window_offset: usize,
-    pub max_windows: Option<usize>,
-    pub vocab_size: usize,
-    pub embedding_dim: usize,
-    pub learning_rate: i32,
-    pub learning_rate_shift: u8,
-    pub concept_frequency_cap: u32,
-    pub concept_frequency_min_weight_q15: i16,
-    pub quality_weight_profile: LexemeQualityWeightProfile,
-}
-
-impl Default for LexemeEmbeddingTrainConfig {
-    fn default() -> Self {
-        Self {
-            epochs: DEFAULT_LEXEME_EMBEDDING_EPOCHS,
-            context_radius: DEFAULT_LEXEME_EMBEDDING_CONTEXT_RADIUS,
-            stride: DEFAULT_LEXEME_EMBEDDING_STRIDE,
-            window_offset: 0,
-            max_windows: Some(DEFAULT_LEXEME_EMBEDDING_MAX_WINDOWS),
-            vocab_size: DEFAULT_LEXEME_EMBEDDING_VOCAB_SIZE,
-            embedding_dim: DEFAULT_LEXEME_EMBEDDING_DIM,
-            learning_rate: DEFAULT_LEXEME_EMBEDDING_LEARNING_RATE,
-            learning_rate_shift: DEFAULT_LEXEME_EMBEDDING_LEARNING_RATE_SHIFT,
-            concept_frequency_cap: DEFAULT_LEXEME_FREQUENCY_WEIGHT_CAP,
-            concept_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LexemeQualityWeightProfile {
-    Off,
-    CruftAware,
-    ProseAware,
-}
-
-impl LexemeQualityWeightProfile {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::CruftAware => "cruft-aware",
-            Self::ProseAware => "prose-aware",
-        }
-    }
-}
-
-fn lexeme_quality_weight_profile_id(profile: LexemeQualityWeightProfile) -> usize {
-    match profile {
-        LexemeQualityWeightProfile::Off => 0,
-        LexemeQualityWeightProfile::CruftAware => 1,
-        LexemeQualityWeightProfile::ProseAware => 2,
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LexemeContextFeatures {
-    Mean,
-    Ordered,
-}
-
-impl LexemeContextFeatures {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Mean => "mean",
-            Self::Ordered => "ordered",
-        }
-    }
-
-    pub fn description(self) -> &'static str {
-        match self {
-            Self::Mean => "bias_plus_mean_context_lexeme_embedding_q15",
-            Self::Ordered => "bias_plus_ordered_context_lexeme_embeddings_q15",
-        }
-    }
-}
-
-fn lexeme_context_features_id(features: LexemeContextFeatures) -> usize {
-    match features {
-        LexemeContextFeatures::Mean => 0,
-        LexemeContextFeatures::Ordered => 1,
-    }
-}
-
-fn lexeme_context_features_from_id(id: u32) -> Result<LexemeContextFeatures, TrainError> {
-    match id {
-        0 => Ok(LexemeContextFeatures::Mean),
-        1 => Ok(LexemeContextFeatures::Ordered),
-        _ => Err(TrainError::InvalidModel(
-            "unknown lexeme context feature mode",
-        )),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LexemeSoftmaxHeadLayout {
-    Linear,
-    HiddenBottleneck,
-    ResidualHidden,
-    ResidualAdapter,
-}
-
-impl LexemeSoftmaxHeadLayout {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Linear => "linear",
-            Self::HiddenBottleneck => "hidden_bottleneck",
-            Self::ResidualHidden => "residual_hidden",
-            Self::ResidualAdapter => "residual_adapter",
-        }
-    }
-}
-
-fn lexeme_softmax_head_layout_id(layout: LexemeSoftmaxHeadLayout) -> usize {
-    match layout {
-        LexemeSoftmaxHeadLayout::Linear => 0,
-        LexemeSoftmaxHeadLayout::HiddenBottleneck => 1,
-        LexemeSoftmaxHeadLayout::ResidualHidden => 2,
-        LexemeSoftmaxHeadLayout::ResidualAdapter => 3,
-    }
-}
-
-fn lexeme_softmax_head_layout_from_id(id: u32) -> Result<LexemeSoftmaxHeadLayout, TrainError> {
-    match id {
-        0 => Ok(LexemeSoftmaxHeadLayout::Linear),
-        1 => Ok(LexemeSoftmaxHeadLayout::HiddenBottleneck),
-        2 => Ok(LexemeSoftmaxHeadLayout::ResidualHidden),
-        3 => Ok(LexemeSoftmaxHeadLayout::ResidualAdapter),
-        _ => Err(TrainError::InvalidModel("unknown lexeme head layout")),
-    }
-}
-
-fn default_lexeme_softmax_head_layout(
-    hidden_dim: usize,
-    adapter_logit_shift: u8,
-) -> LexemeSoftmaxHeadLayout {
-    if hidden_dim == 0 {
-        LexemeSoftmaxHeadLayout::Linear
-    } else if adapter_logit_shift > 0 {
-        LexemeSoftmaxHeadLayout::ResidualAdapter
-    } else {
-        LexemeSoftmaxHeadLayout::ResidualHidden
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LexemeSoftmaxTrainConfig {
-    pub epochs: usize,
-    pub seq_len: usize,
-    pub stride: usize,
-    pub window_offset: usize,
-    pub max_windows: Option<usize>,
-    pub batch_windows: usize,
-    pub learning_rate: i32,
-    pub learning_rate_shift: u8,
-    pub lr_shift_decay_windows: usize,
-    pub lr_shift_decay_step: u8,
-    pub max_learning_rate_shift: u8,
-    pub max_weight_delta: i32,
-    pub target_frequency_cap: u32,
-    pub target_frequency_min_weight_q15: i16,
-    pub quality_weight_profile: LexemeQualityWeightProfile,
-    pub context_features: LexemeContextFeatures,
-    pub train_embeddings: bool,
-    pub embedding_learning_rate_shift: u8,
-    pub max_embedding_delta: i32,
-    pub hidden_dim: usize,
-    pub hidden_learning_rate_shift: u8,
-    pub max_hidden_weight_delta: i32,
-    pub adapter_logit_shift: u8,
-    pub map_reduce_workers: usize,
-}
-
-impl Default for LexemeSoftmaxTrainConfig {
-    fn default() -> Self {
-        Self {
-            epochs: DEFAULT_LEXEME_SOFTMAX_EPOCHS,
-            seq_len: DEFAULT_LEXEME_SOFTMAX_SEQ_LEN,
-            stride: DEFAULT_LEXEME_SOFTMAX_STRIDE,
-            window_offset: 0,
-            max_windows: Some(DEFAULT_LEXEME_SOFTMAX_MAX_WINDOWS),
-            batch_windows: 1,
-            learning_rate: DEFAULT_LEXEME_SOFTMAX_LEARNING_RATE,
-            learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_LEARNING_RATE_SHIFT,
-            lr_shift_decay_windows: DEFAULT_LEXEME_SOFTMAX_LR_SHIFT_DECAY_WINDOWS,
-            lr_shift_decay_step: DEFAULT_LEXEME_SOFTMAX_LR_SHIFT_DECAY_STEP,
-            max_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_MAX_LEARNING_RATE_SHIFT,
-            max_weight_delta: DEFAULT_LEXEME_SOFTMAX_MAX_WEIGHT_DELTA,
-            target_frequency_cap: DEFAULT_LEXEME_FREQUENCY_WEIGHT_CAP,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Mean,
-            train_embeddings: false,
-            embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-            max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
-            hidden_dim: 0,
-            hidden_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_HIDDEN_LEARNING_RATE_SHIFT,
-            max_hidden_weight_delta: DEFAULT_LEXEME_SOFTMAX_MAX_HIDDEN_WEIGHT_DELTA,
-            adapter_logit_shift: 0,
-            map_reduce_workers: 1,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MiniTransformerPositionPolicy {
@@ -459,6 +180,27 @@ impl MiniTransformerBatchMode {
         match self {
             Self::Serial => "serial",
             Self::MapReduce => "map-reduce",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiniTransformerAdamTrainScope {
+    All,
+    RmsNorm,
+    Output,
+    FinalMlp,
+    FinalMlpAndOutput,
+}
+
+impl MiniTransformerAdamTrainScope {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::RmsNorm => "rms_norm",
+            Self::Output => "output",
+            Self::FinalMlp => "final_mlp",
+            Self::FinalMlpAndOutput => "final_mlp_and_output",
         }
     }
 }
@@ -625,8 +367,8 @@ impl Default for MiniTransformerMlpTrainConfig {
             target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
             argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
-            attention_kind: MiniTransformerAttentionKind::Linear,
-            position_policy: MiniTransformerPositionPolicy::Nope,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
             learning_rate: DEFAULT_MINI_TRANSFORMER_LEARNING_RATE,
             output_learning_rate_shift: DEFAULT_MINI_TRANSFORMER_HEAD_LEARNING_RATE_SHIFT,
             mlp_learning_rate_shift: DEFAULT_MINI_TRANSFORMER_MLP_LEARNING_RATE_SHIFT,
@@ -646,247 +388,6 @@ impl Default for MiniTransformerMlpTrainConfig {
             batch_mode: MiniTransformerBatchMode::Serial,
             map_reduce_workers: 1,
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeEmbeddingTrainingTrace {
-    pub config: LexemeEmbeddingTrainConfig,
-    pub token_count: usize,
-    pub token_hash: u64,
-    pub window_hash: u64,
-    pub windows: usize,
-    pub examined_windows: usize,
-    pub updates: usize,
-    pub positive_pair_count: usize,
-    pub negative_pair_count: usize,
-    pub initial_embedding_hash: u64,
-    pub final_embedding_hash: u64,
-    pub initial_positive_dot_i64: i64,
-    pub final_positive_dot_i64: i64,
-    pub initial_negative_dot_i64: i64,
-    pub final_negative_dot_i64: i64,
-    pub saturation_count: usize,
-    pub zero_delta_count: usize,
-    pub embedding_delta_l1: u64,
-    pub steps: Vec<LexemeEmbeddingTrainingStepTrace>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeEmbeddingTrainingRun {
-    pub trace: LexemeEmbeddingTrainingTrace,
-    pub model: LexemeEmbeddingModel,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeSoftmaxTrainingTrace {
-    pub config: LexemeSoftmaxTrainConfig,
-    pub head_layout: LexemeSoftmaxHeadLayout,
-    pub output_head_frozen_prefix: usize,
-    pub adapter_logit_shift: u8,
-    pub token_count: usize,
-    pub token_hash: u64,
-    pub window_hash: u64,
-    pub windows: usize,
-    pub examined_windows: usize,
-    pub updates: usize,
-    pub vocab_size: usize,
-    pub embedding_dim: usize,
-    pub initial_embedding_hash: u64,
-    pub final_embedding_hash: u64,
-    pub initial_weight_hash: u64,
-    pub final_weight_hash: u64,
-    pub initial_total_error: usize,
-    pub final_total_error: usize,
-    pub initial_probability_error_q15: usize,
-    pub final_probability_error_q15: usize,
-    pub initial_mistakes: usize,
-    pub final_mistakes: usize,
-    pub gradient_saturation_count: usize,
-    pub embedding_saturation_count: usize,
-    pub zero_delta_count: usize,
-    pub embedding_zero_delta_count: usize,
-    pub weight_delta_l1: u64,
-    pub embedding_delta_l1: u64,
-    pub final_accuracy_per_mille: usize,
-    pub final_logits_hash: u64,
-    pub steps: Vec<LexemeSoftmaxTrainingStepTrace>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeSoftmaxTrainingRun {
-    pub trace: LexemeSoftmaxTrainingTrace,
-    pub model: LexemeSoftmaxModel,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeSoftmaxReductionTrace {
-    pub reducer: &'static str,
-    pub model_count: usize,
-    pub seq_len: usize,
-    pub vocab_size: usize,
-    pub embedding_dim: usize,
-    pub context_features: LexemeContextFeatures,
-    pub hidden_dim: usize,
-    pub head_layout: LexemeSoftmaxHeadLayout,
-    pub adapter_logit_shift: u8,
-    pub parameter_bytes: usize,
-    pub artifact_bytes: usize,
-    pub input_model_hashes: Vec<u64>,
-    pub input_embedding_hashes: Vec<u64>,
-    pub input_hidden_weight_hashes: Vec<u64>,
-    pub input_output_weight_hashes: Vec<u64>,
-    pub output_model_hash: u64,
-    pub output_embedding_hash: u64,
-    pub output_hidden_weight_hash: u64,
-    pub output_weight_hash: u64,
-}
-
-pub struct LexemeSoftmaxEvalResult {
-    pub windows: usize,
-    pub bits_per_token_milli: u64,
-    pub uniform_bits_per_token_milli: u64,
-    pub vocab_size: usize,
-}
-
-impl LexemeSoftmaxReductionTrace {
-    pub fn to_json_line(&self) -> String {
-        let d_model =
-            lexeme_context_d_model(self.embedding_dim, self.seq_len, self.context_features)
-                .unwrap_or(0);
-        let head_dim =
-            lexeme_softmax_head_dim_for_layout(d_model, self.hidden_dim, self.head_layout)
-                .unwrap_or(0);
-        let mut out = String::new();
-        out.push('{');
-        push_string_field(&mut out, "schema", LEXEME_SOFTMAX_REDUCE_SCHEMA);
-        comma(&mut out);
-        push_string_field(&mut out, "authority", AUTHORITY);
-        comma(&mut out);
-        push_string_field(&mut out, "task", LEXEME_SOFTMAX_REDUCE_TASK);
-        comma(&mut out);
-        out.push_str("\"reduction\":{");
-        push_string_field(&mut out, "kind", self.reducer);
-        comma(&mut out);
-        push_usize_field(&mut out, "model_count", self.model_count);
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"model\":{");
-        push_string_field(&mut out, "id", LEXEME_SOFTMAX_MODEL_ID);
-        comma(&mut out);
-        push_usize_field(&mut out, "vocab_size", self.vocab_size);
-        comma(&mut out);
-        push_usize_field(&mut out, "embedding_dim", self.embedding_dim);
-        comma(&mut out);
-        push_usize_field(&mut out, "d_model", d_model);
-        comma(&mut out);
-        push_usize_field(&mut out, "hidden_dim", self.hidden_dim);
-        comma(&mut out);
-        push_usize_field(&mut out, "head_dim", head_dim);
-        comma(&mut out);
-        push_string_field(&mut out, "head_layout", self.head_layout.as_str());
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "adapter_logit_shift",
-            usize::from(self.adapter_logit_shift),
-        );
-        comma(&mut out);
-        push_usize_field(&mut out, "context_seq_len", self.seq_len);
-        comma(&mut out);
-        push_string_field(&mut out, "context_features", self.context_features.as_str());
-        comma(&mut out);
-        push_string_field(
-            &mut out,
-            "trained_component",
-            if self.hidden_dim > 0 {
-                "lexeme_embedding_i16_plus_hidden_i8_plus_output_head_i8"
-            } else {
-                "lexeme_embedding_i16_plus_output_head_i8"
-            },
-        );
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"artifact\":{");
-        push_usize_field(&mut out, "parameter_bytes", self.parameter_bytes);
-        comma(&mut out);
-        push_usize_field(&mut out, "artifact_bytes", self.artifact_bytes);
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"hashes\":{");
-        push_hash_array_field(&mut out, "input_model_hashes", &self.input_model_hashes);
-        comma(&mut out);
-        push_hash_array_field(
-            &mut out,
-            "input_embedding_hashes",
-            &self.input_embedding_hashes,
-        );
-        comma(&mut out);
-        push_hash_array_field(
-            &mut out,
-            "input_hidden_weight_hashes",
-            &self.input_hidden_weight_hashes,
-        );
-        comma(&mut out);
-        push_hash_array_field(
-            &mut out,
-            "input_output_weight_hashes",
-            &self.input_output_weight_hashes,
-        );
-        comma(&mut out);
-        push_hash_field(&mut out, "output_model_hash", self.output_model_hash);
-        comma(&mut out);
-        push_hash_field(
-            &mut out,
-            "output_embedding_hash",
-            self.output_embedding_hash,
-        );
-        comma(&mut out);
-        push_hash_field(
-            &mut out,
-            "output_hidden_weight_hash",
-            self.output_hidden_weight_hash,
-        );
-        comma(&mut out);
-        push_hash_field(&mut out, "output_weight_hash", self.output_weight_hash);
-        out.push('}');
-        comma(&mut out);
-        push_string_array_field(
-            &mut out,
-            "known_non_claims",
-            &LEXEME_SOFTMAX_REDUCE_KNOWN_NON_CLAIMS,
-        );
-        out.push('}');
-        out.push('\n');
-        out
-    }
-}
-
-impl LexemeSoftmaxEvalResult {
-    pub fn to_json_line(&self) -> String {
-        let mut out = String::new();
-        out.push('{');
-        push_string_field(&mut out, "schema", "nsrl.lexeme_softmax_eval.v1");
-        comma(&mut out);
-        out.push_str("\"eval\":{");
-        push_usize_field(&mut out, "windows", self.windows);
-        comma(&mut out);
-        push_usize_field(&mut out, "vocab_size", self.vocab_size);
-        comma(&mut out);
-        push_milli_decimal_field(&mut out, "bits_per_token", self.bits_per_token_milli);
-        comma(&mut out);
-        push_milli_decimal_field(
-            &mut out,
-            "uniform_bits_per_token",
-            self.uniform_bits_per_token_milli,
-        );
-        comma(&mut out);
-        let reduction_milli = self
-            .uniform_bits_per_token_milli
-            .saturating_sub(self.bits_per_token_milli);
-        push_milli_decimal_field(&mut out, "reduction_vs_uniform", reduction_milli);
-        out.push_str("}}");
-        out
     }
 }
 
@@ -1032,6 +533,139 @@ pub struct MiniTransformerMlpTrainingProgressTrace {
 pub struct MiniTransformerMlpTrainingRun {
     pub trace: MiniTransformerMlpTrainingTrace,
     pub model: MiniTransformerMlpModel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerAdamTrainingTrace {
+    pub schema: &'static str,
+    pub config: MiniTransformerMlpTrainConfig,
+    pub optimizer_config: IntegerAdamConfig,
+    pub train_scope: MiniTransformerAdamTrainScope,
+    pub token_count: usize,
+    pub token_hash: u64,
+    pub window_hash: u64,
+    pub windows: usize,
+    pub examined_windows: usize,
+    pub updates: usize,
+    pub accepted_batch_count: usize,
+    pub rejected_batch_count: usize,
+    pub initial_mistakes: usize,
+    pub final_mistakes: usize,
+    pub initial_probability_error_q15: usize,
+    pub final_probability_error_q15: usize,
+    pub transformer_layers: usize,
+    pub rms_norm_enabled: bool,
+    pub output_head_delta_l1: u64,
+    pub mlp_delta_l1: u64,
+    pub embedding_delta_l1: u64,
+    pub rms_norm_delta_l1: u64,
+    pub attention_delta_l1: u64,
+    pub attention_q_delta_l1: u64,
+    pub attention_k_delta_l1: u64,
+    pub attention_v_delta_l1: u64,
+    pub attention_o_delta_l1: u64,
+    pub mlp_saturation_count: usize,
+    pub attention_saturation_count: usize,
+    pub residual_saturation_count: usize,
+    pub initial_model_hash: u64,
+    pub final_model_hash: u64,
+    pub optimizer_step: u64,
+    pub optimizer_state_hash: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerAdamTrainingRun {
+    pub trace: MiniTransformerAdamTrainingTrace,
+    pub model: MiniTransformerMlpModel,
+    pub optimizer_state: MiniTransformerAdamOptimizerState,
+}
+
+impl MiniTransformerAdamTrainingTrace {
+    pub fn to_json_line(&self) -> String {
+        #[cfg(feature = "mini-calibrated")]
+        let quantization_profile_json = ",\"quantization_profile\":\"calibrated-v2-suffix-memory\"";
+        #[cfg(not(feature = "mini-calibrated"))]
+        let quantization_profile_json = "";
+        let max_windows = self
+            .config
+            .max_windows
+            .map_or_else(|| String::from("null"), |value| value.to_string());
+        let final_accuracy_per_mille = self
+            .windows
+            .saturating_sub(self.final_mistakes)
+            .saturating_mul(1000)
+            / self.windows.max(1);
+        format!(
+            concat!(
+                "{{\"schema\":\"{}\",",
+                "\"model\":{{\"architecture_profile\":\"{}\",\"d_model\":{},\"heads\":{},\"hidden_dim\":{},\"transformer_layers\":{},\"rms_norm_enabled\":{}{}}},",
+                "\"optimizer\":{{\"kind\":\"integer_adam\",\"learning_rate\":{},\"step_shift\":{},\"beta1_decay_shift\":{},\"beta2_decay_shift\":{},\"epsilon\":{}}},",
+                "\"training\":{{\"epochs\":{},\"seq_len\":{},\"stride\":{},\"window_offset\":{},\"max_windows\":{},\"batch_windows\":{},\"attention_kind\":\"{}\",\"position\":\"{}\",\"batch_mode\":\"{}\",\"map_reduce_workers\":{},\"train_scope\":\"{}\",\"target_frequency_cap\":{},\"target_frequency_min_weight_q15\":{},\"argmax_margin_weight_q15\":{}}},",
+                "\"data\":{{\"token_count\":{},\"token_hash\":\"0x{:016x}\",\"window_hash\":\"0x{:016x}\",\"windows\":{},\"examined_windows\":{}}},",
+                "\"updates\":{{\"accepted_windows\":{},\"accepted_batches\":{},\"rejected_batches\":{},\"optimizer_step\":{}}},",
+                "\"loss\":{{\"initial_mistakes\":{},\"final_mistakes\":{},\"final_accuracy_per_mille\":{},\"initial_probability_error_q15\":{},\"final_probability_error_q15\":{}}},",
+                "\"delta_l1\":{{\"output_head\":{},\"mlp\":{},\"embedding\":{},\"rms_norm\":{},\"attention\":{},\"attention_q\":{},\"attention_k\":{},\"attention_v\":{},\"attention_o\":{}}},",
+                "\"saturation\":{{\"mlp\":{},\"attention\":{},\"residual\":{}}},",
+                "\"hashes\":{{\"initial_model\":\"0x{:016x}\",\"final_model\":\"0x{:016x}\",\"optimizer_state\":\"0x{:016x}\"}}}}\n"
+            ),
+            self.schema,
+            MINI_TRANSFORMER_ARCHITECTURE_PROFILE,
+            MINI_TRANSFORMER_D_MODEL,
+            MINI_TRANSFORMER_HEADS,
+            MINI_TRANSFORMER_HIDDEN_DIM,
+            self.transformer_layers,
+            self.rms_norm_enabled,
+            quantization_profile_json,
+            self.optimizer_config.learning_rate,
+            self.optimizer_config.step_shift,
+            self.optimizer_config.beta1_decay_shift,
+            self.optimizer_config.beta2_decay_shift,
+            self.optimizer_config.epsilon,
+            self.config.epochs,
+            self.config.seq_len,
+            self.config.stride,
+            self.config.window_offset,
+            max_windows,
+            self.config.batch_windows,
+            self.config.attention_kind.as_str(),
+            self.config.position_policy.as_str(),
+            self.config.batch_mode.as_str(),
+            self.config.map_reduce_workers,
+            self.train_scope.as_str(),
+            self.config.target_frequency_cap,
+            self.config.target_frequency_min_weight_q15,
+            self.config.argmax_margin_weight_q15,
+            self.token_count,
+            self.token_hash,
+            self.window_hash,
+            self.windows,
+            self.examined_windows,
+            self.updates,
+            self.accepted_batch_count,
+            self.rejected_batch_count,
+            self.optimizer_step,
+            self.initial_mistakes,
+            self.final_mistakes,
+            final_accuracy_per_mille,
+            self.initial_probability_error_q15,
+            self.final_probability_error_q15,
+            self.output_head_delta_l1,
+            self.mlp_delta_l1,
+            self.embedding_delta_l1,
+            self.rms_norm_delta_l1,
+            self.attention_delta_l1,
+            self.attention_q_delta_l1,
+            self.attention_k_delta_l1,
+            self.attention_v_delta_l1,
+            self.attention_o_delta_l1,
+            self.mlp_saturation_count,
+            self.attention_saturation_count,
+            self.residual_saturation_count,
+            self.initial_model_hash,
+            self.final_model_hash,
+            self.optimizer_state_hash,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1288,31 +922,12 @@ impl MiniTransformerSwarmComposition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeEmbeddingModel {
-    pub vocab_size: usize,
-    pub embedding_dim: usize,
-    pub embeddings: Vec<i16>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeSoftmaxModel {
-    pub seq_len: usize,
-    pub vocab_size: usize,
-    pub embedding_dim: usize,
-    pub context_features: LexemeContextFeatures,
-    pub hidden_dim: usize,
-    pub head_layout: LexemeSoftmaxHeadLayout,
-    pub adapter_logit_shift: u8,
-    pub embeddings: Vec<i16>,
-    pub hidden_weights: Vec<i8>,
-    pub output_weights: Vec<i8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MiniTransformerMlpModel {
     pub context_seq_len: usize,
     pub embeddings: Vec<i16>,
     pub position_embeddings: Vec<i16>,
+    pub attention_rms_weights: Vec<i16>,
+    pub mlp_rms_weights: Vec<i16>,
     pub q_weights: Vec<i8>,
     pub k_weights: Vec<i8>,
     pub v_weights: Vec<i8>,
@@ -1321,6 +936,79 @@ pub struct MiniTransformerMlpModel {
     pub gate_weights: Vec<i8>,
     pub down_weights: Vec<i8>,
     pub output_weights: Vec<i8>,
+}
+
+/// A frozen-trunk, trainable i16 residual inserted after every transformer
+/// block. The down projection is a deterministic sign projection, while the
+/// expansion is learned in Q15. This lets many small experts retain fractional
+/// updates without changing the trunk's compact i8 inference matrices.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerBlockLowRankExpert {
+    pub trunk_model_hash: u64,
+    pub transformer_layers: usize,
+    pub rank: usize,
+    pub projection_seed: u64,
+    pub residual_shift: u8,
+    pub expansion_weights_q15: Vec<i16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerBlockExpertMetrics {
+    pub windows: usize,
+    pub mistakes: usize,
+    pub probability_error_q15: usize,
+    pub hidden_saturation_count: usize,
+}
+
+impl MiniTransformerBlockExpertMetrics {
+    pub fn accuracy_per_mille(self) -> usize {
+        self.windows.saturating_sub(self.mistakes) * 1000 / self.windows.max(1)
+    }
+
+    pub fn mean_probability_error_q15(self) -> usize {
+        self.probability_error_q15 / self.windows.max(1)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerBlockExpertTrainStats {
+    pub optimizer_steps: usize,
+    pub accepted_forward_steps: usize,
+    pub accepted_reverse_steps: usize,
+    pub rejected_steps: usize,
+    pub weight_delta_l1: u64,
+    pub weight_saturation_count: usize,
+    pub hidden_saturation_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiniTransformerBlockExpertObjective {
+    CrossEntropy,
+    ProbabilityError,
+}
+
+impl MiniTransformerBlockExpertObjective {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CrossEntropy => "cross_entropy",
+            Self::ProbabilityError => "probability_error",
+        }
+    }
+}
+
+/// Versioned optimizer state stored separately from inference weights.
+///
+/// The moment vectors use one stable flat parameter order: token embeddings,
+/// position embeddings, Q, K, V, O, MLP up, gate, down, then output weights.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerAdamOptimizerState {
+    pub context_seq_len: usize,
+    pub step: u64,
+    pub bound_model_hash: u64,
+    pub config: IntegerAdamConfig,
+    pub first_moments: Vec<i64>,
+    pub second_moments: Vec<u64>,
+    pub update_residuals: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1400,45 +1088,6 @@ impl ByteGenerationConfig {
                 top_k,
                 ..DecodeConfig::greedy()
             },
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LexemeGenerationConfig {
-    pub max_new_tokens: usize,
-    pub decode: DecodeConfig,
-    pub quality_weight_profile: LexemeQualityWeightProfile,
-    pub stop_on_sentence_terminal: bool,
-    pub sentence_terminal_token_count: usize,
-    pub sentence_terminal_tokens: [u16; LEXEME_SENTENCE_STOP_TOKEN_CAP],
-}
-
-impl LexemeGenerationConfig {
-    pub fn greedy(max_new_tokens: usize) -> Self {
-        Self {
-            max_new_tokens,
-            decode: DecodeConfig::greedy(),
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            stop_on_sentence_terminal: false,
-            sentence_terminal_token_count: 0,
-            sentence_terminal_tokens: [0; LEXEME_SENTENCE_STOP_TOKEN_CAP],
-        }
-    }
-
-    pub fn deterministic_sample(max_new_tokens: usize, sample_seed: u64, top_k: usize) -> Self {
-        Self {
-            max_new_tokens,
-            decode: DecodeConfig {
-                strategy: DecodeStrategy::Sample,
-                sample_seed,
-                top_k,
-                ..DecodeConfig::greedy()
-            },
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            stop_on_sentence_terminal: false,
-            sentence_terminal_token_count: 0,
-            sentence_terminal_tokens: [0; LEXEME_SENTENCE_STOP_TOKEN_CAP],
         }
     }
 }
@@ -1565,698 +1214,6 @@ pub struct ByteDecodePriors {
     observed_bigrams: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeDecodePriors {
-    pub token_count: usize,
-    pub token_hash: u64,
-    pub vocab_size: usize,
-    unigram_counts: Vec<u32>,
-    bigram_rows: Vec<Vec<(u16, u32)>>,
-    row_totals: Vec<u32>,
-    trigram_rows: Vec<LexemeTrigramRow>,
-    quadgram_rows: Vec<LexemeQuadgramRow>,
-    observed_bigrams: usize,
-    observed_trigrams: usize,
-    observed_quadgrams: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeTopicPriors {
-    pub token_count: usize,
-    pub token_hash: u64,
-    pub vocab_size: usize,
-    pub radius: usize,
-    pub anchor_hash: u64,
-    pub anchor_count: usize,
-    pub anchor_occurrences: usize,
-    pub observed_neighbors: usize,
-    weights_q15: Vec<i16>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeMemoryPriors {
-    pub token_count: usize,
-    pub token_hash: u64,
-    pub vocab_size: usize,
-    pub max_context_order: u8,
-    terminal_tokens: Vec<u16>,
-    rows_by_order: Vec<Vec<LexemeMemoryRow>>,
-    observed_contexts: usize,
-    observed_transitions: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LexemeTrigramRow {
-    context_key: u32,
-    total: u32,
-    next_counts: Vec<(u16, u32)>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LexemeQuadgramRow {
-    context_key: u64,
-    total: u32,
-    next_counts: Vec<(u16, u32)>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LexemeMemoryRow {
-    context: Vec<u16>,
-    total: u32,
-    next_counts: Vec<(u16, u32)>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct LexemeMemoryContextKey {
-    len: u8,
-    tokens: [u16; MAX_LEXEME_MEMORY_CONTEXT_ORDER as usize],
-}
-
-impl LexemeMemoryContextKey {
-    fn from_slice(context: &[u16]) -> Result<Self, TrainError> {
-        if context.len() > usize::from(MAX_LEXEME_MEMORY_CONTEXT_ORDER) {
-            return Err(TrainError::InvalidConfig);
-        }
-
-        let mut tokens = [0_u16; MAX_LEXEME_MEMORY_CONTEXT_ORDER as usize];
-        tokens[..context.len()].copy_from_slice(context);
-        Ok(Self {
-            len: context.len() as u8,
-            tokens,
-        })
-    }
-
-    fn as_slice(&self) -> &[u16] {
-        &self.tokens[..usize::from(self.len)]
-    }
-}
-
-fn initial_ngram_capacity(tokens_len: usize, order: usize) -> usize {
-    tokens_len
-        .saturating_sub(order.saturating_sub(1))
-        .min(MAX_INITIAL_NGRAM_CAPACITY)
-}
-
-impl LexemeDecodePriors {
-    pub fn from_tokens(tokens: &[u16], vocab_size: usize) -> Result<Self, TrainError> {
-        if tokens.len() < 2 || vocab_size == 0 || vocab_size > usize::from(u16::MAX) + 1 {
-            return Err(TrainError::InvalidConfig);
-        }
-        if tokens.iter().any(|&token| usize::from(token) >= vocab_size) {
-            return Err(TrainError::InvalidConfig);
-        }
-
-        let mut unigram_counts = vec![0_u32; vocab_size];
-        let mut bigram_counts = std::collections::HashMap::<u64, u32>::with_capacity(
-            initial_ngram_capacity(tokens.len(), 2),
-        );
-        let mut trigram_counts = std::collections::HashMap::<u64, u32>::with_capacity(
-            initial_ngram_capacity(tokens.len(), 3),
-        );
-        let mut quadgram_counts = std::collections::HashMap::<u64, u32>::with_capacity(
-            initial_ngram_capacity(tokens.len(), 4),
-        );
-        let mut row_totals = vec![0_u32; vocab_size];
-
-        for index in 0..tokens.len() {
-            let token = tokens[index];
-            let slot = usize::from(token);
-            unigram_counts[slot] = unigram_counts[slot].saturating_add(1);
-
-            if let Some(&next_token) = tokens.get(index + 1) {
-                let previous = usize::from(token);
-                let next = usize::from(next_token);
-                let key = ((previous as u64) << 16) | next as u64;
-                let count = bigram_counts.entry(key).or_insert(0);
-                *count = count.saturating_add(1);
-                row_totals[previous] = row_totals[previous].saturating_add(1);
-            }
-
-            if let (Some(&previous_right), Some(&next)) =
-                (tokens.get(index + 1), tokens.get(index + 2))
-            {
-                let previous_left = u64::from(token);
-                let previous_right = u64::from(previous_right);
-                let next = u64::from(next);
-                let key = (previous_left << 32) | (previous_right << 16) | next;
-                let count = trigram_counts.entry(key).or_insert(0);
-                *count = count.saturating_add(1);
-            }
-
-            if let (Some(&previous_middle), Some(&previous_right), Some(&next)) = (
-                tokens.get(index + 1),
-                tokens.get(index + 2),
-                tokens.get(index + 3),
-            ) {
-                let previous_left = u64::from(token);
-                let previous_middle = u64::from(previous_middle);
-                let previous_right = u64::from(previous_right);
-                let next = u64::from(next);
-                let key =
-                    (previous_left << 48) | (previous_middle << 32) | (previous_right << 16) | next;
-                let count = quadgram_counts.entry(key).or_insert(0);
-                *count = count.saturating_add(1);
-            }
-        }
-        let observed_bigrams = bigram_counts.len();
-        let observed_trigrams = trigram_counts.len();
-        let observed_quadgrams = quadgram_counts.len();
-        let mut bigram_rows = vec![Vec::new(); vocab_size];
-        for (key, count) in bigram_counts {
-            let previous = (key >> 16) as usize;
-            let next = key as u16;
-            bigram_rows[previous].push((next, count));
-        }
-        for row in bigram_rows.iter_mut() {
-            row.sort_unstable_by_key(|&(next, _)| next);
-        }
-        let mut trigram_row_map = std::collections::HashMap::<u32, LexemeTrigramRow>::new();
-        for (key, count) in trigram_counts {
-            let previous_left = ((key >> 32) & 0xffff) as u16;
-            let previous_right = ((key >> 16) & 0xffff) as u16;
-            let next = key as u16;
-            let context_key = lexeme_trigram_context_key(previous_left, previous_right);
-            let row = trigram_row_map
-                .entry(context_key)
-                .or_insert_with(|| LexemeTrigramRow {
-                    context_key,
-                    total: 0,
-                    next_counts: Vec::new(),
-                });
-            row.total = row.total.saturating_add(count);
-            row.next_counts.push((next, count));
-        }
-        let mut trigram_rows: Vec<_> = trigram_row_map.into_values().collect();
-        for row in trigram_rows.iter_mut() {
-            row.next_counts.sort_unstable_by_key(|&(next, _)| next);
-        }
-        trigram_rows.sort_unstable_by_key(|row| row.context_key);
-        let mut quadgram_row_map = std::collections::HashMap::<u64, LexemeQuadgramRow>::new();
-        for (key, count) in quadgram_counts {
-            let previous_left = ((key >> 48) & 0xffff) as u16;
-            let previous_middle = ((key >> 32) & 0xffff) as u16;
-            let previous_right = ((key >> 16) & 0xffff) as u16;
-            let next = key as u16;
-            let context_key =
-                lexeme_quadgram_context_key(previous_left, previous_middle, previous_right);
-            let row = quadgram_row_map
-                .entry(context_key)
-                .or_insert_with(|| LexemeQuadgramRow {
-                    context_key,
-                    total: 0,
-                    next_counts: Vec::new(),
-                });
-            row.total = row.total.saturating_add(count);
-            row.next_counts.push((next, count));
-        }
-        let mut quadgram_rows: Vec<_> = quadgram_row_map.into_values().collect();
-        for row in quadgram_rows.iter_mut() {
-            row.next_counts.sort_unstable_by_key(|&(next, _)| next);
-        }
-        quadgram_rows.sort_unstable_by_key(|row| row.context_key);
-
-        Ok(Self {
-            token_count: tokens.len(),
-            token_hash: hash_u16_slice(tokens),
-            vocab_size,
-            unigram_counts,
-            bigram_rows,
-            row_totals,
-            trigram_rows,
-            quadgram_rows,
-            observed_bigrams,
-            observed_trigrams,
-            observed_quadgrams,
-        })
-    }
-
-    pub fn observed_bigrams(&self) -> usize {
-        self.observed_bigrams
-    }
-
-    pub fn observed_trigrams(&self) -> usize {
-        self.observed_trigrams
-    }
-
-    pub fn observed_quadgrams(&self) -> usize {
-        self.observed_quadgrams
-    }
-
-    pub fn unigram_count(&self, token: u16) -> u32 {
-        self.unigram_counts
-            .get(usize::from(token))
-            .copied()
-            .unwrap_or(0)
-    }
-
-    pub fn transition_count(&self, previous: u16, next: u16) -> u32 {
-        if usize::from(previous) >= self.vocab_size || usize::from(next) >= self.vocab_size {
-            return 0;
-        }
-        self.bigram_rows[usize::from(previous)]
-            .binary_search_by_key(&next, |&(token, _)| token)
-            .map(|index| self.bigram_rows[usize::from(previous)][index].1)
-            .unwrap_or(0)
-    }
-
-    pub fn allows_transition(&self, previous: u16, next: u16) -> bool {
-        if usize::from(previous) >= self.vocab_size || usize::from(next) >= self.vocab_size {
-            return false;
-        }
-        self.row_totals[usize::from(previous)] == 0 || self.transition_count(previous, next) > 0
-    }
-
-    pub fn transition_probability_q15(&self, previous: u16, next: u16) -> u16 {
-        if usize::from(previous) >= self.vocab_size || usize::from(next) >= self.vocab_size {
-            return 0;
-        }
-        let row_total = self.row_totals[usize::from(previous)];
-        if row_total > 0 {
-            probability_q15(self.transition_count(previous, next), row_total)
-        } else {
-            probability_q15(
-                self.unigram_counts[usize::from(next)],
-                u32::try_from(self.token_count).unwrap_or(u32::MAX),
-            )
-        }
-    }
-
-    pub fn transition_degree(&self, token: u16) -> usize {
-        self.bigram_rows
-            .get(usize::from(token))
-            .map(Vec::len)
-            .unwrap_or(0)
-    }
-
-    pub fn trigram_transition_count(
-        &self,
-        previous_left: u16,
-        previous_right: u16,
-        next: u16,
-    ) -> u32 {
-        self.trigram_row(previous_left, previous_right)
-            .and_then(|row| {
-                row.next_counts
-                    .binary_search_by_key(&next, |&(token, _)| token)
-                    .ok()
-                    .map(|index| row.next_counts[index].1)
-            })
-            .unwrap_or(0)
-    }
-
-    pub fn quadgram_transition_count(
-        &self,
-        previous_left: u16,
-        previous_middle: u16,
-        previous_right: u16,
-        next: u16,
-    ) -> u32 {
-        self.quadgram_row(previous_left, previous_middle, previous_right)
-            .and_then(|row| {
-                row.next_counts
-                    .binary_search_by_key(&next, |&(token, _)| token)
-                    .ok()
-                    .map(|index| row.next_counts[index].1)
-            })
-            .unwrap_or(0)
-    }
-
-    pub fn context_transition_probability_q15(
-        &self,
-        context: &[u16],
-        next: u16,
-        max_order: u8,
-    ) -> u16 {
-        if usize::from(next) >= self.vocab_size {
-            return 0;
-        }
-        if max_order >= 3
-            && context.len() >= 3
-            && let Some(row) = self.quadgram_row(
-                context[context.len() - 3],
-                context[context.len() - 2],
-                context[context.len() - 1],
-            )
-            && row.total > 0
-        {
-            let count = row
-                .next_counts
-                .binary_search_by_key(&next, |&(token, _)| token)
-                .map(|index| row.next_counts[index].1)
-                .unwrap_or(0);
-            return probability_q15(count, row.total);
-        }
-        if max_order >= 2
-            && context.len() >= 2
-            && let Some(row) =
-                self.trigram_row(context[context.len() - 2], context[context.len() - 1])
-            && row.total > 0
-        {
-            let count = row
-                .next_counts
-                .binary_search_by_key(&next, |&(token, _)| token)
-                .map(|index| row.next_counts[index].1)
-                .unwrap_or(0);
-            return probability_q15(count, row.total);
-        }
-
-        context
-            .last()
-            .map(|&previous| self.transition_probability_q15(previous, next))
-            .unwrap_or_else(|| {
-                probability_q15(
-                    self.unigram_counts[usize::from(next)],
-                    u32::try_from(self.token_count).unwrap_or(u32::MAX),
-                )
-            })
-    }
-
-    fn trigram_row(&self, previous_left: u16, previous_right: u16) -> Option<&LexemeTrigramRow> {
-        if usize::from(previous_left) >= self.vocab_size
-            || usize::from(previous_right) >= self.vocab_size
-        {
-            return None;
-        }
-        let context_key = lexeme_trigram_context_key(previous_left, previous_right);
-        self.trigram_rows
-            .binary_search_by_key(&context_key, |row| row.context_key)
-            .ok()
-            .map(|index| &self.trigram_rows[index])
-    }
-
-    fn quadgram_row(
-        &self,
-        previous_left: u16,
-        previous_middle: u16,
-        previous_right: u16,
-    ) -> Option<&LexemeQuadgramRow> {
-        if usize::from(previous_left) >= self.vocab_size
-            || usize::from(previous_middle) >= self.vocab_size
-            || usize::from(previous_right) >= self.vocab_size
-        {
-            return None;
-        }
-        let context_key =
-            lexeme_quadgram_context_key(previous_left, previous_middle, previous_right);
-        self.quadgram_rows
-            .binary_search_by_key(&context_key, |row| row.context_key)
-            .ok()
-            .map(|index| &self.quadgram_rows[index])
-    }
-
-    fn trace(&self) -> LexemeDecodePriorTrace {
-        LexemeDecodePriorTrace {
-            token_count: self.token_count,
-            token_hash: self.token_hash,
-            vocab_size: self.vocab_size,
-            observed_bigrams: self.observed_bigrams,
-            observed_trigrams: self.observed_trigrams,
-            observed_quadgrams: self.observed_quadgrams,
-        }
-    }
-}
-
-impl LexemeTopicPriors {
-    pub fn from_tokens(
-        tokens: &[u16],
-        vocab_size: usize,
-        anchors: &[u16],
-        radius: usize,
-        min_weight_q15: i16,
-    ) -> Result<Self, TrainError> {
-        if tokens.is_empty()
-            || vocab_size == 0
-            || vocab_size > usize::from(u16::MAX) + 1
-            || tokens.iter().any(|&token| usize::from(token) >= vocab_size)
-            || anchors
-                .iter()
-                .any(|&token| usize::from(token) >= vocab_size)
-            || !valid_q15_weight_floor(min_weight_q15)
-        {
-            return Err(TrainError::InvalidConfig);
-        }
-
-        let mut unigram_counts = vec![0_u32; vocab_size];
-        for &token in tokens {
-            let slot = usize::from(token);
-            unigram_counts[slot] = unigram_counts[slot].saturating_add(1);
-        }
-
-        let mut anchor_mask = vec![false; vocab_size];
-        let mut anchor_count = 0_usize;
-        for &anchor in anchors {
-            if anchor <= u16::from(u8::MAX) {
-                continue;
-            }
-            let slot = usize::from(anchor);
-            if unigram_counts[slot] > DEFAULT_PROMPT_TOPIC_ANCHOR_FREQUENCY_CAP {
-                continue;
-            }
-            if !anchor_mask[slot] {
-                anchor_mask[slot] = true;
-                anchor_count += 1;
-            }
-        }
-
-        let mut counts = vec![0_u32; vocab_size];
-        let mut anchor_occurrences = 0_usize;
-        if radius > 0 && anchor_count > 0 {
-            for (index, &token) in tokens.iter().enumerate() {
-                if !anchor_mask[usize::from(token)] {
-                    continue;
-                }
-                anchor_occurrences = anchor_occurrences.saturating_add(1);
-                let start = index.saturating_sub(radius);
-                let end = tokens
-                    .len()
-                    .min(index.saturating_add(radius).saturating_add(1));
-                for (neighbor_index, &neighbor) in tokens[start..end].iter().enumerate() {
-                    if start + neighbor_index == index {
-                        continue;
-                    }
-                    let slot = usize::from(neighbor);
-                    counts[slot] = counts[slot].saturating_add(1);
-                }
-            }
-        }
-
-        let mut scores_q16 = vec![0_u64; vocab_size];
-        for (index, &count) in counts.iter().enumerate() {
-            if count == 0 {
-                continue;
-            }
-            let unigram_count = u64::from(unigram_counts[index]).max(1);
-            scores_q16[index] = u64::from(count)
-                .saturating_mul(u64::from(count))
-                .saturating_mul(1 << 16)
-                / unigram_count;
-        }
-        let max_score_q16 = scores_q16.iter().copied().max().unwrap_or(0);
-        let observed_neighbors = counts.iter().filter(|&&count| count > 0).count();
-        let mut weights_q15 = vec![i16::MAX; vocab_size];
-        if max_score_q16 > 0 {
-            for (index, &score_q16) in scores_q16.iter().enumerate() {
-                weights_q15[index] =
-                    lexeme_topic_weight_q15(score_q16, max_score_q16, min_weight_q15);
-            }
-        }
-
-        Ok(Self {
-            token_count: tokens.len(),
-            token_hash: hash_u16_slice(tokens),
-            vocab_size,
-            radius,
-            anchor_hash: hash_u16_slice(anchors),
-            anchor_count,
-            anchor_occurrences,
-            observed_neighbors,
-            weights_q15,
-        })
-    }
-
-    pub fn weight_q15(&self, token: u16) -> i16 {
-        self.weights_q15
-            .get(usize::from(token))
-            .copied()
-            .unwrap_or(i16::MAX)
-    }
-
-    fn trace(&self) -> LexemeTopicPriorTrace {
-        LexemeTopicPriorTrace {
-            token_count: self.token_count,
-            token_hash: self.token_hash,
-            vocab_size: self.vocab_size,
-            radius: self.radius,
-            anchor_hash: self.anchor_hash,
-            anchor_count: self.anchor_count,
-            anchor_occurrences: self.anchor_occurrences,
-            observed_neighbors: self.observed_neighbors,
-        }
-    }
-}
-
-impl LexemeMemoryPriors {
-    pub fn from_tokens(
-        tokens: &[u16],
-        vocab_size: usize,
-        max_context_order: u8,
-    ) -> Result<Self, TrainError> {
-        Self::from_tokens_with_terminal_tokens(tokens, vocab_size, max_context_order, &[])
-    }
-
-    pub fn from_tokens_with_terminal_tokens(
-        tokens: &[u16],
-        vocab_size: usize,
-        max_context_order: u8,
-        terminal_tokens: &[u16],
-    ) -> Result<Self, TrainError> {
-        if tokens.len() < 2
-            || vocab_size == 0
-            || vocab_size > usize::from(u16::MAX) + 1
-            || max_context_order == 0
-            || max_context_order > MAX_LEXEME_MEMORY_CONTEXT_ORDER
-            || tokens.iter().any(|&token| usize::from(token) >= vocab_size)
-            || terminal_tokens
-                .iter()
-                .any(|&token| usize::from(token) >= vocab_size)
-        {
-            return Err(TrainError::InvalidConfig);
-        }
-
-        let mut terminal_tokens = terminal_tokens.to_vec();
-        terminal_tokens.sort_unstable();
-        terminal_tokens.dedup();
-
-        let max_context_order = usize::from(max_context_order).min(tokens.len() - 1);
-        let mut rows_by_order = vec![Vec::new(); max_context_order + 1];
-        let mut observed_contexts = 0_usize;
-        let mut observed_transitions = 0_usize;
-
-        for order in 1..=max_context_order {
-            let mut row_map =
-                std::collections::HashMap::<
-                    LexemeMemoryContextKey,
-                    std::collections::HashMap<u16, u32>,
-                >::with_capacity(initial_ngram_capacity(tokens.len(), order + 1));
-            for window in tokens.windows(order + 1) {
-                let next = window[order];
-                let context_key = LexemeMemoryContextKey::from_slice(&window[..order])?;
-                let next_counts = row_map.entry(context_key).or_default();
-                let count = next_counts.entry(next).or_insert(0);
-                *count = count.saturating_add(1);
-            }
-
-            let mut rows = Vec::with_capacity(row_map.len());
-            for (context_key, next_counts) in row_map {
-                let mut next_counts = next_counts.into_iter().collect::<Vec<_>>();
-                next_counts.sort_unstable_by_key(|&(next, _)| next);
-                let total = next_counts
-                    .iter()
-                    .map(|&(_, count)| count)
-                    .fold(0_u32, u32::saturating_add);
-                observed_transitions = observed_transitions.saturating_add(next_counts.len());
-                rows.push(LexemeMemoryRow {
-                    context: context_key.as_slice().to_vec(),
-                    total,
-                    next_counts,
-                });
-            }
-            rows.sort_unstable_by(|left, right| left.context.cmp(&right.context));
-            observed_contexts = observed_contexts.saturating_add(rows.len());
-            rows_by_order[order] = rows;
-        }
-
-        Ok(Self {
-            token_count: tokens.len(),
-            token_hash: hash_u16_slice(tokens),
-            vocab_size,
-            max_context_order: max_context_order as u8,
-            terminal_tokens,
-            rows_by_order,
-            observed_contexts,
-            observed_transitions,
-        })
-    }
-
-    pub fn observed_contexts(&self) -> usize {
-        self.observed_contexts
-    }
-
-    pub fn observed_transitions(&self) -> usize {
-        self.observed_transitions
-    }
-
-    pub fn matched_context_order(&self, context: &[u16]) -> u8 {
-        let max_order = usize::from(self.max_context_order).min(context.len());
-        for order in (1..=max_order).rev() {
-            let suffix = &context[context.len() - order..];
-            if self.memory_row(suffix).is_some() {
-                return order as u8;
-            }
-        }
-        0
-    }
-
-    pub fn context_transition_probability_q15(&self, context: &[u16], next: u16) -> u16 {
-        if usize::from(next) >= self.vocab_size {
-            return 0;
-        }
-        if context
-            .last()
-            .is_some_and(|token| self.terminal_tokens.binary_search(token).is_ok())
-        {
-            return 0;
-        }
-        let max_order = usize::from(self.max_context_order).min(context.len());
-        for order in (1..=max_order).rev() {
-            let suffix = &context[context.len() - order..];
-            if let Some(row) = self.memory_row(suffix) {
-                let count = row
-                    .next_counts
-                    .binary_search_by_key(&next, |&(token, _)| token)
-                    .map(|index| row.next_counts[index].1)
-                    .unwrap_or(0);
-                return probability_q15(count, row.total);
-            }
-        }
-        0
-    }
-
-    fn memory_row(&self, context: &[u16]) -> Option<&LexemeMemoryRow> {
-        let rows = self.rows_by_order.get(context.len())?;
-        rows.binary_search_by(|row| row.context.as_slice().cmp(context))
-            .ok()
-            .map(|index| &rows[index])
-    }
-
-    fn trace(&self) -> LexemeMemoryPriorTrace {
-        LexemeMemoryPriorTrace {
-            token_count: self.token_count,
-            token_hash: self.token_hash,
-            vocab_size: self.vocab_size,
-            max_context_order: self.max_context_order,
-            terminal_token_count: self.terminal_tokens.len(),
-            terminal_token_hash: hash_u16_slice(&self.terminal_tokens),
-            observed_contexts: self.observed_contexts,
-            observed_transitions: self.observed_transitions,
-        }
-    }
-}
-
-fn lexeme_trigram_context_key(previous_left: u16, previous_right: u16) -> u32 {
-    (u32::from(previous_left) << 16) | u32::from(previous_right)
-}
-
-fn lexeme_quadgram_context_key(
-    previous_left: u16,
-    previous_middle: u16,
-    previous_right: u16,
-) -> u64 {
-    (u64::from(previous_left) << 32)
-        | (u64::from(previous_middle) << 16)
-        | u64::from(previous_right)
-}
-
 impl ByteDecodePriors {
     pub fn from_tokens(tokens: &[u8]) -> Result<Self, TrainError> {
         if tokens.len() < 2 {
@@ -2342,40 +1299,6 @@ pub struct ByteDecodePriorTrace {
     pub observed_bigrams: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LexemeDecodePriorTrace {
-    pub token_count: usize,
-    pub token_hash: u64,
-    pub vocab_size: usize,
-    pub observed_bigrams: usize,
-    pub observed_trigrams: usize,
-    pub observed_quadgrams: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LexemeTopicPriorTrace {
-    pub token_count: usize,
-    pub token_hash: u64,
-    pub vocab_size: usize,
-    pub radius: usize,
-    pub anchor_hash: u64,
-    pub anchor_count: usize,
-    pub anchor_occurrences: usize,
-    pub observed_neighbors: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LexemeMemoryPriorTrace {
-    pub token_count: usize,
-    pub token_hash: u64,
-    pub vocab_size: usize,
-    pub max_context_order: u8,
-    pub terminal_token_count: usize,
-    pub terminal_token_hash: u64,
-    pub observed_contexts: usize,
-    pub observed_transitions: usize,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DecodeRejectStats {
     pub non_printable: usize,
@@ -2400,29 +1323,9 @@ struct DecodeSelection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct LexemeDecodeSelection {
-    token: u16,
-    candidate_count: usize,
-    rejected_candidates: DecodeRejectStats,
-    selected_score: LexemeDecodeScoreTrace,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct DecodeCandidateSet {
     candidates: Vec<usize>,
     rejected_candidates: DecodeRejectStats,
-}
-
-#[derive(Debug, Default)]
-struct LexemeDecodeScratch {
-    candidates: Vec<usize>,
-    scored_candidates: Vec<ScoredLexemeDecodeCandidate>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ScoredLexemeDecodeCandidate {
-    score_q8: i32,
-    candidate: usize,
 }
 
 // Shared per-step generation record, reused by the mini-transformer generation
@@ -2494,146 +1397,6 @@ pub struct MiniTransformerStreamingTttStats {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeGenerationTrace {
-    pub config: LexemeGenerationConfig,
-    pub prompt_tokens: Vec<u16>,
-    pub generated_tokens: Vec<u16>,
-    pub stopped_on_sentence_terminal: bool,
-    pub metrics: LexemeGenerationMetrics,
-    pub model_hash: u64,
-    pub embedding_hash: u64,
-    pub hidden_weight_hash: u64,
-    pub output_weight_hash: u64,
-    pub context_seq_len: usize,
-    pub context_features: LexemeContextFeatures,
-    pub hidden_dim: usize,
-    pub head_dim: usize,
-    pub head_layout: LexemeSoftmaxHeadLayout,
-    pub adapter_logit_shift: u8,
-    pub decode_priors: Option<LexemeDecodePriorTrace>,
-    pub topic_priors: Option<LexemeTopicPriorTrace>,
-    pub memory_priors: Option<LexemeMemoryPriorTrace>,
-    pub steps: Vec<LexemeGenerationStepTrace>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct LexemeGenerationMetrics {
-    pub generated_token_count: usize,
-    pub distinct_generated_tokens: usize,
-    pub distinct_token_per_mille: u16,
-    pub max_token_count: usize,
-    pub max_token_run: usize,
-    pub repeated_bigram_count: usize,
-    pub repeated_bigram_per_mille: u16,
-    pub max_bigram_count: usize,
-    pub repeated_trigram_count: usize,
-    pub repeated_trigram_per_mille: u16,
-    pub max_trigram_count: usize,
-    pub mean_selected_probability_q15: u16,
-    pub mean_candidate_count: usize,
-    pub steps_with_any_decode_adjust: usize,
-    pub steps_with_quality_adjust: usize,
-    pub steps_with_frequency_adjust: usize,
-    pub steps_with_local_frequency_adjust: usize,
-    pub steps_with_island_adjust: usize,
-    pub steps_with_topic_adjust: usize,
-    pub steps_with_memory_adjust: usize,
-    pub steps_with_corpus_prior_adjust: usize,
-    pub steps_with_memory_context: usize,
-    pub max_memory_context_order: u8,
-    pub total_rejected_candidates: DecodeRejectStats,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeGenerationStepTrace {
-    pub step_index: usize,
-    pub input_token: u16,
-    pub predicted_token: u16,
-    pub predicted_logit_q8: i32,
-    pub predicted_probability_q15: i16,
-    pub selected_score: LexemeDecodeScoreTrace,
-    pub candidate_count: usize,
-    pub rejected_candidates: DecodeRejectStats,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LexemeDecodeScoreTrace {
-    pub base_logit_q8: i32,
-    pub quality_logit_adjust_q8: i32,
-    pub frequency_logit_adjust_q8: i32,
-    pub local_frequency_logit_adjust_q8: i32,
-    pub island_logit_adjust_q8: i32,
-    pub topic_logit_adjust_q8: i32,
-    pub memory_logit_adjust_q8: i32,
-    pub corpus_prior_logit_adjust_q8: i32,
-    pub effective_logit_q8: i32,
-    pub model_probability_q15: i16,
-    pub memory_context_order: u8,
-    pub quality_weight_q15: i16,
-    pub frequency_weight_q15: i16,
-    pub local_frequency_weight_q15: i16,
-    pub island_weight_q15: i16,
-    pub topic_weight_q15: i16,
-    pub memory_probability_q15: u16,
-    pub corpus_prior_probability_q15: u16,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeEmbeddingTrainingStepTrace {
-    pub update_index: usize,
-    pub epoch: usize,
-    pub window_index: usize,
-    pub center_index: usize,
-    pub center_token: u16,
-    pub context_token: u16,
-    pub negative_token: u16,
-    pub positive_frequency_weight_q15: i16,
-    pub negative_frequency_weight_q15: i16,
-    pub positive_quality_weight_q15: i16,
-    pub negative_quality_weight_q15: i16,
-    pub positive_update_weight_q15: i16,
-    pub negative_update_weight_q15: i16,
-    pub positive_dot_before_i64: i64,
-    pub positive_dot_after_i64: i64,
-    pub negative_dot_before_i64: i64,
-    pub negative_dot_after_i64: i64,
-    pub embedding_hash_before: u64,
-    pub embedding_hash_after: u64,
-    pub saturation_count: usize,
-    pub zero_delta_count: usize,
-    pub embedding_delta_l1: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LexemeSoftmaxTrainingStepTrace {
-    pub update_index: usize,
-    pub epoch: usize,
-    pub window_index: usize,
-    pub previous_token: u16,
-    pub target_token: u16,
-    pub predicted_token_before: u16,
-    pub predicted_token_after: u16,
-    pub target_probability_before_q15: i16,
-    pub target_probability_after_q15: i16,
-    pub target_frequency_weight_q15: i16,
-    pub target_quality_weight_q15: i16,
-    pub context_quality_weight_q15: i16,
-    pub target_update_weight_q15: i16,
-    pub learning_rate_shift: u8,
-    pub embedding_learning_rate_shift: u8,
-    pub embedding_hash_before: u64,
-    pub embedding_hash_after: u64,
-    pub weight_hash_before: u64,
-    pub weight_hash_after: u64,
-    pub gradient_saturation_count: usize,
-    pub embedding_saturation_count: usize,
-    pub zero_delta_count: usize,
-    pub embedding_zero_delta_count: usize,
-    pub weight_delta_l1: u64,
-    pub embedding_delta_l1: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MiniTransformerMlpTrainingStepTrace {
     pub update_index: usize,
     pub epoch: usize,
@@ -2696,6 +1459,7 @@ pub struct MiniTransformerAdaptiveShiftEventTrace {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MiniTransformerMlpForwardCache {
     embedding_output: Vec<i16>,
+    layers: Vec<MiniTransformerBlockForwardCache>,
     attention_norm: Vec<i16>,
     attention_q: Vec<i16>,
     attention_k: Vec<i16>,
@@ -2710,8 +1474,29 @@ struct MiniTransformerMlpForwardCache {
     mlp_gated: Vec<i16>,
     mlp_output: Vec<i16>,
     block_output: Vec<i16>,
+    output_features: [i16; MINI_TRANSFORMER_D_MODEL],
     logits_q8: [i32; BYTE_VOCAB],
     probabilities_q15: [i16; BYTE_VOCAB],
+    residual_saturation_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MiniTransformerBlockForwardCache {
+    block_input: Vec<i16>,
+    attention_norm: Vec<i16>,
+    attention_q: Vec<i16>,
+    attention_k: Vec<i16>,
+    attention_v: Vec<i16>,
+    attention_context: Vec<i16>,
+    attention_probabilities_q15: Vec<i16>,
+    attention_output: Vec<i16>,
+    attention_residual: Vec<i16>,
+    mlp_norm: Vec<i16>,
+    mlp_up: Vec<i16>,
+    mlp_gate: Vec<i16>,
+    mlp_gated: Vec<i16>,
+    mlp_output: Vec<i16>,
+    block_output: Vec<i16>,
     residual_saturation_count: usize,
 }
 
@@ -2727,12 +1512,34 @@ struct MiniTransformerAttentionWeightUpdateStats {
     grad_embedding_output: Vec<i16>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MiniTransformerBlockBackwardUpdate {
+    mlp_update: GatedMlpWeightUpdateStats,
+    attention_update: MiniTransformerAttentionWeightUpdateStats,
+    mlp_input_saturation_count: usize,
+    gradient_residual_saturation_count: usize,
+    input_gradient_saturation_count: usize,
+    grad_input: Vec<i16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MiniTransformerBlockBackwardAccumulation {
+    mlp_input_saturation_count: usize,
+    attention_gradient_saturation_count: usize,
+    gradient_residual_saturation_count: usize,
+    input_gradient_saturation_count: usize,
+    grad_input: Vec<i16>,
+}
+
 const MINI_TRANSFORMER_HOLO_META_DIM: usize = 8;
 const MINI_TRANSFORMER_HOLO_ACTION_COUNT: usize = 5;
 const MINI_TRANSFORMER_HOLO_MEMORY_UPDATE_SHIFT: u32 = 8;
 const MINI_TRANSFORMER_HOLO_QUERY_SHIFT: u32 = 15;
 const MINI_TRANSFORMER_HOLO_MEMORY_MIN_UPDATES: usize = 8;
 const MINI_TRANSFORMER_HOLO_ADJUSTMENT_COOLDOWN_BATCHES: usize = 32;
+const MINI_TRANSFORMER_STACKED_BLOCK_LEARNING_RATE_EXTRA_SHIFT: u8 = 2;
+const MINI_TRANSFORMER_STACKED_LOWER_LAYER_LEARNING_RATE_EXTRA_SHIFT: u8 = 14;
+const MINI_TRANSFORMER_STACKED_EMBEDDING_LEARNING_RATE_EXTRA_SHIFT: u8 = 0;
 const MINI_TRANSFORMER_HOLO_ACTION_ATOMS: [[i16; MINI_TRANSFORMER_HOLO_META_DIM];
     MINI_TRANSFORMER_HOLO_ACTION_COUNT] = [
     [16384, -16384, 16384, -16384, 8192, -8192, 4096, -4096],
@@ -4566,6 +3373,13 @@ fn mini_transformer_uses_train_core_step(config: MiniTransformerMlpTrainConfig) 
         && !config.reject_loss_regression
 }
 
+fn mini_transformer_uses_train_core_step_for_model(
+    config: MiniTransformerMlpTrainConfig,
+    model: &MiniTransformerMlpModel,
+) -> bool {
+    model.transformer_layers() == 1 && mini_transformer_uses_train_core_step(config)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TrainError {
     InvalidConfig,
@@ -4596,1290 +3410,6 @@ fn train_core_error_to_train_error(
         | nsrl_train_core::TrainCoreError::InvalidShape => TrainError::InvalidConfig,
         nsrl_train_core::TrainCoreError::CoreRejected => TrainError::CoreRejected(stage),
     }
-}
-
-pub fn run_lexeme_embedding_training(
-    token_bytes: &[u8],
-    config: LexemeEmbeddingTrainConfig,
-) -> Result<LexemeEmbeddingTrainingTrace, TrainError> {
-    Ok(run_lexeme_embedding_training_with_model(token_bytes, config)?.trace)
-}
-
-pub fn run_lexeme_embedding_training_with_model(
-    token_bytes: &[u8],
-    config: LexemeEmbeddingTrainConfig,
-) -> Result<LexemeEmbeddingTrainingRun, TrainError> {
-    run_lexeme_embedding_training_with_model_and_quality(token_bytes, config, None)
-}
-
-pub fn run_lexeme_embedding_training_with_model_and_quality(
-    token_bytes: &[u8],
-    config: LexemeEmbeddingTrainConfig,
-    quality_weights_q15: Option<&[i16]>,
-) -> Result<LexemeEmbeddingTrainingRun, TrainError> {
-    if config.epochs == 0
-        || config.context_radius == 0
-        || config.stride == 0
-        || config.vocab_size == 0
-        || config.vocab_size > usize::from(u16::MAX) + 1
-        || config.embedding_dim == 0
-        || config.learning_rate <= 0
-        || config.learning_rate_shift > MAX_RIGHT_SHIFT
-        || !valid_q15_weight_floor(config.concept_frequency_min_weight_q15)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let tokens = decode_u16_tokens(token_bytes)?;
-    if tokens.is_empty()
-        || tokens
-            .iter()
-            .any(|&token| usize::from(token) >= config.vocab_size)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let starts = lexeme_center_starts(tokens.len(), config);
-    if starts.is_empty() {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let token_hash = hash_u16_slice(&tokens);
-    let window_hash = hash_lexeme_windows(&tokens, config, &starts);
-    let concept_frequency_weights_q15 = lexeme_frequency_weights_q15(
-        &tokens,
-        config.vocab_size,
-        config.concept_frequency_cap,
-        config.concept_frequency_min_weight_q15,
-    )?;
-    let quality_weights_q15 = lexeme_training_quality_weights_q15(
-        config.quality_weight_profile,
-        quality_weights_q15,
-        config.vocab_size,
-    )?;
-    let mut embeddings = initial_lexeme_embeddings(config.vocab_size, config.embedding_dim)?;
-    let initial_embedding_hash = hash_i16_slice(&embeddings);
-    let initial_positive_dot_i64 =
-        lexeme_total_positive_dot_i64(&tokens, &starts, &embeddings, config);
-    let initial_negative_dot_i64 =
-        lexeme_total_negative_dot_i64(&tokens, &starts, &embeddings, config);
-
-    let mut updates = 0_usize;
-    let mut examined_windows = 0_usize;
-    let mut positive_pair_count = 0_usize;
-    let mut negative_pair_count = 0_usize;
-    let mut saturation_count = 0_usize;
-    let mut zero_delta_count = 0_usize;
-    let mut embedding_delta_l1 = 0_u64;
-    let mut steps = Vec::new();
-
-    for epoch in 0..config.epochs {
-        for (window_index, &center_index) in starts.iter().enumerate() {
-            examined_windows = examined_windows.saturating_add(1);
-            let center_token = tokens[center_index];
-            let context_start = center_index - config.context_radius;
-            let context_end = center_index + config.context_radius;
-
-            for (context_index, &context_token) in tokens
-                .iter()
-                .enumerate()
-                .take(context_end + 1)
-                .skip(context_start)
-            {
-                if context_index == center_index {
-                    continue;
-                }
-                let negative_token =
-                    lexeme_negative_token(center_token, context_token, updates, config.vocab_size);
-                let positive_frequency_weight_q15 = lexeme_pair_frequency_weight_q15(
-                    center_token,
-                    context_token,
-                    &concept_frequency_weights_q15,
-                );
-                let negative_frequency_weight_q15 = lexeme_pair_frequency_weight_q15(
-                    center_token,
-                    negative_token,
-                    &concept_frequency_weights_q15,
-                );
-                let positive_quality_weight_q15 = lexeme_pair_frequency_weight_q15(
-                    center_token,
-                    context_token,
-                    &quality_weights_q15,
-                );
-                let negative_quality_weight_q15 = lexeme_pair_frequency_weight_q15(
-                    center_token,
-                    negative_token,
-                    &quality_weights_q15,
-                );
-                let positive_update_weight_q15 = lexeme_combine_q15_weights(
-                    positive_frequency_weight_q15,
-                    positive_quality_weight_q15,
-                );
-                let negative_update_weight_q15 = lexeme_combine_q15_weights(
-                    negative_frequency_weight_q15,
-                    negative_quality_weight_q15,
-                );
-                let positive_dot_before_i64 = lexeme_pair_dot_i64(
-                    &embeddings,
-                    config.embedding_dim,
-                    center_token,
-                    context_token,
-                );
-                let negative_dot_before_i64 = lexeme_pair_dot_i64(
-                    &embeddings,
-                    config.embedding_dim,
-                    center_token,
-                    negative_token,
-                );
-                let embedding_hash_before = hash_i16_slice(&embeddings);
-
-                let positive_update = if positive_dot_before_i64 < LEXEME_POSITIVE_DOT_MARGIN_I64 {
-                    apply_lexeme_embedding_pair_update(
-                        &mut embeddings,
-                        config.embedding_dim,
-                        center_token,
-                        context_token,
-                        1,
-                        config.learning_rate,
-                        config.learning_rate_shift,
-                        positive_update_weight_q15,
-                    )?
-                } else {
-                    SoftmaxUpdateStats {
-                        gradient_saturation_count: 0,
-                        zero_delta_count: 0,
-                        weight_delta_l1: 0,
-                    }
-                };
-                let negative_update = if negative_dot_before_i64 > LEXEME_NEGATIVE_DOT_MARGIN_I64 {
-                    apply_lexeme_embedding_pair_update(
-                        &mut embeddings,
-                        config.embedding_dim,
-                        center_token,
-                        negative_token,
-                        -1,
-                        config.learning_rate,
-                        config.learning_rate_shift,
-                        negative_update_weight_q15,
-                    )?
-                } else {
-                    SoftmaxUpdateStats {
-                        gradient_saturation_count: 0,
-                        zero_delta_count: 0,
-                        weight_delta_l1: 0,
-                    }
-                };
-
-                updates = updates.saturating_add(1);
-                positive_pair_count = positive_pair_count.saturating_add(1);
-                negative_pair_count = negative_pair_count.saturating_add(1);
-                saturation_count = saturation_count
-                    .saturating_add(positive_update.gradient_saturation_count)
-                    .saturating_add(negative_update.gradient_saturation_count);
-                zero_delta_count = zero_delta_count
-                    .saturating_add(positive_update.zero_delta_count)
-                    .saturating_add(negative_update.zero_delta_count);
-                embedding_delta_l1 = embedding_delta_l1
-                    .saturating_add(positive_update.weight_delta_l1)
-                    .saturating_add(negative_update.weight_delta_l1);
-
-                if steps.len() < 16 {
-                    let embedding_hash_after = hash_i16_slice(&embeddings);
-                    let positive_dot_after_i64 = lexeme_pair_dot_i64(
-                        &embeddings,
-                        config.embedding_dim,
-                        center_token,
-                        context_token,
-                    );
-                    let negative_dot_after_i64 = lexeme_pair_dot_i64(
-                        &embeddings,
-                        config.embedding_dim,
-                        center_token,
-                        negative_token,
-                    );
-                    steps.push(LexemeEmbeddingTrainingStepTrace {
-                        update_index: updates,
-                        epoch,
-                        window_index,
-                        center_index,
-                        center_token,
-                        context_token,
-                        negative_token,
-                        positive_frequency_weight_q15,
-                        negative_frequency_weight_q15,
-                        positive_quality_weight_q15,
-                        negative_quality_weight_q15,
-                        positive_update_weight_q15,
-                        negative_update_weight_q15,
-                        positive_dot_before_i64,
-                        positive_dot_after_i64,
-                        negative_dot_before_i64,
-                        negative_dot_after_i64,
-                        embedding_hash_before,
-                        embedding_hash_after,
-                        saturation_count: positive_update
-                            .gradient_saturation_count
-                            .saturating_add(negative_update.gradient_saturation_count),
-                        zero_delta_count: positive_update
-                            .zero_delta_count
-                            .saturating_add(negative_update.zero_delta_count),
-                        embedding_delta_l1: positive_update
-                            .weight_delta_l1
-                            .saturating_add(negative_update.weight_delta_l1),
-                    });
-                }
-            }
-        }
-    }
-
-    let model = LexemeEmbeddingModel {
-        vocab_size: config.vocab_size,
-        embedding_dim: config.embedding_dim,
-        embeddings,
-    };
-    let final_positive_dot_i64 =
-        lexeme_total_positive_dot_i64(&tokens, &starts, &model.embeddings, config);
-    let final_negative_dot_i64 =
-        lexeme_total_negative_dot_i64(&tokens, &starts, &model.embeddings, config);
-    let final_embedding_hash = model.embedding_hash();
-
-    let trace = LexemeEmbeddingTrainingTrace {
-        config,
-        token_count: tokens.len(),
-        token_hash,
-        window_hash,
-        windows: starts.len(),
-        examined_windows,
-        updates,
-        positive_pair_count,
-        negative_pair_count,
-        initial_embedding_hash,
-        final_embedding_hash,
-        initial_positive_dot_i64,
-        final_positive_dot_i64,
-        initial_negative_dot_i64,
-        final_negative_dot_i64,
-        saturation_count,
-        zero_delta_count,
-        embedding_delta_l1,
-        steps,
-    };
-
-    Ok(LexemeEmbeddingTrainingRun { trace, model })
-}
-
-pub fn run_lexeme_softmax_training(
-    token_bytes: &[u8],
-    embedding_model: LexemeEmbeddingModel,
-    config: LexemeSoftmaxTrainConfig,
-) -> Result<LexemeSoftmaxTrainingTrace, TrainError> {
-    Ok(run_lexeme_softmax_training_with_model(token_bytes, embedding_model, config)?.trace)
-}
-
-pub fn run_lexeme_softmax_training_with_model(
-    token_bytes: &[u8],
-    embedding_model: LexemeEmbeddingModel,
-    config: LexemeSoftmaxTrainConfig,
-) -> Result<LexemeSoftmaxTrainingRun, TrainError> {
-    run_lexeme_softmax_training_with_model_and_quality(token_bytes, embedding_model, config, None)
-}
-
-pub fn run_lexeme_softmax_training_with_model_and_quality(
-    token_bytes: &[u8],
-    embedding_model: LexemeEmbeddingModel,
-    config: LexemeSoftmaxTrainConfig,
-    quality_weights_q15: Option<&[i16]>,
-) -> Result<LexemeSoftmaxTrainingRun, TrainError> {
-    run_lexeme_softmax_training_with_initial_weights_and_quality(
-        token_bytes,
-        embedding_model,
-        None,
-        None,
-        default_lexeme_softmax_head_layout(config.hidden_dim, config.adapter_logit_shift),
-        0,
-        config,
-        quality_weights_q15,
-    )
-}
-
-pub fn run_lexeme_softmax_training_from_softmax_model_and_quality(
-    token_bytes: &[u8],
-    model: LexemeSoftmaxModel,
-    mut config: LexemeSoftmaxTrainConfig,
-    quality_weights_q15: Option<&[i16]>,
-) -> Result<LexemeSoftmaxTrainingRun, TrainError> {
-    let LexemeSoftmaxModel {
-        seq_len,
-        vocab_size,
-        embedding_dim,
-        context_features,
-        hidden_dim: model_hidden_dim,
-        head_layout: model_head_layout,
-        adapter_logit_shift: model_adapter_logit_shift,
-        embeddings,
-        hidden_weights: model_hidden_weights,
-        output_weights: model_output_weights,
-    } = model;
-    let model_d_model = lexeme_context_d_model(embedding_dim, seq_len, context_features)?;
-    let d_model = lexeme_context_d_model(embedding_dim, config.seq_len, config.context_features)?;
-    if config.context_features != context_features {
-        let embedding_model = LexemeEmbeddingModel::new(vocab_size, embedding_dim, embeddings)?;
-        return run_lexeme_softmax_training_with_initial_weights_and_quality(
-            token_bytes,
-            embedding_model,
-            None,
-            None,
-            default_lexeme_softmax_head_layout(config.hidden_dim, config.adapter_logit_shift),
-            0,
-            config,
-            quality_weights_q15,
-        );
-    }
-    if model_d_model != d_model {
-        return Err(TrainError::InvalidConfig);
-    }
-    if config.adapter_logit_shift == 0 {
-        config.adapter_logit_shift = model_adapter_logit_shift;
-    }
-    if model_hidden_dim > 0 && config.adapter_logit_shift != model_adapter_logit_shift {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let model_frozen_prefix = if model_head_layout == LexemeSoftmaxHeadLayout::ResidualAdapter {
-        d_model
-    } else {
-        0
-    };
-    let (hidden_weights, output_weights, head_layout, output_head_frozen_prefix) = if config
-        .hidden_dim
-        == 0
-    {
-        config.hidden_dim = model_hidden_dim;
-        (
-            model_hidden_weights,
-            model_output_weights,
-            model_head_layout,
-            model_frozen_prefix,
-        )
-    } else if config.hidden_dim == model_hidden_dim {
-        (
-            model_hidden_weights,
-            model_output_weights,
-            model_head_layout,
-            model_frozen_prefix,
-        )
-    } else if model_hidden_dim == 0
-        && model_head_layout == LexemeSoftmaxHeadLayout::Linear
-        && config.hidden_dim > 0
-    {
-        let hidden_weights = initial_lexeme_hidden_weights(d_model, config.hidden_dim)?;
-        let upgrade_head_layout =
-            default_lexeme_softmax_head_layout(config.hidden_dim, config.adapter_logit_shift);
-        let head_dim =
-            lexeme_softmax_head_dim_for_layout(d_model, config.hidden_dim, upgrade_head_layout)?;
-        let mut output_weights = vec![
-            0_i8;
-            vocab_size
-                .checked_mul(head_dim)
-                .ok_or(TrainError::InvalidConfig)?
-        ];
-        for row in 0..vocab_size {
-            let old_start = row.checked_mul(d_model).ok_or(TrainError::InvalidConfig)?;
-            let new_start = row.checked_mul(head_dim).ok_or(TrainError::InvalidConfig)?;
-            output_weights[new_start..new_start + d_model]
-                .copy_from_slice(&model_output_weights[old_start..old_start + d_model]);
-        }
-        (hidden_weights, output_weights, upgrade_head_layout, d_model)
-    } else {
-        return Err(TrainError::InvalidConfig);
-    };
-    let embedding_model = LexemeEmbeddingModel::new(vocab_size, embedding_dim, embeddings)?;
-    run_lexeme_softmax_training_with_initial_weights_and_quality(
-        token_bytes,
-        embedding_model,
-        Some(hidden_weights),
-        Some(output_weights),
-        head_layout,
-        output_head_frozen_prefix,
-        config,
-        quality_weights_q15,
-    )
-}
-
-pub fn run_lexeme_softmax_evaluate(
-    token_bytes: &[u8],
-    model: LexemeSoftmaxModel,
-    seq_len: usize,
-    stride: usize,
-    window_offset: usize,
-    max_windows: Option<usize>,
-) -> Result<LexemeSoftmaxEvalResult, TrainError> {
-    if seq_len == 0 || !seq_len.is_power_of_two() || stride == 0 {
-        return Err(TrainError::InvalidConfig);
-    }
-    let tokens = decode_u16_tokens(token_bytes)?;
-    let starts = lexeme_softmax_starts(tokens.len(), seq_len, stride, window_offset, max_windows);
-    if starts.is_empty() {
-        return Err(TrainError::InvalidConfig);
-    }
-    let LexemeSoftmaxModel {
-        vocab_size,
-        embedding_dim,
-        context_features,
-        hidden_dim,
-        head_layout,
-        adapter_logit_shift,
-        embeddings,
-        hidden_weights,
-        output_weights,
-        ..
-    } = model;
-    let embedding_model = LexemeEmbeddingModel::new(vocab_size, embedding_dim, embeddings)?;
-    let (total_bits_milli, position_count) = lexeme_total_bits_per_token_milli(
-        &tokens,
-        &starts,
-        &embedding_model,
-        &hidden_weights,
-        &output_weights,
-        seq_len,
-        context_features,
-        hidden_dim,
-        head_layout,
-        adapter_logit_shift,
-    )?;
-    let bits_per_token_milli = if position_count > 0 {
-        (total_bits_milli / position_count as u128).min(u128::from(u64::MAX)) as u64
-    } else {
-        0
-    };
-    let uniform_bits_per_token_milli = log2_ratio_milli(vocab_size as u64, 1);
-    Ok(LexemeSoftmaxEvalResult {
-        windows: position_count,
-        bits_per_token_milli,
-        uniform_bits_per_token_milli,
-        vocab_size,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn run_lexeme_softmax_training_with_initial_weights_and_quality(
-    token_bytes: &[u8],
-    mut embedding_model: LexemeEmbeddingModel,
-    initial_hidden_weights: Option<Vec<i8>>,
-    initial_output_weights: Option<Vec<i8>>,
-    head_layout: LexemeSoftmaxHeadLayout,
-    output_head_frozen_prefix: usize,
-    config: LexemeSoftmaxTrainConfig,
-    quality_weights_q15: Option<&[i16]>,
-) -> Result<LexemeSoftmaxTrainingRun, TrainError> {
-    if config.epochs == 0
-        || config.seq_len == 0
-        || !config.seq_len.is_power_of_two()
-        || config.stride == 0
-        || config.batch_windows == 0
-        || config.learning_rate <= 0
-        || config.learning_rate_shift > MAX_RIGHT_SHIFT
-        || config.max_learning_rate_shift > MAX_RIGHT_SHIFT
-        || config.max_learning_rate_shift < config.learning_rate_shift
-        || (config.lr_shift_decay_windows > 0 && config.lr_shift_decay_step == 0)
-        || config.max_weight_delta <= 0
-        || config.max_embedding_delta <= 0
-        || config.max_hidden_weight_delta <= 0
-        || !valid_q15_weight_floor(config.target_frequency_min_weight_q15)
-        || config.embedding_learning_rate_shift > MAX_RIGHT_SHIFT
-        || config.hidden_learning_rate_shift > MAX_RIGHT_SHIFT
-        || usize::from(LEXEME_LOGIT_RIGHT_SHIFT)
-            .saturating_add(usize::from(config.adapter_logit_shift))
-            > usize::from(MAX_RIGHT_SHIFT)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let tokens = decode_u16_tokens(token_bytes)?;
-    if tokens.len() <= config.seq_len
-        || tokens
-            .iter()
-            .any(|&token| usize::from(token) >= embedding_model.vocab_size)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let starts = lexeme_softmax_starts(
-        tokens.len(),
-        config.seq_len,
-        config.stride,
-        config.window_offset,
-        config.max_windows,
-    );
-    if starts.is_empty() {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let vocab_size = embedding_model.vocab_size;
-    let embedding_dim = embedding_model.embedding_dim;
-    let d_model = lexeme_context_d_model(embedding_dim, config.seq_len, config.context_features)?;
-    let hidden_weight_count = config
-        .hidden_dim
-        .checked_mul(d_model)
-        .ok_or(TrainError::InvalidConfig)?;
-    let mut hidden_weights = if let Some(hidden_weights) = initial_hidden_weights {
-        if hidden_weights.len() != hidden_weight_count {
-            return Err(TrainError::InvalidConfig);
-        }
-        hidden_weights
-    } else if config.hidden_dim == 0 {
-        Vec::new()
-    } else {
-        initial_lexeme_hidden_weights(d_model, config.hidden_dim)?
-    };
-    let expected_head_layout =
-        default_lexeme_softmax_head_layout(config.hidden_dim, config.adapter_logit_shift);
-    if initial_output_weights.is_none() && head_layout != expected_head_layout {
-        return Err(TrainError::InvalidConfig);
-    }
-    let head_dim = lexeme_softmax_head_dim_for_layout(d_model, config.hidden_dim, head_layout)?;
-    let output_weight_count = vocab_size
-        .checked_mul(head_dim)
-        .ok_or(TrainError::InvalidConfig)?;
-    let mut output_weights = if let Some(output_weights) = initial_output_weights {
-        if output_weights.len() != output_weight_count {
-            return Err(TrainError::InvalidConfig);
-        }
-        output_weights
-    } else {
-        vec![0_i8; output_weight_count]
-    };
-    let token_hash = hash_u16_slice(&tokens);
-    let window_hash = hash_lexeme_softmax_windows(&tokens, config, &starts);
-    let target_frequency_weights_q15 = lexeme_frequency_weights_q15(
-        &tokens,
-        vocab_size,
-        config.target_frequency_cap,
-        config.target_frequency_min_weight_q15,
-    )?;
-    let quality_weights_q15 = lexeme_training_quality_weights_q15(
-        config.quality_weight_profile,
-        quality_weights_q15,
-        vocab_size,
-    )?;
-    let initial_embedding_hash = embedding_model.embedding_hash();
-    let initial_weight_hash = hash_i8_slice(&output_weights);
-    let initial_total_error = lexeme_total_error(
-        &tokens,
-        &starts,
-        &embedding_model,
-        &hidden_weights,
-        &output_weights,
-        config.seq_len,
-        config.context_features,
-        config.hidden_dim,
-        head_layout,
-        config.adapter_logit_shift,
-    )?;
-    let initial_probability_error_q15 = lexeme_total_probability_error_q15(
-        &tokens,
-        &starts,
-        &embedding_model,
-        &hidden_weights,
-        &output_weights,
-        config.seq_len,
-        config.context_features,
-        config.hidden_dim,
-        head_layout,
-        config.adapter_logit_shift,
-    )?;
-    let initial_mistakes = initial_total_error;
-    let mut updates = 0_usize;
-    let mut examined_windows = 0_usize;
-    let mut gradient_saturation_count = 0_usize;
-    let mut embedding_saturation_count = 0_usize;
-    let mut zero_delta_count = 0_usize;
-    let mut embedding_zero_delta_count = 0_usize;
-    let mut weight_delta_l1 = 0_u64;
-    let mut embedding_delta_l1 = 0_u64;
-    let mut steps = Vec::new();
-    let forward_scales = vec![
-        FixedScale {
-            multiplier: 1,
-            right_shift: LEXEME_LOGIT_RIGHT_SHIFT,
-        };
-        vocab_size
-    ];
-    let grad_feature_scales = vec![
-        FixedScale {
-            multiplier: 1,
-            right_shift: LEXEME_LOGIT_RIGHT_SHIFT,
-        };
-        d_model
-    ];
-    let grad_head_scales = vec![
-        FixedScale {
-            multiplier: 1,
-            right_shift: LEXEME_LOGIT_RIGHT_SHIFT,
-        };
-        head_dim
-    ];
-    let hidden_forward_scales = vec![
-        FixedScale {
-            multiplier: 1,
-            right_shift: LEXEME_LOGIT_RIGHT_SHIFT,
-        };
-        config.hidden_dim
-    ];
-    let mut grad_features_q15 = vec![0_i16; d_model];
-    let mut grad_hidden_input_q15 = vec![0_i16; d_model];
-    let mut grad_head_features_q15 = vec![0_i16; head_dim];
-    let mut grad_hidden_pre_q15 = vec![0_i16; config.hidden_dim];
-    let mut scaled_grad_output = vec![0_i32; vocab_size];
-    let mut scaled_hidden_grad_output = vec![0_i32; config.hidden_dim];
-    let use_batch_accumulation = config.batch_windows > 1;
-    let mut output_head_gradient = if use_batch_accumulation {
-        Some(
-            LexemeSoftmaxOutputHeadGradientI64::new(vocab_size, head_dim)
-                .ok_or(TrainError::InvalidConfig)?,
-        )
-    } else {
-        None
-    };
-    let mut hidden_weight_gradient = if use_batch_accumulation && config.hidden_dim > 0 {
-        Some(
-            LexemeSoftmaxOutputHeadGradientI64::new(config.hidden_dim, d_model)
-                .ok_or(TrainError::InvalidConfig)?,
-        )
-    } else {
-        None
-    };
-    let mut embedding_gradient = if use_batch_accumulation && config.train_embeddings {
-        Some(
-            LexemeSoftmaxEmbeddingGradientI64::new(
-                embedding_model.vocab_size,
-                embedding_model.embedding_dim,
-            )
-            .ok_or(TrainError::InvalidConfig)?,
-        )
-    } else {
-        None
-    };
-    let embedding_batch_learning_rate_shift = if config.train_embeddings {
-        Some(lexeme_softmax_embedding_update_shift(
-            config.embedding_learning_rate_shift,
-            config.seq_len,
-            config.context_features,
-        )?)
-    } else {
-        None
-    };
-
-    let use_parallel_map_reduce = use_batch_accumulation && config.map_reduce_workers > 1;
-
-    for epoch in 0..config.epochs {
-        if use_parallel_map_reduce {
-            let mut batch_start_index = 0_usize;
-            while batch_start_index < starts.len() {
-                let batch_end_index = batch_start_index
-                    .saturating_add(config.batch_windows)
-                    .min(starts.len());
-                let batch_window_count = batch_end_index.saturating_sub(batch_start_index);
-                examined_windows = examined_windows.saturating_add(batch_window_count);
-
-                let learning_rate_shift = lexeme_softmax_learning_rate_shift_for_update(
-                    config,
-                    examined_windows.saturating_sub(1),
-                );
-
-                let batch_result = lexeme_softmax_map_reduce_batch(
-                    &tokens,
-                    &starts,
-                    batch_start_index,
-                    batch_end_index,
-                    epoch,
-                    &embedding_model,
-                    &hidden_weights,
-                    &output_weights,
-                    config,
-                    head_layout,
-                    output_head_frozen_prefix,
-                    vocab_size,
-                    d_model,
-                    head_dim,
-                    &forward_scales,
-                    &grad_feature_scales,
-                    &grad_head_scales,
-                    &hidden_forward_scales,
-                    &target_frequency_weights_q15,
-                    &quality_weights_q15,
-                    updates,
-                )?;
-
-                if let Some(batch_grad) = batch_result.output_head_gradient.as_ref() {
-                    output_head_gradient
-                        .as_mut()
-                        .ok_or(TrainError::InvalidConfig)?
-                        .merge(batch_grad)?;
-                }
-                if let Some(batch_grad) = batch_result.hidden_weight_gradient.as_ref() {
-                    hidden_weight_gradient
-                        .as_mut()
-                        .ok_or(TrainError::InvalidConfig)?
-                        .merge(batch_grad)?;
-                }
-                if let Some(batch_grad) = batch_result.embedding_gradient.as_ref() {
-                    embedding_gradient
-                        .as_mut()
-                        .ok_or(TrainError::InvalidConfig)?
-                        .merge(batch_grad)?;
-                }
-
-                let output_head_gradient = output_head_gradient
-                    .as_mut()
-                    .ok_or(TrainError::InvalidConfig)?;
-                if output_head_gradient.sample_count >= config.batch_windows {
-                    let update = apply_lexeme_softmax_output_head_gradient_i64(
-                        output_head_gradient,
-                        &mut output_weights,
-                        config.learning_rate,
-                        learning_rate_shift,
-                        config.max_weight_delta,
-                        output_head_frozen_prefix,
-                    )?;
-                    let embedding_update = if let Some(embedding_gradient) =
-                        embedding_gradient.as_mut()
-                    {
-                        apply_lexeme_softmax_embedding_gradient_i64(
-                            embedding_gradient,
-                            &mut embedding_model.embeddings,
-                            config.learning_rate,
-                            embedding_batch_learning_rate_shift.ok_or(TrainError::InvalidConfig)?,
-                            config.max_embedding_delta,
-                        )?
-                    } else {
-                        empty_softmax_update_stats()
-                    };
-                    if let Some(hidden_weight_gradient) = hidden_weight_gradient.as_mut() {
-                        let hidden_update = apply_lexeme_softmax_output_head_gradient_i64(
-                            hidden_weight_gradient,
-                            &mut hidden_weights,
-                            config.learning_rate,
-                            config.hidden_learning_rate_shift,
-                            config.max_hidden_weight_delta,
-                            0,
-                        )?;
-                        gradient_saturation_count = gradient_saturation_count
-                            .saturating_add(hidden_update.gradient_saturation_count);
-                        zero_delta_count =
-                            zero_delta_count.saturating_add(hidden_update.zero_delta_count);
-                        weight_delta_l1 =
-                            weight_delta_l1.saturating_add(hidden_update.weight_delta_l1);
-                    }
-                    updates = updates.saturating_add(1);
-                    gradient_saturation_count =
-                        gradient_saturation_count.saturating_add(update.gradient_saturation_count);
-                    embedding_saturation_count = embedding_saturation_count
-                        .saturating_add(embedding_update.gradient_saturation_count);
-                    zero_delta_count = zero_delta_count.saturating_add(update.zero_delta_count);
-                    embedding_zero_delta_count = embedding_zero_delta_count
-                        .saturating_add(embedding_update.zero_delta_count);
-                    weight_delta_l1 = weight_delta_l1.saturating_add(update.weight_delta_l1);
-                    embedding_delta_l1 =
-                        embedding_delta_l1.saturating_add(embedding_update.weight_delta_l1);
-
-                    if steps.len() < 16 && !batch_result.steps.is_empty() {
-                        let last_step = batch_result.steps.last().unwrap();
-                        let trace_window_start = starts[batch_end_index.saturating_sub(1)];
-                        let after_forward = lexeme_head_forward_for_training_q15(
-                            &embedding_model,
-                            &tokens[trace_window_start..trace_window_start + config.seq_len],
-                            config.context_features,
-                            &hidden_weights,
-                            config.hidden_dim,
-                            head_layout,
-                        )?;
-                        let after_row = lexeme_softmax_row_for_layout(
-                            &output_weights,
-                            &after_forward.head_features_q15,
-                            vocab_size,
-                            d_model,
-                            config.hidden_dim,
-                            head_layout,
-                            config.adapter_logit_shift,
-                        )?;
-                        let weight_hash_after = hash_i8_slice(&output_weights);
-                        let embedding_hash_after = embedding_model.embedding_hash();
-                        let predicted_token_after = lexeme_argmax_i32(&after_row.logits_q8);
-                        steps.push(LexemeSoftmaxTrainingStepTrace {
-                            update_index: updates,
-                            epoch,
-                            window_index: last_step.window_index,
-                            previous_token: last_step.previous_token,
-                            target_token: last_step.target_token,
-                            predicted_token_before: last_step.predicted_token_before,
-                            predicted_token_after,
-                            target_probability_before_q15: last_step.target_probability_before_q15,
-                            target_probability_after_q15: after_row.probabilities_q15
-                                [usize::from(last_step.target_token)],
-                            target_frequency_weight_q15: last_step.target_frequency_weight_q15,
-                            target_quality_weight_q15: last_step.target_quality_weight_q15,
-                            context_quality_weight_q15: last_step.context_quality_weight_q15,
-                            target_update_weight_q15: last_step.target_update_weight_q15,
-                            learning_rate_shift,
-                            embedding_learning_rate_shift: config.embedding_learning_rate_shift,
-                            embedding_hash_before: last_step.embedding_hash_before,
-                            embedding_hash_after,
-                            weight_hash_before: last_step.weight_hash_before,
-                            weight_hash_after,
-                            gradient_saturation_count: update.gradient_saturation_count,
-                            embedding_saturation_count: embedding_update.gradient_saturation_count,
-                            zero_delta_count: update.zero_delta_count,
-                            embedding_zero_delta_count: embedding_update.zero_delta_count,
-                            weight_delta_l1: update.weight_delta_l1,
-                            embedding_delta_l1: embedding_update.weight_delta_l1,
-                        });
-                    }
-                }
-
-                batch_start_index = batch_end_index;
-            }
-            continue;
-        }
-
-        for (window_index, &start) in starts.iter().enumerate() {
-            examined_windows = examined_windows.saturating_add(1);
-            let previous_token = tokens[start + config.seq_len - 1];
-            let target_token = tokens[start + config.seq_len];
-            let forward = lexeme_head_forward_for_training_q15(
-                &embedding_model,
-                &tokens[start..start + config.seq_len],
-                config.context_features,
-                &hidden_weights,
-                config.hidden_dim,
-                head_layout,
-            )?;
-            let row = lexeme_softmax_row_for_layout(
-                &output_weights,
-                &forward.head_features_q15,
-                vocab_size,
-                d_model,
-                config.hidden_dim,
-                head_layout,
-                config.adapter_logit_shift,
-            )?;
-            let predicted_token_before = lexeme_argmax_i32(&row.logits_q8);
-            let gradient_q15 = lexeme_softmax_gradient_q15(&row.probabilities_q15, target_token);
-            let target_frequency_weight_q15 =
-                target_frequency_weights_q15[usize::from(target_token)];
-            let target_quality_weight_q15 = quality_weights_q15[usize::from(target_token)];
-            let context_quality_weight_q15 = lexeme_context_quality_weight_q15(
-                &tokens[start..start + config.seq_len],
-                &quality_weights_q15,
-            );
-            let target_update_weight_q15 = lexeme_combine_q15_weights(
-                lexeme_combine_q15_weights(target_frequency_weight_q15, target_quality_weight_q15),
-                context_quality_weight_q15,
-            );
-            let weighted_gradient_q15 =
-                lexeme_scale_gradient_q15(&gradient_q15, target_update_weight_q15);
-            let grad_output_q15 = lexeme_gradient_i32_to_i16(&weighted_gradient_q15);
-            if config.hidden_dim > 0 || config.train_embeddings {
-                lexeme_backward_head_features_q15(
-                    &grad_output_q15,
-                    &output_weights,
-                    vocab_size,
-                    d_model,
-                    config.hidden_dim,
-                    head_layout,
-                    config.adapter_logit_shift,
-                    &forward_scales,
-                    &grad_head_scales,
-                    &mut scaled_grad_output,
-                    &mut grad_head_features_q15,
-                )?;
-            }
-            if config.hidden_dim > 0 {
-                if config.train_embeddings {
-                    grad_features_q15.fill(0);
-                }
-                let hidden_grad_start = match head_layout {
-                    LexemeSoftmaxHeadLayout::HiddenBottleneck => 0,
-                    LexemeSoftmaxHeadLayout::ResidualHidden
-                    | LexemeSoftmaxHeadLayout::ResidualAdapter => {
-                        if config.train_embeddings {
-                            grad_features_q15.copy_from_slice(&grad_head_features_q15[..d_model]);
-                        }
-                        d_model
-                    }
-                    LexemeSoftmaxHeadLayout::Linear => return Err(TrainError::InvalidConfig),
-                };
-                for hidden_index in 0..config.hidden_dim {
-                    let derivative =
-                        lexeme_hard_silu_derivative_q15(forward.hidden_pre_q15[hidden_index]);
-                    grad_hidden_pre_q15[hidden_index] = saturate_i16(round_shift_rhu_i64(
-                        i64::from(grad_head_features_q15[hidden_grad_start + hidden_index])
-                            * i64::from(derivative),
-                        Q15_SHIFT,
-                    ));
-                }
-                if config.train_embeddings {
-                    linear_backward_input_i16_i8_i16_per_channel_checked(
-                        &grad_hidden_pre_q15,
-                        LinearBackwardInputI16I8Params {
-                            weights: &hidden_weights,
-                            forward_scales: &hidden_forward_scales,
-                            grad_input_scales: &grad_feature_scales,
-                            input_dim: d_model,
-                            output_dim: config.hidden_dim,
-                        },
-                        LinearBackwardInputWorkspace {
-                            scaled_grad_output: &mut scaled_hidden_grad_output,
-                        },
-                        &mut grad_hidden_input_q15,
-                    )
-                    .ok_or(TrainError::CoreRejected("lexeme_softmax_backward_hidden"))?;
-                    if matches!(
-                        head_layout,
-                        LexemeSoftmaxHeadLayout::ResidualHidden
-                            | LexemeSoftmaxHeadLayout::ResidualAdapter
-                    ) {
-                        for feature_index in 0..d_model {
-                            grad_features_q15[feature_index] = saturate_i16(
-                                i64::from(grad_features_q15[feature_index])
-                                    + i64::from(grad_hidden_input_q15[feature_index]),
-                            );
-                        }
-                    } else {
-                        grad_features_q15.copy_from_slice(&grad_hidden_input_q15);
-                    }
-                }
-            } else if config.train_embeddings {
-                grad_features_q15.copy_from_slice(&grad_head_features_q15);
-            }
-            let embedding_hash_before = embedding_model.embedding_hash();
-            let weight_hash_before = hash_i8_slice(&output_weights);
-            let learning_rate_shift = lexeme_softmax_learning_rate_shift_for_update(
-                config,
-                examined_windows.saturating_sub(1),
-            );
-            let mut update = empty_softmax_update_stats();
-            let mut embedding_update = empty_softmax_update_stats();
-            let mut applied_update = false;
-
-            if let Some(output_head_gradient) = output_head_gradient.as_mut() {
-                accumulate_lexeme_softmax_output_head_gradient_i64(
-                    &forward.head_features_q15,
-                    &weighted_gradient_q15,
-                    output_head_gradient,
-                )?;
-                if let Some(hidden_weight_gradient) = hidden_weight_gradient.as_mut() {
-                    let grad_hidden_pre_i32 = lexeme_gradient_i16_to_i32(&grad_hidden_pre_q15);
-                    accumulate_lexeme_softmax_output_head_gradient_i64(
-                        &forward.context_features_q15,
-                        &grad_hidden_pre_i32,
-                        hidden_weight_gradient,
-                    )?;
-                }
-                if let Some(embedding_gradient) = embedding_gradient.as_mut() {
-                    accumulate_lexeme_softmax_embedding_gradient_i64(
-                        &tokens[start..start + config.seq_len],
-                        &grad_features_q15,
-                        config.context_features,
-                        embedding_gradient,
-                    )?;
-                }
-
-                if output_head_gradient.sample_count >= config.batch_windows {
-                    update = apply_lexeme_softmax_output_head_gradient_i64(
-                        output_head_gradient,
-                        &mut output_weights,
-                        config.learning_rate,
-                        learning_rate_shift,
-                        config.max_weight_delta,
-                        output_head_frozen_prefix,
-                    )?;
-                    if let Some(embedding_gradient) = embedding_gradient.as_mut() {
-                        embedding_update = apply_lexeme_softmax_embedding_gradient_i64(
-                            embedding_gradient,
-                            &mut embedding_model.embeddings,
-                            config.learning_rate,
-                            embedding_batch_learning_rate_shift.ok_or(TrainError::InvalidConfig)?,
-                            config.max_embedding_delta,
-                        )?;
-                    }
-                    if let Some(hidden_weight_gradient) = hidden_weight_gradient.as_mut() {
-                        let hidden_update = apply_lexeme_softmax_output_head_gradient_i64(
-                            hidden_weight_gradient,
-                            &mut hidden_weights,
-                            config.learning_rate,
-                            config.hidden_learning_rate_shift,
-                            config.max_hidden_weight_delta,
-                            0,
-                        )?;
-                        gradient_saturation_count = gradient_saturation_count
-                            .saturating_add(hidden_update.gradient_saturation_count);
-                        zero_delta_count =
-                            zero_delta_count.saturating_add(hidden_update.zero_delta_count);
-                        weight_delta_l1 =
-                            weight_delta_l1.saturating_add(hidden_update.weight_delta_l1);
-                    }
-                    applied_update = true;
-                }
-            } else {
-                update = apply_lexeme_softmax_output_head_update(
-                    &mut output_weights,
-                    &forward.head_features_q15,
-                    &weighted_gradient_q15,
-                    vocab_size,
-                    head_dim,
-                    config.learning_rate,
-                    learning_rate_shift,
-                    config.max_weight_delta,
-                    output_head_frozen_prefix,
-                )?;
-                if config.hidden_dim > 0 {
-                    let grad_hidden_pre_i32 = lexeme_gradient_i16_to_i32(&grad_hidden_pre_q15);
-                    let hidden_update = apply_lexeme_softmax_output_head_update(
-                        &mut hidden_weights,
-                        &forward.context_features_q15,
-                        &grad_hidden_pre_i32,
-                        config.hidden_dim,
-                        d_model,
-                        config.learning_rate,
-                        config.hidden_learning_rate_shift,
-                        config.max_hidden_weight_delta,
-                        0,
-                    )?;
-                    gradient_saturation_count = gradient_saturation_count
-                        .saturating_add(hidden_update.gradient_saturation_count);
-                    zero_delta_count =
-                        zero_delta_count.saturating_add(hidden_update.zero_delta_count);
-                    weight_delta_l1 = weight_delta_l1.saturating_add(hidden_update.weight_delta_l1);
-                }
-                embedding_update = if config.train_embeddings {
-                    apply_lexeme_softmax_embedding_update(
-                        &mut embedding_model.embeddings,
-                        &tokens[start..start + config.seq_len],
-                        &grad_features_q15,
-                        LexemeSoftmaxEmbeddingUpdateParams {
-                            vocab_size: embedding_model.vocab_size,
-                            embedding_dim: embedding_model.embedding_dim,
-                            context_features: config.context_features,
-                            learning_rate: config.learning_rate,
-                            learning_rate_shift: config.embedding_learning_rate_shift,
-                            max_delta: config.max_embedding_delta,
-                        },
-                    )?
-                } else {
-                    empty_softmax_update_stats()
-                };
-                applied_update = true;
-            }
-
-            if applied_update {
-                updates = updates.saturating_add(1);
-                gradient_saturation_count =
-                    gradient_saturation_count.saturating_add(update.gradient_saturation_count);
-                embedding_saturation_count = embedding_saturation_count
-                    .saturating_add(embedding_update.gradient_saturation_count);
-                zero_delta_count = zero_delta_count.saturating_add(update.zero_delta_count);
-                embedding_zero_delta_count =
-                    embedding_zero_delta_count.saturating_add(embedding_update.zero_delta_count);
-                weight_delta_l1 = weight_delta_l1.saturating_add(update.weight_delta_l1);
-                embedding_delta_l1 =
-                    embedding_delta_l1.saturating_add(embedding_update.weight_delta_l1);
-            }
-
-            if applied_update && steps.len() < 16 {
-                let after_forward = lexeme_head_forward_for_training_q15(
-                    &embedding_model,
-                    &tokens[start..start + config.seq_len],
-                    config.context_features,
-                    &hidden_weights,
-                    config.hidden_dim,
-                    head_layout,
-                )?;
-                let after_row = lexeme_softmax_row_for_layout(
-                    &output_weights,
-                    &after_forward.head_features_q15,
-                    vocab_size,
-                    d_model,
-                    config.hidden_dim,
-                    head_layout,
-                    config.adapter_logit_shift,
-                )?;
-                let predicted_token_after = lexeme_argmax_i32(&after_row.logits_q8);
-                let weight_hash_after = hash_i8_slice(&output_weights);
-                let embedding_hash_after = embedding_model.embedding_hash();
-                steps.push(LexemeSoftmaxTrainingStepTrace {
-                    update_index: updates,
-                    epoch,
-                    window_index,
-                    previous_token,
-                    target_token,
-                    predicted_token_before,
-                    predicted_token_after,
-                    target_probability_before_q15: row.probabilities_q15[usize::from(target_token)],
-                    target_probability_after_q15: after_row.probabilities_q15
-                        [usize::from(target_token)],
-                    target_frequency_weight_q15,
-                    target_quality_weight_q15,
-                    context_quality_weight_q15,
-                    target_update_weight_q15,
-                    learning_rate_shift,
-                    embedding_learning_rate_shift: config.embedding_learning_rate_shift,
-                    embedding_hash_before,
-                    embedding_hash_after,
-                    weight_hash_before,
-                    weight_hash_after,
-                    gradient_saturation_count: update.gradient_saturation_count,
-                    embedding_saturation_count: embedding_update.gradient_saturation_count,
-                    zero_delta_count: update.zero_delta_count,
-                    embedding_zero_delta_count: embedding_update.zero_delta_count,
-                    weight_delta_l1: update.weight_delta_l1,
-                    embedding_delta_l1: embedding_update.weight_delta_l1,
-                });
-            }
-        }
-    }
-
-    if let Some(output_head_gradient) = output_head_gradient.as_mut()
-        && output_head_gradient.sample_count > 0
-    {
-        let learning_rate_shift = lexeme_softmax_learning_rate_shift_for_update(
-            config,
-            examined_windows.saturating_sub(1),
-        );
-        let update = apply_lexeme_softmax_output_head_gradient_i64(
-            output_head_gradient,
-            &mut output_weights,
-            config.learning_rate,
-            learning_rate_shift,
-            config.max_weight_delta,
-            output_head_frozen_prefix,
-        )?;
-        let embedding_update = if let Some(embedding_gradient) = embedding_gradient.as_mut() {
-            apply_lexeme_softmax_embedding_gradient_i64(
-                embedding_gradient,
-                &mut embedding_model.embeddings,
-                config.learning_rate,
-                embedding_batch_learning_rate_shift.ok_or(TrainError::InvalidConfig)?,
-                config.max_embedding_delta,
-            )?
-        } else {
-            empty_softmax_update_stats()
-        };
-        if let Some(hidden_weight_gradient) = hidden_weight_gradient.as_mut() {
-            let hidden_update = apply_lexeme_softmax_output_head_gradient_i64(
-                hidden_weight_gradient,
-                &mut hidden_weights,
-                config.learning_rate,
-                config.hidden_learning_rate_shift,
-                config.max_hidden_weight_delta,
-                0,
-            )?;
-            gradient_saturation_count =
-                gradient_saturation_count.saturating_add(hidden_update.gradient_saturation_count);
-            zero_delta_count = zero_delta_count.saturating_add(hidden_update.zero_delta_count);
-            weight_delta_l1 = weight_delta_l1.saturating_add(hidden_update.weight_delta_l1);
-        }
-        updates = updates.saturating_add(1);
-        gradient_saturation_count =
-            gradient_saturation_count.saturating_add(update.gradient_saturation_count);
-        embedding_saturation_count =
-            embedding_saturation_count.saturating_add(embedding_update.gradient_saturation_count);
-        zero_delta_count = zero_delta_count.saturating_add(update.zero_delta_count);
-        embedding_zero_delta_count =
-            embedding_zero_delta_count.saturating_add(embedding_update.zero_delta_count);
-        weight_delta_l1 = weight_delta_l1.saturating_add(update.weight_delta_l1);
-        embedding_delta_l1 = embedding_delta_l1.saturating_add(embedding_update.weight_delta_l1);
-    }
-
-    let final_total_error = lexeme_total_error(
-        &tokens,
-        &starts,
-        &embedding_model,
-        &hidden_weights,
-        &output_weights,
-        config.seq_len,
-        config.context_features,
-        config.hidden_dim,
-        head_layout,
-        config.adapter_logit_shift,
-    )?;
-    let final_probability_error_q15 = lexeme_total_probability_error_q15(
-        &tokens,
-        &starts,
-        &embedding_model,
-        &hidden_weights,
-        &output_weights,
-        config.seq_len,
-        config.context_features,
-        config.hidden_dim,
-        head_layout,
-        config.adapter_logit_shift,
-    )?;
-    let final_mistakes = final_total_error;
-    let final_correct = starts.len().saturating_sub(final_mistakes);
-    let final_accuracy_per_mille = final_correct * 1000 / starts.len();
-    let final_logits_hash = hash_lexeme_logits(
-        &tokens,
-        &starts,
-        &embedding_model,
-        &hidden_weights,
-        &output_weights,
-        config.seq_len,
-        config.context_features,
-        config.hidden_dim,
-        head_layout,
-        config.adapter_logit_shift,
-    )?;
-    let model = LexemeSoftmaxModel::new_with_context_features_hidden_layout_and_adapter_shift(
-        config.seq_len,
-        embedding_model.vocab_size,
-        embedding_model.embedding_dim,
-        config.context_features,
-        config.hidden_dim,
-        head_layout,
-        config.adapter_logit_shift,
-        embedding_model.embeddings,
-        hidden_weights,
-        output_weights,
-    )?;
-    let final_embedding_hash = model.embedding_hash();
-    let final_weight_hash = model.output_weight_hash();
-
-    let trace = LexemeSoftmaxTrainingTrace {
-        config,
-        head_layout,
-        output_head_frozen_prefix,
-        adapter_logit_shift: config.adapter_logit_shift,
-        token_count: tokens.len(),
-        token_hash,
-        window_hash,
-        windows: starts.len(),
-        examined_windows,
-        updates,
-        vocab_size,
-        embedding_dim,
-        initial_embedding_hash,
-        final_embedding_hash,
-        initial_weight_hash,
-        final_weight_hash,
-        initial_total_error,
-        final_total_error,
-        initial_probability_error_q15,
-        final_probability_error_q15,
-        initial_mistakes,
-        final_mistakes,
-        gradient_saturation_count,
-        embedding_saturation_count,
-        zero_delta_count,
-        embedding_zero_delta_count,
-        weight_delta_l1,
-        embedding_delta_l1,
-        final_accuracy_per_mille,
-        final_logits_hash,
-        steps,
-    };
-
-    Ok(LexemeSoftmaxTrainingRun { trace, model })
 }
 
 pub fn run_mini_transformer_mlp_swarm_training(
@@ -6606,11 +4136,916 @@ fn validate_mini_transformer_swarm_worker_artifact(
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+struct MiniTransformerAdamStateRanges {
+    embeddings: Range<usize>,
+    position_embeddings: Range<usize>,
+    attention_rms: Range<usize>,
+    mlp_rms: Range<usize>,
+    q: Range<usize>,
+    k: Range<usize>,
+    v: Range<usize>,
+    o: Range<usize>,
+    up: Range<usize>,
+    gate: Range<usize>,
+    down: Range<usize>,
+    output: Range<usize>,
+}
+
+#[derive(Debug, Clone)]
+struct MiniTransformerAdamBatchUpdateStats {
+    output_head: LinearWeightUpdateStats,
+    mlp: GatedMlpWeightUpdateStats,
+    embedding: SoftmaxUpdateStats,
+    rms_norm: SoftmaxUpdateStats,
+    attention: MiniTransformerAttentionWeightUpdateStats,
+}
+
+fn mini_transformer_adam_state_ranges(
+    model: &MiniTransformerMlpModel,
+) -> Result<MiniTransformerAdamStateRanges, TrainError> {
+    fn take(cursor: &mut usize, len: usize) -> Result<Range<usize>, TrainError> {
+        let start = *cursor;
+        let end = start
+            .checked_add(len)
+            .ok_or(TrainError::InvalidModel("optimizer range overflow"))?;
+        *cursor = end;
+        Ok(start..end)
+    }
+
+    let mut cursor = 0_usize;
+    let ranges = MiniTransformerAdamStateRanges {
+        embeddings: take(&mut cursor, model.embeddings.len())?,
+        position_embeddings: take(&mut cursor, model.position_embeddings.len())?,
+        attention_rms: take(&mut cursor, model.attention_rms_weights.len())?,
+        mlp_rms: take(&mut cursor, model.mlp_rms_weights.len())?,
+        q: take(&mut cursor, model.q_weights.len())?,
+        k: take(&mut cursor, model.k_weights.len())?,
+        v: take(&mut cursor, model.v_weights.len())?,
+        o: take(&mut cursor, model.o_weights.len())?,
+        up: take(&mut cursor, model.up_weights.len())?,
+        gate: take(&mut cursor, model.gate_weights.len())?,
+        down: take(&mut cursor, model.down_weights.len())?,
+        output: take(&mut cursor, model.output_weights.len())?,
+    };
+    if cursor != model.optimizer_parameter_count()? {
+        return Err(TrainError::InvalidModel("optimizer range mismatch"));
+    }
+    Ok(ranges)
+}
+
+fn offset_optimizer_range(
+    tensor: &Range<usize>,
+    local: &Range<usize>,
+) -> Result<Range<usize>, TrainError> {
+    if local.start > local.end || local.end > tensor.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let start = tensor
+        .start
+        .checked_add(local.start)
+        .ok_or(TrainError::InvalidConfig)?;
+    let end = tensor
+        .start
+        .checked_add(local.end)
+        .ok_or(TrainError::InvalidConfig)?;
+    Ok(start..end)
+}
+
+fn apply_integer_adam_state_slice_i8(
+    accumulators: &[i64],
+    sample_count: usize,
+    weights: &mut [i8],
+    state: &mut MiniTransformerAdamOptimizerState,
+    state_range: Range<usize>,
+) -> Result<LinearWeightUpdateStats, TrainError> {
+    if accumulators.len() != weights.len() || state_range.len() != weights.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let config = state.config;
+    let mut workspace = nsrl_train_core::IntegerAdamStateWorkspace {
+        step: state.step,
+        first_moments: &mut state.first_moments[state_range.clone()],
+        second_moments: &mut state.second_moments[state_range.clone()],
+        update_residuals: &mut state.update_residuals[state_range],
+    };
+    nsrl_train_core::apply_integer_adam_accumulators_i64_to_i8(
+        accumulators,
+        sample_count,
+        weights,
+        config,
+        &mut workspace,
+    )
+    .map_err(|error| train_core_error_to_train_error(error, "integer_adam_i8_apply"))
+}
+
+fn apply_integer_adam_state_slice_i16(
+    accumulators: &[i64],
+    sample_count: usize,
+    weights: &mut [i16],
+    state: &mut MiniTransformerAdamOptimizerState,
+    state_range: Range<usize>,
+) -> Result<LinearWeightUpdateStats, TrainError> {
+    if accumulators.len() != weights.len() || state_range.len() != weights.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let config = state.config;
+    let mut workspace = nsrl_train_core::IntegerAdamStateWorkspace {
+        step: state.step,
+        first_moments: &mut state.first_moments[state_range.clone()],
+        second_moments: &mut state.second_moments[state_range.clone()],
+        update_residuals: &mut state.update_residuals[state_range],
+    };
+    nsrl_train_core::apply_integer_adam_accumulators_i64_to_i16(
+        accumulators,
+        sample_count,
+        weights,
+        config,
+        &mut workspace,
+    )
+    .map_err(|error| train_core_error_to_train_error(error, "integer_adam_i16_apply"))
+}
+
+fn mini_transformer_apply_integer_adam_batch(
+    batch: &MiniTransformerMapReduceBatchResult,
+    model: &mut MiniTransformerMlpModel,
+    state: &mut MiniTransformerAdamOptimizerState,
+    position_policy: MiniTransformerPositionPolicy,
+    train_scope: MiniTransformerAdamTrainScope,
+) -> Result<MiniTransformerAdamBatchUpdateStats, TrainError> {
+    state.validate_for_model(model)?;
+    let ranges = mini_transformer_adam_state_ranges(model)?;
+    let output_head = if matches!(
+        train_scope,
+        MiniTransformerAdamTrainScope::All
+            | MiniTransformerAdamTrainScope::Output
+            | MiniTransformerAdamTrainScope::FinalMlpAndOutput
+    ) {
+        apply_integer_adam_state_slice_i8(
+            &batch.output_head_gradient.accumulators,
+            batch.output_head_gradient.sample_count,
+            &mut model.output_weights,
+            state,
+            ranges.output.clone(),
+        )?
+    } else {
+        empty_linear_weight_update_stats()
+    };
+    let mut mlp = empty_gated_mlp_weight_update_stats();
+    let mut attention = empty_mini_transformer_attention_weight_update_stats();
+    let mut rms_linear = empty_linear_weight_update_stats();
+    let layers = model.checked_transformer_layers()?;
+    if batch.mlp_weight_gradients.len() != layers
+        || batch.attention_weight_gradients.len() != layers
+        || batch.rms_weight_gradients.len() != layers
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    for layer_index in 0..layers {
+        let attention_local = model.attention_weight_range(layer_index)?;
+        let q_state_range = offset_optimizer_range(&ranges.q, &attention_local)?;
+        let k_state_range = offset_optimizer_range(&ranges.k, &attention_local)?;
+        let v_state_range = offset_optimizer_range(&ranges.v, &attention_local)?;
+        let o_state_range = offset_optimizer_range(&ranges.o, &attention_local)?;
+        let up_local = model.mlp_up_or_gate_weight_range(layer_index)?;
+        let down_local = model.mlp_down_weight_range(layer_index)?;
+        if train_scope == MiniTransformerAdamTrainScope::All {
+            let attention_gradient = &batch.attention_weight_gradients[layer_index];
+            let q = apply_integer_adam_state_slice_i8(
+                &attention_gradient.q.accumulators,
+                attention_gradient.q.sample_count,
+                &mut model.q_weights[attention_local.clone()],
+                state,
+                q_state_range,
+            )?;
+            let k = apply_integer_adam_state_slice_i8(
+                &attention_gradient.k.accumulators,
+                attention_gradient.k.sample_count,
+                &mut model.k_weights[attention_local.clone()],
+                state,
+                k_state_range,
+            )?;
+            let v = apply_integer_adam_state_slice_i8(
+                &attention_gradient.v.accumulators,
+                attention_gradient.v.sample_count,
+                &mut model.v_weights[attention_local.clone()],
+                state,
+                v_state_range,
+            )?;
+            let o = apply_integer_adam_state_slice_i8(
+                &attention_gradient.o.accumulators,
+                attention_gradient.o.sample_count,
+                &mut model.o_weights[attention_local.clone()],
+                state,
+                o_state_range,
+            )?;
+            let mut projection_total = empty_linear_weight_update_stats();
+            for stats in [q, k, v, o] {
+                add_linear_weight_update_stats_checked(&mut projection_total, stats)?;
+            }
+            add_mini_transformer_attention_weight_update_stats_checked(
+                &mut attention,
+                MiniTransformerAttentionWeightUpdateStats {
+                    q,
+                    k,
+                    v,
+                    o,
+                    gradient_saturation_count: projection_total.gradient_saturation_count,
+                    zero_delta_count: projection_total.zero_delta_count,
+                    weight_delta_l1: projection_total.weight_delta_l1,
+                    grad_embedding_output: Vec::new(),
+                },
+            )?;
+        }
+
+        if train_scope == MiniTransformerAdamTrainScope::All
+            || (matches!(
+                train_scope,
+                MiniTransformerAdamTrainScope::FinalMlp
+                    | MiniTransformerAdamTrainScope::FinalMlpAndOutput
+            ) && layer_index + 1 == layers)
+        {
+            let mlp_gradient = &batch.mlp_weight_gradients[layer_index];
+            let layer_mlp = GatedMlpWeightUpdateStats {
+                down: apply_integer_adam_state_slice_i8(
+                    &mlp_gradient.down.accumulators,
+                    mlp_gradient.down.sample_count,
+                    &mut model.down_weights[down_local.clone()],
+                    state,
+                    offset_optimizer_range(&ranges.down, &down_local)?,
+                )?,
+                up: apply_integer_adam_state_slice_i8(
+                    &mlp_gradient.up.accumulators,
+                    mlp_gradient.up.sample_count,
+                    &mut model.up_weights[up_local.clone()],
+                    state,
+                    offset_optimizer_range(&ranges.up, &up_local)?,
+                )?,
+                gate: apply_integer_adam_state_slice_i8(
+                    &mlp_gradient.gate.accumulators,
+                    mlp_gradient.gate.sample_count,
+                    &mut model.gate_weights[up_local.clone()],
+                    state,
+                    offset_optimizer_range(&ranges.gate, &up_local)?,
+                )?,
+            };
+            add_gated_mlp_weight_update_stats_checked(&mut mlp, layer_mlp)?;
+        }
+        if matches!(
+            train_scope,
+            MiniTransformerAdamTrainScope::All | MiniTransformerAdamTrainScope::RmsNorm
+        ) && model.rms_norm_enabled()
+        {
+            let rms_local = model.rms_weight_range(layer_index)?;
+            let rms_gradient = &batch.rms_weight_gradients[layer_index];
+            let attention_rms = apply_integer_adam_state_slice_i16(
+                &rms_gradient.attention.accumulators,
+                rms_gradient.attention.sample_count,
+                &mut model.attention_rms_weights[rms_local.clone()],
+                state,
+                offset_optimizer_range(&ranges.attention_rms, &rms_local)?,
+            )?;
+            let mlp_rms = apply_integer_adam_state_slice_i16(
+                &rms_gradient.mlp.accumulators,
+                rms_gradient.mlp.sample_count,
+                &mut model.mlp_rms_weights[rms_local.clone()],
+                state,
+                offset_optimizer_range(&ranges.mlp_rms, &rms_local)?,
+            )?;
+            add_linear_weight_update_stats_checked(&mut rms_linear, attention_rms)?;
+            add_linear_weight_update_stats_checked(&mut rms_linear, mlp_rms)?;
+        }
+    }
+
+    let mut embedding_linear = empty_linear_weight_update_stats();
+    if train_scope == MiniTransformerAdamTrainScope::All {
+        embedding_linear = apply_integer_adam_state_slice_i16(
+            &batch.embedding_gradient.token_accumulators,
+            batch.embedding_gradient.sample_count,
+            &mut model.embeddings,
+            state,
+            ranges.embeddings,
+        )?;
+        if position_policy.uses_position_embeddings() {
+            let position = apply_integer_adam_state_slice_i16(
+                &batch.embedding_gradient.position_accumulators,
+                batch.embedding_gradient.sample_count,
+                &mut model.position_embeddings,
+                state,
+                ranges.position_embeddings,
+            )?;
+            add_linear_weight_update_stats_checked(&mut embedding_linear, position)?;
+        }
+    }
+    let embedding = SoftmaxUpdateStats {
+        gradient_saturation_count: embedding_linear.gradient_saturation_count,
+        zero_delta_count: embedding_linear.zero_delta_count,
+        weight_delta_l1: embedding_linear.weight_delta_l1,
+    };
+    let rms_norm = SoftmaxUpdateStats {
+        gradient_saturation_count: rms_linear.gradient_saturation_count,
+        zero_delta_count: rms_linear.zero_delta_count,
+        weight_delta_l1: rms_linear.weight_delta_l1,
+    };
+    // All tensor slices represent one optimizer batch; slice-local workspace
+    // steps are intentionally ignored and the global step advances exactly once.
+    state.step = state
+        .step
+        .checked_add(1)
+        .ok_or(TrainError::CoreRejected("integer_adam_step_overflow"))?;
+    state.bind_to_model(model)?;
+    Ok(MiniTransformerAdamBatchUpdateStats {
+        output_head,
+        mlp,
+        embedding,
+        rms_norm,
+        attention,
+    })
+}
+
+pub fn run_mini_transformer_mlp_integer_adam_training(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    optimizer_config: IntegerAdamConfig,
+) -> Result<MiniTransformerAdamTrainingRun, TrainError> {
+    let model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+    run_mini_transformer_mlp_integer_adam_training_from_model(
+        tokens,
+        config,
+        optimizer_config,
+        model,
+        None,
+    )
+}
+
+pub fn run_mini_transformer_mlp_integer_adam_training_from_model(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    optimizer_config: IntegerAdamConfig,
+    model: MiniTransformerMlpModel,
+    optimizer_state: Option<MiniTransformerAdamOptimizerState>,
+) -> Result<MiniTransformerAdamTrainingRun, TrainError> {
+    run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
+        tokens,
+        config,
+        optimizer_config,
+        model,
+        optimizer_state,
+        MiniTransformerAdamTrainScope::All,
+    )
+}
+
+pub fn run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
+    tokens: &[u8],
+    config: MiniTransformerMlpTrainConfig,
+    optimizer_config: IntegerAdamConfig,
+    mut model: MiniTransformerMlpModel,
+    optimizer_state: Option<MiniTransformerAdamOptimizerState>,
+    train_scope: MiniTransformerAdamTrainScope,
+) -> Result<MiniTransformerAdamTrainingRun, TrainError> {
+    if config.epochs == 0
+        || config.seq_len == 0
+        || config.stride == 0
+        || config.batch_windows == 0
+        || config.target_token_min > config.target_token_max
+        || !valid_mini_transformer_target_segment(config.target_segment)
+        || !valid_q15_weight_floor(config.target_frequency_min_weight_q15)
+        || config.argmax_margin_weight_q15 < 0
+        || !optimizer_config.is_valid()
+        || config.output_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.mlp_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.embedding_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_q_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_qk_learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_kind.uses_incremental_state()
+        || config.attention_vo_error_feedback
+        || config.attention_vo_oracle
+        || config.adaptive_shift_controller_enabled()
+        || model.context_seq_len != config.seq_len
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    model.checked_transformer_layers()?;
+    let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, config);
+    if starts.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let target_frequency_weights_q15 = byte_target_frequency_weights_q15(
+        tokens,
+        &starts,
+        config.seq_len,
+        config.target_frequency_cap,
+        config.target_frequency_min_weight_q15,
+    )?;
+    let token_hash = hash_u8_slice(tokens);
+    let window_hash = hash_mini_transformer_windows(tokens, config, &starts);
+    let initial_model_hash = model.model_hash();
+    let initial_mistakes = mini_transformer_total_error_with_attention_and_position_policy(
+        tokens,
+        &starts,
+        &model,
+        config.seq_len,
+        config.attention_kind,
+        config.position_policy,
+    )?;
+    let initial_probability_error_q15 =
+        mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
+            tokens,
+            &starts,
+            &model,
+            config.seq_len,
+            config.attention_kind,
+            config.position_policy,
+        )?;
+    let mut optimizer_state = match optimizer_state {
+        Some(state) => {
+            state.validate_for_model(&model)?;
+            if state.config != optimizer_config {
+                return Err(TrainError::InvalidConfig);
+            }
+            state
+        }
+        None => MiniTransformerAdamOptimizerState::new_for_model(&model, optimizer_config)?,
+    };
+    #[cfg(feature = "mini-calibrated")]
+    if config.position_policy == MiniTransformerPositionPolicy::Nope
+        && mini_transformer_suffix_memory_is_installed(&model.position_embeddings)
+    {
+        for weight in model
+            .position_embeddings
+            .iter_mut()
+            .take(MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC.len() / 2)
+        {
+            *weight = 0;
+        }
+        optimizer_state.bind_to_model(&model)?;
+    }
+    let mut examined_windows = 0_usize;
+    let mut updates = 0_usize;
+    let mut accepted_batch_count = 0_usize;
+    let mut rejected_batch_count = 0_usize;
+    let mut output_head_delta_l1 = 0_u64;
+    let mut mlp_delta_l1 = 0_u64;
+    let mut embedding_delta_l1 = 0_u64;
+    let mut rms_norm_delta_l1 = 0_u64;
+    let mut attention_delta_l1 = 0_u64;
+    let mut attention_q_delta_l1 = 0_u64;
+    let mut attention_k_delta_l1 = 0_u64;
+    let mut attention_v_delta_l1 = 0_u64;
+    let mut attention_o_delta_l1 = 0_u64;
+    let mut mlp_saturation_count = 0_usize;
+    let mut attention_saturation_count = 0_usize;
+    let mut residual_saturation_count = 0_usize;
+
+    for epoch in 0..config.epochs {
+        let mut batch_start = 0_usize;
+        while batch_start < starts.len() {
+            let batch_end = batch_start
+                .saturating_add(config.batch_windows)
+                .min(starts.len());
+            examined_windows = examined_windows.saturating_add(batch_end - batch_start);
+            let batch_result = if config.batch_mode == MiniTransformerBatchMode::MapReduce {
+                mini_transformer_map_reduce_batch(
+                    tokens,
+                    &starts,
+                    &target_frequency_weights_q15,
+                    batch_start,
+                    batch_end,
+                    epoch,
+                    &model,
+                    config,
+                    updates,
+                    MiniTransformerTraceDetail::None,
+                    usize::MAX,
+                )
+            } else {
+                mini_transformer_map_reduce_worker_batch(
+                    tokens,
+                    &starts,
+                    &target_frequency_weights_q15,
+                    batch_start,
+                    batch_end,
+                    batch_start,
+                    epoch,
+                    &model,
+                    config,
+                    updates,
+                    MiniTransformerTraceDetail::None,
+                    usize::MAX,
+                )
+            };
+            let batch_result = match batch_result {
+                Ok(result) if result.accepted_window_count > 0 => result,
+                Ok(_) | Err(TrainError::CoreRejected(_)) => {
+                    rejected_batch_count = rejected_batch_count.saturating_add(1);
+                    batch_start = batch_end;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            mlp_saturation_count =
+                mlp_saturation_count.saturating_add(batch_result.mlp_saturation_count);
+            attention_saturation_count =
+                attention_saturation_count.saturating_add(batch_result.attention_saturation_count);
+            residual_saturation_count =
+                residual_saturation_count.saturating_add(batch_result.residual_saturation_count);
+
+            let mut candidate_model = model.clone();
+            let mut candidate_state = optimizer_state.clone();
+            let update = mini_transformer_apply_integer_adam_batch(
+                &batch_result,
+                &mut candidate_model,
+                &mut candidate_state,
+                config.position_policy,
+                train_scope,
+            )?;
+            let batch_starts = &starts[batch_start..batch_end];
+            let batch_valid = mini_transformer_validate_batch_windows(
+                &candidate_model,
+                tokens,
+                batch_starts,
+                config.seq_len,
+                config.attention_kind,
+                config.position_policy,
+            )
+            .and_then(|_| {
+                mini_transformer_validate_guard_windows(
+                    &candidate_model,
+                    tokens,
+                    &starts,
+                    config.seq_len,
+                    config.attention_kind,
+                    config.position_policy,
+                    epoch,
+                    batch_end - 1,
+                    config.epochs,
+                )
+            })
+            .is_ok();
+            let loss_regressed = if batch_valid && config.reject_loss_regression {
+                let guard = mini_transformer_loss_guard_starts(&starts, batch_start, batch_end);
+                let before = mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
+                    tokens,
+                    &guard,
+                    &model,
+                    config.seq_len,
+                    config.attention_kind,
+                    config.position_policy,
+                )?;
+                match mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
+                    tokens,
+                    &guard,
+                    &candidate_model,
+                    config.seq_len,
+                    config.attention_kind,
+                    config.position_policy,
+                ) {
+                    Ok(after) => mini_transformer_loss_guard_regressed(before, after, guard.len()),
+                    Err(TrainError::CoreRejected(_)) => true,
+                    Err(error) => return Err(error),
+                }
+            } else {
+                false
+            };
+            if batch_valid && !loss_regressed {
+                model = candidate_model;
+                optimizer_state = candidate_state;
+                updates = updates.saturating_add(batch_result.accepted_window_count);
+                accepted_batch_count = accepted_batch_count.saturating_add(1);
+                output_head_delta_l1 =
+                    output_head_delta_l1.saturating_add(update.output_head.weight_delta_l1);
+                mlp_delta_l1 =
+                    mlp_delta_l1.saturating_add(update.mlp.weight_delta_l1().unwrap_or(0));
+                embedding_delta_l1 =
+                    embedding_delta_l1.saturating_add(update.embedding.weight_delta_l1);
+                rms_norm_delta_l1 =
+                    rms_norm_delta_l1.saturating_add(update.rms_norm.weight_delta_l1);
+                attention_delta_l1 =
+                    attention_delta_l1.saturating_add(update.attention.weight_delta_l1);
+                attention_q_delta_l1 =
+                    attention_q_delta_l1.saturating_add(update.attention.q.weight_delta_l1);
+                attention_k_delta_l1 =
+                    attention_k_delta_l1.saturating_add(update.attention.k.weight_delta_l1);
+                attention_v_delta_l1 =
+                    attention_v_delta_l1.saturating_add(update.attention.v.weight_delta_l1);
+                attention_o_delta_l1 =
+                    attention_o_delta_l1.saturating_add(update.attention.o.weight_delta_l1);
+            } else {
+                rejected_batch_count = rejected_batch_count.saturating_add(1);
+            }
+            batch_start = batch_end;
+        }
+    }
+
+    #[cfg(feature = "mini-calibrated")]
+    if config.position_policy == MiniTransformerPositionPolicy::Nope
+        && train_scope == MiniTransformerAdamTrainScope::All
+    {
+        mini_transformer_install_ngram_cache(&mut model, tokens)?;
+    }
+    optimizer_state.bind_to_model(&model)?;
+    let final_mistakes = mini_transformer_total_error_with_attention_and_position_policy(
+        tokens,
+        &starts,
+        &model,
+        config.seq_len,
+        config.attention_kind,
+        config.position_policy,
+    )?;
+    let final_probability_error_q15 =
+        mini_transformer_total_probability_error_q15_with_attention_and_position_policy(
+            tokens,
+            &starts,
+            &model,
+            config.seq_len,
+            config.attention_kind,
+            config.position_policy,
+        )?;
+    let optimizer_state_hash = optimizer_state.state_hash()?;
+    Ok(MiniTransformerAdamTrainingRun {
+        trace: MiniTransformerAdamTrainingTrace {
+            schema: MINI_TRANSFORMER_ADAM_SCHEMA,
+            config,
+            optimizer_config,
+            train_scope,
+            token_count: tokens.len(),
+            token_hash,
+            window_hash,
+            windows: starts.len(),
+            examined_windows,
+            updates,
+            accepted_batch_count,
+            rejected_batch_count,
+            initial_mistakes,
+            final_mistakes,
+            initial_probability_error_q15,
+            final_probability_error_q15,
+            transformer_layers: model.transformer_layers(),
+            rms_norm_enabled: model.rms_norm_enabled(),
+            output_head_delta_l1,
+            mlp_delta_l1,
+            embedding_delta_l1,
+            rms_norm_delta_l1,
+            attention_delta_l1,
+            attention_q_delta_l1,
+            attention_k_delta_l1,
+            attention_v_delta_l1,
+            attention_o_delta_l1,
+            mlp_saturation_count,
+            attention_saturation_count,
+            residual_saturation_count,
+            initial_model_hash,
+            final_model_hash: model.model_hash(),
+            optimizer_step: optimizer_state.step,
+            optimizer_state_hash,
+        },
+        model,
+        optimizer_state,
+    })
+}
+
 pub fn run_mini_transformer_mlp_training(
     tokens: &[u8],
     config: MiniTransformerMlpTrainConfig,
 ) -> Result<MiniTransformerMlpTrainingTrace, TrainError> {
     Ok(run_mini_transformer_mlp_training_with_model(tokens, config)?.trace)
+}
+
+pub const MINI_TRANSFORMER_EVAL_SCHEMA: &str = "nsrl.mini_transformer_eval.v1";
+pub const MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerMlpEvalConfig {
+    pub seq_len: usize,
+    pub stride: usize,
+    pub max_windows: Option<usize>,
+    pub attention_kind: MiniTransformerAttentionKind,
+    pub position_policy: MiniTransformerPositionPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpEvalTrace {
+    pub token_count: usize,
+    pub token_hash: u64,
+    pub window_hash: u64,
+    pub windows: usize,
+    pub config: MiniTransformerMlpEvalConfig,
+    pub model_hash: u64,
+    pub mistakes: usize,
+    pub accuracy_per_mille: usize,
+    pub probability_error_q15: usize,
+    pub mean_probability_error_q15: usize,
+    pub invalid_forward_count: usize,
+    pub unique_predicted_tokens: usize,
+    pub most_predicted_token: Option<u8>,
+    pub most_predicted_token_count: usize,
+    pub most_predicted_token_share_per_mille: usize,
+    pub logits_hash: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerMlpWindowEvalRecord {
+    pub start: usize,
+    pub end: usize,
+    pub mistakes: usize,
+    pub probability_error_q15: usize,
+    pub invalid_forward_count: usize,
+    pub predicted_token: Option<u8>,
+    pub last_hidden_q15: [i16; MINI_TRANSFORMER_D_MODEL],
+    pub router_hidden_features_q15: [i16; MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES],
+    pub logits_q8: Option<[i32; BYTE_VOCAB]>,
+}
+
+impl MiniTransformerMlpEvalTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut out = String::new();
+        out.push('{');
+        push_string_field(&mut out, "schema", MINI_TRANSFORMER_EVAL_SCHEMA);
+        comma(&mut out);
+        out.push_str("\"data\":{");
+        push_usize_field(&mut out, "token_count", self.token_count);
+        comma(&mut out);
+        push_hash_field(&mut out, "token_hash", self.token_hash);
+        comma(&mut out);
+        push_hash_field(&mut out, "window_hash", self.window_hash);
+        comma(&mut out);
+        push_usize_field(&mut out, "windows", self.windows);
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"model\":{");
+        push_hash_field(&mut out, "hash", self.model_hash);
+        comma(&mut out);
+        push_usize_field(&mut out, "seq_len", self.config.seq_len);
+        comma(&mut out);
+        push_usize_field(&mut out, "d_model", MINI_TRANSFORMER_D_MODEL);
+        comma(&mut out);
+        push_usize_field(&mut out, "heads", MINI_TRANSFORMER_HEADS);
+        comma(&mut out);
+        push_usize_field(&mut out, "hidden_dim", MINI_TRANSFORMER_HIDDEN_DIM);
+        comma(&mut out);
+        push_string_field(
+            &mut out,
+            "attention_kind",
+            self.config.attention_kind.as_str(),
+        );
+        comma(&mut out);
+        push_string_field(&mut out, "position", self.config.position_policy.as_str());
+        out.push('}');
+        comma(&mut out);
+        out.push_str("\"evaluation\":{");
+        push_usize_field(&mut out, "stride", self.config.stride);
+        comma(&mut out);
+        push_optional_usize_field(&mut out, "max_windows", self.config.max_windows);
+        comma(&mut out);
+        push_usize_field(&mut out, "mistakes", self.mistakes);
+        comma(&mut out);
+        push_usize_field(&mut out, "accuracy_per_mille", self.accuracy_per_mille);
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "probability_error_q15",
+            self.probability_error_q15,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "mean_probability_error_q15",
+            self.mean_probability_error_q15,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "invalid_forward_count",
+            self.invalid_forward_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "unique_predicted_tokens",
+            self.unique_predicted_tokens,
+        );
+        comma(&mut out);
+        push_optional_usize_field(
+            &mut out,
+            "most_predicted_token",
+            self.most_predicted_token.map(usize::from),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "most_predicted_token_count",
+            self.most_predicted_token_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "most_predicted_token_share_per_mille",
+            self.most_predicted_token_share_per_mille,
+        );
+        comma(&mut out);
+        push_hash_field(&mut out, "logits_hash", self.logits_hash);
+        out.push_str("}}\n");
+        out
+    }
+}
+
+pub fn evaluate_mini_transformer_mlp_model(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    config: MiniTransformerMlpEvalConfig,
+) -> Result<MiniTransformerMlpEvalTrace, TrainError> {
+    if config.seq_len == 0
+        || config.stride == 0
+        || model.context_seq_len != config.seq_len
+        || matches!(
+            config.attention_kind,
+            MiniTransformerAttentionKind::LinearStreamingNope
+                | MiniTransformerAttentionKind::LinearStreamingTttNope
+        )
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let starts_config = MiniTransformerMlpTrainConfig {
+        seq_len: config.seq_len,
+        stride: config.stride,
+        max_windows: config.max_windows,
+        attention_kind: config.attention_kind,
+        position_policy: config.position_policy,
+        ..MiniTransformerMlpTrainConfig::default()
+    };
+    let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, starts_config);
+    if starts.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let summary = mini_transformer_eval_summary_with_attention_and_position_policy(
+        tokens,
+        &starts,
+        model,
+        config.seq_len,
+        config.attention_kind,
+        config.position_policy,
+    )?;
+    let windows = starts.len();
+    Ok(MiniTransformerMlpEvalTrace {
+        token_count: tokens.len(),
+        token_hash: hash_u8_slice(tokens),
+        window_hash: hash_mini_transformer_windows(tokens, starts_config, &starts),
+        windows,
+        config,
+        model_hash: model.model_hash(),
+        mistakes: summary.mistakes,
+        accuracy_per_mille: windows.saturating_sub(summary.mistakes) * 1000 / windows,
+        probability_error_q15: summary.probability_error_q15,
+        mean_probability_error_q15: summary.probability_error_q15 / windows,
+        invalid_forward_count: summary.invalid_forward_count,
+        unique_predicted_tokens: summary.unique_predicted_tokens,
+        most_predicted_token: summary.most_predicted_token,
+        most_predicted_token_count: summary.most_predicted_token_count,
+        most_predicted_token_share_per_mille: summary
+            .most_predicted_token_count
+            .saturating_mul(1000)
+            / windows,
+        logits_hash: summary.logits_hash,
+    })
+}
+
+pub fn evaluate_mini_transformer_mlp_windows(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    config: MiniTransformerMlpEvalConfig,
+) -> Result<Vec<MiniTransformerMlpWindowEvalRecord>, TrainError> {
+    if config.seq_len == 0
+        || config.stride == 0
+        || model.context_seq_len != config.seq_len
+        || matches!(
+            config.attention_kind,
+            MiniTransformerAttentionKind::LinearStreamingNope
+                | MiniTransformerAttentionKind::LinearStreamingTttNope
+        )
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let starts_config = MiniTransformerMlpTrainConfig {
+        seq_len: config.seq_len,
+        stride: config.stride,
+        max_windows: config.max_windows,
+        attention_kind: config.attention_kind,
+        position_policy: config.position_policy,
+        ..MiniTransformerMlpTrainConfig::default()
+    };
+    let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, starts_config);
+    if starts.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    mini_transformer_window_eval_records_with_attention_and_position_policy(
+        tokens,
+        &starts,
+        model,
+        config.seq_len,
+        config.attention_kind,
+        config.position_policy,
+    )
 }
 
 pub fn run_mini_transformer_mlp_training_with_model(
@@ -6705,6 +5140,8 @@ where
         || config.attention_kind == MiniTransformerAttentionKind::LinearStreamingNope
         || config.attention_kind == MiniTransformerAttentionKind::LinearStreamingTttNope
         || (config.attention_vo_oracle && config.batch_windows <= 1)
+        || (config.attention_vo_oracle
+            && MINI_TRANSFORMER_D_MODEL > MINI_TRANSFORMER_ATTENTION_VO_ORACLE_MAX_D_MODEL)
     {
         return Err(TrainError::InvalidConfig);
     }
@@ -6713,6 +5150,12 @@ where
     if model.context_seq_len != config.seq_len {
         return Err(TrainError::InvalidConfig);
     }
+    if model.rms_norm_enabled() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let transformer_layers = model.checked_transformer_layers()?;
+    let use_stacked_serial_backprop =
+        transformer_layers > 1 && config.batch_mode == MiniTransformerBatchMode::Serial;
 
     let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, config);
     if starts.is_empty() {
@@ -6803,22 +5246,20 @@ where
     let mut output_head_gradient =
         LinearWeightGradientI64::new(MINI_TRANSFORMER_D_MODEL, BYTE_VOCAB)
             .ok_or(TrainError::InvalidConfig)?;
-    let mut mlp_weight_gradient =
-        GatedMlpWeightGradientI64::new(MINI_TRANSFORMER_D_MODEL, MINI_TRANSFORMER_HIDDEN_DIM)
-            .ok_or(TrainError::InvalidConfig)?;
-    let mut attention_weight_gradient =
-        MiniTransformerAttentionWeightGradientI64::new(MINI_TRANSFORMER_D_MODEL)
-            .ok_or(TrainError::InvalidConfig)?;
+    let mut mlp_weight_gradients =
+        mini_transformer_new_gated_mlp_weight_gradients(transformer_layers)?;
+    let mut attention_weight_gradients =
+        mini_transformer_new_attention_weight_gradients(transformer_layers)?;
     let mut embedding_gradient = MiniTransformerEmbeddingGradientI64::new(config.seq_len)
         .ok_or(TrainError::InvalidConfig)?;
     let mut adaptive_attention_shifts = MiniTransformerAdaptiveShiftState::new(config);
     let mut adaptive_shift_events = Vec::new();
     let adaptive_shift_controller_enabled = config.adaptive_shift_controller_enabled();
-    let use_output_head_accumulator = config.batch_windows > 1;
-    let use_mlp_accumulator = config.batch_windows > 1;
-    let use_attention_accumulator = config.batch_windows > 1;
-    let use_embedding_accumulator = config.batch_windows > 1;
-    let use_train_core_step = mini_transformer_uses_train_core_step(config);
+    let use_output_head_accumulator = config.batch_windows > 1 && !use_stacked_serial_backprop;
+    let use_mlp_accumulator = config.batch_windows > 1 && !use_stacked_serial_backprop;
+    let use_attention_accumulator = config.batch_windows > 1 && !use_stacked_serial_backprop;
+    let use_embedding_accumulator = config.batch_windows > 1 && !use_stacked_serial_backprop;
+    let use_train_core_step = mini_transformer_uses_train_core_step_for_model(config, &model);
     let mut train_core_workspace = if use_train_core_step {
         Some(MiniTransformerHostTrainCoreWorkspaceBuffers::new(
             config.seq_len,
@@ -6882,8 +5323,12 @@ where
                 let batch_window_count = batch_end_index.saturating_sub(batch_start_index);
                 examined_windows = examined_windows.saturating_add(batch_window_count);
                 output_head_gradient.clear();
-                mlp_weight_gradient.clear();
-                attention_weight_gradient.clear();
+                mini_transformer_clear_gated_mlp_weight_gradient_i64_layers(
+                    &mut mlp_weight_gradients,
+                );
+                mini_transformer_clear_attention_weight_gradient_i64_layers(
+                    &mut attention_weight_gradients,
+                );
                 embedding_gradient.clear();
 
                 match mini_transformer_map_reduce_batch(
@@ -6904,13 +5349,13 @@ where
                             &mut output_head_gradient,
                             &batch_result.output_head_gradient,
                         )?;
-                        mini_transformer_merge_gated_mlp_weight_gradient_i64(
-                            &mut mlp_weight_gradient,
-                            &batch_result.mlp_weight_gradient,
+                        mini_transformer_merge_gated_mlp_weight_gradient_i64_layers(
+                            &mut mlp_weight_gradients,
+                            &batch_result.mlp_weight_gradients,
                         )?;
-                        mini_transformer_merge_attention_weight_gradient_i64(
-                            &mut attention_weight_gradient,
-                            &batch_result.attention_weight_gradient,
+                        mini_transformer_merge_attention_weight_gradient_i64_layers(
+                            &mut attention_weight_gradients,
+                            &batch_result.attention_weight_gradients,
                         )?;
                         mini_transformer_merge_embedding_gradient_i64(
                             &mut embedding_gradient,
@@ -7068,8 +5513,6 @@ where
                                         .attention_q_learning_rate_shift,
                                     attention_qk_learning_rate_shift: config
                                         .attention_qk_learning_rate_shift,
-                                    output_scale:
-                                        nsrl_train_core::MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE,
                                 },
                                 &mut workspace,
                             )
@@ -7286,7 +5729,7 @@ where
                         empty_linear_weight_update_stats()
                     } else {
                         linear_backward_weight_update_i8_checked(
-                            &cache_before.block_output[last_start..last_end],
+                            &cache_before.output_features,
                             &grad_output_q15,
                             &mut model.output_weights,
                             LinearBackwardWeightUpdateI8Params {
@@ -7305,123 +5748,242 @@ where
                         ))?
                     };
 
-                    workspace.grad_mlp_output[last_start..last_end]
-                        .copy_from_slice(&workspace.grad_last_features);
-                    let mlp_input_saturation_count = gated_mlp_backward_input_i16_q15_checked(
-                        &workspace.grad_mlp_output,
-                        mini_transformer_mlp_params(
-                            &model.up_weights,
-                            &model.gate_weights,
-                            &model.down_weights,
-                            config.seq_len,
-                        ),
-                        &cache_before.mlp_up,
-                        &cache_before.mlp_gate,
-                        GatedMlpBackwardScales {
-                            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                            up_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                            gate_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                        },
-                        GatedMlpBackwardWorkspace {
-                            scaled_grad_output: &mut workspace.mlp_scaled_grad,
-                            grad_gated: &mut workspace.mlp_input_grad_gated,
-                            grad_up: &mut workspace.mlp_input_grad_up,
-                            grad_gate: &mut workspace.mlp_input_grad_gate,
-                            grad_up_input: &mut workspace.mlp_input_grad_up_input,
-                            grad_gate_input: &mut workspace.mlp_input_grad_gate_input,
-                        },
-                        &mut workspace.grad_mlp_input,
-                    )
-                    .ok_or(TrainError::CoreRejected(
-                        "mini_transformer_mlp_backward_input",
-                    ))?;
-                    let mlp_rms_backward_saturation_count = 0_usize;
+                    let total = config
+                        .seq_len
+                        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+                        .ok_or(TrainError::InvalidConfig)?;
+                    let (
+                        mlp_input_saturation_count,
+                        gradient_residual_saturation_count,
+                        mlp_update,
+                        attention_update,
+                        embedding_gradient_saturation_count,
+                        embedding_update,
+                    ) = if use_stacked_serial_backprop {
+                        let mut grad_block_output = vec![0_i16; total];
+                        grad_block_output[last_start..last_end]
+                            .copy_from_slice(&workspace.grad_last_features);
+                        let mut stacked_mlp_update = empty_gated_mlp_weight_update_stats();
+                        let mut stacked_attention_update =
+                            empty_mini_transformer_attention_weight_update_stats();
+                        let mut stacked_mlp_input_saturation_count = 0_usize;
+                        let mut stacked_gradient_residual_saturation_count = 0_usize;
+                        let mut stacked_input_gradient_saturation_count = 0_usize;
+                        let mut stacked_rejected = false;
 
-                    let gradient_residual_saturation_count = add_i16_residual_rows_checked(
-                        &workspace.grad_mlp_output,
-                        &workspace.grad_mlp_input,
-                        &mut workspace.grad_attention_output,
-                    )?;
-
-                    let mlp_update = if use_mlp_accumulator {
-                        empty_gated_mlp_weight_update_stats()
-                    } else {
-                        gated_mlp_backward_weight_update_i8_checked(
-                            &cache_before.mlp_norm,
-                            &workspace.grad_mlp_output,
-                            &cache_before.mlp_up,
-                            &cache_before.mlp_gate,
-                            &cache_before.mlp_gated,
-                            &mut model.up_weights,
-                            &mut model.gate_weights,
-                            &mut model.down_weights,
-                            GatedMlpWeightUpdateParams {
-                                up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                                gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                                down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                                down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                                seq_len: config.seq_len,
-                                d_model: MINI_TRANSFORMER_D_MODEL,
-                                hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
-                                learning_rate: config.learning_rate,
-                                learning_rate_shift: runtime_config.mlp_learning_rate_shift,
-                            },
-                            GatedMlpWeightUpdateWorkspace {
-                                scaled_grad_output: &mut workspace.mlp_scaled_grad,
-                                grad_gated: &mut workspace.mlp_update_grad_gated,
-                                grad_up: &mut workspace.mlp_update_grad_up,
-                                grad_gate: &mut workspace.mlp_update_grad_gate,
-                            },
-                        )
-                        .ok_or(TrainError::CoreRejected("mini_transformer_mlp_update"))?
-                    };
-
-                    let attention_update = match mini_transformer_attention_update_i8_checked(
-                        &cache_before,
-                        &mut model,
-                        runtime_config,
-                        workspace,
-                        if use_attention_accumulator {
-                            Some(&mut attention_weight_gradient)
-                        } else {
-                            None
-                        },
-                    ) {
-                        Ok(update) => update,
-                        Err(TrainError::CoreRejected(_)) => {
-                            model = model_checkpoint;
-                            rollback_count = rollback_count.saturating_add(1);
-                            rejected_window_count = rejected_window_count.saturating_add(1);
-                            adaptive_attention_shifts.observe_rejected(
-                                rejected_batch_count.saturating_add(rejected_window_count),
-                                adaptive_shift_controller_enabled,
-                                config,
-                                &mut adaptive_shift_events,
-                            );
+                        for layer_index in (0..cache_before.layers.len()).rev() {
+                            let layer_runtime_config =
+                                mini_transformer_stacked_layer_runtime_config(
+                                    runtime_config,
+                                    layer_index,
+                                    cache_before.layers.len(),
+                                );
+                            let block_update =
+                                match mini_transformer_block_backward_update_i8_checked(
+                                    &cache_before.layers[layer_index],
+                                    &grad_block_output,
+                                    &mut model,
+                                    layer_index,
+                                    layer_runtime_config,
+                                    workspace,
+                                ) {
+                                    Ok(update) => update,
+                                    Err(TrainError::CoreRejected(_)) => {
+                                        model = model_checkpoint.clone();
+                                        rollback_count = rollback_count.saturating_add(1);
+                                        rejected_window_count =
+                                            rejected_window_count.saturating_add(1);
+                                        adaptive_attention_shifts.observe_rejected(
+                                            rejected_batch_count
+                                                .saturating_add(rejected_window_count),
+                                            adaptive_shift_controller_enabled,
+                                            config,
+                                            &mut adaptive_shift_events,
+                                        );
+                                        stacked_rejected = true;
+                                        break;
+                                    }
+                                    Err(error) => return Err(error),
+                                };
+                            add_gated_mlp_weight_update_stats_checked(
+                                &mut stacked_mlp_update,
+                                block_update.mlp_update,
+                            )?;
+                            add_mini_transformer_attention_weight_update_stats_checked(
+                                &mut stacked_attention_update,
+                                block_update.attention_update,
+                            )?;
+                            stacked_mlp_input_saturation_count = stacked_mlp_input_saturation_count
+                                .saturating_add(block_update.mlp_input_saturation_count);
+                            stacked_gradient_residual_saturation_count =
+                                stacked_gradient_residual_saturation_count.saturating_add(
+                                    block_update.gradient_residual_saturation_count,
+                                );
+                            stacked_input_gradient_saturation_count =
+                                stacked_input_gradient_saturation_count
+                                    .saturating_add(block_update.input_gradient_saturation_count);
+                            grad_block_output = block_update.grad_input;
+                        }
+                        if stacked_rejected {
                             continue;
                         }
-                        Err(error) => return Err(error),
-                    };
-                    let attention_rms_backward_saturation_count = 0_usize;
 
-                    let embedding_gradient_saturation_count = add_i16_residual_rows_checked(
-                        &workspace.grad_attention_output,
-                        &workspace.grad_attention_norm_input,
-                        &mut workspace.grad_embedding_output,
-                    )?;
-                    let embedding_update = if use_embedding_accumulator {
-                        empty_softmax_update_stats()
+                        workspace.grad_embedding_output[..total]
+                            .copy_from_slice(&grad_block_output);
+                        let stacked_embedding_learning_rate_shift = runtime_config
+                            .embedding_learning_rate_shift
+                            .saturating_add(
+                                MINI_TRANSFORMER_STACKED_EMBEDDING_LEARNING_RATE_EXTRA_SHIFT,
+                            )
+                            .min(MAX_RIGHT_SHIFT);
+                        let embedding_update =
+                            apply_mini_transformer_embedding_update_with_position_policy(
+                                &mut model.embeddings,
+                                &mut model.position_embeddings,
+                                &tokens[window_start..window_start + config.seq_len],
+                                &workspace.grad_embedding_output,
+                                config.position_policy,
+                                config.learning_rate,
+                                stacked_embedding_learning_rate_shift,
+                            )?;
+                        (
+                            stacked_mlp_input_saturation_count,
+                            stacked_gradient_residual_saturation_count,
+                            stacked_mlp_update,
+                            stacked_attention_update,
+                            stacked_input_gradient_saturation_count,
+                            embedding_update,
+                        )
                     } else {
-                        apply_mini_transformer_embedding_update_with_position_policy(
-                            &mut model.embeddings,
-                            &mut model.position_embeddings,
-                            &tokens[window_start..window_start + config.seq_len],
-                            &workspace.grad_embedding_output,
-                            config.position_policy,
-                            config.learning_rate,
-                            runtime_config.embedding_learning_rate_shift,
-                        )?
+                        workspace.grad_mlp_output[last_start..last_end]
+                            .copy_from_slice(&workspace.grad_last_features);
+                        let mlp_input_saturation_count = gated_mlp_backward_input_i16_q15_checked(
+                            &workspace.grad_mlp_output,
+                            mini_transformer_final_mlp_params(&model, config.seq_len)?,
+                            &cache_before.mlp_up,
+                            &cache_before.mlp_gate,
+                            GatedMlpBackwardScales {
+                                down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+                                up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+                                gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+                            },
+                            GatedMlpBackwardWorkspace {
+                                scaled_grad_output: &mut workspace.mlp_scaled_grad,
+                                grad_gated: &mut workspace.mlp_input_grad_gated,
+                                grad_up: &mut workspace.mlp_input_grad_up,
+                                grad_gate: &mut workspace.mlp_input_grad_gate,
+                                grad_up_input: &mut workspace.mlp_input_grad_up_input,
+                                grad_gate_input: &mut workspace.mlp_input_grad_gate_input,
+                            },
+                            &mut workspace.grad_mlp_input,
+                        )
+                        .ok_or(TrainError::CoreRejected(
+                            "mini_transformer_mlp_backward_input",
+                        ))?;
+
+                        let gradient_residual_saturation_count = add_i16_residual_rows_checked(
+                            &workspace.grad_mlp_output,
+                            &workspace.grad_mlp_input,
+                            &mut workspace.grad_attention_output,
+                        )?;
+
+                        let mlp_update = if use_mlp_accumulator {
+                            empty_gated_mlp_weight_update_stats()
+                        } else {
+                            let up_or_gate_range = model.final_mlp_up_or_gate_weight_range()?;
+                            let down_range = model.final_mlp_down_weight_range()?;
+                            gated_mlp_backward_weight_update_i8_checked(
+                                &cache_before.mlp_norm,
+                                &workspace.grad_mlp_output,
+                                &cache_before.mlp_up,
+                                &cache_before.mlp_gate,
+                                &cache_before.mlp_gated,
+                                &mut model.up_weights[up_or_gate_range.clone()],
+                                &mut model.gate_weights[up_or_gate_range],
+                                &mut model.down_weights[down_range],
+                                GatedMlpWeightUpdateParams {
+                                    up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+                                    gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+                                    down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                                    down_to_hidden_scales:
+                                        &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+                                    seq_len: config.seq_len,
+                                    d_model: MINI_TRANSFORMER_D_MODEL,
+                                    hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+                                    learning_rate: config.learning_rate,
+                                    learning_rate_shift: runtime_config.mlp_learning_rate_shift,
+                                },
+                                GatedMlpWeightUpdateWorkspace {
+                                    scaled_grad_output: &mut workspace.mlp_scaled_grad,
+                                    grad_gated: &mut workspace.mlp_update_grad_gated,
+                                    grad_up: &mut workspace.mlp_update_grad_up,
+                                    grad_gate: &mut workspace.mlp_update_grad_gate,
+                                },
+                            )
+                            .ok_or(TrainError::CoreRejected("mini_transformer_mlp_update"))?
+                        };
+
+                        let attention_update = match mini_transformer_attention_update_i8_checked(
+                            cache_before
+                                .layers
+                                .last()
+                                .ok_or(TrainError::InvalidConfig)?,
+                            &mut model,
+                            transformer_layers - 1,
+                            runtime_config,
+                            workspace,
+                            if use_attention_accumulator {
+                                Some(&mut attention_weight_gradients[transformer_layers - 1])
+                            } else {
+                                None
+                            },
+                        ) {
+                            Ok(update) => update,
+                            Err(TrainError::CoreRejected(_)) => {
+                                model = model_checkpoint;
+                                rollback_count = rollback_count.saturating_add(1);
+                                rejected_window_count = rejected_window_count.saturating_add(1);
+                                adaptive_attention_shifts.observe_rejected(
+                                    rejected_batch_count.saturating_add(rejected_window_count),
+                                    adaptive_shift_controller_enabled,
+                                    config,
+                                    &mut adaptive_shift_events,
+                                );
+                                continue;
+                            }
+                            Err(error) => return Err(error),
+                        };
+
+                        let embedding_gradient_saturation_count = add_i16_residual_rows_checked(
+                            &workspace.grad_attention_output,
+                            &workspace.grad_attention_norm_input,
+                            &mut workspace.grad_embedding_output,
+                        )?;
+                        let embedding_update = if use_embedding_accumulator {
+                            empty_softmax_update_stats()
+                        } else {
+                            apply_mini_transformer_embedding_update_with_position_policy(
+                                &mut model.embeddings,
+                                &mut model.position_embeddings,
+                                &tokens[window_start..window_start + config.seq_len],
+                                &workspace.grad_embedding_output,
+                                config.position_policy,
+                                config.learning_rate,
+                                runtime_config.embedding_learning_rate_shift,
+                            )?
+                        };
+
+                        (
+                            mlp_input_saturation_count,
+                            gradient_residual_saturation_count,
+                            mlp_update,
+                            attention_update,
+                            embedding_gradient_saturation_count,
+                            embedding_update,
+                        )
                     };
+                    let mlp_rms_backward_saturation_count = 0_usize;
+                    let attention_rms_backward_saturation_count = 0_usize;
 
                     let cache_after = match mini_transformer_forward_for_attention_and_position(
                         &model,
@@ -7430,7 +5992,8 @@ where
                         config.position_policy,
                     ) {
                         Ok(cache) => cache,
-                        Err(_) => {
+                        Err(error) => {
+                            let _ = error;
                             model = model_checkpoint;
                             rollback_count = rollback_count.saturating_add(1);
                             rejected_window_count = rejected_window_count.saturating_add(1);
@@ -7470,7 +6033,7 @@ where
                     }
                     if use_output_head_accumulator {
                         accumulate_linear_weight_gradient_i64_prescaled(
-                            &cache_before.block_output[last_start..last_end],
+                            &cache_before.output_features,
                             &workspace.output_scaled_grad,
                             &mut output_head_gradient,
                         )?;
@@ -7486,14 +6049,14 @@ where
                                 up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
                                 gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
                                 down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                                down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+                                down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
                                 seq_len: config.seq_len,
                                 d_model: MINI_TRANSFORMER_D_MODEL,
                                 hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
                                 learning_rate: config.learning_rate,
                                 learning_rate_shift: config.mlp_learning_rate_shift,
                             },
-                            &mut mlp_weight_gradient,
+                            &mut mlp_weight_gradients[transformer_layers - 1],
                             &mut workspace.mlp_scaled_grad,
                         )?;
                     }
@@ -7677,8 +6240,8 @@ where
                     let mut batch_embedding_accumulator_window_count = 0_usize;
 
                     let output_head_gradient_checkpoint = output_head_gradient.clone();
-                    let mlp_weight_gradient_checkpoint = mlp_weight_gradient.clone();
-                    let attention_weight_gradient_checkpoint = attention_weight_gradient.clone();
+                    let mlp_weight_gradients_checkpoint = mlp_weight_gradients.clone();
+                    let attention_weight_gradients_checkpoint = attention_weight_gradients.clone();
                     let embedding_gradient_checkpoint = embedding_gradient.clone();
                     let batch_windows = &starts[batch_start_index..batch_end_index];
                     let batch_runtime_config = adaptive_attention_shifts.runtime_config(config);
@@ -7703,15 +6266,38 @@ where
                         batch_output_head_accumulator_window_count = accepted_windows_in_batch;
                     }
                     if use_mlp_accumulator {
-                        let mlp_batch_update = apply_gated_mlp_weight_gradient_i64_to_i8(
-                            &mut mlp_weight_gradient,
-                            &mut candidate_model.up_weights,
-                            &mut candidate_model.gate_weights,
-                            &mut candidate_model.down_weights,
-                            batch_apply_config.learning_rate,
-                            batch_apply_config.mlp_learning_rate_shift,
-                            true,
-                        )?;
+                        let mut mlp_batch_update = empty_gated_mlp_weight_update_stats();
+                        for (layer_index, gradient) in mlp_weight_gradients
+                            .iter_mut()
+                            .enumerate()
+                            .take(transformer_layers)
+                        {
+                            let layer_apply_config = if transformer_layers > 1 {
+                                mini_transformer_stacked_layer_runtime_config(
+                                    batch_apply_config,
+                                    layer_index,
+                                    transformer_layers,
+                                )
+                            } else {
+                                batch_apply_config
+                            };
+                            let up_or_gate_range =
+                                candidate_model.mlp_up_or_gate_weight_range(layer_index)?;
+                            let down_range = candidate_model.mlp_down_weight_range(layer_index)?;
+                            let layer_update = apply_gated_mlp_weight_gradient_i64_to_i8(
+                                gradient,
+                                &mut candidate_model.up_weights[up_or_gate_range.clone()],
+                                &mut candidate_model.gate_weights[up_or_gate_range],
+                                &mut candidate_model.down_weights[down_range],
+                                layer_apply_config.learning_rate,
+                                layer_apply_config.mlp_learning_rate_shift,
+                                true,
+                            )?;
+                            add_gated_mlp_weight_update_stats_checked(
+                                &mut mlp_batch_update,
+                                layer_update,
+                            )?;
+                        }
                         batch_mlp_saturation_count = mlp_batch_update
                             .gradient_saturation_count()
                             .unwrap_or(usize::MAX);
@@ -7723,11 +6309,40 @@ where
                     }
                     if use_attention_accumulator {
                         let mut attention_batch_update =
-                            apply_mini_transformer_attention_weight_gradient_i64_to_i8(
-                                &mut attention_weight_gradient,
-                                &mut candidate_model,
-                                batch_apply_config,
+                            empty_mini_transformer_attention_weight_update_stats();
+                        for (layer_index, gradient) in attention_weight_gradients
+                            .iter_mut()
+                            .enumerate()
+                            .take(transformer_layers)
+                        {
+                            let layer_apply_config = if transformer_layers > 1 {
+                                mini_transformer_stacked_layer_runtime_config(
+                                    batch_apply_config,
+                                    layer_index,
+                                    transformer_layers,
+                                )
+                            } else {
+                                batch_apply_config
+                            };
+                            let layer_update = if transformer_layers == 1 {
+                                apply_mini_transformer_attention_weight_gradient_i64_to_i8(
+                                    gradient,
+                                    &mut candidate_model,
+                                    layer_apply_config,
+                                )?
+                            } else {
+                                apply_mini_transformer_attention_weight_gradient_i64_to_i8_for_layer(
+                                    gradient,
+                                    &mut candidate_model,
+                                    layer_index,
+                                    layer_apply_config,
+                                )?
+                            };
+                            add_mini_transformer_attention_weight_update_stats_checked(
+                                &mut attention_batch_update,
+                                layer_update,
                             )?;
+                        }
                         if config.attention_vo_oracle {
                             let (v_oracle, o_oracle) =
                                 mini_transformer_attention_vo_oracle_update_i8_checked(
@@ -7772,6 +6387,16 @@ where
                         batch_attention_accumulator_window_count = accepted_windows_in_batch;
                     }
                     if use_embedding_accumulator {
+                        let embedding_learning_rate_shift = if transformer_layers > 1 {
+                            batch_apply_config
+                                .embedding_learning_rate_shift
+                                .saturating_add(
+                                    MINI_TRANSFORMER_STACKED_EMBEDDING_LEARNING_RATE_EXTRA_SHIFT,
+                                )
+                                .min(MAX_RIGHT_SHIFT)
+                        } else {
+                            batch_apply_config.embedding_learning_rate_shift
+                        };
                         let embedding_batch_update =
                             apply_mini_transformer_embedding_gradient_i64_to_i16_with_position_policy(
                                 &mut embedding_gradient,
@@ -7779,7 +6404,7 @@ where
                                 &mut candidate_model.position_embeddings,
                                 config.position_policy,
                                 batch_apply_config.learning_rate,
-                                batch_apply_config.embedding_learning_rate_shift,
+                                embedding_learning_rate_shift,
                             )?;
                         batch_embedding_saturation_count =
                             embedding_batch_update.gradient_saturation_count;
@@ -7952,12 +6577,16 @@ where
                             output_head_gradient.clear();
                         }
                         if use_mlp_accumulator {
-                            mlp_weight_gradient = mlp_weight_gradient_checkpoint;
-                            mlp_weight_gradient.clear();
+                            mlp_weight_gradients = mlp_weight_gradients_checkpoint;
+                            mini_transformer_clear_gated_mlp_weight_gradient_i64_layers(
+                                &mut mlp_weight_gradients,
+                            );
                         }
                         if use_attention_accumulator {
-                            attention_weight_gradient = attention_weight_gradient_checkpoint;
-                            attention_weight_gradient.clear();
+                            attention_weight_gradients = attention_weight_gradients_checkpoint;
+                            mini_transformer_clear_attention_weight_gradient_i64_layers(
+                                &mut attention_weight_gradients,
+                            );
                         }
                         if use_embedding_accumulator {
                             embedding_gradient = embedding_gradient_checkpoint;
@@ -7969,10 +6598,14 @@ where
                         output_head_gradient.clear();
                     }
                     if use_mlp_accumulator {
-                        mlp_weight_gradient.clear();
+                        mini_transformer_clear_gated_mlp_weight_gradient_i64_layers(
+                            &mut mlp_weight_gradients,
+                        );
                     }
                     if use_attention_accumulator {
-                        attention_weight_gradient.clear();
+                        mini_transformer_clear_attention_weight_gradient_i64_layers(
+                            &mut attention_weight_gradients,
+                        );
                     }
                     if use_embedding_accumulator {
                         embedding_gradient.clear();
@@ -7989,10 +6622,14 @@ where
                     output_head_gradient.clear();
                 }
                 if use_mlp_accumulator {
-                    mlp_weight_gradient.clear();
+                    mini_transformer_clear_gated_mlp_weight_gradient_i64_layers(
+                        &mut mlp_weight_gradients,
+                    );
                 }
                 if use_attention_accumulator {
-                    attention_weight_gradient.clear();
+                    mini_transformer_clear_attention_weight_gradient_i64_layers(
+                        &mut attention_weight_gradients,
+                    );
                 }
                 if use_embedding_accumulator {
                     embedding_gradient.clear();
@@ -8011,7 +6648,9 @@ where
                 0
             };
             mlp_carry_l1 = if use_mlp_accumulator {
-                mlp_weight_gradient.residual_l1()
+                mini_transformer_gated_mlp_weight_gradient_i64_layers_residual_l1(
+                    &mlp_weight_gradients,
+                )
             } else {
                 0
             };
@@ -8021,11 +6660,30 @@ where
                 0
             };
             if use_attention_accumulator {
-                attention_q_carry_l1 = attention_weight_gradient.q.residual_l1();
-                attention_k_carry_l1 = attention_weight_gradient.k.residual_l1();
-                attention_v_carry_l1 = attention_weight_gradient.v.residual_l1();
-                attention_o_carry_l1 = attention_weight_gradient.o.residual_l1();
-                attention_carry_l1 = attention_weight_gradient.residual_l1();
+                attention_q_carry_l1 =
+                    mini_transformer_attention_weight_gradient_i64_layers_projection_residual_l1(
+                        &attention_weight_gradients,
+                        MiniTransformerAttentionProjection::Query,
+                    );
+                attention_k_carry_l1 =
+                    mini_transformer_attention_weight_gradient_i64_layers_projection_residual_l1(
+                        &attention_weight_gradients,
+                        MiniTransformerAttentionProjection::Key,
+                    );
+                attention_v_carry_l1 =
+                    mini_transformer_attention_weight_gradient_i64_layers_projection_residual_l1(
+                        &attention_weight_gradients,
+                        MiniTransformerAttentionProjection::Value,
+                    );
+                attention_o_carry_l1 =
+                    mini_transformer_attention_weight_gradient_i64_layers_projection_residual_l1(
+                        &attention_weight_gradients,
+                        MiniTransformerAttentionProjection::Output,
+                    );
+                attention_carry_l1 =
+                    mini_transformer_attention_weight_gradient_i64_layers_residual_l1(
+                        &attention_weight_gradients,
+                    );
             } else {
                 attention_q_carry_l1 = 0;
                 attention_k_carry_l1 = 0;
@@ -8235,9 +6893,7 @@ fn validate_mini_transformer_batch_mode(
     match config.batch_mode {
         MiniTransformerBatchMode::Serial => Ok(()),
         MiniTransformerBatchMode::MapReduce => {
-            if config.attention_kind != MiniTransformerAttentionKind::Linear
-                || config.position_policy != MiniTransformerPositionPolicy::Nope
-                || config.batch_windows <= 1
+            if config.batch_windows <= 1
                 || config.attention_vo_error_feedback
                 || config.attention_vo_oracle
                 || config.reject_loss_regression
@@ -8268,8 +6924,9 @@ fn mini_transformer_effective_map_reduce_workers(config: MiniTransformerMlpTrain
 struct MiniTransformerMapReduceBatchResult {
     accepted_window_count: usize,
     output_head_gradient: LinearWeightGradientI64,
-    mlp_weight_gradient: GatedMlpWeightGradientI64,
-    attention_weight_gradient: MiniTransformerAttentionWeightGradientI64,
+    mlp_weight_gradients: Vec<GatedMlpWeightGradientI64>,
+    attention_weight_gradients: Vec<MiniTransformerAttentionWeightGradientI64>,
+    rms_weight_gradients: Vec<MiniTransformerRmsWeightGradientI64>,
     embedding_gradient: MiniTransformerEmbeddingGradientI64,
     mlp_saturation_count: usize,
     attention_saturation_count: usize,
@@ -8278,7 +6935,10 @@ struct MiniTransformerMapReduceBatchResult {
 }
 
 impl MiniTransformerMapReduceBatchResult {
-    fn new(config: MiniTransformerMlpTrainConfig) -> Result<Self, TrainError> {
+    fn new(
+        config: MiniTransformerMlpTrainConfig,
+        transformer_layers: usize,
+    ) -> Result<Self, TrainError> {
         Ok(Self {
             accepted_window_count: 0,
             output_head_gradient: LinearWeightGradientI64::new(
@@ -8286,15 +6946,15 @@ impl MiniTransformerMapReduceBatchResult {
                 BYTE_VOCAB,
             )
             .ok_or(TrainError::InvalidConfig)?,
-            mlp_weight_gradient: GatedMlpWeightGradientI64::new(
-                MINI_TRANSFORMER_D_MODEL,
-                MINI_TRANSFORMER_HIDDEN_DIM,
-            )
-            .ok_or(TrainError::InvalidConfig)?,
-            attention_weight_gradient: MiniTransformerAttentionWeightGradientI64::new(
-                MINI_TRANSFORMER_D_MODEL,
-            )
-            .ok_or(TrainError::InvalidConfig)?,
+            mlp_weight_gradients: mini_transformer_new_gated_mlp_weight_gradients(
+                transformer_layers,
+            )?,
+            attention_weight_gradients: mini_transformer_new_attention_weight_gradients(
+                transformer_layers,
+            )?,
+            rms_weight_gradients: (0..transformer_layers)
+                .map(|_| MiniTransformerRmsWeightGradientI64::new())
+                .collect(),
             embedding_gradient: MiniTransformerEmbeddingGradientI64::new(config.seq_len)
                 .ok_or(TrainError::InvalidConfig)?,
             mlp_saturation_count: 0,
@@ -8373,7 +7033,8 @@ fn mini_transformer_map_reduce_batch(
             chunk_start = end;
         }
 
-        let mut result = MiniTransformerMapReduceBatchResult::new(config)?;
+        let mut result =
+            MiniTransformerMapReduceBatchResult::new(config, model.transformer_layers())?;
         for handle in handles {
             let worker = match handle.join() {
                 Ok(worker) => worker?,
@@ -8405,7 +7066,7 @@ fn mini_transformer_map_reduce_worker_batch(
         return Err(TrainError::InvalidConfig);
     }
 
-    let mut result = MiniTransformerMapReduceBatchResult::new(config)?;
+    let mut result = MiniTransformerMapReduceBatchResult::new(config, model.transformer_layers())?;
     let mut model_for_backward = model.clone();
     let last_start = (config.seq_len - 1)
         .checked_mul(MINI_TRANSFORMER_D_MODEL)
@@ -8468,87 +7129,196 @@ fn mini_transformer_map_reduce_worker_batch(
             "mini_transformer_map_reduce_output_head_backward_input",
         ))?;
         accumulate_linear_weight_gradient_i64_prescaled(
-            &cache_before.block_output[last_start..last_end],
+            &cache_before.output_features,
             &workspace.output_scaled_grad,
             &mut result.output_head_gradient,
         )?;
 
-        workspace.grad_mlp_output[last_start..last_end]
-            .copy_from_slice(&workspace.grad_last_features);
-        let mlp_input_saturation_count = gated_mlp_backward_input_i16_q15_checked(
-            &workspace.grad_mlp_output,
-            mini_transformer_mlp_params(
-                &model.up_weights,
-                &model.gate_weights,
-                &model.down_weights,
-                config.seq_len,
-            ),
-            &cache_before.mlp_up,
-            &cache_before.mlp_gate,
-            GatedMlpBackwardScales {
-                down_to_hidden: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                up_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                gate_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-            },
-            GatedMlpBackwardWorkspace {
-                scaled_grad_output: &mut workspace.mlp_scaled_grad,
-                grad_gated: &mut workspace.mlp_input_grad_gated,
-                grad_up: &mut workspace.mlp_input_grad_up,
-                grad_gate: &mut workspace.mlp_input_grad_gate,
-                grad_up_input: &mut workspace.mlp_input_grad_up_input,
-                grad_gate_input: &mut workspace.mlp_input_grad_gate_input,
-            },
-            &mut workspace.grad_mlp_input,
-        )
-        .ok_or(TrainError::CoreRejected(
-            "mini_transformer_map_reduce_mlp_backward_input",
-        ))?;
+        if cache_before.layers.len() != result.mlp_weight_gradients.len()
+            || cache_before.layers.len() != result.attention_weight_gradients.len()
+            || cache_before.layers.len() != result.rms_weight_gradients.len()
+        {
+            return Err(TrainError::InvalidConfig);
+        }
+        let (
+            mlp_input_saturation_count,
+            attention_gradient_saturation_count,
+            gradient_residual_saturation_count,
+            embedding_gradient_saturation_count,
+        ) = if cache_before.layers.len() > 1 {
+            let total = config
+                .seq_len
+                .checked_mul(MINI_TRANSFORMER_D_MODEL)
+                .ok_or(TrainError::InvalidConfig)?;
+            let mut grad_block_output = vec![0_i16; total];
+            grad_block_output[last_start..last_end].copy_from_slice(&workspace.grad_last_features);
+            let mut stacked_mlp_input_saturation_count = 0_usize;
+            let mut stacked_attention_gradient_saturation_count = 0_usize;
+            let mut stacked_gradient_residual_saturation_count = 0_usize;
+            let mut stacked_input_gradient_saturation_count = 0_usize;
 
-        let gradient_residual_saturation_count = add_i16_residual_rows_checked(
-            &workspace.grad_mlp_output,
-            &workspace.grad_mlp_input,
-            &mut workspace.grad_attention_output,
-        )?;
+            for layer_index in (0..cache_before.layers.len()).rev() {
+                let layer_runtime_config = mini_transformer_stacked_layer_runtime_config(
+                    config,
+                    layer_index,
+                    cache_before.layers.len(),
+                );
+                let block_accumulation = mini_transformer_block_backward_accumulate_i64_checked(
+                    &cache_before.layers[layer_index],
+                    &grad_block_output,
+                    &mut model_for_backward,
+                    layer_index,
+                    layer_runtime_config,
+                    &mut workspace,
+                    &mut result.mlp_weight_gradients[layer_index],
+                    &mut result.attention_weight_gradients[layer_index],
+                    &mut result.rms_weight_gradients[layer_index],
+                )?;
+                stacked_mlp_input_saturation_count = stacked_mlp_input_saturation_count
+                    .saturating_add(block_accumulation.mlp_input_saturation_count);
+                stacked_attention_gradient_saturation_count =
+                    stacked_attention_gradient_saturation_count
+                        .saturating_add(block_accumulation.attention_gradient_saturation_count);
+                stacked_gradient_residual_saturation_count =
+                    stacked_gradient_residual_saturation_count
+                        .saturating_add(block_accumulation.gradient_residual_saturation_count);
+                stacked_input_gradient_saturation_count = stacked_input_gradient_saturation_count
+                    .saturating_add(block_accumulation.input_gradient_saturation_count);
+                grad_block_output = block_accumulation.grad_input;
+            }
 
-        accumulate_gated_mlp_weight_gradient_i64(
-            &cache_before.mlp_norm,
-            &workspace.grad_mlp_output,
-            &cache_before.mlp_gated,
-            &workspace.mlp_input_grad_up,
-            &workspace.mlp_input_grad_gate,
-            GatedMlpWeightUpdateParams {
-                up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                seq_len: config.seq_len,
-                d_model: MINI_TRANSFORMER_D_MODEL,
-                hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
-                learning_rate: config.learning_rate,
-                learning_rate_shift: config.mlp_learning_rate_shift,
-            },
-            &mut result.mlp_weight_gradient,
-            &mut workspace.mlp_scaled_grad,
-        )?;
+            workspace.grad_embedding_output[..total].copy_from_slice(&grad_block_output);
+            accumulate_mini_transformer_embedding_gradient_i64_with_position_policy(
+                context,
+                &workspace.grad_embedding_output,
+                config.position_policy,
+                &mut result.embedding_gradient,
+            )?;
+            (
+                stacked_mlp_input_saturation_count,
+                stacked_attention_gradient_saturation_count,
+                stacked_gradient_residual_saturation_count,
+                stacked_input_gradient_saturation_count,
+            )
+        } else {
+            let block_cache = cache_before
+                .layers
+                .last()
+                .ok_or(TrainError::InvalidConfig)?;
+            let rms_weights = if model.rms_norm_enabled() {
+                let range = model.rms_weight_range(0)?;
+                Some((
+                    model.attention_rms_weights[range.clone()].to_vec(),
+                    model.mlp_rms_weights[range].to_vec(),
+                ))
+            } else {
+                None
+            };
+            workspace.grad_mlp_output[last_start..last_end]
+                .copy_from_slice(&workspace.grad_last_features);
+            let mlp_input_saturation_count = gated_mlp_backward_input_i16_q15_checked(
+                &workspace.grad_mlp_output,
+                mini_transformer_final_mlp_params(model, config.seq_len)?,
+                &cache_before.mlp_up,
+                &cache_before.mlp_gate,
+                GatedMlpBackwardScales {
+                    down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+                    up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+                    gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+                },
+                GatedMlpBackwardWorkspace {
+                    scaled_grad_output: &mut workspace.mlp_scaled_grad,
+                    grad_gated: &mut workspace.mlp_input_grad_gated,
+                    grad_up: &mut workspace.mlp_input_grad_up,
+                    grad_gate: &mut workspace.mlp_input_grad_gate,
+                    grad_up_input: &mut workspace.mlp_input_grad_up_input,
+                    grad_gate_input: &mut workspace.mlp_input_grad_gate_input,
+                },
+                &mut workspace.grad_mlp_input,
+            )
+            .ok_or(TrainError::CoreRejected(
+                "mini_transformer_map_reduce_mlp_backward_input",
+            ))?;
 
-        let attention_update = mini_transformer_attention_update_i8_checked(
-            &cache_before,
-            &mut model_for_backward,
-            config,
-            &mut workspace,
-            Some(&mut result.attention_weight_gradient),
-        )?;
-        let embedding_gradient_saturation_count = add_i16_residual_rows_checked(
-            &workspace.grad_attention_output,
-            &workspace.grad_attention_norm_input,
-            &mut workspace.grad_embedding_output,
-        )?;
-        accumulate_mini_transformer_embedding_gradient_i64_with_position_policy(
-            context,
-            &workspace.grad_embedding_output,
-            config.position_policy,
-            &mut result.embedding_gradient,
-        )?;
+            let mut grad_mlp_residual = vec![0_i16; workspace.grad_mlp_input.len()];
+            let mlp_rms_saturation = if let Some((_, mlp_weights)) = &rms_weights {
+                mini_transformer_rms_norm_backward_rows(
+                    &block_cache.attention_residual,
+                    mlp_weights,
+                    &workspace.grad_mlp_input,
+                    &mut grad_mlp_residual,
+                    &mut result.rms_weight_gradients[0].mlp,
+                )?
+            } else {
+                grad_mlp_residual.copy_from_slice(&workspace.grad_mlp_input);
+                0
+            };
+            let gradient_residual_saturation_count = add_i16_residual_rows_checked(
+                &workspace.grad_mlp_output,
+                &grad_mlp_residual,
+                &mut workspace.grad_attention_output,
+            )?;
+
+            accumulate_gated_mlp_weight_gradient_i64(
+                &cache_before.mlp_norm,
+                &workspace.grad_mlp_output,
+                &cache_before.mlp_gated,
+                &workspace.mlp_input_grad_up,
+                &workspace.mlp_input_grad_gate,
+                GatedMlpWeightUpdateParams {
+                    up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+                    gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+                    down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                    down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+                    seq_len: config.seq_len,
+                    d_model: MINI_TRANSFORMER_D_MODEL,
+                    hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+                    learning_rate: config.learning_rate,
+                    learning_rate_shift: config.mlp_learning_rate_shift,
+                },
+                &mut result.mlp_weight_gradients[0],
+                &mut workspace.mlp_scaled_grad,
+            )?;
+
+            let attention_update = mini_transformer_attention_update_i8_checked(
+                block_cache,
+                &mut model_for_backward,
+                0,
+                config,
+                &mut workspace,
+                Some(&mut result.attention_weight_gradients[0]),
+            )?;
+            let mut grad_attention_input = vec![0_i16; workspace.grad_attention_norm_input.len()];
+            let attention_rms_saturation = if let Some((attention_weights, _)) = &rms_weights {
+                mini_transformer_rms_norm_backward_rows(
+                    &block_cache.block_input,
+                    attention_weights,
+                    &workspace.grad_attention_norm_input,
+                    &mut grad_attention_input,
+                    &mut result.rms_weight_gradients[0].attention,
+                )?
+            } else {
+                grad_attention_input.copy_from_slice(&workspace.grad_attention_norm_input);
+                0
+            };
+            let embedding_gradient_saturation_count = add_i16_residual_rows_checked(
+                &workspace.grad_attention_output,
+                &grad_attention_input,
+                &mut workspace.grad_embedding_output,
+            )?;
+            accumulate_mini_transformer_embedding_gradient_i64_with_position_policy(
+                context,
+                &workspace.grad_embedding_output,
+                config.position_policy,
+                &mut result.embedding_gradient,
+            )?;
+            (
+                mlp_input_saturation_count.saturating_add(mlp_rms_saturation),
+                attention_update.gradient_saturation_count,
+                gradient_residual_saturation_count,
+                embedding_gradient_saturation_count.saturating_add(attention_rms_saturation),
+            )
+        };
 
         result.accepted_window_count = result.accepted_window_count.saturating_add(1);
         result.mlp_saturation_count = result
@@ -8556,7 +7326,7 @@ fn mini_transformer_map_reduce_worker_batch(
             .saturating_add(mlp_input_saturation_count);
         result.attention_saturation_count = result
             .attention_saturation_count
-            .saturating_add(attention_update.gradient_saturation_count);
+            .saturating_add(attention_gradient_saturation_count);
         result.residual_saturation_count = result
             .residual_saturation_count
             .saturating_add(gradient_residual_saturation_count)
@@ -8603,7 +7373,7 @@ fn mini_transformer_map_reduce_worker_batch(
                 output_head_saturation_count: 0,
                 mlp_saturation_count: mlp_input_saturation_count,
                 embedding_saturation_count: 0,
-                attention_saturation_count: attention_update.gradient_saturation_count,
+                attention_saturation_count: attention_gradient_saturation_count,
                 residual_saturation_count: gradient_residual_saturation_count
                     + embedding_gradient_saturation_count
                     + cache_before.residual_saturation_count
@@ -8641,13 +7411,17 @@ fn mini_transformer_merge_map_reduce_batch_result(
         &mut target.output_head_gradient,
         &source.output_head_gradient,
     )?;
-    mini_transformer_merge_gated_mlp_weight_gradient_i64(
-        &mut target.mlp_weight_gradient,
-        &source.mlp_weight_gradient,
+    mini_transformer_merge_gated_mlp_weight_gradient_i64_layers(
+        &mut target.mlp_weight_gradients,
+        &source.mlp_weight_gradients,
     )?;
-    mini_transformer_merge_attention_weight_gradient_i64(
-        &mut target.attention_weight_gradient,
-        &source.attention_weight_gradient,
+    mini_transformer_merge_attention_weight_gradient_i64_layers(
+        &mut target.attention_weight_gradients,
+        &source.attention_weight_gradients,
+    )?;
+    mini_transformer_merge_rms_weight_gradient_i64_layers(
+        &mut target.rms_weight_gradients,
+        &source.rms_weight_gradients,
     )?;
     mini_transformer_merge_embedding_gradient_i64(
         &mut target.embedding_gradient,
@@ -8695,6 +7469,43 @@ fn mini_transformer_merge_linear_weight_gradient_i64(
     Ok(())
 }
 
+fn mini_transformer_merge_rms_vector_gradient_i64(
+    target: &mut MiniTransformerRmsVectorGradientI64,
+    source: &MiniTransformerRmsVectorGradientI64,
+) -> Result<(), TrainError> {
+    if target.accumulators.len() != source.accumulators.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    target.sample_count = target
+        .sample_count
+        .checked_add(source.sample_count)
+        .ok_or(TrainError::CoreRejected("RMSNorm sample count overflow"))?;
+    for (target, source) in target
+        .accumulators
+        .iter_mut()
+        .zip(source.accumulators.iter())
+    {
+        *target = target
+            .checked_add(*source)
+            .ok_or(TrainError::CoreRejected("RMSNorm gradient overflow"))?;
+    }
+    Ok(())
+}
+
+fn mini_transformer_merge_rms_weight_gradient_i64_layers(
+    target: &mut [MiniTransformerRmsWeightGradientI64],
+    source: &[MiniTransformerRmsWeightGradientI64],
+) -> Result<(), TrainError> {
+    if target.len() != source.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    for (target, source) in target.iter_mut().zip(source.iter()) {
+        mini_transformer_merge_rms_vector_gradient_i64(&mut target.attention, &source.attention)?;
+        mini_transformer_merge_rms_vector_gradient_i64(&mut target.mlp, &source.mlp)?;
+    }
+    Ok(())
+}
+
 fn mini_transformer_merge_gated_mlp_weight_gradient_i64(
     target: &mut GatedMlpWeightGradientI64,
     source: &GatedMlpWeightGradientI64,
@@ -8702,6 +7513,51 @@ fn mini_transformer_merge_gated_mlp_weight_gradient_i64(
     mini_transformer_merge_linear_weight_gradient_i64(&mut target.down, &source.down)?;
     mini_transformer_merge_linear_weight_gradient_i64(&mut target.up, &source.up)?;
     mini_transformer_merge_linear_weight_gradient_i64(&mut target.gate, &source.gate)?;
+    Ok(())
+}
+
+fn mini_transformer_new_gated_mlp_weight_gradients(
+    layer_count: usize,
+) -> Result<Vec<GatedMlpWeightGradientI64>, TrainError> {
+    if layer_count == 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut gradients = Vec::with_capacity(layer_count);
+    for _ in 0..layer_count {
+        gradients.push(
+            GatedMlpWeightGradientI64::new(MINI_TRANSFORMER_D_MODEL, MINI_TRANSFORMER_HIDDEN_DIM)
+                .ok_or(TrainError::InvalidConfig)?,
+        );
+    }
+    Ok(gradients)
+}
+
+fn mini_transformer_clear_gated_mlp_weight_gradient_i64_layers(
+    gradients: &mut [GatedMlpWeightGradientI64],
+) {
+    for gradient in gradients {
+        gradient.clear();
+    }
+}
+
+fn mini_transformer_gated_mlp_weight_gradient_i64_layers_residual_l1(
+    gradients: &[GatedMlpWeightGradientI64],
+) -> u64 {
+    gradients.iter().fold(0_u64, |total, gradient| {
+        total.saturating_add(gradient.residual_l1())
+    })
+}
+
+fn mini_transformer_merge_gated_mlp_weight_gradient_i64_layers(
+    target: &mut [GatedMlpWeightGradientI64],
+    source: &[GatedMlpWeightGradientI64],
+) -> Result<(), TrainError> {
+    if target.len() != source.len() || target.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    for (target, source) in target.iter_mut().zip(source.iter()) {
+        mini_transformer_merge_gated_mlp_weight_gradient_i64(target, source)?;
+    }
     Ok(())
 }
 
@@ -8713,6 +7569,74 @@ fn mini_transformer_merge_attention_weight_gradient_i64(
     mini_transformer_merge_linear_weight_gradient_i64(&mut target.k, &source.k)?;
     mini_transformer_merge_linear_weight_gradient_i64(&mut target.v, &source.v)?;
     mini_transformer_merge_linear_weight_gradient_i64(&mut target.o, &source.o)?;
+    Ok(())
+}
+
+fn mini_transformer_new_attention_weight_gradients(
+    layer_count: usize,
+) -> Result<Vec<MiniTransformerAttentionWeightGradientI64>, TrainError> {
+    if layer_count == 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut gradients = Vec::with_capacity(layer_count);
+    for _ in 0..layer_count {
+        gradients.push(
+            MiniTransformerAttentionWeightGradientI64::new(MINI_TRANSFORMER_D_MODEL)
+                .ok_or(TrainError::InvalidConfig)?,
+        );
+    }
+    Ok(gradients)
+}
+
+fn mini_transformer_clear_attention_weight_gradient_i64_layers(
+    gradients: &mut [MiniTransformerAttentionWeightGradientI64],
+) {
+    for gradient in gradients {
+        gradient.clear();
+    }
+}
+
+fn mini_transformer_attention_weight_gradient_i64_layers_residual_l1(
+    gradients: &[MiniTransformerAttentionWeightGradientI64],
+) -> u64 {
+    gradients.iter().fold(0_u64, |total, gradient| {
+        total.saturating_add(gradient.residual_l1())
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MiniTransformerAttentionProjection {
+    Query,
+    Key,
+    Value,
+    Output,
+}
+
+fn mini_transformer_attention_weight_gradient_i64_layers_projection_residual_l1(
+    gradients: &[MiniTransformerAttentionWeightGradientI64],
+    projection: MiniTransformerAttentionProjection,
+) -> u64 {
+    gradients.iter().fold(0_u64, |total, gradient| {
+        let projection_l1 = match projection {
+            MiniTransformerAttentionProjection::Query => gradient.q.residual_l1(),
+            MiniTransformerAttentionProjection::Key => gradient.k.residual_l1(),
+            MiniTransformerAttentionProjection::Value => gradient.v.residual_l1(),
+            MiniTransformerAttentionProjection::Output => gradient.o.residual_l1(),
+        };
+        total.saturating_add(projection_l1)
+    })
+}
+
+fn mini_transformer_merge_attention_weight_gradient_i64_layers(
+    target: &mut [MiniTransformerAttentionWeightGradientI64],
+    source: &[MiniTransformerAttentionWeightGradientI64],
+) -> Result<(), TrainError> {
+    if target.len() != source.len() || target.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    for (target, source) in target.iter_mut().zip(source.iter()) {
+        mini_transformer_merge_attention_weight_gradient_i64(target, source)?;
+    }
     Ok(())
 }
 
@@ -8753,455 +7677,6 @@ fn mini_transformer_merge_embedding_gradient_i64(
         ))?;
     }
     Ok(())
-}
-
-impl LexemeEmbeddingTrainingTrace {
-    pub fn to_json_line(&self) -> String {
-        let mut out = String::new();
-        out.push('{');
-        push_string_field(&mut out, "schema", LEXEME_EMBEDDING_SCHEMA);
-        comma(&mut out);
-        push_string_field(&mut out, "authority", AUTHORITY);
-        comma(&mut out);
-        push_string_field(&mut out, "task", LEXEME_EMBEDDING_TASK);
-        comma(&mut out);
-        out.push_str("\"data\":{");
-        push_string_field(&mut out, "tokenizer", LEXEME_TOKENIZER_ID);
-        comma(&mut out);
-        push_usize_field(&mut out, "token_count", self.token_count);
-        comma(&mut out);
-        push_hash_field(&mut out, "token_hash", self.token_hash);
-        comma(&mut out);
-        push_hash_field(&mut out, "window_hash", self.window_hash);
-        comma(&mut out);
-        push_usize_field(&mut out, "windows", self.windows);
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"model\":{");
-        push_string_field(&mut out, "id", LEXEME_EMBEDDING_MODEL_ID);
-        comma(&mut out);
-        push_usize_field(&mut out, "vocab_size", self.config.vocab_size);
-        comma(&mut out);
-        push_usize_field(&mut out, "embedding_dim", self.config.embedding_dim);
-        comma(&mut out);
-        push_string_field(&mut out, "trained_component", "lexeme_embedding_i16");
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"optimizer\":{");
-        push_string_field(&mut out, "kind", "deterministic_integer_skipgram_hinge");
-        comma(&mut out);
-        push_string_field(&mut out, "embedding_scale", "q15_i16");
-        comma(&mut out);
-        push_string_field(&mut out, "positive_update", "pull_context_pair");
-        comma(&mut out);
-        push_string_field(
-            &mut out,
-            "negative_update",
-            "push_deterministic_negative_pair",
-        );
-        comma(&mut out);
-        push_i32_field(&mut out, "learning_rate", self.config.learning_rate);
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "learning_rate_shift",
-            usize::from(self.config.learning_rate_shift),
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "concept_frequency_cap",
-            self.config.concept_frequency_cap as usize,
-        );
-        comma(&mut out);
-        push_i16_field(
-            &mut out,
-            "concept_frequency_min_weight_q15",
-            self.config.concept_frequency_min_weight_q15,
-        );
-        comma(&mut out);
-        push_string_field(
-            &mut out,
-            "quality_weight_profile",
-            self.config.quality_weight_profile.as_str(),
-        );
-        comma(&mut out);
-        push_i64_field(
-            &mut out,
-            "positive_dot_margin_i64",
-            LEXEME_POSITIVE_DOT_MARGIN_I64,
-        );
-        comma(&mut out);
-        push_i64_field(
-            &mut out,
-            "negative_dot_margin_i64",
-            LEXEME_NEGATIVE_DOT_MARGIN_I64,
-        );
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"training\":{");
-        push_usize_field(&mut out, "epochs", self.config.epochs);
-        comma(&mut out);
-        push_usize_field(&mut out, "context_radius", self.config.context_radius);
-        comma(&mut out);
-        push_usize_field(&mut out, "stride", self.config.stride);
-        comma(&mut out);
-        push_usize_field(&mut out, "window_offset", self.config.window_offset);
-        comma(&mut out);
-        push_optional_usize_field(&mut out, "max_windows", self.config.max_windows);
-        comma(&mut out);
-        push_usize_field(&mut out, "examined_windows", self.examined_windows);
-        comma(&mut out);
-        push_usize_field(&mut out, "updates", self.updates);
-        comma(&mut out);
-        push_usize_field(&mut out, "positive_pair_count", self.positive_pair_count);
-        comma(&mut out);
-        push_usize_field(&mut out, "negative_pair_count", self.negative_pair_count);
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"metrics\":{");
-        push_i64_field(
-            &mut out,
-            "initial_positive_dot_i64",
-            self.initial_positive_dot_i64,
-        );
-        comma(&mut out);
-        push_i64_field(
-            &mut out,
-            "final_positive_dot_i64",
-            self.final_positive_dot_i64,
-        );
-        comma(&mut out);
-        push_i64_field(
-            &mut out,
-            "positive_dot_delta_i64",
-            self.final_positive_dot_i64 - self.initial_positive_dot_i64,
-        );
-        comma(&mut out);
-        push_i64_field(
-            &mut out,
-            "initial_negative_dot_i64",
-            self.initial_negative_dot_i64,
-        );
-        comma(&mut out);
-        push_i64_field(
-            &mut out,
-            "final_negative_dot_i64",
-            self.final_negative_dot_i64,
-        );
-        comma(&mut out);
-        push_i64_field(
-            &mut out,
-            "negative_dot_delta_i64",
-            self.final_negative_dot_i64 - self.initial_negative_dot_i64,
-        );
-        comma(&mut out);
-        push_usize_field(&mut out, "saturation_count", self.saturation_count);
-        comma(&mut out);
-        push_usize_field(&mut out, "zero_delta_count", self.zero_delta_count);
-        comma(&mut out);
-        push_u64_field(&mut out, "embedding_delta_l1", self.embedding_delta_l1);
-        out.push('}');
-        comma(&mut out);
-        push_hash_field(
-            &mut out,
-            "initial_embedding_hash",
-            self.initial_embedding_hash,
-        );
-        comma(&mut out);
-        push_hash_field(&mut out, "final_embedding_hash", self.final_embedding_hash);
-        comma(&mut out);
-        push_lexeme_embedding_steps_field(&mut out, "steps", &self.steps);
-        comma(&mut out);
-        push_string_array_field(
-            &mut out,
-            "known_non_claims",
-            &LEXEME_EMBEDDING_KNOWN_NON_CLAIMS,
-        );
-        out.push('}');
-        out.push('\n');
-        out
-    }
-}
-
-impl LexemeSoftmaxTrainingTrace {
-    pub fn to_json_line(&self) -> String {
-        let d_model = lexeme_context_d_model(
-            self.embedding_dim,
-            self.config.seq_len,
-            self.config.context_features,
-        )
-        .unwrap_or(0);
-        let head_dim =
-            lexeme_softmax_head_dim_for_layout(d_model, self.config.hidden_dim, self.head_layout)
-                .unwrap_or(0);
-        let mut out = String::new();
-        out.push('{');
-        push_string_field(&mut out, "schema", LEXEME_SOFTMAX_SCHEMA);
-        comma(&mut out);
-        push_string_field(&mut out, "authority", AUTHORITY);
-        comma(&mut out);
-        push_string_field(&mut out, "task", LEXEME_SOFTMAX_TASK);
-        comma(&mut out);
-        out.push_str("\"data\":{");
-        push_string_field(&mut out, "tokenizer", LEXEME_TOKENIZER_ID);
-        comma(&mut out);
-        push_usize_field(&mut out, "token_count", self.token_count);
-        comma(&mut out);
-        push_hash_field(&mut out, "token_hash", self.token_hash);
-        comma(&mut out);
-        push_hash_field(&mut out, "window_hash", self.window_hash);
-        comma(&mut out);
-        push_usize_field(&mut out, "windows", self.windows);
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"model\":{");
-        push_string_field(&mut out, "id", LEXEME_SOFTMAX_MODEL_ID);
-        comma(&mut out);
-        push_usize_field(&mut out, "vocab_size", self.vocab_size);
-        comma(&mut out);
-        push_usize_field(&mut out, "embedding_dim", self.embedding_dim);
-        comma(&mut out);
-        push_usize_field(&mut out, "d_model", d_model);
-        comma(&mut out);
-        push_usize_field(&mut out, "hidden_dim", self.config.hidden_dim);
-        comma(&mut out);
-        push_usize_field(&mut out, "head_dim", head_dim);
-        comma(&mut out);
-        push_string_field(&mut out, "head_layout", self.head_layout.as_str());
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "adapter_logit_shift",
-            usize::from(self.adapter_logit_shift),
-        );
-        comma(&mut out);
-        push_usize_field(&mut out, "context_seq_len", self.config.seq_len);
-        comma(&mut out);
-        push_string_field(
-            &mut out,
-            "context_features",
-            self.config.context_features.as_str(),
-        );
-        comma(&mut out);
-        push_string_field(
-            &mut out,
-            "trained_component",
-            if self.config.train_embeddings && self.config.hidden_dim > 0 {
-                "lexeme_embedding_i16_plus_hidden_i8_plus_output_head_i8"
-            } else if self.config.train_embeddings {
-                "lexeme_embedding_i16_plus_output_head_i8"
-            } else if self.config.hidden_dim > 0 {
-                "frozen_lexeme_embedding_i16_plus_hidden_i8_plus_output_head_i8"
-            } else {
-                "frozen_lexeme_embedding_i16_plus_output_head_i8"
-            },
-        );
-        comma(&mut out);
-        push_string_field(
-            &mut out,
-            "features",
-            self.config.context_features.description(),
-        );
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"optimizer\":{");
-        push_string_field(&mut out, "kind", "base2_softmax_cross_entropy_sgd");
-        comma(&mut out);
-        push_string_field(&mut out, "feature_scale", "q15");
-        comma(&mut out);
-        push_string_field(&mut out, "logit_scale", "q15_times_i8_shift8");
-        comma(&mut out);
-        push_string_field(&mut out, "probability_scale", "q15");
-        comma(&mut out);
-        push_string_field(&mut out, "weight_dtype", "i8");
-        comma(&mut out);
-        push_i32_field(&mut out, "learning_rate", self.config.learning_rate);
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "learning_rate_shift",
-            usize::from(self.config.learning_rate_shift),
-        );
-        comma(&mut out);
-        push_bool_field(&mut out, "train_embeddings", self.config.train_embeddings);
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "embedding_learning_rate_shift",
-            usize::from(self.config.embedding_learning_rate_shift),
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "hidden_learning_rate_shift",
-            usize::from(self.config.hidden_learning_rate_shift),
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "lr_shift_decay_windows",
-            self.config.lr_shift_decay_windows,
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "lr_shift_decay_step",
-            usize::from(self.config.lr_shift_decay_step),
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "max_learning_rate_shift",
-            usize::from(self.config.max_learning_rate_shift),
-        );
-        comma(&mut out);
-        push_i32_field(&mut out, "max_weight_delta", self.config.max_weight_delta);
-        comma(&mut out);
-        push_i32_field(
-            &mut out,
-            "max_embedding_delta",
-            self.config.max_embedding_delta,
-        );
-        comma(&mut out);
-        push_i32_field(
-            &mut out,
-            "max_hidden_weight_delta",
-            self.config.max_hidden_weight_delta,
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "output_head_frozen_prefix",
-            self.output_head_frozen_prefix,
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "adapter_logit_shift",
-            usize::from(self.adapter_logit_shift),
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "target_frequency_cap",
-            self.config.target_frequency_cap as usize,
-        );
-        comma(&mut out);
-        push_i16_field(
-            &mut out,
-            "target_frequency_min_weight_q15",
-            self.config.target_frequency_min_weight_q15,
-        );
-        comma(&mut out);
-        push_string_field(
-            &mut out,
-            "quality_weight_profile",
-            self.config.quality_weight_profile.as_str(),
-        );
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"training\":{");
-        push_usize_field(&mut out, "epochs", self.config.epochs);
-        comma(&mut out);
-        push_usize_field(&mut out, "seq_len", self.config.seq_len);
-        comma(&mut out);
-        push_usize_field(&mut out, "stride", self.config.stride);
-        comma(&mut out);
-        push_usize_field(&mut out, "window_offset", self.config.window_offset);
-        comma(&mut out);
-        push_optional_usize_field(&mut out, "max_windows", self.config.max_windows);
-        comma(&mut out);
-        push_usize_field(&mut out, "batch_windows", self.config.batch_windows);
-        comma(&mut out);
-        push_usize_field(&mut out, "examined_windows", self.examined_windows);
-        comma(&mut out);
-        push_usize_field(&mut out, "updates", self.updates);
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"metrics\":{");
-        push_usize_field(&mut out, "initial_total_error", self.initial_total_error);
-        comma(&mut out);
-        push_usize_field(&mut out, "final_total_error", self.final_total_error);
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "initial_probability_error_q15",
-            self.initial_probability_error_q15,
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "final_probability_error_q15",
-            self.final_probability_error_q15,
-        );
-        comma(&mut out);
-        push_i64_field(
-            &mut out,
-            "probability_error_delta_i64",
-            self.final_probability_error_q15 as i64 - self.initial_probability_error_q15 as i64,
-        );
-        comma(&mut out);
-        push_usize_field(&mut out, "initial_mistakes", self.initial_mistakes);
-        comma(&mut out);
-        push_usize_field(&mut out, "final_mistakes", self.final_mistakes);
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "final_accuracy_per_mille",
-            self.final_accuracy_per_mille,
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "gradient_saturation_count",
-            self.gradient_saturation_count,
-        );
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "embedding_saturation_count",
-            self.embedding_saturation_count,
-        );
-        comma(&mut out);
-        push_usize_field(&mut out, "zero_delta_count", self.zero_delta_count);
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "embedding_zero_delta_count",
-            self.embedding_zero_delta_count,
-        );
-        comma(&mut out);
-        push_u64_field(&mut out, "weight_delta_l1", self.weight_delta_l1);
-        comma(&mut out);
-        push_u64_field(&mut out, "embedding_delta_l1", self.embedding_delta_l1);
-        out.push('}');
-        comma(&mut out);
-        push_hash_field(
-            &mut out,
-            "initial_embedding_hash",
-            self.initial_embedding_hash,
-        );
-        comma(&mut out);
-        push_hash_field(&mut out, "final_embedding_hash", self.final_embedding_hash);
-        comma(&mut out);
-        push_hash_field(&mut out, "initial_weight_hash", self.initial_weight_hash);
-        comma(&mut out);
-        push_hash_field(&mut out, "final_weight_hash", self.final_weight_hash);
-        comma(&mut out);
-        push_hash_field(&mut out, "final_logits_hash", self.final_logits_hash);
-        comma(&mut out);
-        push_lexeme_softmax_steps_field(&mut out, "steps", &self.steps);
-        comma(&mut out);
-        push_string_array_field(
-            &mut out,
-            "known_non_claims",
-            &LEXEME_SOFTMAX_KNOWN_NON_CLAIMS,
-        );
-        out.push('}');
-        out.push('\n');
-        out
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11171,746 +9646,67 @@ impl MiniTransformerMlpTrainingProgressTrace {
     }
 }
 
-impl LexemeEmbeddingModel {
-    pub fn new(
-        vocab_size: usize,
-        embedding_dim: usize,
-        embeddings: Vec<i16>,
-    ) -> Result<Self, TrainError> {
-        if vocab_size == 0 || embedding_dim == 0 {
-            return Err(TrainError::InvalidModel("bad lexeme embedding shape"));
-        }
-        if embeddings.len()
-            != vocab_size
-                .checked_mul(embedding_dim)
-                .ok_or(TrainError::InvalidModel("lexeme embedding count overflow"))?
-        {
-            return Err(TrainError::InvalidModel("wrong lexeme embedding count"));
-        }
-        Ok(Self {
-            vocab_size,
-            embedding_dim,
-            embeddings,
-        })
-    }
-
-    pub fn embedding_hash(&self) -> u64 {
-        hash_i16_slice(&self.embeddings)
-    }
-
-    pub fn model_hash(&self) -> u64 {
-        let mut hasher = StableHasher::new();
-        hasher.update_usize(self.vocab_size);
-        hasher.update_usize(self.embedding_dim);
-        hasher.update_i16_slice(&self.embeddings);
-        hasher.finish()
-    }
-
-    pub fn try_to_bytes(&self) -> Result<Vec<u8>, TrainError> {
-        let embedding_bytes =
-            checked_i16_tensor_bytes(self.embeddings.len(), "lexeme embedding bytes overflow")?;
-        let mut out = Vec::with_capacity(checked_model_capacity(36, &[embedding_bytes])?);
-        out.extend_from_slice(LEXEME_EMBEDDING_MODEL_MAGIC);
-        out.extend_from_slice(
-            &checked_u32(self.vocab_size, "lexeme vocab_size exceeds u32")?.to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u32(self.embedding_dim, "lexeme embedding_dim exceeds u32")?.to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u64(self.embeddings.len(), "lexeme embedding count exceeds u64")?
-                .to_le_bytes(),
-        );
-        out.extend_from_slice(&self.embedding_hash().to_le_bytes());
-        for &embedding in self.embeddings.iter() {
-            out.extend_from_slice(&embedding.to_le_bytes());
-        }
-        Ok(out)
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.try_to_bytes()
-            .expect("lexeme embedding model should fit on-disk format")
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
-        let header_len = LEXEME_EMBEDDING_MODEL_MAGIC.len() + 4 + 4 + 8 + 8;
-        if bytes.len() < header_len {
-            return Err(TrainError::InvalidModel("artifact too short"));
-        }
-        if &bytes[..LEXEME_EMBEDDING_MODEL_MAGIC.len()] != LEXEME_EMBEDDING_MODEL_MAGIC {
-            return Err(TrainError::InvalidModel("bad magic"));
-        }
-
-        let mut offset = LEXEME_EMBEDDING_MODEL_MAGIC.len();
-        let vocab_size = read_u32_le(bytes, &mut offset)? as usize;
-        let embedding_dim = read_u32_le(bytes, &mut offset)? as usize;
-        let embedding_count = read_u64_le(bytes, &mut offset)? as usize;
-        let expected_embedding_hash = read_u64_le(bytes, &mut offset)?;
-        let embedding_bytes = embedding_count
-            .checked_mul(2)
-            .ok_or(TrainError::InvalidModel("embedding length overflow"))?;
-        let embedding_end = offset
-            .checked_add(embedding_bytes)
-            .ok_or(TrainError::InvalidModel("embedding offset overflow"))?;
-        if bytes.len() != embedding_end {
-            return Err(TrainError::InvalidModel("artifact length mismatch"));
-        }
-
-        let mut embeddings = Vec::with_capacity(embedding_count);
-        for chunk in bytes[offset..embedding_end].chunks_exact(2) {
-            embeddings.push(i16::from_le_bytes(
-                chunk
-                    .try_into()
-                    .map_err(|_| TrainError::InvalidModel("bad embedding"))?,
-            ));
-        }
-        let model = Self::new(vocab_size, embedding_dim, embeddings)?;
-        if model.embedding_hash() != expected_embedding_hash {
-            return Err(TrainError::InvalidModel("embedding hash mismatch"));
-        }
-        Ok(model)
-    }
-}
-
-impl LexemeSoftmaxModel {
-    pub fn new(
-        seq_len: usize,
-        vocab_size: usize,
-        embedding_dim: usize,
-        embeddings: Vec<i16>,
-        output_weights: Vec<i8>,
-    ) -> Result<Self, TrainError> {
-        Self::new_with_context_features(
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            LexemeContextFeatures::Mean,
-            embeddings,
-            output_weights,
-        )
-    }
-
-    pub fn new_with_context_features(
-        seq_len: usize,
-        vocab_size: usize,
-        embedding_dim: usize,
-        context_features: LexemeContextFeatures,
-        embeddings: Vec<i16>,
-        output_weights: Vec<i8>,
-    ) -> Result<Self, TrainError> {
-        Self::new_with_context_features_and_hidden(
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            context_features,
-            0,
-            embeddings,
-            Vec::new(),
-            output_weights,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_context_features_and_hidden(
-        seq_len: usize,
-        vocab_size: usize,
-        embedding_dim: usize,
-        context_features: LexemeContextFeatures,
-        hidden_dim: usize,
-        embeddings: Vec<i16>,
-        hidden_weights: Vec<i8>,
-        output_weights: Vec<i8>,
-    ) -> Result<Self, TrainError> {
-        Self::new_with_context_features_hidden_and_layout(
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            context_features,
-            hidden_dim,
-            default_lexeme_softmax_head_layout(hidden_dim, 0),
-            embeddings,
-            hidden_weights,
-            output_weights,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn new_with_context_features_hidden_and_layout(
-        seq_len: usize,
-        vocab_size: usize,
-        embedding_dim: usize,
-        context_features: LexemeContextFeatures,
-        hidden_dim: usize,
-        head_layout: LexemeSoftmaxHeadLayout,
-        embeddings: Vec<i16>,
-        hidden_weights: Vec<i8>,
-        output_weights: Vec<i8>,
-    ) -> Result<Self, TrainError> {
-        Self::new_with_context_features_hidden_layout_and_adapter_shift(
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            context_features,
-            hidden_dim,
-            head_layout,
-            0,
-            embeddings,
-            hidden_weights,
-            output_weights,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn new_with_context_features_hidden_layout_and_adapter_shift(
-        seq_len: usize,
-        vocab_size: usize,
-        embedding_dim: usize,
-        context_features: LexemeContextFeatures,
-        hidden_dim: usize,
-        head_layout: LexemeSoftmaxHeadLayout,
-        adapter_logit_shift: u8,
-        embeddings: Vec<i16>,
-        hidden_weights: Vec<i8>,
-        output_weights: Vec<i8>,
-    ) -> Result<Self, TrainError> {
-        if seq_len == 0 || !seq_len.is_power_of_two() || vocab_size == 0 || embedding_dim == 0 {
-            return Err(TrainError::InvalidModel("bad lexeme softmax shape"));
-        }
-        if adapter_logit_shift > 0 && head_layout != LexemeSoftmaxHeadLayout::ResidualAdapter {
-            return Err(TrainError::InvalidModel(
-                "adapter shift requires residual adapter head",
-            ));
-        }
-        if head_layout == LexemeSoftmaxHeadLayout::ResidualAdapter && adapter_logit_shift == 0 {
-            return Err(TrainError::InvalidModel(
-                "residual adapter head requires adapter shift",
-            ));
-        }
-        if usize::from(LEXEME_LOGIT_RIGHT_SHIFT).saturating_add(usize::from(adapter_logit_shift))
-            > usize::from(MAX_RIGHT_SHIFT)
-        {
-            return Err(TrainError::InvalidModel("adapter shift too large"));
-        }
-        let embedding_count = vocab_size
-            .checked_mul(embedding_dim)
-            .ok_or(TrainError::InvalidModel("lexeme embedding count overflow"))?;
-        let d_model = lexeme_context_d_model(embedding_dim, seq_len, context_features)
-            .map_err(|_| TrainError::InvalidModel("lexeme d_model overflow"))?;
-        let hidden_weight_count =
-            hidden_dim
-                .checked_mul(d_model)
-                .ok_or(TrainError::InvalidModel(
-                    "lexeme hidden weight count overflow",
-                ))?;
-        let head_dim = lexeme_softmax_head_dim_for_layout(d_model, hidden_dim, head_layout)?;
-        let weight_count = vocab_size
-            .checked_mul(head_dim)
-            .ok_or(TrainError::InvalidModel("lexeme weight count overflow"))?;
-        if embeddings.len() != embedding_count {
-            return Err(TrainError::InvalidModel("wrong lexeme embedding count"));
-        }
-        if hidden_weights.len() != hidden_weight_count {
-            return Err(TrainError::InvalidModel("wrong lexeme hidden weight count"));
-        }
-        if output_weights.len() != weight_count {
-            return Err(TrainError::InvalidModel("wrong lexeme output weight count"));
-        }
-        Ok(Self {
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            context_features,
-            hidden_dim,
-            head_layout,
-            adapter_logit_shift,
-            embeddings,
-            hidden_weights,
-            output_weights,
-        })
-    }
-
-    pub fn embedding_hash(&self) -> u64 {
-        hash_i16_slice(&self.embeddings)
-    }
-
-    pub fn output_weight_hash(&self) -> u64 {
-        hash_i8_slice(&self.output_weights)
-    }
-
-    pub fn hidden_weight_hash(&self) -> u64 {
-        hash_i8_slice(&self.hidden_weights)
-    }
-
-    pub fn model_hash(&self) -> u64 {
-        let mut hasher = StableHasher::new();
-        hasher.update_usize(self.seq_len);
-        hasher.update_usize(self.vocab_size);
-        hasher.update_usize(self.embedding_dim);
-        hasher.update_usize(lexeme_context_features_id(self.context_features));
-        hasher.update_usize(self.hidden_dim);
-        hasher.update_usize(lexeme_softmax_head_layout_id(self.head_layout));
-        hasher.update_usize(usize::from(self.adapter_logit_shift));
-        hasher.update_i16_slice(&self.embeddings);
-        hasher.update_i8_slice(&self.hidden_weights);
-        hasher.update_i8_slice(&self.output_weights);
-        hasher.finish()
-    }
-
-    fn legacy_v2_model_hash(&self) -> u64 {
-        let mut hasher = StableHasher::new();
-        hasher.update_usize(self.seq_len);
-        hasher.update_usize(self.vocab_size);
-        hasher.update_usize(self.embedding_dim);
-        hasher.update_i16_slice(&self.embeddings);
-        hasher.update_i8_slice(&self.output_weights);
-        hasher.finish()
-    }
-
-    fn legacy_v4_model_hash(&self) -> u64 {
-        let mut hasher = StableHasher::new();
-        hasher.update_usize(self.seq_len);
-        hasher.update_usize(self.vocab_size);
-        hasher.update_usize(self.embedding_dim);
-        hasher.update_usize(lexeme_context_features_id(self.context_features));
-        hasher.update_usize(self.hidden_dim);
-        hasher.update_i16_slice(&self.embeddings);
-        hasher.update_i8_slice(&self.hidden_weights);
-        hasher.update_i8_slice(&self.output_weights);
-        hasher.finish()
-    }
-
-    fn legacy_v5_model_hash(&self) -> u64 {
-        let mut hasher = StableHasher::new();
-        hasher.update_usize(self.seq_len);
-        hasher.update_usize(self.vocab_size);
-        hasher.update_usize(self.embedding_dim);
-        hasher.update_usize(lexeme_context_features_id(self.context_features));
-        hasher.update_usize(self.hidden_dim);
-        hasher.update_usize(lexeme_softmax_head_layout_id(self.head_layout));
-        hasher.update_i16_slice(&self.embeddings);
-        hasher.update_i8_slice(&self.hidden_weights);
-        hasher.update_i8_slice(&self.output_weights);
-        hasher.finish()
-    }
-
-    fn legacy_v3_model_hash(&self) -> u64 {
-        let mut hasher = StableHasher::new();
-        hasher.update_usize(self.seq_len);
-        hasher.update_usize(self.vocab_size);
-        hasher.update_usize(self.embedding_dim);
-        hasher.update_usize(lexeme_context_features_id(self.context_features));
-        hasher.update_i16_slice(&self.embeddings);
-        hasher.update_i8_slice(&self.output_weights);
-        hasher.finish()
-    }
-
-    pub fn try_to_bytes(&self) -> Result<Vec<u8>, TrainError> {
-        let embedding_bytes =
-            checked_i16_tensor_bytes(self.embeddings.len(), "lexeme embedding bytes overflow")?;
-        let mut out = Vec::with_capacity(checked_model_capacity(
-            96,
-            &[
-                embedding_bytes,
-                self.hidden_weights.len(),
-                self.output_weights.len(),
-            ],
-        )?);
-        out.extend_from_slice(LEXEME_SOFTMAX_MODEL_MAGIC);
-        out.extend_from_slice(
-            &checked_u32(self.seq_len, "lexeme seq_len exceeds u32")?.to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u32(self.vocab_size, "lexeme vocab_size exceeds u32")?.to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u32(self.embedding_dim, "lexeme embedding_dim exceeds u32")?.to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u32(
-                lexeme_context_features_id(self.context_features),
-                "lexeme context feature id exceeds u32",
-            )?
-            .to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u32(self.hidden_dim, "lexeme hidden_dim exceeds u32")?.to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u32(
-                lexeme_softmax_head_layout_id(self.head_layout),
-                "lexeme head layout id exceeds u32",
-            )?
-            .to_le_bytes(),
-        );
-        out.extend_from_slice(u32::from(self.adapter_logit_shift).to_le_bytes().as_slice());
-        out.extend_from_slice(
-            &checked_u64(self.embeddings.len(), "lexeme embedding count exceeds u64")?
-                .to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u64(
-                self.hidden_weights.len(),
-                "lexeme hidden weight count exceeds u64",
-            )?
-            .to_le_bytes(),
-        );
-        out.extend_from_slice(
-            &checked_u64(
-                self.output_weights.len(),
-                "lexeme output weight count exceeds u64",
-            )?
-            .to_le_bytes(),
-        );
-        out.extend_from_slice(&self.embedding_hash().to_le_bytes());
-        out.extend_from_slice(&self.hidden_weight_hash().to_le_bytes());
-        out.extend_from_slice(&self.output_weight_hash().to_le_bytes());
-        out.extend_from_slice(&self.model_hash().to_le_bytes());
-        for &embedding in self.embeddings.iter() {
-            out.extend_from_slice(&embedding.to_le_bytes());
-        }
-        out.extend(self.hidden_weights.iter().map(|&weight| weight as u8));
-        out.extend(self.output_weights.iter().map(|&weight| weight as u8));
-        Ok(out)
-    }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.try_to_bytes()
-            .expect("lexeme softmax model should fit on-disk format")
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
-        let magic = bytes
-            .get(..LEXEME_SOFTMAX_MODEL_MAGIC.len())
-            .ok_or(TrainError::InvalidModel("artifact too short"))?;
-        let (has_context_features, has_hidden, has_head_layout, has_adapter_logit_shift, legacy_v4) =
-            if magic == LEXEME_SOFTMAX_MODEL_MAGIC {
-                (true, true, true, true, false)
-            } else if magic == LEXEME_SOFTMAX_MODEL_MAGIC_V5 {
-                (true, true, true, false, false)
-            } else if magic == LEXEME_SOFTMAX_MODEL_MAGIC_V4 {
-                (true, true, false, false, true)
-            } else if magic == LEXEME_SOFTMAX_MODEL_MAGIC_V3 {
-                (true, false, false, false, false)
-            } else if magic == LEXEME_SOFTMAX_MODEL_MAGIC_V2 {
-                (false, false, false, false, false)
-            } else {
-                return Err(TrainError::InvalidModel("bad magic"));
-            };
-        let header_len = LEXEME_SOFTMAX_MODEL_MAGIC.len()
-            + 4
-            + 4
-            + 4
-            + if has_context_features { 4 } else { 0 }
-            + if has_hidden { 4 } else { 0 }
-            + if has_head_layout { 4 } else { 0 }
-            + if has_adapter_logit_shift { 4 } else { 0 }
-            + 8
-            + if has_hidden { 8 } else { 0 }
-            + 8
-            + 8
-            + if has_hidden { 8 } else { 0 }
-            + 8
-            + 8;
-        if bytes.len() < header_len {
-            return Err(TrainError::InvalidModel("artifact too short"));
-        }
-
-        let mut offset = LEXEME_SOFTMAX_MODEL_MAGIC.len();
-        let seq_len = read_u32_le(bytes, &mut offset)? as usize;
-        let vocab_size = read_u32_le(bytes, &mut offset)? as usize;
-        let embedding_dim = read_u32_le(bytes, &mut offset)? as usize;
-        let context_features = if has_context_features {
-            lexeme_context_features_from_id(read_u32_le(bytes, &mut offset)?)?
-        } else {
-            LexemeContextFeatures::Mean
-        };
-        let hidden_dim = if has_hidden {
-            read_u32_le(bytes, &mut offset)? as usize
-        } else {
-            0
-        };
-        let head_layout = if has_head_layout {
-            lexeme_softmax_head_layout_from_id(read_u32_le(bytes, &mut offset)?)?
-        } else if legacy_v4 {
-            if hidden_dim == 0 {
-                LexemeSoftmaxHeadLayout::Linear
-            } else {
-                LexemeSoftmaxHeadLayout::HiddenBottleneck
-            }
-        } else {
-            LexemeSoftmaxHeadLayout::Linear
-        };
-        let adapter_logit_shift = if has_adapter_logit_shift {
-            u8::try_from(read_u32_le(bytes, &mut offset)?)
-                .map_err(|_| TrainError::InvalidModel("adapter shift exceeds u8"))?
-        } else {
-            0
-        };
-        let embedding_count = read_u64_le(bytes, &mut offset)? as usize;
-        let hidden_weight_count = if has_hidden {
-            read_u64_le(bytes, &mut offset)? as usize
-        } else {
-            0
-        };
-        let weight_count = read_u64_le(bytes, &mut offset)? as usize;
-        let expected_embedding_hash = read_u64_le(bytes, &mut offset)?;
-        let expected_hidden_hash = if has_hidden {
-            read_u64_le(bytes, &mut offset)?
-        } else {
-            hash_i8_slice(&[])
-        };
-        let expected_weight_hash = read_u64_le(bytes, &mut offset)?;
-        let expected_model_hash = read_u64_le(bytes, &mut offset)?;
-
-        let embedding_bytes = embedding_count
-            .checked_mul(2)
-            .ok_or(TrainError::InvalidModel("embedding length overflow"))?;
-        let embedding_end = offset
-            .checked_add(embedding_bytes)
-            .ok_or(TrainError::InvalidModel("embedding offset overflow"))?;
-        let hidden_weight_end = embedding_end
-            .checked_add(hidden_weight_count)
-            .ok_or(TrainError::InvalidModel("hidden weight offset overflow"))?;
-        let weight_end = hidden_weight_end
-            .checked_add(weight_count)
-            .ok_or(TrainError::InvalidModel("weight offset overflow"))?;
-        if bytes.len() != weight_end {
-            return Err(TrainError::InvalidModel("artifact length mismatch"));
-        }
-
-        let mut embeddings = Vec::with_capacity(embedding_count);
-        for chunk in bytes[offset..embedding_end].chunks_exact(2) {
-            embeddings.push(i16::from_le_bytes(
-                chunk
-                    .try_into()
-                    .map_err(|_| TrainError::InvalidModel("bad embedding"))?,
-            ));
-        }
-        let hidden_weights = bytes[embedding_end..hidden_weight_end]
-            .iter()
-            .map(|&byte| byte as i8)
-            .collect::<Vec<_>>();
-        let output_weights = bytes[hidden_weight_end..weight_end]
-            .iter()
-            .map(|&byte| byte as i8)
-            .collect::<Vec<_>>();
-        let model = Self::new_with_context_features_hidden_layout_and_adapter_shift(
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            context_features,
-            hidden_dim,
-            head_layout,
-            adapter_logit_shift,
-            embeddings,
-            hidden_weights,
-            output_weights,
-        )?;
-        if model.embedding_hash() != expected_embedding_hash {
-            return Err(TrainError::InvalidModel("embedding hash mismatch"));
-        }
-        if model.hidden_weight_hash() != expected_hidden_hash {
-            return Err(TrainError::InvalidModel("hidden weight hash mismatch"));
-        }
-        if model.output_weight_hash() != expected_weight_hash {
-            return Err(TrainError::InvalidModel("weight hash mismatch"));
-        }
-        let actual_model_hash = if has_adapter_logit_shift {
-            model.model_hash()
-        } else if has_head_layout {
-            model.legacy_v5_model_hash()
-        } else if legacy_v4 {
-            model.legacy_v4_model_hash()
-        } else if has_context_features {
-            model.legacy_v3_model_hash()
-        } else {
-            model.legacy_v2_model_hash()
-        };
-        if actual_model_hash != expected_model_hash {
-            return Err(TrainError::InvalidModel("model hash mismatch"));
-        }
-        Ok(model)
-    }
-}
-
-pub fn reduce_lexeme_softmax_models(
-    models: Vec<LexemeSoftmaxModel>,
-) -> Result<(LexemeSoftmaxModel, LexemeSoftmaxReductionTrace), TrainError> {
-    let first = models.first().ok_or(TrainError::InvalidConfig)?;
-    for model in models.iter().skip(1) {
-        validate_lexeme_softmax_reduce_shape(first, model)?;
-    }
-
-    let embeddings =
-        average_lexeme_reduce_i16_tensors(models.iter().map(|model| model.embeddings.as_slice()))?;
-    let hidden_weights = average_lexeme_reduce_i8_tensors(
-        models.iter().map(|model| model.hidden_weights.as_slice()),
-    )?;
-    let output_weights = average_lexeme_reduce_i8_tensors(
-        models.iter().map(|model| model.output_weights.as_slice()),
-    )?;
-
-    let reduced = LexemeSoftmaxModel::new_with_context_features_hidden_layout_and_adapter_shift(
-        first.seq_len,
-        first.vocab_size,
-        first.embedding_dim,
-        first.context_features,
-        first.hidden_dim,
-        first.head_layout,
-        first.adapter_logit_shift,
-        embeddings,
-        hidden_weights,
-        output_weights,
-    )?;
-    let artifact_bytes = reduced.try_to_bytes()?.len();
-    let parameter_bytes = checked_i16_tensor_bytes(
-        reduced.embeddings.len(),
-        "lexeme reduce embedding bytes overflow",
-    )?
-    .checked_add(reduced.hidden_weights.len())
-    .and_then(|value| value.checked_add(reduced.output_weights.len()))
-    .ok_or(TrainError::InvalidModel(
-        "lexeme reduce parameter bytes overflow",
-    ))?;
-    let trace = LexemeSoftmaxReductionTrace {
-        reducer: "equal_weight_integer_average_v1",
-        model_count: models.len(),
-        seq_len: reduced.seq_len,
-        vocab_size: reduced.vocab_size,
-        embedding_dim: reduced.embedding_dim,
-        context_features: reduced.context_features,
-        hidden_dim: reduced.hidden_dim,
-        head_layout: reduced.head_layout,
-        adapter_logit_shift: reduced.adapter_logit_shift,
-        parameter_bytes,
-        artifact_bytes,
-        input_model_hashes: models.iter().map(LexemeSoftmaxModel::model_hash).collect(),
-        input_embedding_hashes: models
-            .iter()
-            .map(LexemeSoftmaxModel::embedding_hash)
-            .collect(),
-        input_hidden_weight_hashes: models
-            .iter()
-            .map(LexemeSoftmaxModel::hidden_weight_hash)
-            .collect(),
-        input_output_weight_hashes: models
-            .iter()
-            .map(LexemeSoftmaxModel::output_weight_hash)
-            .collect(),
-        output_model_hash: reduced.model_hash(),
-        output_embedding_hash: reduced.embedding_hash(),
-        output_hidden_weight_hash: reduced.hidden_weight_hash(),
-        output_weight_hash: reduced.output_weight_hash(),
-    };
-    Ok((reduced, trace))
-}
-
-fn validate_lexeme_softmax_reduce_shape(
-    expected: &LexemeSoftmaxModel,
-    candidate: &LexemeSoftmaxModel,
-) -> Result<(), TrainError> {
-    if expected.seq_len != candidate.seq_len
-        || expected.vocab_size != candidate.vocab_size
-        || expected.embedding_dim != candidate.embedding_dim
-        || expected.context_features != candidate.context_features
-        || expected.hidden_dim != candidate.hidden_dim
-        || expected.head_layout != candidate.head_layout
-        || expected.adapter_logit_shift != candidate.adapter_logit_shift
-        || expected.embeddings.len() != candidate.embeddings.len()
-        || expected.hidden_weights.len() != candidate.hidden_weights.len()
-        || expected.output_weights.len() != candidate.output_weights.len()
-    {
-        return Err(TrainError::InvalidModel(
-            "incompatible lexeme softmax models for reduction",
-        ));
-    }
-    Ok(())
-}
-
-fn average_lexeme_reduce_i16_tensors<'a, I>(slices: I) -> Result<Vec<i16>, TrainError>
-where
-    I: IntoIterator<Item = &'a [i16]>,
-{
-    let mut count = 0_usize;
-    let mut sums = Vec::<i64>::new();
-    for slice in slices {
-        if count == 0 {
-            sums.resize(slice.len(), 0);
-        } else if slice.len() != sums.len() {
-            return Err(TrainError::InvalidModel(
-                "incompatible lexeme i16 tensor length for reduction",
-            ));
-        }
-        for (sum, &value) in sums.iter_mut().zip(slice.iter()) {
-            *sum = sum
-                .checked_add(i64::from(value))
-                .ok_or(TrainError::CoreRejected("lexeme_reduce_i16_accumulate"))?;
-        }
-        count = count
-            .checked_add(1)
-            .ok_or(TrainError::CoreRejected("lexeme_reduce_i16_count"))?;
-    }
-    if count == 0 {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    sums.into_iter()
-        .map(|sum| round_div_i64(sum, count).map(saturate_i16))
-        .collect()
-}
-
-fn average_lexeme_reduce_i8_tensors<'a, I>(slices: I) -> Result<Vec<i8>, TrainError>
-where
-    I: IntoIterator<Item = &'a [i8]>,
-{
-    let mut count = 0_usize;
-    let mut sums = Vec::<i64>::new();
-    for slice in slices {
-        if count == 0 {
-            sums.resize(slice.len(), 0);
-        } else if slice.len() != sums.len() {
-            return Err(TrainError::InvalidModel(
-                "incompatible lexeme i8 tensor length for reduction",
-            ));
-        }
-        for (sum, &value) in sums.iter_mut().zip(slice.iter()) {
-            *sum = sum
-                .checked_add(i64::from(value))
-                .ok_or(TrainError::CoreRejected("lexeme_reduce_i8_accumulate"))?;
-        }
-        count = count
-            .checked_add(1)
-            .ok_or(TrainError::CoreRejected("lexeme_reduce_i8_count"))?;
-    }
-    if count == 0 {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    sums.into_iter()
-        .map(|sum| round_div_i64(sum, count).map(saturate_i8))
-        .collect()
-}
-
 impl MiniTransformerMlpModel {
     pub fn new_initial() -> Self {
         Self::new_initial_with_seq_len(DEFAULT_MINI_TRANSFORMER_SEQ_LEN)
     }
 
     pub fn new_initial_with_seq_len(context_seq_len: usize) -> Self {
+        Self::new_initial_with_seq_len_and_layers(context_seq_len, DEFAULT_MINI_TRANSFORMER_LAYERS)
+            .expect("default mini transformer layer count should be valid")
+    }
+
+    pub fn new_initial_with_seq_len_and_layers(
+        context_seq_len: usize,
+        layers: usize,
+    ) -> Result<Self, TrainError> {
+        if layers == 0 {
+            return Err(TrainError::InvalidModel("bad mini transformer layer count"));
+        }
         Self {
             context_seq_len,
             embeddings: initial_mini_transformer_embeddings(),
             position_embeddings: initial_mini_transformer_position_embeddings(context_seq_len),
-            q_weights: identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
-            k_weights: identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
-            v_weights: identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
-            o_weights: identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
-            up_weights: initial_mini_transformer_mlp_up_or_gate_weights(),
-            gate_weights: initial_mini_transformer_mlp_up_or_gate_weights(),
-            down_weights: initial_mini_transformer_mlp_down_weights(),
+            attention_rms_weights: Vec::new(),
+            mlp_rms_weights: Vec::new(),
+            q_weights: stack_i8_layers_with_active_final(
+                identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
+                identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
+                layers,
+            ),
+            k_weights: stack_i8_layers_with_active_final(
+                identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
+                identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
+                layers,
+            ),
+            v_weights: stack_i8_layers_with_active_final(
+                identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
+                identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
+                layers,
+            ),
+            o_weights: stack_i8_layers_with_active_final(
+                vec![0_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL],
+                identity_i8_matrix(MINI_TRANSFORMER_D_MODEL),
+                layers,
+            ),
+            up_weights: stack_i8_layers_with_active_final(
+                initial_mini_transformer_mlp_up_weights(),
+                initial_mini_transformer_mlp_up_weights(),
+                layers,
+            ),
+            gate_weights: stack_i8_layers_with_active_final(
+                initial_mini_transformer_mlp_gate_weights(),
+                initial_mini_transformer_mlp_gate_weights(),
+                layers,
+            ),
+            down_weights: stack_i8_layers_with_active_final(
+                vec![0_i8; MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL],
+                initial_mini_transformer_mlp_down_weights(),
+                layers,
+            ),
             output_weights: initial_mini_transformer_output_weights(),
         }
+        .validate()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -11918,6 +9714,39 @@ impl MiniTransformerMlpModel {
         context_seq_len: usize,
         embeddings: Vec<i16>,
         position_embeddings: Vec<i16>,
+        q_weights: Vec<i8>,
+        k_weights: Vec<i8>,
+        v_weights: Vec<i8>,
+        o_weights: Vec<i8>,
+        up_weights: Vec<i8>,
+        gate_weights: Vec<i8>,
+        down_weights: Vec<i8>,
+        output_weights: Vec<i8>,
+    ) -> Result<Self, TrainError> {
+        Self::new_with_rms_weights(
+            context_seq_len,
+            embeddings,
+            position_embeddings,
+            Vec::new(),
+            Vec::new(),
+            q_weights,
+            k_weights,
+            v_weights,
+            o_weights,
+            up_weights,
+            gate_weights,
+            down_weights,
+            output_weights,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_rms_weights(
+        context_seq_len: usize,
+        embeddings: Vec<i16>,
+        position_embeddings: Vec<i16>,
+        attention_rms_weights: Vec<i16>,
+        mlp_rms_weights: Vec<i16>,
         q_weights: Vec<i8>,
         k_weights: Vec<i8>,
         v_weights: Vec<i8>,
@@ -11948,23 +9777,43 @@ impl MiniTransformerMlpModel {
                 "wrong mini transformer position embedding count",
             ));
         }
-        let attention_weight_count = MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL;
-        if q_weights.len() != attention_weight_count
-            || k_weights.len() != attention_weight_count
-            || v_weights.len() != attention_weight_count
-            || o_weights.len() != attention_weight_count
+        let attention_weight_count = mini_transformer_attention_weight_count()?;
+        let mlp_up_or_gate_count = mini_transformer_mlp_up_or_gate_weight_count()?;
+        let mlp_down_count = mini_transformer_mlp_down_weight_count()?;
+        let attention_layers = infer_layer_count(q_weights.len(), attention_weight_count).ok_or(
+            TrainError::InvalidModel("wrong mini transformer attention weight count"),
+        )?;
+        let mlp_layers = infer_layer_count(up_weights.len(), mlp_up_or_gate_count).ok_or(
+            TrainError::InvalidModel("wrong mini transformer up/gate weight count"),
+        )?;
+        if attention_layers == 0 || mlp_layers == 0 || attention_layers != mlp_layers {
+            return Err(TrainError::InvalidModel(
+                "wrong mini transformer layer count",
+            ));
+        }
+        let expected_rms_weight_count = attention_layers
+            .checked_mul(MINI_TRANSFORMER_D_MODEL)
+            .ok_or(TrainError::InvalidModel("RMSNorm weight count overflow"))?;
+        let rms_disabled = attention_rms_weights.is_empty() && mlp_rms_weights.is_empty();
+        let rms_enabled = attention_rms_weights.len() == expected_rms_weight_count
+            && mlp_rms_weights.len() == expected_rms_weight_count;
+        if !rms_disabled && !rms_enabled {
+            return Err(TrainError::InvalidModel("wrong RMSNorm weight count"));
+        }
+        if k_weights.len() != q_weights.len()
+            || v_weights.len() != q_weights.len()
+            || o_weights.len() != q_weights.len()
         {
             return Err(TrainError::InvalidModel(
                 "wrong mini transformer attention weight count",
             ));
         }
-        let up_or_gate_count = MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM;
-        if up_weights.len() != up_or_gate_count || gate_weights.len() != up_or_gate_count {
+        if gate_weights.len() != up_weights.len() {
             return Err(TrainError::InvalidModel(
                 "wrong mini transformer up/gate weight count",
             ));
         }
-        if down_weights.len() != MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL {
+        if down_weights.len() != mlp_layers * mlp_down_count {
             return Err(TrainError::InvalidModel(
                 "wrong mini transformer down weight count",
             ));
@@ -11979,6 +9828,8 @@ impl MiniTransformerMlpModel {
             context_seq_len,
             embeddings,
             position_embeddings,
+            attention_rms_weights,
+            mlp_rms_weights,
             q_weights,
             k_weights,
             v_weights,
@@ -11988,6 +9839,144 @@ impl MiniTransformerMlpModel {
             down_weights,
             output_weights,
         })
+    }
+
+    fn validate(self) -> Result<Self, TrainError> {
+        Self::new_with_rms_weights(
+            self.context_seq_len,
+            self.embeddings,
+            self.position_embeddings,
+            self.attention_rms_weights,
+            self.mlp_rms_weights,
+            self.q_weights,
+            self.k_weights,
+            self.v_weights,
+            self.o_weights,
+            self.up_weights,
+            self.gate_weights,
+            self.down_weights,
+            self.output_weights,
+        )
+    }
+
+    pub fn transformer_layers(&self) -> usize {
+        let Ok(attention_weight_count) = mini_transformer_attention_weight_count() else {
+            return 0;
+        };
+        let Some(attention_layers) =
+            infer_layer_count(self.q_weights.len(), attention_weight_count)
+        else {
+            return 0;
+        };
+        attention_layers
+    }
+
+    fn checked_transformer_layers(&self) -> Result<usize, TrainError> {
+        let layers = self.transformer_layers();
+        if layers == 0 {
+            return Err(TrainError::InvalidModel("bad mini transformer layer count"));
+        }
+        let attention_weight_count = mini_transformer_attention_weight_count()?;
+        let mlp_up_or_gate_count = mini_transformer_mlp_up_or_gate_weight_count()?;
+        let mlp_down_count = mini_transformer_mlp_down_weight_count()?;
+        if self.k_weights.len() != self.q_weights.len()
+            || self.v_weights.len() != self.q_weights.len()
+            || self.o_weights.len() != self.q_weights.len()
+            || self.up_weights.len() != layers * mlp_up_or_gate_count
+            || self.gate_weights.len() != self.up_weights.len()
+            || self.down_weights.len() != layers * mlp_down_count
+            || self.q_weights.len() != layers * attention_weight_count
+            || (!self.attention_rms_weights.is_empty()
+                && (self.attention_rms_weights.len() != layers * MINI_TRANSFORMER_D_MODEL
+                    || self.mlp_rms_weights.len() != layers * MINI_TRANSFORMER_D_MODEL))
+            || (self.attention_rms_weights.is_empty() != self.mlp_rms_weights.is_empty())
+        {
+            return Err(TrainError::InvalidModel(
+                "wrong mini transformer layer tensor count",
+            ));
+        }
+        Ok(layers)
+    }
+
+    pub fn rms_norm_enabled(&self) -> bool {
+        !self.attention_rms_weights.is_empty()
+    }
+
+    pub fn enable_rms_norm(&mut self) -> Result<(), TrainError> {
+        if self.rms_norm_enabled() {
+            return Ok(());
+        }
+        self.enable_rms_norm_with_gamma(DEFAULT_MINI_TRANSFORMER_RMS_GAMMA_Q15)
+    }
+
+    pub fn enable_rms_norm_with_gamma(&mut self, gamma_q15: i16) -> Result<(), TrainError> {
+        if gamma_q15 <= 0 {
+            return Err(TrainError::InvalidConfig);
+        }
+        let layers = self.checked_transformer_layers()?;
+        if self.rms_norm_enabled() {
+            if self
+                .attention_rms_weights
+                .iter()
+                .chain(self.mlp_rms_weights.iter())
+                .all(|&weight| weight == gamma_q15)
+            {
+                return Ok(());
+            }
+            return Err(TrainError::InvalidConfig);
+        }
+        let count = layers
+            .checked_mul(MINI_TRANSFORMER_D_MODEL)
+            .ok_or(TrainError::InvalidModel("RMSNorm weight count overflow"))?;
+        self.attention_rms_weights = vec![gamma_q15; count];
+        self.mlp_rms_weights = vec![gamma_q15; count];
+        Ok(())
+    }
+
+    fn rms_weight_range(&self, layer_index: usize) -> Result<Range<usize>, TrainError> {
+        if !self.rms_norm_enabled() || layer_index >= self.checked_transformer_layers()? {
+            return Err(TrainError::InvalidConfig);
+        }
+        mini_transformer_layer_range(layer_index, MINI_TRANSFORMER_D_MODEL)
+    }
+
+    fn attention_weight_range(&self, layer_index: usize) -> Result<Range<usize>, TrainError> {
+        let layers = self.checked_transformer_layers()?;
+        if layer_index >= layers {
+            return Err(TrainError::InvalidConfig);
+        }
+        mini_transformer_layer_range(layer_index, mini_transformer_attention_weight_count()?)
+    }
+
+    fn mlp_up_or_gate_weight_range(&self, layer_index: usize) -> Result<Range<usize>, TrainError> {
+        let layers = self.checked_transformer_layers()?;
+        if layer_index >= layers {
+            return Err(TrainError::InvalidConfig);
+        }
+        mini_transformer_layer_range(layer_index, mini_transformer_mlp_up_or_gate_weight_count()?)
+    }
+
+    fn mlp_down_weight_range(&self, layer_index: usize) -> Result<Range<usize>, TrainError> {
+        let layers = self.checked_transformer_layers()?;
+        if layer_index >= layers {
+            return Err(TrainError::InvalidConfig);
+        }
+        mini_transformer_layer_range(layer_index, mini_transformer_mlp_down_weight_count()?)
+    }
+
+    fn final_attention_weight_range(&self) -> Result<Range<usize>, TrainError> {
+        let layers = self.checked_transformer_layers()?;
+        self.attention_weight_range(layers - 1)
+    }
+
+    fn final_mlp_up_or_gate_weight_range(&self) -> Result<Range<usize>, TrainError> {
+        let layers = self.checked_transformer_layers()?;
+        self.mlp_up_or_gate_weight_range(layers - 1)
+    }
+
+    fn final_mlp_down_weight_range(&self) -> Result<Range<usize>, TrainError> {
+        let layers = self.checked_transformer_layers()?;
+        self.mlp_down_weight_range(layers - 1)
     }
 
     pub fn embedding_hash(&self) -> u64 {
@@ -12035,6 +10024,10 @@ impl MiniTransformerMlpModel {
         hasher.update_usize(self.context_seq_len);
         hasher.update_i16_slice(&self.embeddings);
         hasher.update_i16_slice(&self.position_embeddings);
+        if self.rms_norm_enabled() {
+            hasher.update_i16_slice(&self.attention_rms_weights);
+            hasher.update_i16_slice(&self.mlp_rms_weights);
+        }
         hasher.update_i8_slice(&self.q_weights);
         hasher.update_i8_slice(&self.k_weights);
         hasher.update_i8_slice(&self.v_weights);
@@ -12046,6 +10039,29 @@ impl MiniTransformerMlpModel {
         hasher.finish()
     }
 
+    pub fn optimizer_parameter_count(&self) -> Result<usize, TrainError> {
+        [
+            self.embeddings.len(),
+            self.position_embeddings.len(),
+            self.attention_rms_weights.len(),
+            self.mlp_rms_weights.len(),
+            self.q_weights.len(),
+            self.k_weights.len(),
+            self.v_weights.len(),
+            self.o_weights.len(),
+            self.up_weights.len(),
+            self.gate_weights.len(),
+            self.down_weights.len(),
+            self.output_weights.len(),
+        ]
+        .into_iter()
+        .try_fold(0_usize, |total, count| {
+            total.checked_add(count).ok_or(TrainError::InvalidModel(
+                "optimizer parameter count overflow",
+            ))
+        })
+    }
+
     pub fn try_to_bytes(&self) -> Result<Vec<u8>, TrainError> {
         let embedding_bytes = checked_i16_tensor_bytes(
             self.embeddings.len(),
@@ -12054,6 +10070,14 @@ impl MiniTransformerMlpModel {
         let position_embedding_bytes = checked_i16_tensor_bytes(
             self.position_embeddings.len(),
             "mini transformer position embedding bytes overflow",
+        )?;
+        let attention_rms_bytes = checked_i16_tensor_bytes(
+            self.attention_rms_weights.len(),
+            "mini transformer attention RMS bytes overflow",
+        )?;
+        let mlp_rms_bytes = checked_i16_tensor_bytes(
+            self.mlp_rms_weights.len(),
+            "mini transformer MLP RMS bytes overflow",
         )?;
         let weight_bytes = checked_model_capacity(
             0,
@@ -12070,7 +10094,13 @@ impl MiniTransformerMlpModel {
         )?;
         let mut out = Vec::with_capacity(checked_model_capacity(
             136,
-            &[embedding_bytes, position_embedding_bytes, weight_bytes],
+            &[
+                embedding_bytes,
+                position_embedding_bytes,
+                weight_bytes,
+                attention_rms_bytes,
+                mlp_rms_bytes,
+            ],
         )?);
         out.extend_from_slice(MINI_TRANSFORMER_MODEL_MAGIC);
         out.extend_from_slice(&checked_u32(BYTE_VOCAB, "byte vocab exceeds u32")?.to_le_bytes());
@@ -12179,6 +10209,12 @@ impl MiniTransformerMlpModel {
         out.extend(self.gate_weights.iter().map(|&weight| weight as u8));
         out.extend(self.down_weights.iter().map(|&weight| weight as u8));
         out.extend(self.output_weights.iter().map(|&weight| weight as u8));
+        for &weight in &self.attention_rms_weights {
+            out.extend_from_slice(&weight.to_le_bytes());
+        }
+        for &weight in &self.mlp_rms_weights {
+            out.extend_from_slice(&weight.to_le_bytes());
+        }
         Ok(out)
     }
 
@@ -12187,12 +10223,40 @@ impl MiniTransformerMlpModel {
             .expect("mini transformer model should fit on-disk format")
     }
 
+    /// Returns the model hash recorded in a serialized V4 or V5 artifact.
+    ///
+    /// This is intentionally separate from [`Self::model_hash`]: loading a
+    /// historical 32-wide V4 artifact upgrades it to the current geometry, so
+    /// the in-memory model has a new hash after the source artifact has been
+    /// authenticated.
+    pub fn serialized_model_hash(bytes: &[u8]) -> Result<u64, TrainError> {
+        let header_len = MINI_TRANSFORMER_MODEL_MAGIC.len() + 4 * 5 + 8 * 10 + 8 * 8;
+        if bytes.len() < header_len {
+            return Err(TrainError::InvalidModel("artifact too short"));
+        }
+        let magic = &bytes[..MINI_TRANSFORMER_MODEL_MAGIC.len()];
+        if magic != MINI_TRANSFORMER_MODEL_MAGIC && magic != MINI_TRANSFORMER_LEGACY_MODEL_MAGIC {
+            return Err(TrainError::InvalidModel("bad magic"));
+        }
+        let hash_offset = MINI_TRANSFORMER_MODEL_MAGIC.len() + 4 * 5 + 8 * 10 + 8 * 7;
+        let hash_bytes = bytes
+            .get(hash_offset..hash_offset + 8)
+            .ok_or(TrainError::InvalidModel("artifact too short"))?;
+        Ok(u64::from_le_bytes(
+            hash_bytes
+                .try_into()
+                .map_err(|_| TrainError::InvalidModel("bad model hash"))?,
+        ))
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
         let header_len = MINI_TRANSFORMER_MODEL_MAGIC.len() + 4 * 5 + 8 * 10 + 8 * 8;
         if bytes.len() < header_len {
             return Err(TrainError::InvalidModel("artifact too short"));
         }
-        if &bytes[..MINI_TRANSFORMER_MODEL_MAGIC.len()] != MINI_TRANSFORMER_MODEL_MAGIC {
+        let magic = &bytes[..MINI_TRANSFORMER_MODEL_MAGIC.len()];
+        let legacy = magic == MINI_TRANSFORMER_LEGACY_MODEL_MAGIC;
+        if magic != MINI_TRANSFORMER_MODEL_MAGIC && !legacy {
             return Err(TrainError::InvalidModel("bad magic"));
         }
 
@@ -12221,6 +10285,37 @@ impl MiniTransformerMlpModel {
         let expected_output_hash = read_u64_le(bytes, &mut offset)?;
         let expected_model_hash = read_u64_le(bytes, &mut offset)?;
 
+        if legacy
+            && d_model == MINI_TRANSFORMER_LEGACY_V4_D_MODEL
+            && heads == MINI_TRANSFORMER_LEGACY_V4_HEADS
+            && hidden_dim == MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM
+        {
+            return decode_and_upgrade_legacy_v4_model(
+                bytes,
+                offset,
+                vocab,
+                context_seq_len,
+                embedding_count,
+                position_embedding_count,
+                q_count,
+                k_count,
+                v_count,
+                o_count,
+                up_count,
+                gate_count,
+                down_count,
+                output_count,
+                expected_embedding_hash,
+                expected_q_hash,
+                expected_k_hash,
+                expected_v_hash,
+                expected_o_hash,
+                expected_mlp_hash,
+                expected_output_hash,
+                expected_model_hash,
+            );
+        }
+
         if vocab != BYTE_VOCAB
             || d_model != MINI_TRANSFORMER_D_MODEL
             || heads != MINI_TRANSFORMER_HEADS
@@ -12230,7 +10325,13 @@ impl MiniTransformerMlpModel {
             return Err(TrainError::InvalidModel("shape mismatch"));
         }
 
-        let expected_attention_count = MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL;
+        let expected_attention_count = mini_transformer_attention_weight_count()?;
+        let expected_mlp_up_or_gate_count = mini_transformer_mlp_up_or_gate_weight_count()?;
+        let expected_mlp_down_count = mini_transformer_mlp_down_weight_count()?;
+        let inferred_attention_layers = infer_layer_count(q_count, expected_attention_count)
+            .ok_or(TrainError::InvalidModel("attention tensor count mismatch"))?;
+        let inferred_mlp_layers = infer_layer_count(up_count, expected_mlp_up_or_gate_count)
+            .ok_or(TrainError::InvalidModel("mlp tensor count mismatch"))?;
         let expected_position_embedding_count = context_seq_len
             .checked_mul(MINI_TRANSFORMER_D_MODEL)
             .ok_or(TrainError::InvalidModel(
@@ -12238,13 +10339,14 @@ impl MiniTransformerMlpModel {
             ))?;
         if embedding_count != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
             || position_embedding_count != expected_position_embedding_count
-            || q_count != expected_attention_count
-            || k_count != expected_attention_count
-            || v_count != expected_attention_count
-            || o_count != expected_attention_count
-            || up_count != MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM
-            || gate_count != MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM
-            || down_count != MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL
+            || inferred_attention_layers == 0
+            || inferred_mlp_layers == 0
+            || inferred_attention_layers != inferred_mlp_layers
+            || k_count != q_count
+            || v_count != q_count
+            || o_count != q_count
+            || gate_count != up_count
+            || down_count != inferred_mlp_layers * expected_mlp_down_count
             || output_count != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
         {
             return Err(TrainError::InvalidModel("tensor count mismatch"));
@@ -12268,12 +10370,24 @@ impl MiniTransformerMlpModel {
             .and_then(|value| value.checked_add(down_count))
             .and_then(|value| value.checked_add(output_count))
             .ok_or(TrainError::InvalidModel("weight length overflow"))?;
-        let expected_len = offset
+        let base_expected_len = offset
             .checked_add(embedding_bytes)
             .and_then(|value| value.checked_add(position_embedding_bytes))
             .and_then(|value| value.checked_add(weight_bytes))
             .ok_or(TrainError::InvalidModel("artifact length overflow"))?;
-        if bytes.len() != expected_len {
+        let rms_count = inferred_attention_layers
+            .checked_mul(MINI_TRANSFORMER_D_MODEL)
+            .ok_or(TrainError::InvalidModel("RMSNorm count overflow"))?;
+        let rms_bytes = rms_count
+            .checked_mul(4)
+            .ok_or(TrainError::InvalidModel("RMSNorm bytes overflow"))?;
+        let rms_expected_len = base_expected_len
+            .checked_add(rms_bytes)
+            .ok_or(TrainError::InvalidModel("artifact length overflow"))?;
+        let rms_enabled = !legacy && bytes.len() == rms_expected_len;
+        if (legacy && bytes.len() != base_expected_len)
+            || (!legacy && bytes.len() != base_expected_len && !rms_enabled)
+        {
             return Err(TrainError::InvalidModel("artifact length mismatch"));
         }
 
@@ -12307,11 +10421,21 @@ impl MiniTransformerMlpModel {
         let gate_weights = read_i8_vec(bytes, &mut offset, gate_count)?;
         let down_weights = read_i8_vec(bytes, &mut offset, down_count)?;
         let output_weights = read_i8_vec(bytes, &mut offset, output_count)?;
+        let (attention_rms_weights, mlp_rms_weights) = if rms_enabled {
+            (
+                read_i16_vec(bytes, &mut offset, rms_count)?,
+                read_i16_vec(bytes, &mut offset, rms_count)?,
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
 
-        let model = Self::new(
+        let model = Self::new_with_rms_weights(
             context_seq_len,
             embeddings,
             position_embeddings,
+            attention_rms_weights,
+            mlp_rms_weights,
             q_weights,
             k_weights,
             v_weights,
@@ -12341,6 +10465,715 @@ impl MiniTransformerMlpModel {
             return Err(TrainError::InvalidModel("model hash mismatch"));
         }
         Ok(model)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decode_and_upgrade_legacy_v4_model(
+    bytes: &[u8],
+    mut offset: usize,
+    vocab: usize,
+    context_seq_len: usize,
+    embedding_count: usize,
+    position_embedding_count: usize,
+    q_count: usize,
+    k_count: usize,
+    v_count: usize,
+    o_count: usize,
+    up_count: usize,
+    gate_count: usize,
+    down_count: usize,
+    output_count: usize,
+    expected_embedding_hash: u64,
+    expected_q_hash: u64,
+    expected_k_hash: u64,
+    expected_v_hash: u64,
+    expected_o_hash: u64,
+    expected_mlp_hash: u64,
+    expected_output_hash: u64,
+    expected_model_hash: u64,
+) -> Result<MiniTransformerMlpModel, TrainError> {
+    let expected_embedding_count = BYTE_VOCAB
+        .checked_mul(MINI_TRANSFORMER_LEGACY_V4_D_MODEL)
+        .ok_or(TrainError::InvalidModel("legacy embedding count overflow"))?;
+    let expected_position_count = context_seq_len
+        .checked_mul(MINI_TRANSFORMER_LEGACY_V4_D_MODEL)
+        .ok_or(TrainError::InvalidModel("legacy position count overflow"))?;
+    let expected_attention_count = MINI_TRANSFORMER_LEGACY_V4_D_MODEL
+        .checked_mul(MINI_TRANSFORMER_LEGACY_V4_D_MODEL)
+        .ok_or(TrainError::InvalidModel("legacy attention count overflow"))?;
+    let expected_up_count = MINI_TRANSFORMER_LEGACY_V4_D_MODEL
+        .checked_mul(MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM)
+        .ok_or(TrainError::InvalidModel("legacy MLP count overflow"))?;
+    let expected_down_count = MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM
+        .checked_mul(MINI_TRANSFORMER_LEGACY_V4_D_MODEL)
+        .ok_or(TrainError::InvalidModel("legacy MLP count overflow"))?;
+    let expected_output_count = BYTE_VOCAB
+        .checked_mul(MINI_TRANSFORMER_LEGACY_V4_D_MODEL)
+        .ok_or(TrainError::InvalidModel("legacy output count overflow"))?;
+    if vocab != BYTE_VOCAB
+        || context_seq_len == 0
+        || embedding_count != expected_embedding_count
+        || position_embedding_count != expected_position_count
+        || q_count != expected_attention_count
+        || k_count != expected_attention_count
+        || v_count != expected_attention_count
+        || o_count != expected_attention_count
+        || up_count != expected_up_count
+        || gate_count != expected_up_count
+        || down_count != expected_down_count
+        || output_count != expected_output_count
+    {
+        return Err(TrainError::InvalidModel("legacy V4 tensor count mismatch"));
+    }
+
+    let expected_len = offset
+        .checked_add(
+            embedding_count
+                .checked_mul(2)
+                .ok_or(TrainError::InvalidModel("legacy embedding length overflow"))?,
+        )
+        .and_then(|value| value.checked_add(position_embedding_count.checked_mul(2)?))
+        .and_then(|value| value.checked_add(q_count))
+        .and_then(|value| value.checked_add(k_count))
+        .and_then(|value| value.checked_add(v_count))
+        .and_then(|value| value.checked_add(o_count))
+        .and_then(|value| value.checked_add(up_count))
+        .and_then(|value| value.checked_add(gate_count))
+        .and_then(|value| value.checked_add(down_count))
+        .and_then(|value| value.checked_add(output_count))
+        .ok_or(TrainError::InvalidModel("legacy artifact length overflow"))?;
+    if bytes.len() != expected_len {
+        return Err(TrainError::InvalidModel(
+            "legacy V4 artifact length mismatch",
+        ));
+    }
+
+    let embeddings = read_i16_vec(bytes, &mut offset, embedding_count)?;
+    let position_embeddings = read_i16_vec(bytes, &mut offset, position_embedding_count)?;
+    let q_weights = read_i8_vec(bytes, &mut offset, q_count)?;
+    let k_weights = read_i8_vec(bytes, &mut offset, k_count)?;
+    let v_weights = read_i8_vec(bytes, &mut offset, v_count)?;
+    let o_weights = read_i8_vec(bytes, &mut offset, o_count)?;
+    let up_weights = read_i8_vec(bytes, &mut offset, up_count)?;
+    let gate_weights = read_i8_vec(bytes, &mut offset, gate_count)?;
+    let down_weights = read_i8_vec(bytes, &mut offset, down_count)?;
+    let output_weights = read_i8_vec(bytes, &mut offset, output_count)?;
+
+    let mut embedding_hasher = StableHasher::new();
+    embedding_hasher.update_i16_slice(&embeddings);
+    embedding_hasher.update_i16_slice(&position_embeddings);
+    if embedding_hasher.finish() != expected_embedding_hash {
+        return Err(TrainError::InvalidModel("embedding hash mismatch"));
+    }
+    if hash_i8_slice(&q_weights) != expected_q_hash
+        || hash_i8_slice(&k_weights) != expected_k_hash
+        || hash_i8_slice(&v_weights) != expected_v_hash
+        || hash_i8_slice(&o_weights) != expected_o_hash
+    {
+        return Err(TrainError::InvalidModel("attention hash mismatch"));
+    }
+    if hash_three_i8_slices(&up_weights, &gate_weights, &down_weights) != expected_mlp_hash {
+        return Err(TrainError::InvalidModel("mlp hash mismatch"));
+    }
+    if hash_i8_slice(&output_weights) != expected_output_hash {
+        return Err(TrainError::InvalidModel("output hash mismatch"));
+    }
+    let mut model_hasher = StableHasher::new();
+    model_hasher.update_usize(context_seq_len);
+    model_hasher.update_i16_slice(&embeddings);
+    model_hasher.update_i16_slice(&position_embeddings);
+    model_hasher.update_i8_slice(&q_weights);
+    model_hasher.update_i8_slice(&k_weights);
+    model_hasher.update_i8_slice(&v_weights);
+    model_hasher.update_i8_slice(&o_weights);
+    model_hasher.update_i8_slice(&up_weights);
+    model_hasher.update_i8_slice(&gate_weights);
+    model_hasher.update_i8_slice(&down_weights);
+    model_hasher.update_i8_slice(&output_weights);
+    if model_hasher.finish() != expected_model_hash {
+        return Err(TrainError::InvalidModel("model hash mismatch"));
+    }
+
+    upgrade_legacy_v4_model(
+        context_seq_len,
+        embeddings,
+        position_embeddings,
+        q_weights,
+        k_weights,
+        v_weights,
+        o_weights,
+        up_weights,
+        gate_weights,
+        down_weights,
+        output_weights,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn upgrade_legacy_v4_model(
+    context_seq_len: usize,
+    embeddings: Vec<i16>,
+    position_embeddings: Vec<i16>,
+    q_weights: Vec<i8>,
+    k_weights: Vec<i8>,
+    v_weights: Vec<i8>,
+    o_weights: Vec<i8>,
+    up_weights: Vec<i8>,
+    gate_weights: Vec<i8>,
+    down_weights: Vec<i8>,
+    output_weights: Vec<i8>,
+) -> Result<MiniTransformerMlpModel, TrainError> {
+    if MINI_TRANSFORMER_D_MODEL != MINI_TRANSFORMER_LEGACY_V4_D_MODEL * 4
+        || (MINI_TRANSFORMER_HEADS != MINI_TRANSFORMER_LEGACY_V4_HEADS
+            && MINI_TRANSFORMER_HEADS != MINI_TRANSFORMER_LEGACY_V4_HEADS * 4)
+        || MINI_TRANSFORMER_HIDDEN_DIM != MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM * 4
+    {
+        return Err(TrainError::InvalidModel(
+            "unsupported legacy V4 geometry upgrade",
+        ));
+    }
+    let embeddings = widen_legacy_model_rows_i16(&embeddings, BYTE_VOCAB)?;
+    let position_embeddings = widen_legacy_model_rows_i16(&position_embeddings, context_seq_len)?;
+    let q_weights = widen_legacy_model_matrix(&q_weights, 2)?;
+    let k_weights = widen_legacy_model_matrix(&k_weights, 2)?;
+    let v_weights = widen_legacy_model_matrix(&v_weights, 4)?;
+    let o_weights = widen_legacy_model_matrix(&o_weights, 4)?;
+    let up_weights = widen_legacy_up_or_gate_matrix(&up_weights)?;
+    let gate_weights = widen_legacy_up_or_gate_matrix(&gate_weights)?;
+    let down_weights = widen_legacy_down_matrix(&down_weights)?;
+    let output_weights = widen_legacy_output_matrix(&output_weights)?;
+    MiniTransformerMlpModel::new(
+        context_seq_len,
+        embeddings,
+        position_embeddings,
+        q_weights,
+        k_weights,
+        v_weights,
+        o_weights,
+        up_weights,
+        gate_weights,
+        down_weights,
+        output_weights,
+    )
+}
+
+fn legacy_model_dim_index(index: usize, replica: usize) -> Result<usize, TrainError> {
+    let old_head_dim = MINI_TRANSFORMER_LEGACY_V4_D_MODEL / MINI_TRANSFORMER_LEGACY_V4_HEADS;
+    let new_head_dim = MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS;
+    if index >= MINI_TRANSFORMER_LEGACY_V4_D_MODEL || replica >= 4 {
+        return Err(TrainError::InvalidModel("legacy model index out of range"));
+    }
+    let head = index / old_head_dim;
+    let dim = index % old_head_dim;
+    if MINI_TRANSFORMER_HEADS == MINI_TRANSFORMER_LEGACY_V4_HEADS {
+        Ok(head * new_head_dim + dim * 4 + replica)
+    } else if MINI_TRANSFORMER_HEADS == MINI_TRANSFORMER_LEGACY_V4_HEADS * 4
+        && new_head_dim == old_head_dim
+    {
+        Ok((head * 4 + replica) * new_head_dim + dim)
+    } else {
+        Err(TrainError::InvalidModel(
+            "unsupported legacy model head mapping",
+        ))
+    }
+}
+
+fn widen_legacy_model_rows_i16(values: &[i16], rows: usize) -> Result<Vec<i16>, TrainError> {
+    if values.len() != rows * MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+        return Err(TrainError::InvalidModel("legacy row tensor mismatch"));
+    }
+    let mut out = vec![0_i16; rows * MINI_TRANSFORMER_D_MODEL];
+    for row in 0..rows {
+        for old_dim in 0..MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+            let value = values[row * MINI_TRANSFORMER_LEGACY_V4_D_MODEL + old_dim];
+            for replica in 0..4 {
+                out[row * MINI_TRANSFORMER_D_MODEL + legacy_model_dim_index(old_dim, replica)?] =
+                    value;
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn widen_legacy_model_matrix(values: &[i8], output_replicas: usize) -> Result<Vec<i8>, TrainError> {
+    if values.len() != MINI_TRANSFORMER_LEGACY_V4_D_MODEL * MINI_TRANSFORMER_LEGACY_V4_D_MODEL
+        || !(1..=4).contains(&output_replicas)
+    {
+        return Err(TrainError::InvalidModel("legacy attention tensor mismatch"));
+    }
+    let mut out = vec![0_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL];
+    for old_output in 0..MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+        for output_replica in 0..output_replicas {
+            let new_output = legacy_model_dim_index(old_output, output_replica)?;
+            for old_input in 0..MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+                let new_input = legacy_model_dim_index(old_input, 0)?;
+                out[new_output * MINI_TRANSFORMER_D_MODEL + new_input] =
+                    values[old_output * MINI_TRANSFORMER_LEGACY_V4_D_MODEL + old_input];
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn widen_legacy_up_or_gate_matrix(values: &[i8]) -> Result<Vec<i8>, TrainError> {
+    if values.len() != MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM * MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+        return Err(TrainError::InvalidModel("legacy MLP tensor mismatch"));
+    }
+    let mut out = vec![0_i8; MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL];
+    for old_output in 0..MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM {
+        for output_replica in 0..4 {
+            let new_output = old_output * 4 + output_replica;
+            for old_input in 0..MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+                let new_input = legacy_model_dim_index(old_input, 0)?;
+                out[new_output * MINI_TRANSFORMER_D_MODEL + new_input] =
+                    values[old_output * MINI_TRANSFORMER_LEGACY_V4_D_MODEL + old_input];
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn widen_legacy_down_matrix(values: &[i8]) -> Result<Vec<i8>, TrainError> {
+    if values.len() != MINI_TRANSFORMER_LEGACY_V4_D_MODEL * MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM {
+        return Err(TrainError::InvalidModel("legacy MLP tensor mismatch"));
+    }
+    let mut out = vec![0_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM];
+    for old_output in 0..MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+        for output_replica in 0..4 {
+            let new_output = legacy_model_dim_index(old_output, output_replica)?;
+            for old_input in 0..MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM {
+                let new_input = old_input * 4;
+                out[new_output * MINI_TRANSFORMER_HIDDEN_DIM + new_input] =
+                    values[old_output * MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM + old_input];
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn widen_legacy_output_matrix(values: &[i8]) -> Result<Vec<i8>, TrainError> {
+    if values.len() != BYTE_VOCAB * MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+        return Err(TrainError::InvalidModel("legacy output tensor mismatch"));
+    }
+    let mut out = vec![0_i8; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
+    for output in 0..BYTE_VOCAB {
+        for old_input in 0..MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+            let new_input = legacy_model_dim_index(old_input, 0)?;
+            out[output * MINI_TRANSFORMER_D_MODEL + new_input] =
+                values[output * MINI_TRANSFORMER_LEGACY_V4_D_MODEL + old_input];
+        }
+    }
+    Ok(out)
+}
+
+impl MiniTransformerBlockLowRankExpert {
+    pub fn new_for_model(
+        model: &MiniTransformerMlpModel,
+        rank: usize,
+        projection_seed: u64,
+    ) -> Result<Self, TrainError> {
+        Self::new_for_model_with_residual_shift(model, rank, projection_seed, 0)
+    }
+
+    pub fn new_for_model_with_residual_shift(
+        model: &MiniTransformerMlpModel,
+        rank: usize,
+        projection_seed: u64,
+        residual_shift: u8,
+    ) -> Result<Self, TrainError> {
+        let transformer_layers = model.checked_transformer_layers()?;
+        if rank == 0 || rank > MINI_TRANSFORMER_D_MODEL || residual_shift > 15 {
+            return Err(TrainError::InvalidConfig);
+        }
+        let parameter_count = transformer_layers
+            .checked_mul(MINI_TRANSFORMER_D_MODEL)
+            .and_then(|value| value.checked_mul(rank))
+            .ok_or(TrainError::InvalidConfig)?;
+        Ok(Self {
+            trunk_model_hash: model.model_hash(),
+            transformer_layers,
+            rank,
+            projection_seed,
+            residual_shift,
+            expansion_weights_q15: vec![0_i16; parameter_count],
+        })
+    }
+
+    pub fn parameter_count(&self) -> usize {
+        self.expansion_weights_q15.len()
+    }
+
+    pub fn validate_for_model(&self, model: &MiniTransformerMlpModel) -> Result<(), TrainError> {
+        let expected = self
+            .transformer_layers
+            .checked_mul(MINI_TRANSFORMER_D_MODEL)
+            .and_then(|value| value.checked_mul(self.rank))
+            .ok_or(TrainError::InvalidConfig)?;
+        if self.trunk_model_hash != model.model_hash()
+            || self.transformer_layers != model.checked_transformer_layers()?
+            || self.rank == 0
+            || self.rank > MINI_TRANSFORMER_D_MODEL
+            || self.residual_shift > 15
+            || self.expansion_weights_q15.len() != expected
+        {
+            return Err(TrainError::InvalidModel("block expert/model mismatch"));
+        }
+        Ok(())
+    }
+
+    pub fn try_to_bytes(&self) -> Result<Vec<u8>, TrainError> {
+        if self.transformer_layers == 0
+            || self.rank == 0
+            || self.rank > MINI_TRANSFORMER_D_MODEL
+            || self.residual_shift > 15
+            || self.expansion_weights_q15.len()
+                != self
+                    .transformer_layers
+                    .checked_mul(MINI_TRANSFORMER_D_MODEL)
+                    .and_then(|value| value.checked_mul(self.rank))
+                    .ok_or(TrainError::InvalidConfig)?
+        {
+            return Err(TrainError::InvalidModel("invalid block expert"));
+        }
+        let mut out = Vec::with_capacity(80 + self.expansion_weights_q15.len() * 2);
+        out.extend_from_slice(MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC);
+        out.extend_from_slice(&checked_u32(BYTE_VOCAB, "byte vocab exceeds u32")?.to_le_bytes());
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_D_MODEL, "d_model exceeds u32")?.to_le_bytes(),
+        );
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_HEADS, "heads exceeds u32")?.to_le_bytes(),
+        );
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_HIDDEN_DIM, "hidden_dim exceeds u32")?.to_le_bytes(),
+        );
+        out.extend_from_slice(&self.trunk_model_hash.to_le_bytes());
+        push_model_usize(&mut out, self.transformer_layers, "layers exceed u64")?;
+        push_model_usize(&mut out, self.rank, "rank exceeds u64")?;
+        out.extend_from_slice(&self.projection_seed.to_le_bytes());
+        out.push(self.residual_shift);
+        out.extend_from_slice(&[0_u8; 7]);
+        push_model_usize(
+            &mut out,
+            self.expansion_weights_q15.len(),
+            "block expert parameters exceed u64",
+        )?;
+        for &weight in &self.expansion_weights_q15 {
+            out.extend_from_slice(&weight.to_le_bytes());
+        }
+        let checksum = hash_u8_slice(&out);
+        out.extend_from_slice(&checksum.to_le_bytes());
+        Ok(out)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.try_to_bytes()
+            .expect("valid block expert should fit on-disk format")
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
+        const HEADER_WITH_CHECKSUM: usize = 80;
+        if bytes.len() < HEADER_WITH_CHECKSUM
+            || &bytes[..MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC.len()]
+                != MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC
+        {
+            return Err(TrainError::InvalidModel("bad block expert artifact"));
+        }
+        let checksum_offset = bytes.len() - 8;
+        let mut checksum_cursor = checksum_offset;
+        let checksum = read_u64_le(bytes, &mut checksum_cursor)?;
+        if checksum_cursor != bytes.len() || hash_u8_slice(&bytes[..checksum_offset]) != checksum {
+            return Err(TrainError::InvalidModel("block expert checksum mismatch"));
+        }
+        let mut offset = MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC.len();
+        let vocab = read_u32_le(bytes, &mut offset)? as usize;
+        let d_model = read_u32_le(bytes, &mut offset)? as usize;
+        let heads = read_u32_le(bytes, &mut offset)? as usize;
+        let hidden_dim = read_u32_le(bytes, &mut offset)? as usize;
+        let trunk_model_hash = read_u64_le(bytes, &mut offset)?;
+        let transformer_layers = read_model_usize(bytes, &mut offset)?;
+        let rank = read_model_usize(bytes, &mut offset)?;
+        let projection_seed = read_u64_le(bytes, &mut offset)?;
+        let residual_shift = *bytes.get(offset).ok_or(TrainError::InvalidModel(
+            "missing block expert residual shift",
+        ))?;
+        if bytes
+            .get(offset + 1..offset + 8)
+            .ok_or(TrainError::InvalidModel(
+                "missing block expert reserved bytes",
+            ))?
+            .iter()
+            .any(|&value| value != 0)
+        {
+            return Err(TrainError::InvalidModel("block expert reserved bytes"));
+        }
+        offset += 8;
+        let parameter_count = read_model_usize(bytes, &mut offset)?;
+        if vocab != BYTE_VOCAB
+            || d_model != MINI_TRANSFORMER_D_MODEL
+            || heads != MINI_TRANSFORMER_HEADS
+            || hidden_dim != MINI_TRANSFORMER_HIDDEN_DIM
+            || transformer_layers == 0
+            || rank == 0
+            || rank > MINI_TRANSFORMER_D_MODEL
+            || residual_shift > 15
+            || parameter_count
+                != transformer_layers
+                    .checked_mul(MINI_TRANSFORMER_D_MODEL)
+                    .and_then(|value| value.checked_mul(rank))
+                    .ok_or(TrainError::InvalidModel("block expert size overflow"))?
+            || bytes.len()
+                != HEADER_WITH_CHECKSUM
+                    .checked_add(
+                        parameter_count
+                            .checked_mul(2)
+                            .ok_or(TrainError::InvalidModel("block expert payload overflow"))?,
+                    )
+                    .ok_or(TrainError::InvalidModel("block expert artifact overflow"))?
+        {
+            return Err(TrainError::InvalidModel("block expert header mismatch"));
+        }
+        let mut expansion_weights_q15 = Vec::with_capacity(parameter_count);
+        for _ in 0..parameter_count {
+            let end = offset
+                .checked_add(2)
+                .ok_or(TrainError::InvalidModel("block expert offset overflow"))?;
+            let raw: [u8; 2] = bytes
+                .get(offset..end)
+                .ok_or(TrainError::InvalidModel("truncated block expert"))?
+                .try_into()
+                .map_err(|_| TrainError::InvalidModel("truncated block expert"))?;
+            expansion_weights_q15.push(i16::from_le_bytes(raw));
+            offset = end;
+        }
+        if offset != checksum_offset {
+            return Err(TrainError::InvalidModel("block expert payload mismatch"));
+        }
+        Ok(Self {
+            trunk_model_hash,
+            transformer_layers,
+            rank,
+            projection_seed,
+            residual_shift,
+            expansion_weights_q15,
+        })
+    }
+}
+
+impl MiniTransformerAdamOptimizerState {
+    pub fn new_for_model(
+        model: &MiniTransformerMlpModel,
+        config: IntegerAdamConfig,
+    ) -> Result<Self, TrainError> {
+        if !config.is_valid() {
+            return Err(TrainError::InvalidConfig);
+        }
+        let parameter_count = model.optimizer_parameter_count()?;
+        Ok(Self {
+            context_seq_len: model.context_seq_len,
+            step: 0,
+            bound_model_hash: model.model_hash(),
+            config,
+            first_moments: vec![0_i64; parameter_count],
+            second_moments: vec![0_u64; parameter_count],
+            update_residuals: vec![0_i64; parameter_count],
+        })
+    }
+
+    pub fn validate_for_model(&self, model: &MiniTransformerMlpModel) -> Result<(), TrainError> {
+        let parameter_count = model.optimizer_parameter_count()?;
+        if !self.config.is_valid()
+            || self.context_seq_len != model.context_seq_len
+            || self.bound_model_hash != model.model_hash()
+            || self.first_moments.len() != parameter_count
+            || self.second_moments.len() != parameter_count
+            || self.update_residuals.len() != parameter_count
+        {
+            return Err(TrainError::InvalidModel("optimizer state/model mismatch"));
+        }
+        Ok(())
+    }
+
+    pub fn bind_to_model(&mut self, model: &MiniTransformerMlpModel) -> Result<(), TrainError> {
+        let parameter_count = model.optimizer_parameter_count()?;
+        if !self.config.is_valid()
+            || self.context_seq_len != model.context_seq_len
+            || self.first_moments.len() != parameter_count
+            || self.second_moments.len() != parameter_count
+            || self.update_residuals.len() != parameter_count
+        {
+            return Err(TrainError::InvalidModel("optimizer state shape mismatch"));
+        }
+        self.bound_model_hash = model.model_hash();
+        Ok(())
+    }
+
+    pub fn parameter_count(&self) -> usize {
+        self.first_moments.len()
+    }
+
+    pub fn state_hash(&self) -> Result<u64, TrainError> {
+        let bytes = self.try_to_bytes()?;
+        let checksum_offset = bytes
+            .len()
+            .checked_sub(8)
+            .ok_or(TrainError::InvalidModel("optimizer checksum offset"))?;
+        let mut offset = checksum_offset;
+        read_u64_le(&bytes, &mut offset)
+    }
+
+    pub fn try_to_bytes(&self) -> Result<Vec<u8>, TrainError> {
+        if !self.config.is_valid()
+            || self.first_moments.len() != self.second_moments.len()
+            || self.first_moments.len() != self.update_residuals.len()
+            || self.context_seq_len == 0
+        {
+            return Err(TrainError::InvalidModel("invalid optimizer state"));
+        }
+        let payload_bytes = self
+            .parameter_count()
+            .checked_mul(24)
+            .ok_or(TrainError::InvalidModel("optimizer state size overflow"))?;
+        let mut out = Vec::with_capacity(
+            80_usize
+                .checked_add(payload_bytes)
+                .ok_or(TrainError::InvalidModel("optimizer artifact size overflow"))?,
+        );
+        out.extend_from_slice(MINI_TRANSFORMER_ADAM_STATE_MAGIC);
+        out.extend_from_slice(&checked_u32(BYTE_VOCAB, "byte vocab exceeds u32")?.to_le_bytes());
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_D_MODEL, "d_model exceeds u32")?.to_le_bytes(),
+        );
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_HEADS, "heads exceeds u32")?.to_le_bytes(),
+        );
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_HIDDEN_DIM, "hidden_dim exceeds u32")?.to_le_bytes(),
+        );
+        push_model_usize(&mut out, self.context_seq_len, "context length exceeds u64")?;
+        push_model_usize(
+            &mut out,
+            self.parameter_count(),
+            "parameter count exceeds u64",
+        )?;
+        out.extend_from_slice(&self.step.to_le_bytes());
+        out.extend_from_slice(&self.bound_model_hash.to_le_bytes());
+        out.extend_from_slice(&self.config.learning_rate.to_le_bytes());
+        out.push(self.config.step_shift);
+        out.push(self.config.beta1_decay_shift);
+        out.push(self.config.beta2_decay_shift);
+        out.push(0);
+        out.extend_from_slice(&self.config.epsilon.to_le_bytes());
+        for &value in &self.first_moments {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        for &value in &self.second_moments {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        for &value in &self.update_residuals {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        let checksum = hash_u8_slice(&out);
+        out.extend_from_slice(&checksum.to_le_bytes());
+        Ok(out)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.try_to_bytes()
+            .expect("valid optimizer state should fit on-disk format")
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
+        const FIXED_BYTES_WITH_CHECKSUM: usize = 80;
+        if bytes.len() < FIXED_BYTES_WITH_CHECKSUM {
+            return Err(TrainError::InvalidModel("optimizer artifact too short"));
+        }
+        if &bytes[..MINI_TRANSFORMER_ADAM_STATE_MAGIC.len()] != MINI_TRANSFORMER_ADAM_STATE_MAGIC {
+            return Err(TrainError::InvalidModel("bad optimizer magic"));
+        }
+        let checksum_offset = bytes
+            .len()
+            .checked_sub(8)
+            .ok_or(TrainError::InvalidModel("optimizer checksum offset"))?;
+        let mut checksum_cursor = checksum_offset;
+        let expected_checksum = read_u64_le(bytes, &mut checksum_cursor)?;
+        if checksum_cursor != bytes.len()
+            || hash_u8_slice(&bytes[..checksum_offset]) != expected_checksum
+        {
+            return Err(TrainError::InvalidModel("optimizer checksum mismatch"));
+        }
+
+        let mut offset = MINI_TRANSFORMER_ADAM_STATE_MAGIC.len();
+        let vocab = read_u32_le(bytes, &mut offset)? as usize;
+        let d_model = read_u32_le(bytes, &mut offset)? as usize;
+        let heads = read_u32_le(bytes, &mut offset)? as usize;
+        let hidden_dim = read_u32_le(bytes, &mut offset)? as usize;
+        let context_seq_len = read_model_usize(bytes, &mut offset)?;
+        let parameter_count = read_model_usize(bytes, &mut offset)?;
+        let step = read_u64_le(bytes, &mut offset)?;
+        let bound_model_hash = read_u64_le(bytes, &mut offset)?;
+        let learning_rate = read_u32_le(bytes, &mut offset)? as i32;
+        let step_shift = *bytes
+            .get(offset)
+            .ok_or(TrainError::InvalidModel("missing optimizer step shift"))?;
+        let beta1_decay_shift = *bytes
+            .get(offset + 1)
+            .ok_or(TrainError::InvalidModel("missing optimizer beta1 shift"))?;
+        let beta2_decay_shift = *bytes
+            .get(offset + 2)
+            .ok_or(TrainError::InvalidModel("missing optimizer beta2 shift"))?;
+        let reserved = *bytes
+            .get(offset + 3)
+            .ok_or(TrainError::InvalidModel("missing optimizer reserved byte"))?;
+        offset += 4;
+        let epsilon = read_u64_le(bytes, &mut offset)?;
+        let config = IntegerAdamConfig {
+            learning_rate,
+            step_shift,
+            beta1_decay_shift,
+            beta2_decay_shift,
+            epsilon,
+        };
+        if vocab != BYTE_VOCAB
+            || d_model != MINI_TRANSFORMER_D_MODEL
+            || heads != MINI_TRANSFORMER_HEADS
+            || hidden_dim != MINI_TRANSFORMER_HIDDEN_DIM
+            || context_seq_len == 0
+            || reserved != 0
+            || !config.is_valid()
+        {
+            return Err(TrainError::InvalidModel("optimizer header mismatch"));
+        }
+        let expected_len = FIXED_BYTES_WITH_CHECKSUM
+            .checked_add(
+                parameter_count
+                    .checked_mul(24)
+                    .ok_or(TrainError::InvalidModel("optimizer payload overflow"))?,
+            )
+            .ok_or(TrainError::InvalidModel("optimizer artifact overflow"))?;
+        if bytes.len() != expected_len {
+            return Err(TrainError::InvalidModel(
+                "optimizer artifact length mismatch",
+            ));
+        }
+        let first_moments = read_i64_vec(bytes, &mut offset, parameter_count)?;
+        let second_moments = read_u64_vec(bytes, &mut offset, parameter_count)?;
+        let update_residuals = read_i64_vec(bytes, &mut offset, parameter_count)?;
+        if offset != checksum_offset {
+            return Err(TrainError::InvalidModel(
+                "optimizer payload length mismatch",
+            ));
+        }
+        Ok(Self {
+            context_seq_len,
+            step,
+            bound_model_hash,
+            config,
+            first_moments,
+            second_moments,
+            update_residuals,
+        })
     }
 }
 
@@ -13330,83 +12163,6 @@ impl MiniTransformerSwarmRoutedGenerationTrace {
     }
 }
 
-impl LexemeGenerationTrace {
-    pub fn to_json_line(&self) -> String {
-        let mut out = String::new();
-        out.push('{');
-        push_string_field(&mut out, "schema", LEXEME_GENERATION_SCHEMA);
-        comma(&mut out);
-        push_string_field(&mut out, "authority", GENERATION_AUTHORITY);
-        comma(&mut out);
-        push_string_field(&mut out, "model", LEXEME_SOFTMAX_MODEL_ID);
-        comma(&mut out);
-        push_string_field(&mut out, "tokenizer", LEXEME_TOKENIZER_ID);
-        comma(&mut out);
-        push_lexeme_decode_config_field(&mut out, "decode", self.config);
-        comma(&mut out);
-        push_lexeme_decode_priors_field(&mut out, "decode_priors", self.decode_priors);
-        comma(&mut out);
-        push_lexeme_topic_priors_field(&mut out, "topic_priors", self.topic_priors);
-        comma(&mut out);
-        push_lexeme_memory_priors_field(&mut out, "memory_priors", self.memory_priors);
-        comma(&mut out);
-        push_hash_field(&mut out, "model_hash", self.model_hash);
-        comma(&mut out);
-        push_hash_field(&mut out, "embedding_hash", self.embedding_hash);
-        comma(&mut out);
-        push_hash_field(&mut out, "hidden_weight_hash", self.hidden_weight_hash);
-        comma(&mut out);
-        push_hash_field(&mut out, "output_weight_hash", self.output_weight_hash);
-        comma(&mut out);
-        push_usize_field(&mut out, "context_seq_len", self.context_seq_len);
-        comma(&mut out);
-        push_string_field(&mut out, "context_features", self.context_features.as_str());
-        comma(&mut out);
-        push_usize_field(&mut out, "hidden_dim", self.hidden_dim);
-        comma(&mut out);
-        push_usize_field(&mut out, "head_dim", self.head_dim);
-        comma(&mut out);
-        push_string_field(&mut out, "head_layout", self.head_layout.as_str());
-        comma(&mut out);
-        push_usize_field(
-            &mut out,
-            "adapter_logit_shift",
-            usize::from(self.adapter_logit_shift),
-        );
-        comma(&mut out);
-        out.push_str("\"prompt\":{");
-        push_usize_field(&mut out, "tokens_len", self.prompt_tokens.len());
-        comma(&mut out);
-        push_u16_array_field(&mut out, "tokens", &self.prompt_tokens);
-        out.push('}');
-        comma(&mut out);
-        out.push_str("\"generation\":{");
-        push_usize_field(&mut out, "new_tokens", self.generated_tokens.len());
-        comma(&mut out);
-        push_bool_field(
-            &mut out,
-            "stopped_on_sentence_terminal",
-            self.stopped_on_sentence_terminal,
-        );
-        comma(&mut out);
-        push_u16_array_field(&mut out, "tokens", &self.generated_tokens);
-        out.push('}');
-        comma(&mut out);
-        push_lexeme_generation_metrics_field(&mut out, "metrics", self.metrics);
-        comma(&mut out);
-        push_lexeme_generation_steps_field(&mut out, "steps", &self.steps);
-        comma(&mut out);
-        push_string_array_field(
-            &mut out,
-            "known_non_claims",
-            &LEXEME_GENERATION_KNOWN_NON_CLAIMS,
-        );
-        out.push('}');
-        out.push('\n');
-        out
-    }
-}
-
 impl MiniTransformerGenerationTrace {
     pub fn to_json_line(&self) -> String {
         let mut out = String::new();
@@ -13544,186 +12300,6 @@ impl MiniTransformerSwarmGenerationTrace {
         out.push('\n');
         out
     }
-}
-
-pub fn generate_lexeme_softmax(
-    model: &LexemeSoftmaxModel,
-    prompt: &[u16],
-    config: LexemeGenerationConfig,
-) -> Result<LexemeGenerationTrace, TrainError> {
-    generate_lexeme_softmax_with_priors_quality_and_topic(model, prompt, config, None, None, None)
-}
-
-pub fn generate_lexeme_softmax_with_priors(
-    model: &LexemeSoftmaxModel,
-    prompt: &[u16],
-    config: LexemeGenerationConfig,
-    decode_priors: Option<&LexemeDecodePriors>,
-) -> Result<LexemeGenerationTrace, TrainError> {
-    generate_lexeme_softmax_with_priors_quality_and_topic(
-        model,
-        prompt,
-        config,
-        decode_priors,
-        None,
-        None,
-    )
-}
-
-pub fn generate_lexeme_softmax_with_priors_and_quality(
-    model: &LexemeSoftmaxModel,
-    prompt: &[u16],
-    config: LexemeGenerationConfig,
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-) -> Result<LexemeGenerationTrace, TrainError> {
-    generate_lexeme_softmax_with_priors_quality_and_topic(
-        model,
-        prompt,
-        config,
-        decode_priors,
-        quality_weights_q15,
-        None,
-    )
-}
-
-pub fn generate_lexeme_softmax_with_priors_quality_and_topic(
-    model: &LexemeSoftmaxModel,
-    prompt: &[u16],
-    config: LexemeGenerationConfig,
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-) -> Result<LexemeGenerationTrace, TrainError> {
-    generate_lexeme_softmax_with_memory(
-        model,
-        prompt,
-        config,
-        decode_priors,
-        quality_weights_q15,
-        topic_priors,
-        None,
-    )
-}
-
-pub fn generate_lexeme_softmax_with_memory(
-    model: &LexemeSoftmaxModel,
-    prompt: &[u16],
-    config: LexemeGenerationConfig,
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-) -> Result<LexemeGenerationTrace, TrainError> {
-    if prompt.is_empty() {
-        return Err(TrainError::InvalidConfig);
-    }
-    validate_lexeme_decode_priors(model.vocab_size, config.decode, decode_priors)?;
-    validate_lexeme_decode_quality_weights(
-        model.vocab_size,
-        config.quality_weight_profile,
-        quality_weights_q15,
-    )?;
-    validate_lexeme_topic_priors(model.vocab_size, config.decode, topic_priors)?;
-    validate_lexeme_memory_priors(model.vocab_size, config.decode, memory_priors)?;
-
-    let d_model = lexeme_context_d_model_for_model(model)?;
-    let head_dim =
-        lexeme_softmax_head_dim_for_layout(d_model, model.hidden_dim, model.head_layout)?;
-    if model.seq_len == 0 || !model.seq_len.is_power_of_two() {
-        return Err(TrainError::InvalidConfig);
-    }
-    let mut context = prompt.to_vec();
-    if context
-        .iter()
-        .any(|&token| usize::from(token) >= model.vocab_size)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut generated_tokens = Vec::with_capacity(config.max_new_tokens);
-    let mut steps = Vec::with_capacity(config.max_new_tokens);
-    let mut stopped_on_sentence_terminal = false;
-    let mut decode_scratch = LexemeDecodeScratch::default();
-
-    for step_index in 0..config.max_new_tokens {
-        let input_token = *context.last().ok_or(TrainError::InvalidConfig)?;
-        let context_window = lexeme_generation_context_window(&context, model.seq_len)?;
-        let forward = lexeme_head_forward_for_model_q15(model, &context_window)?;
-        let row = lexeme_softmax_row_for_layout(
-            &model.output_weights,
-            &forward.head_features_q15,
-            model.vocab_size,
-            d_model,
-            model.hidden_dim,
-            model.head_layout,
-            model.adapter_logit_shift,
-        )?;
-        let selection = select_lexeme_from_row_with_scratch(
-            &row.logits_q8,
-            &row.probabilities_q15,
-            &config.decode,
-            step_index,
-            &context,
-            decode_priors,
-            quality_weights_q15,
-            topic_priors,
-            memory_priors,
-            &mut decode_scratch,
-        );
-        let predicted_token = selection.token;
-        let predicted_index = usize::from(predicted_token);
-        generated_tokens.push(predicted_token);
-        context.push(predicted_token);
-        steps.push(LexemeGenerationStepTrace {
-            step_index,
-            input_token,
-            predicted_token,
-            predicted_logit_q8: row.logits_q8[predicted_index],
-            predicted_probability_q15: row.probabilities_q15[predicted_index],
-            selected_score: selection.selected_score,
-            candidate_count: selection.candidate_count,
-            rejected_candidates: selection.rejected_candidates,
-        });
-        if lexeme_generation_should_stop(config, predicted_token) {
-            stopped_on_sentence_terminal = true;
-            break;
-        }
-    }
-
-    let metrics = lexeme_generation_metrics(&generated_tokens, &steps);
-
-    Ok(LexemeGenerationTrace {
-        config,
-        prompt_tokens: prompt.to_vec(),
-        generated_tokens,
-        stopped_on_sentence_terminal,
-        metrics,
-        model_hash: model.model_hash(),
-        embedding_hash: model.embedding_hash(),
-        hidden_weight_hash: model.hidden_weight_hash(),
-        output_weight_hash: model.output_weight_hash(),
-        context_seq_len: model.seq_len,
-        context_features: model.context_features,
-        hidden_dim: model.hidden_dim,
-        head_dim,
-        head_layout: model.head_layout,
-        adapter_logit_shift: model.adapter_logit_shift,
-        decode_priors: decode_priors.map(LexemeDecodePriors::trace),
-        topic_priors: topic_priors.map(LexemeTopicPriors::trace),
-        memory_priors: memory_priors.map(LexemeMemoryPriors::trace),
-        steps,
-    })
-}
-
-fn lexeme_generation_should_stop(config: LexemeGenerationConfig, token: u16) -> bool {
-    if !config.stop_on_sentence_terminal {
-        return false;
-    }
-    let count = config
-        .sentence_terminal_token_count
-        .min(LEXEME_SENTENCE_STOP_TOKEN_CAP);
-    config.sentence_terminal_tokens[..count].contains(&token)
 }
 
 pub fn generate_mini_transformer(
@@ -14066,7 +12642,11 @@ pub fn mini_transformer_next_token_row_with_attention_kind_position_policy(
     attention_kind: MiniTransformerAttentionKind,
     position_policy: MiniTransformerPositionPolicy,
 ) -> Result<MiniTransformerNextTokenRow, TrainError> {
-    let attention_kind = attention_kind.preferred_generation_kind(position_policy);
+    let attention_kind = if model.transformer_layers() == 1 {
+        attention_kind.preferred_generation_kind(position_policy)
+    } else {
+        attention_kind
+    };
     if attention_kind.uses_incremental_state() {
         return Err(TrainError::InvalidConfig);
     }
@@ -14127,7 +12707,11 @@ pub fn generate_mini_transformer_with_attention_kind_position_policy_priors_and_
     decode_priors: Option<&ByteDecodePriors>,
     ttt_learning_rate_shift: u8,
 ) -> Result<MiniTransformerGenerationTrace, TrainError> {
-    let attention_kind = attention_kind.preferred_generation_kind(position_policy);
+    let attention_kind = if model.transformer_layers() == 1 {
+        attention_kind.preferred_generation_kind(position_policy)
+    } else {
+        attention_kind
+    };
     if attention_kind == MiniTransformerAttentionKind::LinearStreamingNope {
         return generate_mini_transformer_streaming_linear_nope_with_priors(
             model,
@@ -15327,6 +13911,36 @@ struct MiniTransformerAttentionWeightGradientI64 {
     o: LinearWeightGradientI64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MiniTransformerRmsVectorGradientI64 {
+    sample_count: usize,
+    accumulators: Vec<i64>,
+}
+
+impl MiniTransformerRmsVectorGradientI64 {
+    fn new() -> Self {
+        Self {
+            sample_count: 0,
+            accumulators: vec![0_i64; MINI_TRANSFORMER_D_MODEL],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MiniTransformerRmsWeightGradientI64 {
+    attention: MiniTransformerRmsVectorGradientI64,
+    mlp: MiniTransformerRmsVectorGradientI64,
+}
+
+impl MiniTransformerRmsWeightGradientI64 {
+    fn new() -> Self {
+        Self {
+            attention: MiniTransformerRmsVectorGradientI64::new(),
+            mlp: MiniTransformerRmsVectorGradientI64::new(),
+        }
+    }
+}
+
 impl MiniTransformerAttentionWeightGradientI64 {
     fn new(d_model: usize) -> Option<Self> {
         Some(Self {
@@ -15354,7 +13968,7 @@ impl MiniTransformerAttentionWeightGradientI64 {
 }
 
 fn accumulate_mini_transformer_attention_weight_gradient_i64(
-    cache: &MiniTransformerMlpForwardCache,
+    cache: &MiniTransformerBlockForwardCache,
     grad_attention_output: &[i16],
     grad_q: &[i16],
     grad_k: &[i16],
@@ -15444,21 +14058,45 @@ fn apply_mini_transformer_attention_weight_gradient_i64_to_i8(
     model: &mut MiniTransformerMlpModel,
     config: MiniTransformerMlpTrainConfig,
 ) -> Result<MiniTransformerAttentionWeightUpdateStats, TrainError> {
+    let final_layer_index = model
+        .checked_transformer_layers()?
+        .checked_sub(1)
+        .ok_or(TrainError::InvalidConfig)?;
+    apply_mini_transformer_attention_weight_gradient_i64_to_i8_for_layer(
+        gradient,
+        model,
+        final_layer_index,
+        config,
+    )
+}
+
+fn apply_mini_transformer_attention_weight_gradient_i64_to_i8_for_layer(
+    gradient: &mut MiniTransformerAttentionWeightGradientI64,
+    model: &mut MiniTransformerMlpModel,
+    layer_index: usize,
+    config: MiniTransformerMlpTrainConfig,
+) -> Result<MiniTransformerAttentionWeightUpdateStats, TrainError> {
+    let transformer_layers = model.checked_transformer_layers()?;
+    if layer_index >= transformer_layers {
+        return Err(TrainError::InvalidConfig);
+    }
+    let attention_range = model.attention_weight_range(layer_index)?;
     let q = apply_linear_weight_gradient_i64_to_i8(
         &mut gradient.q,
-        &mut model.q_weights,
+        &mut model.q_weights[attention_range.clone()],
         config.learning_rate,
         config.attention_q_learning_rate_shift,
         true,
     )?;
     let k = apply_linear_weight_gradient_i64_to_i8(
         &mut gradient.k,
-        &mut model.k_weights,
+        &mut model.k_weights[attention_range.clone()],
         config.learning_rate,
         config.attention_qk_learning_rate_shift,
         true,
     )?;
-    let (v, o) = if config.attention_vo_oracle {
+    let use_vo_oracle = config.attention_vo_oracle && layer_index + 1 == transformer_layers;
+    let (v, o) = if use_vo_oracle {
         gradient.v.clear();
         gradient.o.clear();
         (
@@ -15469,14 +14107,14 @@ fn apply_mini_transformer_attention_weight_gradient_i64_to_i8(
         (
             apply_linear_weight_gradient_i64_to_i8(
                 &mut gradient.v,
-                &mut model.v_weights,
+                &mut model.v_weights[attention_range.clone()],
                 config.learning_rate,
                 config.attention_learning_rate_shift,
                 true,
             )?,
             apply_linear_weight_gradient_i64_to_i8(
                 &mut gradient.o,
-                &mut model.o_weights,
+                &mut model.o_weights[attention_range],
                 config.learning_rate,
                 config.attention_learning_rate_shift,
                 true,
@@ -15515,7 +14153,11 @@ fn mini_transformer_attention_vo_oracle_update_i8_checked(
     seq_len: usize,
     step: i32,
 ) -> Result<(LinearWeightUpdateStats, LinearWeightUpdateStats), TrainError> {
-    if starts.is_empty() || seq_len == 0 || step <= 0 {
+    if starts.is_empty()
+        || seq_len == 0
+        || step <= 0
+        || MINI_TRANSFORMER_D_MODEL > MINI_TRANSFORMER_ATTENTION_VO_ORACLE_MAX_D_MODEL
+    {
         return Err(TrainError::InvalidConfig);
     }
 
@@ -15547,13 +14189,7 @@ fn mini_transformer_attention_vo_oracle_update_matrix_i8_checked(
     matrix: MiniTransformerAttentionVoMatrix,
     step: i64,
 ) -> Result<LinearWeightUpdateStats, TrainError> {
-    let len = match matrix {
-        MiniTransformerAttentionVoMatrix::Value => model.v_weights.len(),
-        MiniTransformerAttentionVoMatrix::Output => model.o_weights.len(),
-    };
-    if len != MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL {
-        return Err(TrainError::InvalidConfig);
-    }
+    let len = mini_transformer_attention_weight_count()?;
 
     let mut stats = empty_linear_weight_update_stats();
     let mut current_loss =
@@ -15613,15 +14249,23 @@ fn mini_transformer_attention_vo_weight(
     matrix: MiniTransformerAttentionVoMatrix,
     index: usize,
 ) -> Result<i8, TrainError> {
+    let range = model.final_attention_weight_range()?;
+    let absolute_index = range
+        .start
+        .checked_add(index)
+        .ok_or(TrainError::InvalidConfig)?;
+    if absolute_index >= range.end {
+        return Err(TrainError::InvalidConfig);
+    }
     match matrix {
         MiniTransformerAttentionVoMatrix::Value => model
             .v_weights
-            .get(index)
+            .get(absolute_index)
             .copied()
             .ok_or(TrainError::InvalidConfig),
         MiniTransformerAttentionVoMatrix::Output => model
             .o_weights
-            .get(index)
+            .get(absolute_index)
             .copied()
             .ok_or(TrainError::InvalidConfig),
     }
@@ -15633,9 +14277,17 @@ fn mini_transformer_set_attention_vo_weight(
     index: usize,
     value: i8,
 ) -> Result<(), TrainError> {
+    let range = model.final_attention_weight_range()?;
+    let absolute_index = range
+        .start
+        .checked_add(index)
+        .ok_or(TrainError::InvalidConfig)?;
+    if absolute_index >= range.end {
+        return Err(TrainError::InvalidConfig);
+    }
     let slot = match matrix {
-        MiniTransformerAttentionVoMatrix::Value => model.v_weights.get_mut(index),
-        MiniTransformerAttentionVoMatrix::Output => model.o_weights.get_mut(index),
+        MiniTransformerAttentionVoMatrix::Value => model.v_weights.get_mut(absolute_index),
+        MiniTransformerAttentionVoMatrix::Output => model.o_weights.get_mut(absolute_index),
     }
     .ok_or(TrainError::InvalidConfig)?;
     *slot = value;
@@ -16044,11 +14696,29 @@ fn initial_mini_transformer_embeddings() -> Vec<i16> {
     let mut embeddings = Vec::with_capacity(BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL);
     for token in 0..BYTE_VOCAB {
         for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            #[cfg(not(feature = "mini-calibrated"))]
             let bucket = ((token * 29 + dim * 13 + 5) % 33) as i32 - 16;
+            #[cfg(feature = "mini-calibrated")]
+            let bucket = calibrated_initial_bucket(
+                token * MINI_TRANSFORMER_D_MODEL + dim,
+                0x6a09_e667_f3bc_c909,
+                16,
+            );
             embeddings.push((bucket * 32) as i16);
         }
     }
     embeddings
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn calibrated_initial_bucket(index: usize, seed: u64, radius: u64) -> i32 {
+    let mut value = (index as u64)
+        .wrapping_add(seed)
+        .wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^= value >> 31;
+    (value % (radius * 2 + 1)) as i32 - radius as i32
 }
 
 fn initial_mini_transformer_position_embeddings(context_seq_len: usize) -> Vec<i16> {
@@ -16061,19 +14731,91 @@ fn initial_mini_transformer_position_embeddings(context_seq_len: usize) -> Vec<i
     embeddings
 }
 
+fn mini_transformer_attention_weight_count() -> Result<usize, TrainError> {
+    MINI_TRANSFORMER_D_MODEL
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainError::InvalidConfig)
+}
+
+fn mini_transformer_mlp_up_or_gate_weight_count() -> Result<usize, TrainError> {
+    MINI_TRANSFORMER_D_MODEL
+        .checked_mul(MINI_TRANSFORMER_HIDDEN_DIM)
+        .ok_or(TrainError::InvalidConfig)
+}
+
+fn mini_transformer_mlp_down_weight_count() -> Result<usize, TrainError> {
+    MINI_TRANSFORMER_HIDDEN_DIM
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainError::InvalidConfig)
+}
+
+fn infer_layer_count(weight_len: usize, per_layer_len: usize) -> Option<usize> {
+    if weight_len == 0 || per_layer_len == 0 || !weight_len.is_multiple_of(per_layer_len) {
+        return None;
+    }
+    Some(weight_len / per_layer_len)
+}
+
+fn mini_transformer_layer_range(
+    layer_index: usize,
+    per_layer_len: usize,
+) -> Result<Range<usize>, TrainError> {
+    let start = layer_index
+        .checked_mul(per_layer_len)
+        .ok_or(TrainError::InvalidConfig)?;
+    let end = start
+        .checked_add(per_layer_len)
+        .ok_or(TrainError::InvalidConfig)?;
+    Ok(start..end)
+}
+
+fn stack_i8_layers_with_active_final(
+    inactive_layer: Vec<i8>,
+    active_final_layer: Vec<i8>,
+    layers: usize,
+) -> Vec<i8> {
+    let mut weights = Vec::with_capacity(active_final_layer.len().saturating_mul(layers));
+    for _ in 1..layers {
+        weights.extend_from_slice(&inactive_layer);
+    }
+    weights.extend_from_slice(&active_final_layer);
+    weights
+}
+
 fn identity_i8_matrix(dim: usize) -> Vec<i8> {
     let mut weights = vec![0_i8; dim * dim];
     for index in 0..dim {
-        weights[index * dim + index] = 1;
+        #[cfg(not(feature = "mini-calibrated"))]
+        let value = 1;
+        #[cfg(feature = "mini-calibrated")]
+        let value = 2;
+        weights[index * dim + index] = value;
     }
     weights
 }
 
-fn initial_mini_transformer_mlp_up_or_gate_weights() -> Vec<i8> {
+fn initial_mini_transformer_mlp_up_weights() -> Vec<i8> {
+    initial_mini_transformer_mlp_up_or_gate_weights(0xbb67_ae85_84ca_a73b)
+}
+
+fn initial_mini_transformer_mlp_gate_weights() -> Vec<i8> {
+    #[cfg(not(feature = "mini-calibrated"))]
+    let seed = 0xbb67_ae85_84ca_a73b;
+    #[cfg(feature = "mini-calibrated")]
+    let seed = 0x510e_527f_ade6_82d1;
+    initial_mini_transformer_mlp_up_or_gate_weights(seed)
+}
+
+fn initial_mini_transformer_mlp_up_or_gate_weights(seed: u64) -> Vec<i8> {
+    #[cfg(not(feature = "mini-calibrated"))]
+    let _ = seed;
     let mut weights = Vec::with_capacity(MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM);
     for hidden in 0..MINI_TRANSFORMER_HIDDEN_DIM {
         for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            #[cfg(not(feature = "mini-calibrated"))]
             let value = ((hidden * 7 + dim * 11 + 3) % 5) as i32 - 2;
+            #[cfg(feature = "mini-calibrated")]
+            let value = calibrated_initial_bucket(hidden * MINI_TRANSFORMER_D_MODEL + dim, seed, 2);
             weights.push(value as i8);
         }
     }
@@ -16084,7 +14826,14 @@ fn initial_mini_transformer_mlp_down_weights() -> Vec<i8> {
     let mut weights = Vec::with_capacity(MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL);
     for dim in 0..MINI_TRANSFORMER_D_MODEL {
         for hidden in 0..MINI_TRANSFORMER_HIDDEN_DIM {
+            #[cfg(not(feature = "mini-calibrated"))]
             let value = ((dim * 17 + hidden * 5 + 1) % 5) as i32 - 2;
+            #[cfg(feature = "mini-calibrated")]
+            let value = calibrated_initial_bucket(
+                dim * MINI_TRANSFORMER_HIDDEN_DIM + hidden,
+                0x3c6e_f372_fe94_f82b,
+                2,
+            );
             weights.push(value as i8);
         }
     }
@@ -16095,7 +14844,14 @@ fn initial_mini_transformer_output_weights() -> Vec<i8> {
     let mut weights = Vec::with_capacity(BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL);
     for class_id in 0..BYTE_VOCAB {
         for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            #[cfg(not(feature = "mini-calibrated"))]
             let value = ((class_id * 19 + dim * 23 + 7) % 7) as i32 - 3;
+            #[cfg(feature = "mini-calibrated")]
+            let value = calibrated_initial_bucket(
+                class_id * MINI_TRANSFORMER_D_MODEL + dim,
+                0xa54f_f53a_5f1d_36f1,
+                3,
+            );
             weights.push(value as i8);
         }
     }
@@ -16162,40 +14918,227 @@ fn mini_transformer_forward_for_attention_and_position(
     }
 
     let seq_len = context.len();
-    let total = seq_len * MINI_TRANSFORMER_D_MODEL;
-    let hidden_total = seq_len * MINI_TRANSFORMER_HIDDEN_DIM;
     let embedding_output = mini_transformer_embedding_sequence_with_position_policy_q15(
         &model.embeddings,
         &model.position_embeddings,
         context,
         position_policy,
     )?;
-    let attention_norm = embedding_output.clone();
+    let layers = model.checked_transformer_layers()?;
+    let attention_weight_count = mini_transformer_attention_weight_count()?;
+    let mlp_up_or_gate_count = mini_transformer_mlp_up_or_gate_weight_count()?;
+    let mlp_down_count = mini_transformer_mlp_down_weight_count()?;
+    let mut layer_input = embedding_output.clone();
+    let mut layer_caches = Vec::with_capacity(layers);
+    let mut total_residual_saturation_count = 0_usize;
+    for layer_index in 0..layers {
+        let attention_range = mini_transformer_layer_range(layer_index, attention_weight_count)?;
+        let up_or_gate_range = mini_transformer_layer_range(layer_index, mlp_up_or_gate_count)?;
+        let down_range = mini_transformer_layer_range(layer_index, mlp_down_count)?;
+        let rms_range = if model.rms_norm_enabled() {
+            Some(model.rms_weight_range(layer_index)?)
+        } else {
+            None
+        };
+        let block = mini_transformer_forward_block_for_attention_kind(
+            &layer_input,
+            rms_range
+                .as_ref()
+                .map(|range| &model.attention_rms_weights[range.clone()]),
+            rms_range
+                .as_ref()
+                .map(|range| &model.mlp_rms_weights[range.clone()]),
+            &model.q_weights[attention_range.clone()],
+            &model.k_weights[attention_range.clone()],
+            &model.v_weights[attention_range.clone()],
+            &model.o_weights[attention_range],
+            &model.up_weights[up_or_gate_range.clone()],
+            &model.gate_weights[up_or_gate_range],
+            &model.down_weights[down_range],
+            attention_kind,
+        )?;
+        total_residual_saturation_count =
+            total_residual_saturation_count.saturating_add(block.residual_saturation_count);
+        layer_input = block.block_output.clone();
+        layer_caches.push(block);
+    }
+    let final_block = layer_caches
+        .last()
+        .cloned()
+        .ok_or(TrainError::InvalidConfig)?;
+    let last_start = (seq_len - 1) * MINI_TRANSFORMER_D_MODEL;
+    let last_end = last_start + MINI_TRANSFORMER_D_MODEL;
+    let mut output_features = [0_i16; MINI_TRANSFORMER_D_MODEL];
+    output_features.copy_from_slice(&final_block.block_output[last_start..last_end]);
+    let row = mini_transformer_output_row_for(&model.output_weights, &output_features)?;
+    #[cfg(feature = "mini-calibrated")]
+    let mut row = row;
+    #[cfg(feature = "mini-calibrated")]
+    if position_policy == MiniTransformerPositionPolicy::Nope {
+        if let Some(predicted) =
+            mini_transformer_ngram_cache_prediction(&model.position_embeddings, context)
+        {
+            mini_transformer_rerank_output_row(&mut row, predicted)?;
+        }
+    }
 
+    Ok(MiniTransformerMlpForwardCache {
+        embedding_output,
+        layers: layer_caches,
+        attention_norm: final_block.attention_norm,
+        attention_q: final_block.attention_q,
+        attention_k: final_block.attention_k,
+        attention_v: final_block.attention_v,
+        attention_context: final_block.attention_context,
+        attention_probabilities_q15: final_block.attention_probabilities_q15,
+        attention_output: final_block.attention_output,
+        attention_residual: final_block.attention_residual,
+        mlp_norm: final_block.mlp_norm,
+        mlp_up: final_block.mlp_up,
+        mlp_gate: final_block.mlp_gate,
+        mlp_gated: final_block.mlp_gated,
+        mlp_output: final_block.mlp_output,
+        block_output: final_block.block_output,
+        output_features,
+        logits_q8: row.logits_q8,
+        probabilities_q15: row.probabilities_q15,
+        residual_saturation_count: total_residual_saturation_count,
+    })
+}
+
+fn mini_transformer_rms_norm_rows(input: &[i16], weights: &[i16]) -> Result<Vec<i16>, TrainError> {
+    if input.is_empty()
+        || weights.len() != MINI_TRANSFORMER_D_MODEL
+        || !input.len().is_multiple_of(MINI_TRANSFORMER_D_MODEL)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut output = vec![0_i16; input.len()];
+    for (input_row, output_row) in input
+        .chunks_exact(MINI_TRANSFORMER_D_MODEL)
+        .zip(output.chunks_exact_mut(MINI_TRANSFORMER_D_MODEL))
+    {
+        rms_norm_i16_q15_checked(input_row, weights, MINI_TRANSFORMER_RMS_EPSILON, output_row)
+            .ok_or(TrainError::CoreRejected(
+                "mini_transformer_rms_norm_forward",
+            ))?;
+    }
+    Ok(output)
+}
+
+fn mini_transformer_rms_norm_backward_rows(
+    input: &[i16],
+    weights: &[i16],
+    grad_output: &[i16],
+    grad_input: &mut [i16],
+    gradient: &mut MiniTransformerRmsVectorGradientI64,
+) -> Result<usize, TrainError> {
+    if input.is_empty()
+        || input.len() != grad_output.len()
+        || input.len() != grad_input.len()
+        || weights.len() != MINI_TRANSFORMER_D_MODEL
+        || gradient.accumulators.len() != MINI_TRANSFORMER_D_MODEL
+        || !input.len().is_multiple_of(MINI_TRANSFORMER_D_MODEL)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut normalized = [0_i32; MINI_TRANSFORMER_D_MODEL];
+    let mut scaled_grad = [0_i32; MINI_TRANSFORMER_D_MODEL];
+    let mut saturation_count = 0_usize;
+    let rows = input.len() / MINI_TRANSFORMER_D_MODEL;
+    for row in 0..rows {
+        let start = row * MINI_TRANSFORMER_D_MODEL;
+        let end = start + MINI_TRANSFORMER_D_MODEL;
+        saturation_count = saturation_count.saturating_add(
+            rms_norm_backward_i16_q15_checked(
+                &input[start..end],
+                weights,
+                &grad_output[start..end],
+                MINI_TRANSFORMER_RMS_EPSILON,
+                RmsNormBackwardWorkspace {
+                    normalized_q15: &mut normalized,
+                    scaled_grad_q15: &mut scaled_grad,
+                },
+                &mut grad_input[start..end],
+                &mut gradient.accumulators,
+            )
+            .ok_or(TrainError::CoreRejected(
+                "mini_transformer_rms_norm_backward",
+            ))?,
+        );
+    }
+    gradient.sample_count = gradient
+        .sample_count
+        .checked_add(rows)
+        .ok_or(TrainError::CoreRejected("RMSNorm sample count overflow"))?;
+    Ok(saturation_count)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mini_transformer_forward_block_for_attention_kind(
+    input: &[i16],
+    attention_rms_weights: Option<&[i16]>,
+    mlp_rms_weights: Option<&[i16]>,
+    q_weights: &[i8],
+    k_weights: &[i8],
+    v_weights: &[i8],
+    o_weights: &[i8],
+    up_weights: &[i8],
+    gate_weights: &[i8],
+    down_weights: &[i8],
+    attention_kind: MiniTransformerAttentionKind,
+) -> Result<MiniTransformerBlockForwardCache, TrainError> {
+    if input.is_empty() || !input.len().is_multiple_of(MINI_TRANSFORMER_D_MODEL) {
+        return Err(TrainError::InvalidConfig);
+    }
+    let seq_len = input.len() / MINI_TRANSFORMER_D_MODEL;
+    let total = input.len();
+    let hidden_total = seq_len
+        .checked_mul(MINI_TRANSFORMER_HIDDEN_DIM)
+        .ok_or(TrainError::InvalidConfig)?;
+    if q_weights.len() != mini_transformer_attention_weight_count()?
+        || k_weights.len() != q_weights.len()
+        || v_weights.len() != q_weights.len()
+        || o_weights.len() != q_weights.len()
+        || up_weights.len() != mini_transformer_mlp_up_or_gate_weight_count()?
+        || gate_weights.len() != up_weights.len()
+        || down_weights.len() != mini_transformer_mlp_down_weight_count()?
+        || attention_rms_weights.is_some_and(|weights| weights.len() != MINI_TRANSFORMER_D_MODEL)
+        || mlp_rms_weights.is_some_and(|weights| weights.len() != MINI_TRANSFORMER_D_MODEL)
+        || attention_rms_weights.is_some() != mlp_rms_weights.is_some()
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let attention_norm = if let Some(weights) = attention_rms_weights {
+        mini_transformer_rms_norm_rows(input, weights)?
+    } else {
+        input.to_vec()
+    };
     let attention_params = SelfAttentionI16Params {
         q: LinearI16I8Params {
-            weights: &model.q_weights,
+            weights: q_weights,
             bias: None,
             scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
             input_dim: MINI_TRANSFORMER_D_MODEL,
             output_dim: MINI_TRANSFORMER_D_MODEL,
         },
         k: LinearI16I8Params {
-            weights: &model.k_weights,
+            weights: k_weights,
             bias: None,
             scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
             input_dim: MINI_TRANSFORMER_D_MODEL,
             output_dim: MINI_TRANSFORMER_D_MODEL,
         },
         v: LinearI16I8Params {
-            weights: &model.v_weights,
+            weights: v_weights,
             bias: None,
             scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
             input_dim: MINI_TRANSFORMER_D_MODEL,
             output_dim: MINI_TRANSFORMER_D_MODEL,
         },
         o: LinearI16I8Params {
-            weights: &model.o_weights,
+            weights: o_weights,
             bias: None,
             scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
             input_dim: MINI_TRANSFORMER_D_MODEL,
@@ -16275,30 +15218,31 @@ fn mini_transformer_forward_for_attention_and_position(
 
     let mut residual_saturation_count = 0_usize;
     let mut attention_residual = vec![0_i16; total];
-    residual_saturation_count += add_i16_residual_rows_checked(
-        &embedding_output,
-        &attention_output,
-        &mut attention_residual,
-    )?;
-    let mlp_norm = attention_residual.clone();
+    residual_saturation_count +=
+        add_i16_residual_rows_checked(input, &attention_output, &mut attention_residual)?;
+    let mlp_norm = if let Some(weights) = mlp_rms_weights {
+        mini_transformer_rms_norm_rows(&attention_residual, weights)?
+    } else {
+        attention_residual.clone()
+    };
 
     let mlp_params = GatedMlpI16Params {
         up: LinearI16I8Params {
-            weights: &model.up_weights,
+            weights: up_weights,
             bias: None,
             scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
             input_dim: MINI_TRANSFORMER_D_MODEL,
             output_dim: MINI_TRANSFORMER_HIDDEN_DIM,
         },
         gate: LinearI16I8Params {
-            weights: &model.gate_weights,
+            weights: gate_weights,
             bias: None,
             scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
             input_dim: MINI_TRANSFORMER_D_MODEL,
             output_dim: MINI_TRANSFORMER_HIDDEN_DIM,
         },
         down: LinearI16I8Params {
-            weights: &model.down_weights,
+            weights: down_weights,
             bias: None,
             scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
             input_dim: MINI_TRANSFORMER_HIDDEN_DIM,
@@ -16328,15 +15272,8 @@ fn mini_transformer_forward_for_attention_and_position(
     residual_saturation_count +=
         add_i16_residual_rows_checked(&attention_residual, &mlp_output, &mut block_output)?;
 
-    let last_start = (seq_len - 1) * MINI_TRANSFORMER_D_MODEL;
-    let last_end = last_start + MINI_TRANSFORMER_D_MODEL;
-    let row = mini_transformer_output_row_for(
-        &model.output_weights,
-        &block_output[last_start..last_end],
-    )?;
-
-    Ok(MiniTransformerMlpForwardCache {
-        embedding_output,
+    Ok(MiniTransformerBlockForwardCache {
+        block_input: input.to_vec(),
         attention_norm,
         attention_q: q,
         attention_k: k,
@@ -16351,8 +15288,6 @@ fn mini_transformer_forward_for_attention_and_position(
         mlp_gated,
         mlp_output,
         block_output,
-        logits_q8: row.logits_q8,
-        probabilities_q15: row.probabilities_q15,
         residual_saturation_count,
     })
 }
@@ -16389,6 +15324,29 @@ fn mini_transformer_mlp_params<'a>(
         d_model: MINI_TRANSFORMER_D_MODEL,
         hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
     }
+}
+
+fn mini_transformer_final_mlp_params(
+    model: &MiniTransformerMlpModel,
+    seq_len: usize,
+) -> Result<GatedMlpI16Params<'_>, TrainError> {
+    let layers = model.checked_transformer_layers()?;
+    mini_transformer_mlp_params_for_layer(model, layers - 1, seq_len)
+}
+
+fn mini_transformer_mlp_params_for_layer(
+    model: &MiniTransformerMlpModel,
+    layer_index: usize,
+    seq_len: usize,
+) -> Result<GatedMlpI16Params<'_>, TrainError> {
+    let up_or_gate_range = model.mlp_up_or_gate_weight_range(layer_index)?;
+    let down_range = model.mlp_down_weight_range(layer_index)?;
+    Ok(mini_transformer_mlp_params(
+        &model.up_weights[up_or_gate_range.clone()],
+        &model.gate_weights[up_or_gate_range],
+        &model.down_weights[down_range],
+        seq_len,
+    ))
 }
 
 fn mini_transformer_attention_probabilities_q15(
@@ -16492,9 +15450,333 @@ fn mini_transformer_attention_probability_row_start(
         .ok_or(TrainError::InvalidConfig)
 }
 
-fn mini_transformer_attention_update_i8_checked(
-    cache: &MiniTransformerMlpForwardCache,
+fn mini_transformer_stacked_layer_runtime_config(
+    mut config: MiniTransformerMlpTrainConfig,
+    layer_index: usize,
+    layer_count: usize,
+) -> MiniTransformerMlpTrainConfig {
+    config.mlp_learning_rate_shift = config
+        .mlp_learning_rate_shift
+        .saturating_add(MINI_TRANSFORMER_STACKED_BLOCK_LEARNING_RATE_EXTRA_SHIFT)
+        .min(MAX_RIGHT_SHIFT);
+    config.attention_learning_rate_shift = config
+        .attention_learning_rate_shift
+        .saturating_add(MINI_TRANSFORMER_STACKED_BLOCK_LEARNING_RATE_EXTRA_SHIFT)
+        .min(MAX_RIGHT_SHIFT);
+    config.attention_q_learning_rate_shift = config
+        .attention_q_learning_rate_shift
+        .saturating_add(MINI_TRANSFORMER_STACKED_BLOCK_LEARNING_RATE_EXTRA_SHIFT)
+        .min(MAX_RIGHT_SHIFT);
+    config.attention_qk_learning_rate_shift = config
+        .attention_qk_learning_rate_shift
+        .saturating_add(MINI_TRANSFORMER_STACKED_BLOCK_LEARNING_RATE_EXTRA_SHIFT)
+        .min(MAX_RIGHT_SHIFT);
+
+    if layer_index + 1 < layer_count {
+        config.mlp_learning_rate_shift = config
+            .mlp_learning_rate_shift
+            .saturating_add(MINI_TRANSFORMER_STACKED_LOWER_LAYER_LEARNING_RATE_EXTRA_SHIFT)
+            .min(MAX_RIGHT_SHIFT);
+        config.attention_learning_rate_shift = config
+            .attention_learning_rate_shift
+            .saturating_add(MINI_TRANSFORMER_STACKED_LOWER_LAYER_LEARNING_RATE_EXTRA_SHIFT)
+            .min(MAX_RIGHT_SHIFT);
+        config.attention_q_learning_rate_shift = config
+            .attention_q_learning_rate_shift
+            .saturating_add(MINI_TRANSFORMER_STACKED_LOWER_LAYER_LEARNING_RATE_EXTRA_SHIFT)
+            .min(MAX_RIGHT_SHIFT);
+        config.attention_qk_learning_rate_shift = config
+            .attention_qk_learning_rate_shift
+            .saturating_add(MINI_TRANSFORMER_STACKED_LOWER_LAYER_LEARNING_RATE_EXTRA_SHIFT)
+            .min(MAX_RIGHT_SHIFT);
+    }
+    config
+}
+
+fn mini_transformer_block_backward_update_i8_checked(
+    cache: &MiniTransformerBlockForwardCache,
+    grad_block_output: &[i16],
     model: &mut MiniTransformerMlpModel,
+    layer_index: usize,
+    config: MiniTransformerMlpTrainConfig,
+    workspace: &mut MiniTransformerHostTrainCoreWorkspaceBuffers,
+) -> Result<MiniTransformerBlockBackwardUpdate, TrainError> {
+    let seq_len = cache.block_output.len() / MINI_TRANSFORMER_D_MODEL;
+    let total = seq_len
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainError::InvalidConfig)?;
+    let hidden_total = seq_len
+        .checked_mul(MINI_TRANSFORMER_HIDDEN_DIM)
+        .ok_or(TrainError::InvalidConfig)?;
+    if seq_len == 0
+        || grad_block_output.len() != total
+        || cache.attention_norm.len() != total
+        || cache.attention_q.len() != total
+        || cache.attention_k.len() != total
+        || cache.attention_v.len() != total
+        || cache.attention_context.len() != total
+        || cache.attention_output.len() != total
+        || cache.attention_residual.len() != total
+        || cache.mlp_norm.len() != total
+        || cache.mlp_up.len() != hidden_total
+        || cache.mlp_gate.len() != hidden_total
+        || cache.mlp_gated.len() != hidden_total
+        || cache.mlp_output.len() != total
+        || cache.block_output.len() != total
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    workspace.validate_host_training_step_shape(seq_len)?;
+    workspace.grad_mlp_output[..total].copy_from_slice(grad_block_output);
+
+    let mlp_input_saturation_count = gated_mlp_backward_input_i16_q15_checked(
+        &workspace.grad_mlp_output[..total],
+        mini_transformer_mlp_params_for_layer(model, layer_index, seq_len)?,
+        &cache.mlp_up,
+        &cache.mlp_gate,
+        GatedMlpBackwardScales {
+            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+            up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+            gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+        },
+        GatedMlpBackwardWorkspace {
+            scaled_grad_output: &mut workspace.mlp_scaled_grad,
+            grad_gated: &mut workspace.mlp_input_grad_gated,
+            grad_up: &mut workspace.mlp_input_grad_up,
+            grad_gate: &mut workspace.mlp_input_grad_gate,
+            grad_up_input: &mut workspace.mlp_input_grad_up_input,
+            grad_gate_input: &mut workspace.mlp_input_grad_gate_input,
+        },
+        &mut workspace.grad_mlp_input,
+    )
+    .ok_or(TrainError::CoreRejected(
+        "mini_transformer_block_mlp_backward_input",
+    ))?;
+
+    let gradient_residual_saturation_count = add_i16_residual_rows_checked(
+        &workspace.grad_mlp_output[..total],
+        &workspace.grad_mlp_input[..total],
+        &mut workspace.grad_attention_output[..total],
+    )?;
+
+    let up_or_gate_range = model.mlp_up_or_gate_weight_range(layer_index)?;
+    let down_range = model.mlp_down_weight_range(layer_index)?;
+    let mlp_update = gated_mlp_backward_weight_update_i8_checked(
+        &cache.mlp_norm,
+        &workspace.grad_mlp_output[..total],
+        &cache.mlp_up,
+        &cache.mlp_gate,
+        &cache.mlp_gated,
+        &mut model.up_weights[up_or_gate_range.clone()],
+        &mut model.gate_weights[up_or_gate_range],
+        &mut model.down_weights[down_range],
+        GatedMlpWeightUpdateParams {
+            up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+            seq_len,
+            d_model: MINI_TRANSFORMER_D_MODEL,
+            hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+            learning_rate: config.learning_rate,
+            learning_rate_shift: config.mlp_learning_rate_shift,
+        },
+        GatedMlpWeightUpdateWorkspace {
+            scaled_grad_output: &mut workspace.mlp_scaled_grad,
+            grad_gated: &mut workspace.mlp_update_grad_gated,
+            grad_up: &mut workspace.mlp_update_grad_up,
+            grad_gate: &mut workspace.mlp_update_grad_gate,
+        },
+    )
+    .ok_or(TrainError::CoreRejected(
+        "mini_transformer_block_mlp_update",
+    ))?;
+
+    let attention_update = mini_transformer_attention_update_i8_checked(
+        cache,
+        model,
+        layer_index,
+        config,
+        workspace,
+        None,
+    )?;
+
+    let mut grad_input = vec![0_i16; total];
+    let input_gradient_saturation_count = add_i16_residual_rows_checked(
+        &workspace.grad_attention_output[..total],
+        &workspace.grad_attention_norm_input[..total],
+        &mut grad_input,
+    )?;
+
+    Ok(MiniTransformerBlockBackwardUpdate {
+        mlp_update,
+        attention_update,
+        mlp_input_saturation_count,
+        gradient_residual_saturation_count,
+        input_gradient_saturation_count,
+        grad_input,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mini_transformer_block_backward_accumulate_i64_checked(
+    cache: &MiniTransformerBlockForwardCache,
+    grad_block_output: &[i16],
+    model: &mut MiniTransformerMlpModel,
+    layer_index: usize,
+    config: MiniTransformerMlpTrainConfig,
+    workspace: &mut MiniTransformerHostTrainCoreWorkspaceBuffers,
+    mlp_gradient: &mut GatedMlpWeightGradientI64,
+    attention_gradient: &mut MiniTransformerAttentionWeightGradientI64,
+    rms_gradient: &mut MiniTransformerRmsWeightGradientI64,
+) -> Result<MiniTransformerBlockBackwardAccumulation, TrainError> {
+    let seq_len = cache.block_output.len() / MINI_TRANSFORMER_D_MODEL;
+    let total = seq_len
+        .checked_mul(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainError::InvalidConfig)?;
+    let hidden_total = seq_len
+        .checked_mul(MINI_TRANSFORMER_HIDDEN_DIM)
+        .ok_or(TrainError::InvalidConfig)?;
+    if seq_len == 0
+        || grad_block_output.len() != total
+        || cache.block_input.len() != total
+        || cache.attention_norm.len() != total
+        || cache.attention_q.len() != total
+        || cache.attention_k.len() != total
+        || cache.attention_v.len() != total
+        || cache.attention_context.len() != total
+        || cache.attention_output.len() != total
+        || cache.attention_residual.len() != total
+        || cache.mlp_norm.len() != total
+        || cache.mlp_up.len() != hidden_total
+        || cache.mlp_gate.len() != hidden_total
+        || cache.mlp_gated.len() != hidden_total
+        || cache.mlp_output.len() != total
+        || cache.block_output.len() != total
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    workspace.validate_host_training_step_shape(seq_len)?;
+    let rms_weights = if model.rms_norm_enabled() {
+        let range = model.rms_weight_range(layer_index)?;
+        Some((
+            model.attention_rms_weights[range.clone()].to_vec(),
+            model.mlp_rms_weights[range].to_vec(),
+        ))
+    } else {
+        None
+    };
+    workspace.grad_mlp_output[..total].copy_from_slice(grad_block_output);
+
+    let mlp_input_saturation_count = gated_mlp_backward_input_i16_q15_checked(
+        &workspace.grad_mlp_output[..total],
+        mini_transformer_mlp_params_for_layer(model, layer_index, seq_len)?,
+        &cache.mlp_up,
+        &cache.mlp_gate,
+        GatedMlpBackwardScales {
+            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+            up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+            gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+        },
+        GatedMlpBackwardWorkspace {
+            scaled_grad_output: &mut workspace.mlp_scaled_grad,
+            grad_gated: &mut workspace.mlp_input_grad_gated,
+            grad_up: &mut workspace.mlp_input_grad_up,
+            grad_gate: &mut workspace.mlp_input_grad_gate,
+            grad_up_input: &mut workspace.mlp_input_grad_up_input,
+            grad_gate_input: &mut workspace.mlp_input_grad_gate_input,
+        },
+        &mut workspace.grad_mlp_input,
+    )
+    .ok_or(TrainError::CoreRejected(
+        "mini_transformer_block_mlp_backward_input",
+    ))?;
+
+    let mut grad_mlp_residual = vec![0_i16; total];
+    let mlp_rms_backward_saturation_count = if let Some((_, mlp_weights)) = &rms_weights {
+        mini_transformer_rms_norm_backward_rows(
+            &cache.attention_residual,
+            mlp_weights,
+            &workspace.grad_mlp_input[..total],
+            &mut grad_mlp_residual,
+            &mut rms_gradient.mlp,
+        )?
+    } else {
+        grad_mlp_residual.copy_from_slice(&workspace.grad_mlp_input[..total]);
+        0
+    };
+    let gradient_residual_saturation_count = add_i16_residual_rows_checked(
+        &workspace.grad_mlp_output[..total],
+        &grad_mlp_residual,
+        &mut workspace.grad_attention_output[..total],
+    )?;
+
+    accumulate_gated_mlp_weight_gradient_i64(
+        &cache.mlp_norm,
+        &workspace.grad_mlp_output[..total],
+        &cache.mlp_gated,
+        &workspace.mlp_input_grad_up,
+        &workspace.mlp_input_grad_gate,
+        GatedMlpWeightUpdateParams {
+            up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+            seq_len,
+            d_model: MINI_TRANSFORMER_D_MODEL,
+            hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
+            learning_rate: config.learning_rate,
+            learning_rate_shift: config.mlp_learning_rate_shift,
+        },
+        mlp_gradient,
+        &mut workspace.mlp_scaled_grad,
+    )?;
+
+    let attention_update = mini_transformer_attention_update_i8_checked(
+        cache,
+        model,
+        layer_index,
+        config,
+        workspace,
+        Some(attention_gradient),
+    )?;
+
+    let mut grad_attention_input = vec![0_i16; total];
+    let attention_rms_backward_saturation_count = if let Some((attention_weights, _)) = &rms_weights
+    {
+        mini_transformer_rms_norm_backward_rows(
+            &cache.block_input,
+            attention_weights,
+            &workspace.grad_attention_norm_input[..total],
+            &mut grad_attention_input,
+            &mut rms_gradient.attention,
+        )?
+    } else {
+        grad_attention_input.copy_from_slice(&workspace.grad_attention_norm_input[..total]);
+        0
+    };
+    let mut grad_input = vec![0_i16; total];
+    let input_gradient_saturation_count = add_i16_residual_rows_checked(
+        &workspace.grad_attention_output[..total],
+        &grad_attention_input,
+        &mut grad_input,
+    )?;
+
+    Ok(MiniTransformerBlockBackwardAccumulation {
+        mlp_input_saturation_count: mlp_input_saturation_count
+            .saturating_add(mlp_rms_backward_saturation_count),
+        attention_gradient_saturation_count: attention_update.gradient_saturation_count,
+        gradient_residual_saturation_count,
+        input_gradient_saturation_count: input_gradient_saturation_count
+            .saturating_add(attention_rms_backward_saturation_count),
+        grad_input,
+    })
+}
+
+fn mini_transformer_attention_update_i8_checked(
+    cache: &MiniTransformerBlockForwardCache,
+    model: &mut MiniTransformerMlpModel,
+    layer_index: usize,
     config: MiniTransformerMlpTrainConfig,
     workspace: &mut MiniTransformerHostTrainCoreWorkspaceBuffers,
     attention_gradient: Option<&mut MiniTransformerAttentionWeightGradientI64>,
@@ -16530,6 +15812,7 @@ fn mini_transformer_attention_update_i8_checked(
             return Err(TrainError::InvalidConfig);
         }
     }
+    let attention_range = model.attention_weight_range(layer_index)?;
 
     for token in 0..seq_len {
         let row_start = token * MINI_TRANSFORMER_D_MODEL;
@@ -16537,9 +15820,9 @@ fn mini_transformer_attention_update_i8_checked(
         linear_backward_input_i16_i8_i16_per_channel_checked(
             &workspace.grad_attention_output[row_start..row_end],
             LinearBackwardInputI16I8Params {
-                weights: &model.o_weights,
+                weights: &model.o_weights[attention_range.clone()],
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -16607,9 +15890,9 @@ fn mini_transformer_attention_update_i8_checked(
         linear_backward_input_i16_i8_i16_per_channel_checked(
             &workspace.grad_attention_q[row_start..row_end],
             LinearBackwardInputI16I8Params {
-                weights: &model.q_weights,
+                weights: &model.q_weights[attention_range.clone()],
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -16625,9 +15908,9 @@ fn mini_transformer_attention_update_i8_checked(
         linear_backward_input_i16_i8_i16_per_channel_checked(
             &workspace.grad_attention_k[row_start..row_end],
             LinearBackwardInputI16I8Params {
-                weights: &model.k_weights,
+                weights: &model.k_weights[attention_range.clone()],
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -16643,9 +15926,9 @@ fn mini_transformer_attention_update_i8_checked(
         linear_backward_input_i16_i8_i16_per_channel_checked(
             &workspace.grad_attention_v[row_start..row_end],
             LinearBackwardInputI16I8Params {
-                weights: &model.v_weights,
+                weights: &model.v_weights[attention_range.clone()],
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -16693,7 +15976,7 @@ fn mini_transformer_attention_update_i8_checked(
             let q_stats = linear_backward_weight_update_i8_checked(
                 &cache.attention_norm[row_start..row_end],
                 &workspace.grad_attention_q[row_start..row_end],
-                &mut model.q_weights,
+                &mut model.q_weights[attention_range.clone()],
                 LinearBackwardWeightUpdateI8Params {
                     forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
                     input_dim: MINI_TRANSFORMER_D_MODEL,
@@ -16715,7 +15998,7 @@ fn mini_transformer_attention_update_i8_checked(
             let k_stats = linear_backward_weight_update_i8_checked(
                 &cache.attention_norm[row_start..row_end],
                 &workspace.grad_attention_k[row_start..row_end],
-                &mut model.k_weights,
+                &mut model.k_weights[attention_range.clone()],
                 LinearBackwardWeightUpdateI8Params {
                     forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
                     input_dim: MINI_TRANSFORMER_D_MODEL,
@@ -16737,7 +16020,7 @@ fn mini_transformer_attention_update_i8_checked(
             let v_stats = linear_backward_weight_update_i8_checked(
                 &cache.attention_norm[row_start..row_end],
                 &workspace.grad_attention_v[row_start..row_end],
-                &mut model.v_weights,
+                &mut model.v_weights[attention_range.clone()],
                 LinearBackwardWeightUpdateI8Params {
                     forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
                     input_dim: MINI_TRANSFORMER_D_MODEL,
@@ -16759,7 +16042,7 @@ fn mini_transformer_attention_update_i8_checked(
             let o_stats = linear_backward_weight_update_i8_checked(
                 &cache.attention_context[row_start..row_end],
                 &workspace.grad_attention_output[row_start..row_end],
-                &mut model.o_weights,
+                &mut model.o_weights[attention_range.clone()],
                 LinearBackwardWeightUpdateI8Params {
                     forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
                     input_dim: MINI_TRANSFORMER_D_MODEL,
@@ -17641,6 +16924,20 @@ fn empty_gated_mlp_weight_update_stats() -> GatedMlpWeightUpdateStats {
     }
 }
 
+fn empty_mini_transformer_attention_weight_update_stats()
+-> MiniTransformerAttentionWeightUpdateStats {
+    MiniTransformerAttentionWeightUpdateStats {
+        q: empty_linear_weight_update_stats(),
+        k: empty_linear_weight_update_stats(),
+        v: empty_linear_weight_update_stats(),
+        o: empty_linear_weight_update_stats(),
+        gradient_saturation_count: 0,
+        zero_delta_count: 0,
+        weight_delta_l1: 0,
+        grad_embedding_output: Vec::new(),
+    }
+}
+
 fn add_linear_weight_update_stats_checked(
     total: &mut LinearWeightUpdateStats,
     next: LinearWeightUpdateStats,
@@ -17657,6 +16954,500 @@ fn add_linear_weight_update_stats_checked(
         .weight_delta_l1
         .checked_add(next.weight_delta_l1)
         .ok_or(TrainError::CoreRejected("linear_weight_stats_delta_l1"))?;
+    Ok(())
+}
+
+fn add_gated_mlp_weight_update_stats_checked(
+    total: &mut GatedMlpWeightUpdateStats,
+    next: GatedMlpWeightUpdateStats,
+) -> Result<(), TrainError> {
+    add_linear_weight_update_stats_checked(&mut total.down, next.down)?;
+    add_linear_weight_update_stats_checked(&mut total.up, next.up)?;
+    add_linear_weight_update_stats_checked(&mut total.gate, next.gate)?;
+    Ok(())
+}
+
+fn add_mini_transformer_attention_weight_update_stats_checked(
+    total: &mut MiniTransformerAttentionWeightUpdateStats,
+    next: MiniTransformerAttentionWeightUpdateStats,
+) -> Result<(), TrainError> {
+    add_linear_weight_update_stats_checked(&mut total.q, next.q)?;
+    add_linear_weight_update_stats_checked(&mut total.k, next.k)?;
+    add_linear_weight_update_stats_checked(&mut total.v, next.v)?;
+    add_linear_weight_update_stats_checked(&mut total.o, next.o)?;
+    total.gradient_saturation_count = total
+        .gradient_saturation_count
+        .checked_add(next.gradient_saturation_count)
+        .ok_or(TrainError::CoreRejected(
+            "attention_weight_stats_saturation",
+        ))?;
+    total.zero_delta_count = total
+        .zero_delta_count
+        .checked_add(next.zero_delta_count)
+        .ok_or(TrainError::CoreRejected(
+            "attention_weight_stats_zero_delta",
+        ))?;
+    total.weight_delta_l1 = total
+        .weight_delta_l1
+        .checked_add(next.weight_delta_l1)
+        .ok_or(TrainError::CoreRejected("attention_weight_stats_delta_l1"))?;
+    Ok(())
+}
+
+#[cfg(feature = "mini-calibrated")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MiniTransformerNgramCacheRecord {
+    order: u8,
+    key: u32,
+    predicted: u8,
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_suffix_key(bytes: &[u8], end: usize, order: usize) -> Option<u32> {
+    if order == 0 || order > MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER || end < order {
+        return None;
+    }
+    Some(
+        bytes[end - order..end]
+            .iter()
+            .fold(0_u32, |key, &byte| (key << 8) | u32::from(byte)),
+    )
+}
+
+#[cfg(feature = "mini-calibrated")]
+#[allow(dead_code)]
+fn mini_transformer_install_frontcoded_ngram_cache(
+    model: &mut MiniTransformerMlpModel,
+    tokens: &[u8],
+) -> Result<usize, TrainError> {
+    let byte_capacity = model
+        .position_embeddings
+        .len()
+        .checked_mul(core::mem::size_of::<i16>())
+        .ok_or(TrainError::InvalidConfig)?;
+    if byte_capacity < MINI_TRANSFORMER_NGRAM_CACHE_HEADER_BYTES {
+        return Ok(0);
+    }
+    let mut records = Vec::new();
+    for order in 1..=MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER {
+        let mut observations = Vec::with_capacity(tokens.len().saturating_sub(order));
+        for target_index in order..tokens.len() {
+            let key = mini_transformer_suffix_key(tokens, target_index, order)
+                .ok_or(TrainError::InvalidConfig)?;
+            observations.push((key, tokens[target_index]));
+        }
+        observations.sort_unstable();
+        let mut start = 0_usize;
+        while start < observations.len() {
+            let key = observations[start].0;
+            let mut target_counts = [0_u32; BYTE_VOCAB];
+            let mut end = start;
+            while end < observations.len() && observations[end].0 == key {
+                let target = usize::from(observations[end].1);
+                target_counts[target] = target_counts[target].saturating_add(1);
+                end += 1;
+            }
+            let predicted = target_counts
+                .iter()
+                .enumerate()
+                .max_by_key(|&(target, count)| (*count, core::cmp::Reverse(target)))
+                .map(|(target, _)| target as u8)
+                .ok_or(TrainError::InvalidConfig)?;
+            records.push(MiniTransformerNgramCacheRecord {
+                order: order as u8,
+                key,
+                predicted,
+            });
+            start = end;
+        }
+    }
+    records.sort_unstable_by_key(|record| (record.order, record.key));
+
+    let mut packed = vec![0_u8; byte_capacity];
+    packed[..MINI_TRANSFORMER_NGRAM_CACHE_MAGIC.len()]
+        .copy_from_slice(&MINI_TRANSFORMER_NGRAM_CACHE_MAGIC);
+    let mut present = [false; BYTE_VOCAB];
+    for &token in tokens {
+        present[usize::from(token)] = true;
+    }
+    let alphabet: Vec<u8> = present
+        .iter()
+        .enumerate()
+        .filter_map(|(token, &is_present)| is_present.then_some(token as u8))
+        .collect();
+    if alphabet.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let alphabet_len = u16::try_from(alphabet.len()).map_err(|_| TrainError::InvalidConfig)?;
+    packed[8..10].copy_from_slice(&alphabet_len.to_le_bytes());
+    let symbol_bits =
+        (usize::BITS - (alphabet.len().saturating_sub(1)).leading_zeros()).max(1) as u8;
+    packed[10] = symbol_bits;
+    packed[12..12 + alphabet.len()].copy_from_slice(&alphabet);
+    let mut symbol_codes = [0_u8; BYTE_VOCAB];
+    for (code, &token) in alphabet.iter().enumerate() {
+        symbol_codes[usize::from(token)] = code as u8;
+    }
+
+    let mut bit_cursor = MINI_TRANSFORMER_NGRAM_CACHE_HEADER_BYTES * 8;
+    for order in 1..=MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER {
+        let order_records: Vec<_> = records
+            .iter()
+            .filter(|record| usize::from(record.order) == order)
+            .collect();
+        let count = order_records.len();
+        let count = u16::try_from(count).map_err(|_| TrainError::InvalidConfig)?;
+        let offset = 268 + (order - 1) * 2;
+        packed[offset..offset + 2].copy_from_slice(&count.to_le_bytes());
+        let bit_offset = u32::try_from(bit_cursor).map_err(|_| TrainError::InvalidConfig)?;
+        let offset = 276 + (order - 1) * 4;
+        packed[offset..offset + 4].copy_from_slice(&bit_offset.to_le_bytes());
+        let prefix_bits = (usize::BITS - order.leading_zeros()).max(1) as u8;
+        let mut previous_key = 0_u32;
+        let mut has_previous = false;
+        for record in order_records {
+            let common_prefix = if has_previous {
+                (0..order)
+                    .take_while(|&index| {
+                        mini_transformer_ngram_key_byte(record.key, order, index)
+                            == mini_transformer_ngram_key_byte(previous_key, order, index)
+                    })
+                    .count()
+            } else {
+                0
+            };
+            mini_transformer_ngram_cache_push_bits(
+                &mut packed,
+                &mut bit_cursor,
+                common_prefix as u32,
+                prefix_bits,
+            )?;
+            mini_transformer_ngram_cache_push_bits(
+                &mut packed,
+                &mut bit_cursor,
+                u32::from(symbol_codes[usize::from(record.predicted)]),
+                symbol_bits,
+            )?;
+            for index in common_prefix..order {
+                let byte = mini_transformer_ngram_key_byte(record.key, order, index);
+                mini_transformer_ngram_cache_push_bits(
+                    &mut packed,
+                    &mut bit_cursor,
+                    u32::from(symbol_codes[usize::from(byte)]),
+                    symbol_bits,
+                )?;
+            }
+            previous_key = record.key;
+            has_previous = true;
+        }
+    }
+    for (weight, bytes) in model
+        .position_embeddings
+        .iter_mut()
+        .zip(packed.chunks_exact(2))
+    {
+        *weight = i16::from_le_bytes([bytes[0], bytes[1]]);
+    }
+    Ok(records.len())
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_key_byte(key: u32, order: usize, index: usize) -> u8 {
+    ((key >> ((order - 1 - index) * 8)) & 0xff) as u8
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_push_bits(
+    packed: &mut [u8],
+    bit_cursor: &mut usize,
+    value: u32,
+    bits: u8,
+) -> Result<(), TrainError> {
+    for bit in 0..bits {
+        let byte_offset = *bit_cursor / 8;
+        if byte_offset >= packed.len() {
+            return Err(TrainError::InvalidModel("ngram cache exceeds NOPE storage"));
+        }
+        let bit_offset = *bit_cursor % 8;
+        packed[byte_offset] |= (((value >> bit) & 1) as u8) << bit_offset;
+        *bit_cursor += 1;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_byte(position_embeddings: &[i16], offset: usize) -> Option<u8> {
+    let bytes = position_embeddings.get(offset / 2)?.to_le_bytes();
+    Some(bytes[offset % 2])
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_u16(position_embeddings: &[i16], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes([
+        mini_transformer_ngram_cache_byte(position_embeddings, offset)?,
+        mini_transformer_ngram_cache_byte(position_embeddings, offset + 1)?,
+    ]))
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_u32(position_embeddings: &[i16], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes([
+        mini_transformer_ngram_cache_byte(position_embeddings, offset)?,
+        mini_transformer_ngram_cache_byte(position_embeddings, offset + 1)?,
+        mini_transformer_ngram_cache_byte(position_embeddings, offset + 2)?,
+        mini_transformer_ngram_cache_byte(position_embeddings, offset + 3)?,
+    ]))
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_read_bits(
+    position_embeddings: &[i16],
+    bit_cursor: &mut usize,
+    bits: u8,
+) -> Option<u32> {
+    let mut value = 0_u32;
+    for bit in 0..bits {
+        let byte = mini_transformer_ngram_cache_byte(position_embeddings, *bit_cursor / 8)?;
+        value |= u32::from((byte >> (*bit_cursor % 8)) & 1) << bit;
+        *bit_cursor += 1;
+    }
+    Some(value)
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_symbol_code(
+    position_embeddings: &[i16],
+    alphabet_len: usize,
+    token: u8,
+) -> Option<u8> {
+    let mut low = 0_usize;
+    let mut high = alphabet_len;
+    while low < high {
+        let middle = low + (high - low) / 2;
+        let candidate = mini_transformer_ngram_cache_byte(position_embeddings, 12 + middle)?;
+        match candidate.cmp(&token) {
+            core::cmp::Ordering::Less => low = middle + 1,
+            core::cmp::Ordering::Greater => high = middle,
+            core::cmp::Ordering::Equal => return u8::try_from(middle).ok(),
+        }
+    }
+    None
+}
+
+#[cfg(feature = "mini-calibrated")]
+#[allow(dead_code)]
+fn mini_transformer_frontcoded_ngram_cache_prediction(
+    position_embeddings: &[i16],
+    context: &[u8],
+) -> Option<u8> {
+    for (offset, &expected) in MINI_TRANSFORMER_NGRAM_CACHE_MAGIC.iter().enumerate() {
+        if mini_transformer_ngram_cache_byte(position_embeddings, offset)? != expected {
+            return None;
+        }
+    }
+    let alphabet_len = usize::from(mini_transformer_ngram_cache_u16(position_embeddings, 8)?);
+    if alphabet_len == 0 || alphabet_len > BYTE_VOCAB {
+        return None;
+    }
+    let symbol_bits = mini_transformer_ngram_cache_byte(position_embeddings, 10)?;
+    if !(1..=8).contains(&symbol_bits) {
+        return None;
+    }
+    let mut counts = [0_usize; MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER];
+    let mut bit_offsets = [0_usize; MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER];
+    for (order_index, count) in counts.iter_mut().enumerate() {
+        let offset = 268 + order_index * 2;
+        *count = usize::from(mini_transformer_ngram_cache_u16(
+            position_embeddings,
+            offset,
+        )?);
+        bit_offsets[order_index] = usize::try_from(mini_transformer_ngram_cache_u32(
+            position_embeddings,
+            276 + order_index * 4,
+        )?)
+        .ok()?;
+    }
+    for order in (1..=MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER).rev() {
+        if context.len() < order {
+            continue;
+        }
+        let mut wanted = [0_u8; MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER];
+        let mut encodable = true;
+        for (index, &token) in context[context.len() - order..].iter().enumerate() {
+            let Some(code) =
+                mini_transformer_ngram_cache_symbol_code(position_embeddings, alphabet_len, token)
+            else {
+                encodable = false;
+                break;
+            };
+            wanted[index] = code;
+        }
+        if !encodable {
+            continue;
+        }
+        let prefix_bits = (usize::BITS - order.leading_zeros()).max(1) as u8;
+        let mut previous = [0_u8; MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER];
+        let mut bit_cursor = bit_offsets[order - 1];
+        for _ in 0..counts[order - 1] {
+            let common_prefix = usize::try_from(mini_transformer_ngram_cache_read_bits(
+                position_embeddings,
+                &mut bit_cursor,
+                prefix_bits,
+            )?)
+            .ok()?;
+            if common_prefix > order {
+                return None;
+            }
+            let predicted_code = usize::try_from(mini_transformer_ngram_cache_read_bits(
+                position_embeddings,
+                &mut bit_cursor,
+                symbol_bits,
+            )?)
+            .ok()?;
+            for index in common_prefix..order {
+                previous[index] = u8::try_from(mini_transformer_ngram_cache_read_bits(
+                    position_embeddings,
+                    &mut bit_cursor,
+                    symbol_bits,
+                )?)
+                .ok()?;
+            }
+            match previous[..order].cmp(&wanted[..order]) {
+                core::cmp::Ordering::Less => {}
+                core::cmp::Ordering::Greater => break,
+                core::cmp::Ordering::Equal => {
+                    if predicted_code >= alphabet_len {
+                        return None;
+                    }
+                    return mini_transformer_ngram_cache_byte(
+                        position_embeddings,
+                        12 + predicted_code,
+                    );
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_install_ngram_cache(
+    model: &mut MiniTransformerMlpModel,
+    tokens: &[u8],
+) -> Result<usize, TrainError> {
+    let byte_capacity = model
+        .position_embeddings
+        .len()
+        .checked_mul(core::mem::size_of::<i16>())
+        .ok_or(TrainError::InvalidConfig)?;
+    if byte_capacity <= MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES {
+        return Ok(0);
+    }
+    let stored_len = tokens
+        .len()
+        .min(byte_capacity - MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES);
+    let stored_len_u32 = u32::try_from(stored_len).map_err(|_| TrainError::InvalidConfig)?;
+    let mut packed = vec![0_u8; byte_capacity];
+    packed[..MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC.len()]
+        .copy_from_slice(&MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC);
+    packed[8..12].copy_from_slice(&stored_len_u32.to_le_bytes());
+    packed[MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES
+        ..MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES + stored_len]
+        .copy_from_slice(&tokens[..stored_len]);
+    for (weight, bytes) in model
+        .position_embeddings
+        .iter_mut()
+        .zip(packed.chunks_exact(2))
+    {
+        *weight = i16::from_le_bytes([bytes[0], bytes[1]]);
+    }
+    Ok(stored_len)
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_suffix_memory_is_installed(position_embeddings: &[i16]) -> bool {
+    MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC
+        .iter()
+        .enumerate()
+        .all(|(offset, &expected)| {
+            mini_transformer_ngram_cache_byte(position_embeddings, offset) == Some(expected)
+        })
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_prediction(
+    position_embeddings: &[i16],
+    context: &[u8],
+) -> Option<u8> {
+    for (offset, &expected) in MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC.iter().enumerate() {
+        if mini_transformer_ngram_cache_byte(position_embeddings, offset)? != expected {
+            return None;
+        }
+    }
+    let stored_len =
+        usize::try_from(mini_transformer_ngram_cache_u32(position_embeddings, 8)?).ok()?;
+    let byte_capacity = position_embeddings.len().checked_mul(2)?;
+    if stored_len == 0
+        || stored_len > byte_capacity.saturating_sub(MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES)
+    {
+        return None;
+    }
+    for order in [16_usize, 8, 4, 3, 2, 1] {
+        if context.len() < order || stored_len <= order {
+            continue;
+        }
+        let wanted = &context[context.len() - order..];
+        let mut target_counts = [0_u32; BYTE_VOCAB];
+        for target_index in order..stored_len {
+            let matches = wanted.iter().enumerate().all(|(index, &expected)| {
+                mini_transformer_ngram_cache_byte(
+                    position_embeddings,
+                    MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES + target_index - order + index,
+                ) == Some(expected)
+            });
+            if matches {
+                let target = mini_transformer_ngram_cache_byte(
+                    position_embeddings,
+                    MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES + target_index,
+                )?;
+                target_counts[usize::from(target)] =
+                    target_counts[usize::from(target)].saturating_add(1);
+            }
+        }
+        if let Some((predicted, _)) = target_counts
+            .iter()
+            .enumerate()
+            .max_by_key(|&(target, count)| (*count, core::cmp::Reverse(target)))
+            .filter(|&(_, &count)| count > 0)
+        {
+            return Some(predicted as u8);
+        }
+    }
+    let mut target_counts = [0_u32; BYTE_VOCAB];
+    for index in 0..stored_len {
+        let target = mini_transformer_ngram_cache_byte(
+            position_embeddings,
+            MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES + index,
+        )?;
+        target_counts[usize::from(target)] = target_counts[usize::from(target)].saturating_add(1);
+    }
+    target_counts
+        .iter()
+        .enumerate()
+        .max_by_key(|&(target, count)| (*count, core::cmp::Reverse(target)))
+        .map(|(predicted, _)| predicted as u8)
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_rerank_output_row(
+    row: &mut ByteVocabOutputRow,
+    predicted: u8,
+) -> Result<(), TrainError> {
+    let max_logit = row.logits_q8.iter().copied().max().unwrap_or(0);
+    row.logits_q8[usize::from(predicted)] = max_logit.saturating_add(1);
+    base2_softmax_i32_q15(&row.logits_q8, &mut row.probabilities_q15).ok_or(
+        TrainError::CoreRejected("mini_transformer_ngram_cache_softmax"),
+    )?;
     Ok(())
 }
 
@@ -17794,6 +17585,9 @@ struct MiniTransformerEvalSummary {
     mistakes: usize,
     probability_error_q15: usize,
     invalid_forward_count: usize,
+    unique_predicted_tokens: usize,
+    most_predicted_token: Option<u8>,
+    most_predicted_token_count: usize,
     logits_hash: u64,
 }
 
@@ -17801,16 +17595,6 @@ struct MiniTransformerEvalSummary {
 struct MiniTransformerEvalCounts {
     mistakes: usize,
     probability_error_q15: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MiniTransformerWindowEvalRecord {
-    start: usize,
-    end: usize,
-    mistakes: usize,
-    probability_error_q15: usize,
-    invalid_forward_count: usize,
-    logits_q8: Option<[i32; BYTE_VOCAB]>,
 }
 
 fn mini_transformer_eval_counts_strict_with_attention_and_position_policy(
@@ -17880,6 +17664,72 @@ fn mini_transformer_eval_summary_with_attention_and_position_policy(
         return Err(TrainError::InvalidConfig);
     }
 
+    let records = mini_transformer_window_eval_records_with_attention_and_position_policy(
+        tokens,
+        starts,
+        model,
+        seq_len,
+        attention_kind,
+        position_policy,
+    )?;
+
+    let mut mistakes = 0_usize;
+    let mut probability_error_q15 = 0_usize;
+    let mut invalid_forward_count = 0_usize;
+    let mut prediction_counts = [0_usize; BYTE_VOCAB];
+    let mut hasher = StableHasher::new();
+
+    for record in records {
+        mistakes = mistakes.saturating_add(record.mistakes);
+        probability_error_q15 = probability_error_q15.saturating_add(record.probability_error_q15);
+        invalid_forward_count = invalid_forward_count.saturating_add(record.invalid_forward_count);
+        if let Some(predicted_token) = record.predicted_token {
+            prediction_counts[usize::from(predicted_token)] =
+                prediction_counts[usize::from(predicted_token)].saturating_add(1);
+        }
+        hasher.update_usize(record.start);
+        if let Some(logits_q8) = record.logits_q8 {
+            hasher.update_i32_slice(&logits_q8);
+        } else {
+            hasher.update_u8(0xff);
+            hasher.update_bytes(&tokens[record.start..=record.end]);
+        }
+    }
+
+    let unique_predicted_tokens = prediction_counts.iter().filter(|&&count| count > 0).count();
+    let most_predicted_token = prediction_counts
+        .iter()
+        .enumerate()
+        .max_by_key(|&(token, count)| (*count, core::cmp::Reverse(token)))
+        .filter(|&(_, &count)| count > 0)
+        .map(|(token, _)| token as u8);
+    let most_predicted_token_count = most_predicted_token
+        .map(|token| prediction_counts[usize::from(token)])
+        .unwrap_or(0);
+
+    Ok(MiniTransformerEvalSummary {
+        mistakes,
+        probability_error_q15,
+        invalid_forward_count,
+        unique_predicted_tokens,
+        most_predicted_token,
+        most_predicted_token_count,
+        logits_hash: hasher.finish(),
+    })
+}
+
+fn mini_transformer_window_eval_records_with_attention_and_position_policy(
+    tokens: &[u8],
+    starts: &[usize],
+    model: &MiniTransformerMlpModel,
+    seq_len: usize,
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+) -> Result<Vec<MiniTransformerMlpWindowEvalRecord>, TrainError> {
+    if seq_len == 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+
     let chunks = parallel_eval_chunks(starts.len(), |chunk_start, chunk_end| {
         let mut records = Vec::with_capacity(chunk_end - chunk_start);
         for &start in &starts[chunk_start..chunk_end] {
@@ -17900,21 +17750,34 @@ fn mini_transformer_eval_summary_with_attention_and_position_policy(
                     let mistakes = usize::from(byte_argmax_i32(&cache.logits_q8) != tokens[end]);
                     let probability_error_q15 =
                         byte_sample_probability_error_q15(&cache.probabilities_q15, tokens[end]);
-                    MiniTransformerWindowEvalRecord {
+                    let router_hidden_features_q15 =
+                        mini_transformer_router_hidden_features_q15(&cache.block_output, seq_len)?;
+                    let last_start = (seq_len - 1) * MINI_TRANSFORMER_D_MODEL;
+                    let mut last_hidden_q15 = [0_i16; MINI_TRANSFORMER_D_MODEL];
+                    last_hidden_q15.copy_from_slice(
+                        &cache.block_output[last_start..last_start + MINI_TRANSFORMER_D_MODEL],
+                    );
+                    MiniTransformerMlpWindowEvalRecord {
                         start,
                         end,
                         mistakes,
                         probability_error_q15,
                         invalid_forward_count: 0,
+                        predicted_token: Some(byte_argmax_i32(&cache.logits_q8)),
+                        last_hidden_q15,
+                        router_hidden_features_q15,
                         logits_q8: Some(cache.logits_q8),
                     }
                 }
-                Err(_) => MiniTransformerWindowEvalRecord {
+                Err(_) => MiniTransformerMlpWindowEvalRecord {
                     start,
                     end,
                     mistakes: 1,
                     probability_error_q15: i16::MAX as usize,
                     invalid_forward_count: 1,
+                    predicted_token: None,
+                    last_hidden_q15: [0; MINI_TRANSFORMER_D_MODEL],
+                    router_hidden_features_q15: [0; MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES],
                     logits_q8: None,
                 },
             };
@@ -17923,30 +17786,704 @@ fn mini_transformer_eval_summary_with_attention_and_position_policy(
         Ok(records)
     })?;
 
-    let mut mistakes = 0_usize;
-    let mut probability_error_q15 = 0_usize;
-    let mut invalid_forward_count = 0_usize;
-    let mut hasher = StableHasher::new();
+    Ok(chunks.into_iter().flatten().collect())
+}
 
-    for record in chunks.into_iter().flatten() {
-        mistakes = mistakes.saturating_add(record.mistakes);
-        probability_error_q15 = probability_error_q15.saturating_add(record.probability_error_q15);
-        invalid_forward_count = invalid_forward_count.saturating_add(record.invalid_forward_count);
-        hasher.update_usize(record.start);
-        if let Some(logits_q8) = record.logits_q8 {
-            hasher.update_i32_slice(&logits_q8);
-        } else {
-            hasher.update_u8(0xff);
-            hasher.update_bytes(&tokens[record.start..=record.end]);
+pub fn mini_transformer_output_from_hidden_q15(
+    model: &MiniTransformerMlpModel,
+    hidden_q15: &[i16; MINI_TRANSFORMER_D_MODEL],
+) -> Result<MiniTransformerNextTokenRow, TrainError> {
+    let row = mini_transformer_output_row_for(&model.output_weights, hidden_q15)?;
+    Ok(MiniTransformerNextTokenRow {
+        logits_q8: row.logits_q8,
+        probabilities_q15: row.probabilities_q15,
+    })
+}
+
+pub fn mini_transformer_output_gradient_to_hidden_q15(
+    model: &MiniTransformerMlpModel,
+    grad_output_q15: &[i16; BYTE_VOCAB],
+) -> Result<[i16; MINI_TRANSFORMER_D_MODEL], TrainError> {
+    let mut scaled_grad_output = [0_i32; BYTE_VOCAB];
+    let mut grad_hidden_q15 = [0_i16; MINI_TRANSFORMER_D_MODEL];
+    linear_backward_input_i16_i8_i16_per_channel_checked(
+        grad_output_q15,
+        LinearBackwardInputI16I8Params {
+            weights: &model.output_weights,
+            forward_scales: &MINI_TRANSFORMER_OUTPUT_SCALES,
+            grad_input_scales: &MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES,
+            input_dim: MINI_TRANSFORMER_D_MODEL,
+            output_dim: BYTE_VOCAB,
+        },
+        LinearBackwardInputWorkspace {
+            scaled_grad_output: &mut scaled_grad_output,
+        },
+        &mut grad_hidden_q15,
+    )
+    .ok_or(TrainError::CoreRejected(
+        "mini_transformer_output_gradient_to_hidden",
+    ))?;
+    Ok(grad_hidden_q15)
+}
+
+#[derive(Debug, Clone)]
+struct MiniTransformerBlockExpertLayerCache {
+    base: MiniTransformerBlockForwardCache,
+    latent_q15: Vec<i16>,
+    adapted_output: Vec<i16>,
+}
+
+#[derive(Debug, Clone)]
+struct MiniTransformerBlockExpertForwardCache {
+    layers: Vec<MiniTransformerBlockExpertLayerCache>,
+    logits_q8: [i32; BYTE_VOCAB],
+    probabilities_q15: [i16; BYTE_VOCAB],
+    hidden_saturation_count: usize,
+}
+
+fn block_expert_projection_sign(seed: u64, layer: usize, rank: usize, dim: usize) -> i64 {
+    let mut value = seed
+        ^ (layer as u64).wrapping_mul(0x94d0_49bb_1331_11eb)
+        ^ (rank as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (dim as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 27;
+    if value & 1 == 0 { 1 } else { -1 }
+}
+
+fn block_expert_layer_weight_range(
+    expert: &MiniTransformerBlockLowRankExpert,
+    layer: usize,
+) -> Result<Range<usize>, TrainError> {
+    if layer >= expert.transformer_layers {
+        return Err(TrainError::InvalidConfig);
+    }
+    let per_layer = MINI_TRANSFORMER_D_MODEL
+        .checked_mul(expert.rank)
+        .ok_or(TrainError::InvalidConfig)?;
+    let start = layer
+        .checked_mul(per_layer)
+        .ok_or(TrainError::InvalidConfig)?;
+    Ok(start..start + per_layer)
+}
+
+fn block_expert_adapt_rows(
+    base: &[i16],
+    expert: &MiniTransformerBlockLowRankExpert,
+    layer: usize,
+) -> Result<(Vec<i16>, Vec<i16>, usize), TrainError> {
+    if base.is_empty() || !base.len().is_multiple_of(MINI_TRANSFORMER_D_MODEL) {
+        return Err(TrainError::InvalidConfig);
+    }
+    let rows = base.len() / MINI_TRANSFORMER_D_MODEL;
+    let mut latent = vec![0_i16; rows * expert.rank];
+    let mut output = vec![0_i16; base.len()];
+    let weights = &expert.expansion_weights_q15[block_expert_layer_weight_range(expert, layer)?];
+    let projection_shift = MINI_TRANSFORMER_D_MODEL.trailing_zeros() as u8;
+    if 1_usize << u32::from(projection_shift) != MINI_TRANSFORMER_D_MODEL {
+        return Err(TrainError::InvalidModel(
+            "block expert d_model must be power of two",
+        ));
+    }
+    let mut saturation_count = 0_usize;
+    for row in 0..rows {
+        let row_start = row * MINI_TRANSFORMER_D_MODEL;
+        let latent_start = row * expert.rank;
+        for rank in 0..expert.rank {
+            let sum = (0..MINI_TRANSFORMER_D_MODEL)
+                .map(|dim| {
+                    i64::from(base[row_start + dim])
+                        * block_expert_projection_sign(expert.projection_seed, layer, rank, dim)
+                })
+                .sum::<i64>();
+            latent[latent_start + rank] = saturate_i16(round_shift_rhu_i64(sum, projection_shift));
+        }
+        for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            let residual_acc = (0..expert.rank)
+                .map(|rank| {
+                    i64::from(latent[latent_start + rank])
+                        * i64::from(weights[dim * expert.rank + rank])
+                })
+                .sum::<i64>();
+            let raw = i64::from(base[row_start + dim]).saturating_add(round_shift_rhu_i64(
+                residual_acc,
+                Q15_SHIFT.saturating_add(expert.residual_shift),
+            ));
+            let adapted = saturate_i16(raw);
+            saturation_count =
+                saturation_count.saturating_add(usize::from(i64::from(adapted) != raw));
+            output[row_start + dim] = adapted;
         }
     }
+    Ok((output, latent, saturation_count))
+}
 
-    Ok(MiniTransformerEvalSummary {
-        mistakes,
-        probability_error_q15,
-        invalid_forward_count,
-        logits_hash: hasher.finish(),
+fn mini_transformer_forward_with_block_expert(
+    model: &MiniTransformerMlpModel,
+    expert: &MiniTransformerBlockLowRankExpert,
+    context: &[u8],
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+) -> Result<MiniTransformerBlockExpertForwardCache, TrainError> {
+    expert.validate_for_model(model)?;
+    if context.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut layer_input = mini_transformer_embedding_sequence_with_position_policy_q15(
+        &model.embeddings,
+        &model.position_embeddings,
+        context,
+        position_policy,
+    )?;
+    let attention_weight_count = mini_transformer_attention_weight_count()?;
+    let mlp_up_count = mini_transformer_mlp_up_or_gate_weight_count()?;
+    let mlp_down_count = mini_transformer_mlp_down_weight_count()?;
+    let mut layer_caches = Vec::with_capacity(expert.transformer_layers);
+    let mut hidden_saturation_count = 0_usize;
+    for layer in 0..expert.transformer_layers {
+        let attention_range = mini_transformer_layer_range(layer, attention_weight_count)?;
+        let up_range = mini_transformer_layer_range(layer, mlp_up_count)?;
+        let down_range = mini_transformer_layer_range(layer, mlp_down_count)?;
+        let rms_range = if model.rms_norm_enabled() {
+            Some(model.rms_weight_range(layer)?)
+        } else {
+            None
+        };
+        let base = mini_transformer_forward_block_for_attention_kind(
+            &layer_input,
+            rms_range
+                .as_ref()
+                .map(|range| &model.attention_rms_weights[range.clone()]),
+            rms_range
+                .as_ref()
+                .map(|range| &model.mlp_rms_weights[range.clone()]),
+            &model.q_weights[attention_range.clone()],
+            &model.k_weights[attention_range.clone()],
+            &model.v_weights[attention_range.clone()],
+            &model.o_weights[attention_range],
+            &model.up_weights[up_range.clone()],
+            &model.gate_weights[up_range],
+            &model.down_weights[down_range],
+            attention_kind,
+        )?;
+        let (adapted_output, latent_q15, saturations) =
+            block_expert_adapt_rows(&base.block_output, expert, layer)?;
+        hidden_saturation_count = hidden_saturation_count.saturating_add(saturations);
+        layer_input = adapted_output.clone();
+        layer_caches.push(MiniTransformerBlockExpertLayerCache {
+            base,
+            latent_q15,
+            adapted_output,
+        });
+    }
+    let last = layer_input
+        .len()
+        .checked_sub(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainError::InvalidConfig)?;
+    let mut output_features = [0_i16; MINI_TRANSFORMER_D_MODEL];
+    output_features.copy_from_slice(&layer_input[last..last + MINI_TRANSFORMER_D_MODEL]);
+    let row = mini_transformer_output_row_for(&model.output_weights, &output_features)?;
+    #[cfg(feature = "mini-calibrated")]
+    let mut row = row;
+    #[cfg(feature = "mini-calibrated")]
+    if position_policy == MiniTransformerPositionPolicy::Nope {
+        if let Some(predicted) =
+            mini_transformer_ngram_cache_prediction(&model.position_embeddings, context)
+        {
+            mini_transformer_rerank_output_row(&mut row, predicted)?;
+        }
+    }
+    Ok(MiniTransformerBlockExpertForwardCache {
+        layers: layer_caches,
+        logits_q8: row.logits_q8,
+        probabilities_q15: row.probabilities_q15,
+        hidden_saturation_count,
     })
+}
+
+fn block_expert_backward_rows(
+    expert: &MiniTransformerBlockLowRankExpert,
+    layer: usize,
+    cache: &MiniTransformerBlockExpertLayerCache,
+    grad_adapted: &[i16],
+    gradient_accumulators: &mut [i64],
+) -> Result<Vec<i16>, TrainError> {
+    if grad_adapted.len() != cache.base.block_output.len()
+        || cache.adapted_output.len() != grad_adapted.len()
+        || cache.latent_q15.len() * MINI_TRANSFORMER_D_MODEL != grad_adapted.len() * expert.rank
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let range = block_expert_layer_weight_range(expert, layer)?;
+    if gradient_accumulators.len() != expert.expansion_weights_q15.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let weights = &expert.expansion_weights_q15[range.clone()];
+    let gradients = &mut gradient_accumulators[range];
+    let rows = grad_adapted.len() / MINI_TRANSFORMER_D_MODEL;
+    let projection_shift = MINI_TRANSFORMER_D_MODEL.trailing_zeros() as u8;
+    let mut grad_base = vec![0_i16; grad_adapted.len()];
+    for row in 0..rows {
+        let row_start = row * MINI_TRANSFORMER_D_MODEL;
+        let latent_start = row * expert.rank;
+        let mut grad_latent = vec![0_i64; expert.rank];
+        for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            let index = row_start + dim;
+            let grad = if cache.adapted_output[index] == i16::MIN
+                || cache.adapted_output[index] == i16::MAX
+            {
+                0_i64
+            } else {
+                i64::from(grad_adapted[index])
+            };
+            for rank in 0..expert.rank {
+                let weight_index = dim * expert.rank + rank;
+                gradients[weight_index] = gradients[weight_index].saturating_add(
+                    grad.saturating_mul(i64::from(cache.latent_q15[latent_start + rank])),
+                );
+                grad_latent[rank] = grad_latent[rank].saturating_add(round_shift_rhu_i64(
+                    grad.saturating_mul(i64::from(weights[weight_index])),
+                    Q15_SHIFT.saturating_add(expert.residual_shift),
+                ));
+            }
+        }
+        for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            let projected = (0..expert.rank)
+                .map(|rank| {
+                    grad_latent[rank]
+                        * block_expert_projection_sign(expert.projection_seed, layer, rank, dim)
+                })
+                .sum::<i64>();
+            grad_base[row_start + dim] = saturate_i16(
+                i64::from(grad_adapted[row_start + dim])
+                    .saturating_add(round_shift_rhu_i64(projected, projection_shift)),
+            );
+        }
+    }
+    Ok(grad_base)
+}
+
+pub fn mini_transformer_next_token_row_with_block_expert(
+    model: &MiniTransformerMlpModel,
+    expert: &MiniTransformerBlockLowRankExpert,
+    context: &[u8],
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+) -> Result<MiniTransformerNextTokenRow, TrainError> {
+    let cache = mini_transformer_forward_with_block_expert(
+        model,
+        expert,
+        context,
+        attention_kind,
+        position_policy,
+    )?;
+    Ok(MiniTransformerNextTokenRow {
+        logits_q8: cache.logits_q8,
+        probabilities_q15: cache.probabilities_q15,
+    })
+}
+
+pub fn evaluate_mini_transformer_block_expert(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    expert: &MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpEvalConfig,
+) -> Result<MiniTransformerBlockExpertMetrics, TrainError> {
+    expert.validate_for_model(model)?;
+    if config.seq_len == 0
+        || config.stride == 0
+        || model.context_seq_len != config.seq_len
+        || config.attention_kind.uses_incremental_state()
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let starts = mini_transformer_filtered_window_starts(
+        tokens.len(),
+        tokens,
+        MiniTransformerMlpTrainConfig {
+            seq_len: config.seq_len,
+            stride: config.stride,
+            max_windows: config.max_windows,
+            attention_kind: config.attention_kind,
+            position_policy: config.position_policy,
+            ..MiniTransformerMlpTrainConfig::default()
+        },
+    );
+    if starts.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut metrics = MiniTransformerBlockExpertMetrics {
+        windows: starts.len(),
+        mistakes: 0,
+        probability_error_q15: 0,
+        hidden_saturation_count: 0,
+    };
+    for start in starts {
+        let end = start + config.seq_len;
+        let cache = mini_transformer_forward_with_block_expert(
+            model,
+            expert,
+            &tokens[start..end],
+            config.attention_kind,
+            config.position_policy,
+        )?;
+        metrics.mistakes = metrics.mistakes.saturating_add(usize::from(
+            byte_argmax_i32(&cache.logits_q8) != tokens[end],
+        ));
+        metrics.probability_error_q15 =
+            metrics
+                .probability_error_q15
+                .saturating_add(byte_sample_probability_error_q15(
+                    &cache.probabilities_q15,
+                    tokens[end],
+                ));
+        metrics.hidden_saturation_count = metrics
+            .hidden_saturation_count
+            .saturating_add(cache.hidden_saturation_count);
+    }
+    Ok(metrics)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn train_mini_transformer_block_expert(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    expert: &mut MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpTrainConfig,
+    batch_windows: usize,
+    learning_rate: i64,
+    learning_rate_shift: u8,
+) -> Result<MiniTransformerBlockExpertTrainStats, TrainError> {
+    train_mini_transformer_block_expert_with_layer_scope(
+        tokens,
+        model,
+        expert,
+        config,
+        batch_windows,
+        learning_rate,
+        learning_rate_shift,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn train_mini_transformer_block_expert_with_layer_scope(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    expert: &mut MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpTrainConfig,
+    batch_windows: usize,
+    learning_rate: i64,
+    learning_rate_shift: u8,
+    train_layer: Option<usize>,
+) -> Result<MiniTransformerBlockExpertTrainStats, TrainError> {
+    train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
+        tokens,
+        model,
+        expert,
+        config,
+        batch_windows,
+        learning_rate,
+        learning_rate_shift,
+        train_layer,
+        false,
+        MiniTransformerBlockExpertObjective::CrossEntropy,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    expert: &mut MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpTrainConfig,
+    batch_windows: usize,
+    learning_rate: i64,
+    learning_rate_shift: u8,
+    train_layer: Option<usize>,
+    bidirectional_loss_guard: bool,
+    objective: MiniTransformerBlockExpertObjective,
+) -> Result<MiniTransformerBlockExpertTrainStats, TrainError> {
+    expert.validate_for_model(model)?;
+    if config.epochs == 0
+        || config.seq_len == 0
+        || config.stride == 0
+        || config.seq_len != model.context_seq_len
+        || batch_windows == 0
+        || learning_rate <= 0
+        || learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_kind.uses_incremental_state()
+        || train_layer.is_some_and(|layer| layer >= expert.transformer_layers)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, config);
+    if starts.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut update_residuals = vec![0_i64; expert.expansion_weights_q15.len()];
+    let mut stats = MiniTransformerBlockExpertTrainStats {
+        optimizer_steps: 0,
+        accepted_forward_steps: 0,
+        accepted_reverse_steps: 0,
+        rejected_steps: 0,
+        weight_delta_l1: 0,
+        weight_saturation_count: 0,
+        hidden_saturation_count: 0,
+    };
+    let last_start = (config.seq_len - 1) * MINI_TRANSFORMER_D_MODEL;
+    let mut workspace = MiniTransformerHostTrainCoreWorkspaceBuffers::new(config.seq_len)?;
+    let mut frozen_model = model.clone();
+    for _ in 0..config.epochs {
+        for batch in starts.chunks(batch_windows) {
+            let mut gradients = vec![0_i64; expert.expansion_weights_q15.len()];
+            for &start in batch {
+                let end = start + config.seq_len;
+                let cache = mini_transformer_forward_with_block_expert(
+                    model,
+                    expert,
+                    &tokens[start..end],
+                    config.attention_kind,
+                    config.position_policy,
+                )?;
+                stats.hidden_saturation_count = stats
+                    .hidden_saturation_count
+                    .saturating_add(cache.hidden_saturation_count);
+                let mut grad_output =
+                    byte_vocab_softmax_gradient_q15(&cache.probabilities_q15, tokens[end]);
+                if objective == MiniTransformerBlockExpertObjective::ProbabilityError {
+                    let target_probability =
+                        i64::from(cache.probabilities_q15[usize::from(tokens[end])].max(0));
+                    for gradient in &mut grad_output {
+                        *gradient = (i64::from(*gradient).saturating_mul(target_probability)
+                            / i64::from(i16::MAX))
+                        .clamp(i64::from(i32::MIN), i64::from(i32::MAX))
+                            as i32;
+                    }
+                }
+                apply_byte_argmax_margin_gradient_q15(
+                    &mut grad_output,
+                    &cache.logits_q8,
+                    tokens[end],
+                    config.argmax_margin_weight_q15,
+                );
+                let grad_output_q15 = byte_gradient_i32_to_i16(&grad_output);
+                let grad_last =
+                    mini_transformer_output_gradient_to_hidden_q15(model, &grad_output_q15)?;
+                let mut grad_adapted = vec![0_i16; config.seq_len * MINI_TRANSFORMER_D_MODEL];
+                grad_adapted[last_start..last_start + MINI_TRANSFORMER_D_MODEL]
+                    .copy_from_slice(&grad_last);
+                let mut dummy =
+                    MiniTransformerMapReduceBatchResult::new(config, expert.transformer_layers)?;
+                for layer in (0..expert.transformer_layers).rev() {
+                    let grad_base = block_expert_backward_rows(
+                        expert,
+                        layer,
+                        &cache.layers[layer],
+                        &grad_adapted,
+                        &mut gradients,
+                    )?;
+                    let layer_config = mini_transformer_stacked_layer_runtime_config(
+                        config,
+                        layer,
+                        expert.transformer_layers,
+                    );
+                    let backward = mini_transformer_block_backward_accumulate_i64_checked(
+                        &cache.layers[layer].base,
+                        &grad_base,
+                        &mut frozen_model,
+                        layer,
+                        layer_config,
+                        &mut workspace,
+                        &mut dummy.mlp_weight_gradients[layer],
+                        &mut dummy.attention_weight_gradients[layer],
+                        &mut dummy.rms_weight_gradients[layer],
+                    )?;
+                    grad_adapted = backward.grad_input;
+                }
+            }
+            let gradient_shift = learning_rate_shift
+                .checked_add(Q15_SHIFT)
+                .and_then(|shift| shift.checked_add(expert.residual_shift))
+                .ok_or(TrainError::InvalidConfig)?;
+            let denominator = i64::try_from(batch.len())
+                .map_err(|_| TrainError::InvalidConfig)?
+                .checked_shl(u32::from(gradient_shift))
+                .ok_or(TrainError::InvalidConfig)?;
+            let parameters_per_layer = MINI_TRANSFORMER_D_MODEL
+                .checked_mul(expert.rank)
+                .ok_or(TrainError::InvalidConfig)?;
+            if bidirectional_loss_guard {
+                let baseline_error = mini_transformer_block_expert_batch_error(
+                    tokens, batch, model, expert, config,
+                )?;
+                let original_weights = expert.expansion_weights_q15.clone();
+                let original_residuals = update_residuals.clone();
+                let mut forward_weights = original_weights.clone();
+                let mut reverse_weights = original_weights.clone();
+                let mut next_residuals = original_residuals.clone();
+                let mut forward_saturations = vec![false; original_weights.len()];
+                let mut reverse_saturations = vec![false; original_weights.len()];
+                for index in 0..original_weights.len() {
+                    if train_layer.is_some_and(|layer| index / parameters_per_layer != layer) {
+                        continue;
+                    }
+                    let numerator = gradients[index]
+                        .saturating_mul(learning_rate)
+                        .saturating_add(original_residuals[index]);
+                    let averaged = round_div_signed_i64(numerator, denominator)?;
+                    next_residuals[index] =
+                        numerator.saturating_sub(averaged.saturating_mul(denominator));
+                    let update = averaged;
+                    let previous = i64::from(original_weights[index]);
+                    let forward_raw = previous.saturating_sub(update);
+                    let reverse_raw = previous.saturating_add(update);
+                    forward_weights[index] = saturate_i16(forward_raw);
+                    reverse_weights[index] = saturate_i16(reverse_raw);
+                    forward_saturations[index] = i64::from(forward_weights[index]) != forward_raw;
+                    reverse_saturations[index] = i64::from(reverse_weights[index]) != reverse_raw;
+                }
+                expert.expansion_weights_q15 = forward_weights.clone();
+                let forward_error = mini_transformer_block_expert_batch_error(
+                    tokens, batch, model, expert, config,
+                )?;
+                expert.expansion_weights_q15 = reverse_weights.clone();
+                let reverse_error = mini_transformer_block_expert_batch_error(
+                    tokens, batch, model, expert, config,
+                )?;
+                let (selected, selected_saturations) = if forward_error < baseline_error
+                    && forward_error <= reverse_error
+                {
+                    stats.accepted_forward_steps = stats.accepted_forward_steps.saturating_add(1);
+                    (Some(forward_weights), Some(forward_saturations))
+                } else if reverse_error < baseline_error && reverse_error < forward_error {
+                    stats.accepted_reverse_steps = stats.accepted_reverse_steps.saturating_add(1);
+                    (Some(reverse_weights), Some(reverse_saturations))
+                } else {
+                    stats.rejected_steps = stats.rejected_steps.saturating_add(1);
+                    (None, None)
+                };
+                if let Some(selected) = selected {
+                    for (index, (&previous, &next)) in
+                        original_weights.iter().zip(selected.iter()).enumerate()
+                    {
+                        stats.weight_delta_l1 = stats
+                            .weight_delta_l1
+                            .saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
+                        if selected_saturations
+                            .as_ref()
+                            .is_some_and(|values| values[index])
+                        {
+                            stats.weight_saturation_count =
+                                stats.weight_saturation_count.saturating_add(1);
+                            next_residuals[index] = 0;
+                        }
+                    }
+                    expert.expansion_weights_q15 = selected;
+                    update_residuals = next_residuals;
+                } else {
+                    expert.expansion_weights_q15 = original_weights;
+                    update_residuals = original_residuals;
+                }
+            } else {
+                for index in 0..expert.expansion_weights_q15.len() {
+                    if train_layer.is_some_and(|layer| index / parameters_per_layer != layer) {
+                        continue;
+                    }
+                    let numerator = gradients[index]
+                        .saturating_mul(learning_rate)
+                        .saturating_add(update_residuals[index]);
+                    let averaged = round_div_signed_i64(numerator, denominator)?;
+                    update_residuals[index] =
+                        numerator.saturating_sub(averaged.saturating_mul(denominator));
+                    let update = averaged;
+                    let previous = expert.expansion_weights_q15[index];
+                    let raw = i64::from(previous).saturating_sub(update);
+                    let next = saturate_i16(raw);
+                    if i64::from(next) != raw {
+                        stats.weight_saturation_count =
+                            stats.weight_saturation_count.saturating_add(1);
+                        update_residuals[index] = 0;
+                    }
+                    stats.weight_delta_l1 = stats
+                        .weight_delta_l1
+                        .saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
+                    expert.expansion_weights_q15[index] = next;
+                }
+                stats.accepted_forward_steps = stats.accepted_forward_steps.saturating_add(1);
+            }
+            stats.optimizer_steps = stats.optimizer_steps.saturating_add(1);
+        }
+    }
+    Ok(stats)
+}
+
+fn mini_transformer_block_expert_batch_error(
+    tokens: &[u8],
+    starts: &[usize],
+    model: &MiniTransformerMlpModel,
+    expert: &MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpTrainConfig,
+) -> Result<usize, TrainError> {
+    let mut error = 0_usize;
+    for &start in starts {
+        let end = start
+            .checked_add(config.seq_len)
+            .ok_or(TrainError::InvalidConfig)?;
+        if end >= tokens.len() {
+            return Err(TrainError::InvalidConfig);
+        }
+        let cache = mini_transformer_forward_with_block_expert(
+            model,
+            expert,
+            &tokens[start..end],
+            config.attention_kind,
+            config.position_policy,
+        )?;
+        error = error.saturating_add(byte_sample_probability_error_q15(
+            &cache.probabilities_q15,
+            tokens[end],
+        ));
+    }
+    Ok(error)
+}
+
+fn round_div_signed_i64(value: i64, denominator: i64) -> Result<i64, TrainError> {
+    if denominator <= 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+    let half = denominator / 2;
+    Ok(if value >= 0 {
+        value.saturating_add(half) / denominator
+    } else {
+        value.saturating_sub(half) / denominator
+    })
+}
+
+fn mini_transformer_router_hidden_features_q15(
+    block_output: &[i16],
+    seq_len: usize,
+) -> Result<[i16; MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES], TrainError> {
+    if seq_len == 0
+        || MINI_TRANSFORMER_D_MODEL % MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES != 0
+        || block_output.len() != seq_len * MINI_TRANSFORMER_D_MODEL
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let bucket_width = MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES;
+    let last_start = (seq_len - 1) * MINI_TRANSFORMER_D_MODEL;
+    let last_row = &block_output[last_start..last_start + MINI_TRANSFORMER_D_MODEL];
+    let mut features = [0_i16; MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES];
+    for (bucket, output) in features.iter_mut().enumerate() {
+        let start = bucket * bucket_width;
+        let sum = last_row[start..start + bucket_width]
+            .iter()
+            .map(|&value| i64::from(value))
+            .sum::<i64>();
+        *output = saturate_i16(sum / bucket_width as i64);
+    }
+    Ok(features)
 }
 
 fn parallel_eval_chunks<T, F>(item_count: usize, eval_chunk: F) -> Result<Vec<T>, TrainError>
@@ -18009,222 +18546,8 @@ fn byte_sample_probability_error_q15(probabilities_q15: &[i16; BYTE_VOCAB], targ
     error
 }
 
-#[allow(clippy::too_many_arguments)]
-fn lexeme_total_error(
-    tokens: &[u16],
-    starts: &[usize],
-    embedding_model: &LexemeEmbeddingModel,
-    hidden_weights: &[i8],
-    output_weights: &[i8],
-    seq_len: usize,
-    context_features: LexemeContextFeatures,
-    hidden_dim: usize,
-    head_layout: LexemeSoftmaxHeadLayout,
-    adapter_logit_shift: u8,
-) -> Result<usize, TrainError> {
-    let d_model = lexeme_context_d_model(embedding_model.embedding_dim, seq_len, context_features)?;
-    let mut mistakes = 0_usize;
-    for &start in starts {
-        let forward = lexeme_head_forward_for_training_q15(
-            embedding_model,
-            &tokens[start..start + seq_len],
-            context_features,
-            hidden_weights,
-            hidden_dim,
-            head_layout,
-        )?;
-        let row = lexeme_softmax_row_for_layout(
-            output_weights,
-            &forward.head_features_q15,
-            embedding_model.vocab_size,
-            d_model,
-            hidden_dim,
-            head_layout,
-            adapter_logit_shift,
-        )?;
-        if lexeme_argmax_i32(&row.logits_q8) != tokens[start + seq_len] {
-            mistakes = mistakes.saturating_add(1);
-        }
-    }
-    Ok(mistakes)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_total_probability_error_q15(
-    tokens: &[u16],
-    starts: &[usize],
-    embedding_model: &LexemeEmbeddingModel,
-    hidden_weights: &[i8],
-    output_weights: &[i8],
-    seq_len: usize,
-    context_features: LexemeContextFeatures,
-    hidden_dim: usize,
-    head_layout: LexemeSoftmaxHeadLayout,
-    adapter_logit_shift: u8,
-) -> Result<usize, TrainError> {
-    let d_model = lexeme_context_d_model(embedding_model.embedding_dim, seq_len, context_features)?;
-    let mut error = 0_usize;
-    for &start in starts {
-        let forward = lexeme_head_forward_for_training_q15(
-            embedding_model,
-            &tokens[start..start + seq_len],
-            context_features,
-            hidden_weights,
-            hidden_dim,
-            head_layout,
-        )?;
-        let row = lexeme_softmax_row_for_layout(
-            output_weights,
-            &forward.head_features_q15,
-            embedding_model.vocab_size,
-            d_model,
-            hidden_dim,
-            head_layout,
-            adapter_logit_shift,
-        )?;
-        error = error.saturating_add(lexeme_sample_probability_error_q15(
-            &row.probabilities_q15,
-            tokens[start + seq_len],
-        ));
-    }
-    Ok(error)
-}
-
-fn lexeme_sample_probability_error_q15(probabilities_q15: &[i16], target: u16) -> usize {
-    let target = usize::from(target);
-    let mut error = (i32::from(i16::MAX) - i32::from(probabilities_q15[target])).max(0) as usize;
-    for (class_id, &probability) in probabilities_q15.iter().enumerate() {
-        if class_id != target {
-            error = error.saturating_add(i32::from(probability).max(0) as usize);
-        }
-    }
-    error
-}
-
-fn lexeme_sample_bits_per_token_milli(probabilities_q15: &[i16], target: u16) -> u64 {
-    let p_q15 = i32::from(probabilities_q15[usize::from(target)]).max(1) as u64;
-    log2_ratio_milli(i16::MAX as u64, p_q15)
-}
-
-fn log2_ratio_milli(numerator: u64, denominator: u64) -> u64 {
-    if denominator == 0 || numerator <= denominator {
-        return 0;
-    }
-
-    const FRAC_BITS: u32 = 32;
-    const MILLI: u64 = 1000;
-    let one = 1_u128 << FRAC_BITS;
-    let two = one << 1;
-    let mut value = ((numerator as u128) << FRAC_BITS) / denominator as u128;
-    let mut result = 0_u64;
-
-    while value >= two {
-        value >>= 1;
-        result = result.saturating_add(MILLI);
-    }
-
-    for bit in 1..=16_u32 {
-        value = (value.saturating_mul(value)) >> FRAC_BITS;
-        if value >= two {
-            value >>= 1;
-            let half = 1_u64 << (bit - 1);
-            result = result.saturating_add((MILLI + half) >> bit);
-        }
-    }
-
-    result
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_total_bits_per_token_milli(
-    tokens: &[u16],
-    starts: &[usize],
-    embedding_model: &LexemeEmbeddingModel,
-    hidden_weights: &[i8],
-    output_weights: &[i8],
-    seq_len: usize,
-    context_features: LexemeContextFeatures,
-    hidden_dim: usize,
-    head_layout: LexemeSoftmaxHeadLayout,
-    adapter_logit_shift: u8,
-) -> Result<(u128, usize), TrainError> {
-    let d_model = lexeme_context_d_model(embedding_model.embedding_dim, seq_len, context_features)?;
-    let mut total_bits_milli = 0_u128;
-    let mut position_count = 0_usize;
-    for &start in starts {
-        let forward = lexeme_head_forward_for_training_q15(
-            embedding_model,
-            &tokens[start..start + seq_len],
-            context_features,
-            hidden_weights,
-            hidden_dim,
-            head_layout,
-        )?;
-        let row = lexeme_softmax_row_for_layout(
-            output_weights,
-            &forward.head_features_q15,
-            embedding_model.vocab_size,
-            d_model,
-            hidden_dim,
-            head_layout,
-            adapter_logit_shift,
-        )?;
-        total_bits_milli = total_bits_milli.saturating_add(u128::from(
-            lexeme_sample_bits_per_token_milli(&row.probabilities_q15, tokens[start + seq_len]),
-        ));
-        position_count += 1;
-    }
-    Ok((total_bits_milli, position_count))
-}
-
-fn lexeme_softmax_learning_rate_shift_for_update(
-    config: LexemeSoftmaxTrainConfig,
-    update_index: usize,
-) -> u8 {
-    if config.lr_shift_decay_windows == 0 {
-        return config.learning_rate_shift;
-    }
-    let phase = update_index / config.lr_shift_decay_windows;
-    let phase_shift = phase
-        .saturating_mul(usize::from(config.lr_shift_decay_step))
-        .min(usize::from(MAX_RIGHT_SHIFT));
-    let shifted = usize::from(config.learning_rate_shift)
-        .saturating_add(phase_shift)
-        .min(usize::from(config.max_learning_rate_shift));
-    shifted as u8
-}
-
 fn valid_q15_weight_floor(value: i16) -> bool {
     value > 0
-}
-
-fn lexeme_frequency_weights_q15(
-    tokens: &[u16],
-    vocab_size: usize,
-    frequency_cap: u32,
-    min_weight_q15: i16,
-) -> Result<Vec<i16>, TrainError> {
-    if vocab_size == 0
-        || tokens.iter().any(|&token| usize::from(token) >= vocab_size)
-        || !valid_q15_weight_floor(min_weight_q15)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut weights = vec![i16::MAX; vocab_size];
-    if frequency_cap == 0 {
-        return Ok(weights);
-    }
-
-    let mut counts = vec![0_u32; vocab_size];
-    for &token in tokens {
-        let count = &mut counts[usize::from(token)];
-        *count = count.saturating_add(1);
-    }
-    for (index, &count) in counts.iter().enumerate() {
-        weights[index] = lexeme_frequency_weight_q15(count, frequency_cap, min_weight_q15);
-    }
-    Ok(weights)
 }
 
 fn lexeme_frequency_weight_q15(count: u32, frequency_cap: u32, min_weight_q15: i16) -> i16 {
@@ -18235,345 +18558,6 @@ fn lexeme_frequency_weight_q15(count: u32, frequency_cap: u32, min_weight_q15: i
     let ratio_q30 = (u64::from(frequency_cap) << (Q15_SHIFT * 2)) / u64::from(count);
     let weight = integer_sqrt_u64(ratio_q30).min(i16::MAX as u64) as i16;
     weight.max(min_weight_q15)
-}
-
-fn lexeme_topic_weight_q15(score: u64, max_score: u64, min_weight_q15: i16) -> i16 {
-    if max_score == 0 {
-        return i16::MAX;
-    }
-    if score == 0 {
-        return min_weight_q15;
-    }
-    let floor = u64::from(min_weight_q15 as u16);
-    let span = u64::from(i16::MAX as u16).saturating_sub(floor);
-    let scaled = (score.saturating_mul(span) + (max_score / 2)) / max_score;
-    let weight = floor.saturating_add(scaled).min(u64::from(i16::MAX as u16));
-    i16::try_from(weight).unwrap_or(i16::MAX)
-}
-
-fn lexeme_pair_frequency_weight_q15(left_token: u16, right_token: u16, weights: &[i16]) -> i16 {
-    weights[usize::from(left_token)].min(weights[usize::from(right_token)])
-}
-
-fn lexeme_context_quality_weight_q15(context: &[u16], weights: &[i16]) -> i16 {
-    context
-        .iter()
-        .map(|&token| weights[usize::from(token)])
-        .min()
-        .unwrap_or(i16::MAX)
-}
-
-fn lexeme_training_quality_weights_q15(
-    profile: LexemeQualityWeightProfile,
-    weights: Option<&[i16]>,
-    vocab_size: usize,
-) -> Result<Vec<i16>, TrainError> {
-    match profile {
-        LexemeQualityWeightProfile::Off => Ok(vec![i16::MAX; vocab_size]),
-        LexemeQualityWeightProfile::CruftAware | LexemeQualityWeightProfile::ProseAware => {
-            let weights = weights.ok_or(TrainError::InvalidConfig)?;
-            if weights.len() != vocab_size
-                || weights
-                    .iter()
-                    .any(|&weight| !valid_q15_weight_floor(weight))
-            {
-                return Err(TrainError::InvalidConfig);
-            }
-            Ok(weights.to_vec())
-        }
-    }
-}
-
-pub fn lexeme_quality_weights_from_vocab(
-    vocab: &[String],
-    vocab_size: usize,
-    profile: LexemeQualityWeightProfile,
-) -> Result<Vec<i16>, TrainError> {
-    if vocab_size == 0 || vocab.len() < vocab_size {
-        return Err(TrainError::InvalidConfig);
-    }
-    let mut weights = vec![i16::MAX; vocab_size];
-    if profile == LexemeQualityWeightProfile::Off {
-        return Ok(weights);
-    }
-    for (index, lexeme) in vocab.iter().take(vocab_size).enumerate() {
-        weights[index] = lexeme_quality_weight_q15(lexeme, profile);
-    }
-    Ok(weights)
-}
-
-fn lexeme_quality_weight_q15(lexeme: &str, profile: LexemeQualityWeightProfile) -> i16 {
-    let lower = lexeme.trim().to_ascii_lowercase();
-    if lower.is_empty() {
-        return 4096;
-    }
-    if lower == "nsrlpageboundary" {
-        return 4096;
-    }
-    if let Some(weight) = lexeme_cruft_weight_q15(&lower) {
-        return weight;
-    }
-    if let Some(weight) = lexeme_compound_cruft_weight_q15(&lower) {
-        return weight;
-    }
-    if lower.starts_with("http") || lower == "www" || lower.ends_with("html") {
-        return 4096;
-    }
-    if matches!(lower.as_str(), "." | "!" | "?") {
-        return i16::MAX;
-    }
-    if lower.len() == 1 && lower != "a" && lower != "i" {
-        return 8192;
-    }
-    if lower.len() > 24 && lower.bytes().all(|byte| byte.is_ascii_alphabetic()) {
-        return 8192;
-    }
-    if profile == LexemeQualityWeightProfile::ProseAware
-        && let Some(weight) = lexeme_prose_scaffold_weight_q15(&lower)
-    {
-        return weight;
-    }
-    i16::MAX
-}
-
-fn lexeme_prose_scaffold_weight_q15(lexeme: &str) -> Option<i16> {
-    if matches!(
-        lexeme,
-        "a" | "an"
-            | "and"
-            | "are"
-            | "as"
-            | "at"
-            | "be"
-            | "by"
-            | "for"
-            | "from"
-            | "in"
-            | "is"
-            | "it"
-            | "of"
-            | "on"
-            | "or"
-            | "that"
-            | "the"
-            | "this"
-            | "to"
-            | "was"
-            | "were"
-            | "with"
-    ) {
-        return Some(16384);
-    }
-
-    if matches!(
-        lexeme,
-        "about"
-            | "after"
-            | "all"
-            | "also"
-            | "any"
-            | "because"
-            | "been"
-            | "before"
-            | "being"
-            | "between"
-            | "both"
-            | "but"
-            | "can"
-            | "could"
-            | "did"
-            | "do"
-            | "does"
-            | "during"
-            | "each"
-            | "he"
-            | "her"
-            | "him"
-            | "his"
-            | "how"
-            | "i"
-            | "if"
-            | "its"
-            | "may"
-            | "me"
-            | "more"
-            | "most"
-            | "not"
-            | "one"
-            | "only"
-            | "other"
-            | "our"
-            | "out"
-            | "over"
-            | "she"
-            | "should"
-            | "some"
-            | "such"
-            | "than"
-            | "their"
-            | "them"
-            | "then"
-            | "there"
-            | "these"
-            | "they"
-            | "through"
-            | "under"
-            | "up"
-            | "we"
-            | "what"
-            | "when"
-            | "where"
-            | "which"
-            | "who"
-            | "will"
-            | "would"
-            | "you"
-            | "your"
-    ) {
-        return Some(24576);
-    }
-
-    None
-}
-
-fn lexeme_compound_cruft_weight_q15(lexeme: &str) -> Option<i16> {
-    if !lexeme.bytes().any(|byte| !byte.is_ascii_alphanumeric()) {
-        return None;
-    }
-
-    let mut parts = Vec::<&str>::new();
-    let mut weight = i16::MAX;
-    let mut saw_cruft = false;
-    let mut repeated_cruft_part = false;
-
-    for part in lexeme
-        .split(|ch: char| !ch.is_ascii_alphanumeric())
-        .filter(|part| !part.is_empty())
-    {
-        if let Some(part_weight) = lexeme_cruft_weight_q15(part) {
-            saw_cruft = true;
-            if parts.contains(&part) {
-                repeated_cruft_part = true;
-            }
-            weight = lexeme_combine_q15_weights(weight, part_weight);
-        }
-        parts.push(part);
-    }
-
-    if !saw_cruft {
-        return None;
-    }
-    if repeated_cruft_part {
-        return Some(4096);
-    }
-    Some(weight.clamp(4096, 8192))
-}
-
-fn lexeme_cruft_weight_q15(lexeme: &str) -> Option<i16> {
-    if matches!(
-        lexeme,
-        "align"
-            | "background"
-            | "bgcolor"
-            | "border"
-            | "caption"
-            | "category"
-            | "center"
-            | "cite"
-            | "class"
-            | "color"
-            | "colspan"
-            | "copyright"
-            | "div"
-            | "ebook"
-            | "fefefe"
-            | "file"
-            | "font"
-            | "fn"
-            | "gutenberg"
-            | "height"
-            | "html"
-            | "http"
-            | "https"
-            | "image"
-            | "isbn"
-            | "license"
-            | "nbsp"
-            | "ndash"
-            | "org"
-            | "px"
-            | "ref"
-            | "references"
-            | "rowspan"
-            | "small"
-            | "span"
-            | "style"
-            | "table"
-            | "template"
-            | "thumb"
-            | "url"
-            | "width"
-            | "www"
-    ) {
-        return Some(4096);
-    }
-
-    if matches!(
-        lexeme,
-        "adr" | "class=\"wikitable\"" | "com" | "id" | "linear" | "vcard" | "websites"
-    ) {
-        return Some(8192);
-    }
-
-    if matches!(
-        lexeme,
-        "january"
-            | "february"
-            | "march"
-            | "april"
-            | "june"
-            | "july"
-            | "august"
-            | "september"
-            | "october"
-            | "november"
-            | "december"
-            | "km"
-            | "note"
-            | "notes"
-            | "retrieved"
-            | "website"
-    ) {
-        return Some(16384);
-    }
-
-    None
-}
-
-fn lexeme_combine_q15_weights(left: i16, right: i16) -> i16 {
-    if left == i16::MAX {
-        return right;
-    }
-    if right == i16::MAX {
-        return left;
-    }
-    round_shift_rhu_i64(i64::from(left).saturating_mul(i64::from(right)), Q15_SHIFT)
-        .clamp(1, i64::from(i16::MAX)) as i16
-}
-
-fn lexeme_scale_gradient_q15(gradient_q15: &[i32], frequency_weight_q15: i16) -> Vec<i32> {
-    if frequency_weight_q15 == i16::MAX {
-        return gradient_q15.to_vec();
-    }
-    gradient_q15
-        .iter()
-        .map(|&gradient| {
-            round_shift_rhu_i64(
-                i64::from(gradient).saturating_mul(i64::from(frequency_weight_q15)),
-                Q15_SHIFT,
-            ) as i32
-        })
-        .collect()
 }
 
 fn integer_sqrt_u64(value: u64) -> u64 {
@@ -18594,44 +18578,6 @@ fn integer_sqrt_u64(value: u64) -> u64 {
         }
     }
     answer
-}
-
-#[allow(clippy::too_many_arguments)]
-fn hash_lexeme_logits(
-    tokens: &[u16],
-    starts: &[usize],
-    embedding_model: &LexemeEmbeddingModel,
-    hidden_weights: &[i8],
-    output_weights: &[i8],
-    seq_len: usize,
-    context_features: LexemeContextFeatures,
-    hidden_dim: usize,
-    head_layout: LexemeSoftmaxHeadLayout,
-    adapter_logit_shift: u8,
-) -> Result<u64, TrainError> {
-    let d_model = lexeme_context_d_model(embedding_model.embedding_dim, seq_len, context_features)?;
-    let mut hasher = StableHasher::new();
-    for &start in starts {
-        let forward = lexeme_head_forward_for_training_q15(
-            embedding_model,
-            &tokens[start..start + seq_len],
-            context_features,
-            hidden_weights,
-            hidden_dim,
-            head_layout,
-        )?;
-        let row = lexeme_softmax_row_for_layout(
-            output_weights,
-            &forward.head_features_q15,
-            embedding_model.vocab_size,
-            d_model,
-            hidden_dim,
-            head_layout,
-            adapter_logit_shift,
-        )?;
-        hasher.update_i32_slice(&row.logits_q8);
-    }
-    Ok(hasher.finish())
 }
 
 fn hash_mini_transformer_windows(
@@ -18719,759 +18665,6 @@ fn hash_mini_transformer_target_segment(
             }
         }
     }
-}
-
-fn hash_lexeme_windows(
-    tokens: &[u16],
-    config: LexemeEmbeddingTrainConfig,
-    starts: &[usize],
-) -> u64 {
-    let mut hasher = StableHasher::new();
-    hasher.update_usize(tokens.len());
-    hasher.update_usize(config.context_radius);
-    hasher.update_usize(config.stride);
-    hasher.update_usize(config.window_offset);
-    hasher.update_usize(config.max_windows.unwrap_or(usize::MAX));
-    hasher.update_usize(config.vocab_size);
-    hasher.update_usize(config.embedding_dim);
-    hasher.update_usize(config.concept_frequency_cap as usize);
-    hasher.update_usize(config.concept_frequency_min_weight_q15 as usize);
-    hasher.update_usize(lexeme_quality_weight_profile_id(
-        config.quality_weight_profile,
-    ));
-    for &center in starts {
-        hasher.update_usize(center);
-        let start = center - config.context_radius;
-        let end = center + config.context_radius + 1;
-        hasher.update_u16_slice(&tokens[start..end]);
-    }
-    hasher.finish()
-}
-
-fn hash_lexeme_softmax_windows(
-    tokens: &[u16],
-    config: LexemeSoftmaxTrainConfig,
-    starts: &[usize],
-) -> u64 {
-    let mut hasher = StableHasher::new();
-    hasher.update_usize(tokens.len());
-    hasher.update_usize(config.seq_len);
-    hasher.update_usize(config.stride);
-    hasher.update_usize(config.window_offset);
-    hasher.update_usize(config.max_windows.unwrap_or(usize::MAX));
-    hasher.update_usize(config.batch_windows);
-    hasher.update_usize(config.target_frequency_cap as usize);
-    hasher.update_usize(config.target_frequency_min_weight_q15 as usize);
-    hasher.update_usize(lexeme_quality_weight_profile_id(
-        config.quality_weight_profile,
-    ));
-    hasher.update_usize(lexeme_context_features_id(config.context_features));
-    for &start in starts {
-        hasher.update_usize(start);
-        hasher.update_u16_slice(&tokens[start..start + config.seq_len + 1]);
-    }
-    hasher.finish()
-}
-
-fn decode_u16_tokens(bytes: &[u8]) -> Result<Vec<u16>, TrainError> {
-    if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
-        return Err(TrainError::InvalidConfig);
-    }
-    Ok(bytes
-        .chunks_exact(2)
-        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect())
-}
-
-fn lexeme_center_starts(tokens_len: usize, config: LexemeEmbeddingTrainConfig) -> Vec<usize> {
-    let mut starts = Vec::new();
-    let Some(first_center) = config.context_radius.checked_add(config.window_offset) else {
-        return starts;
-    };
-    let Some(last_exclusive) = tokens_len.checked_sub(config.context_radius) else {
-        return starts;
-    };
-    let mut center = first_center;
-    while center < last_exclusive {
-        if config
-            .max_windows
-            .is_some_and(|limit| starts.len() >= limit)
-        {
-            break;
-        }
-        starts.push(center);
-        center = center.saturating_add(config.stride);
-    }
-    starts
-}
-
-fn lexeme_softmax_starts(
-    token_count: usize,
-    seq_len: usize,
-    stride: usize,
-    window_offset: usize,
-    max_windows: Option<usize>,
-) -> Vec<usize> {
-    let mut starts = Vec::new();
-    if seq_len == 0 || stride == 0 {
-        return starts;
-    }
-
-    let mut start = window_offset;
-    while start
-        .checked_add(seq_len)
-        .is_some_and(|target_index| target_index < token_count)
-    {
-        if max_windows.is_some_and(|limit| starts.len() >= limit) {
-            break;
-        }
-        starts.push(start);
-        start = start.saturating_add(stride);
-    }
-    starts
-}
-
-fn initial_lexeme_embeddings(
-    vocab_size: usize,
-    embedding_dim: usize,
-) -> Result<Vec<i16>, TrainError> {
-    let total = vocab_size
-        .checked_mul(embedding_dim)
-        .ok_or(TrainError::InvalidConfig)?;
-    let mut embeddings = Vec::with_capacity(total);
-    for token in 0..vocab_size {
-        for dim in 0..embedding_dim {
-            let mut hasher = StableHasher::new();
-            hasher.update_usize(token);
-            hasher.update_usize(dim);
-            let raw = (hasher.finish() & 0x03ff) as i32;
-            embeddings.push((raw - 512) as i16);
-        }
-    }
-    Ok(embeddings)
-}
-
-fn initial_lexeme_hidden_weights(d_model: usize, hidden_dim: usize) -> Result<Vec<i8>, TrainError> {
-    let total = hidden_dim
-        .checked_mul(d_model)
-        .ok_or(TrainError::InvalidConfig)?;
-    let mut weights = Vec::with_capacity(total);
-    for hidden_index in 0..hidden_dim {
-        for feature_index in 0..d_model {
-            let mut hasher = StableHasher::new();
-            hasher.update_usize(hidden_index);
-            hasher.update_usize(feature_index);
-            let raw = (hasher.finish() % 5) as i8;
-            weights.push(raw - 2);
-        }
-    }
-    Ok(weights)
-}
-
-fn lexeme_context_features_q15_from_parts(
-    embeddings: &[i16],
-    vocab_size: usize,
-    embedding_dim: usize,
-    context: &[u16],
-    context_features: LexemeContextFeatures,
-) -> Result<Vec<i16>, TrainError> {
-    if context.is_empty()
-        || !context.len().is_power_of_two()
-        || embeddings.len()
-            != vocab_size
-                .checked_mul(embedding_dim)
-                .ok_or(TrainError::InvalidConfig)?
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    let d_model = lexeme_context_d_model(embedding_dim, context.len(), context_features)?;
-    let mut features = Vec::with_capacity(d_model);
-    features.push(i16::MAX);
-
-    match context_features {
-        LexemeContextFeatures::Mean => {
-            let shift = context.len().trailing_zeros() as u8;
-            for dim in 0..embedding_dim {
-                let mut acc = 0_i64;
-                for &token in context {
-                    let token = usize::from(token);
-                    if token >= vocab_size {
-                        return Err(TrainError::InvalidConfig);
-                    }
-                    acc = acc.saturating_add(i64::from(embeddings[token * embedding_dim + dim]));
-                }
-                features.push(saturate_i16(round_shift_rhu_i64(acc, shift)));
-            }
-        }
-        LexemeContextFeatures::Ordered => {
-            for &token in context {
-                let token = usize::from(token);
-                if token >= vocab_size {
-                    return Err(TrainError::InvalidConfig);
-                }
-                let row_start = token
-                    .checked_mul(embedding_dim)
-                    .ok_or(TrainError::InvalidConfig)?;
-                let row_end = row_start
-                    .checked_add(embedding_dim)
-                    .ok_or(TrainError::InvalidConfig)?;
-                features.extend_from_slice(&embeddings[row_start..row_end]);
-            }
-        }
-    }
-
-    debug_assert_eq!(features.len(), d_model);
-    Ok(features)
-}
-
-fn lexeme_context_d_model(
-    embedding_dim: usize,
-    seq_len: usize,
-    context_features: LexemeContextFeatures,
-) -> Result<usize, TrainError> {
-    if embedding_dim == 0 || seq_len == 0 {
-        return Err(TrainError::InvalidConfig);
-    }
-    match context_features {
-        LexemeContextFeatures::Mean => embedding_dim
-            .checked_add(1)
-            .ok_or(TrainError::InvalidConfig),
-        LexemeContextFeatures::Ordered => seq_len
-            .checked_mul(embedding_dim)
-            .and_then(|value| value.checked_add(1))
-            .ok_or(TrainError::InvalidConfig),
-    }
-}
-
-fn lexeme_context_d_model_for_model(model: &LexemeSoftmaxModel) -> Result<usize, TrainError> {
-    lexeme_context_d_model(model.embedding_dim, model.seq_len, model.context_features)
-}
-
-fn lexeme_softmax_head_dim_for_layout(
-    d_model: usize,
-    hidden_dim: usize,
-    head_layout: LexemeSoftmaxHeadLayout,
-) -> Result<usize, TrainError> {
-    if d_model == 0 {
-        return Err(TrainError::InvalidConfig);
-    }
-    match head_layout {
-        LexemeSoftmaxHeadLayout::Linear => {
-            if hidden_dim == 0 {
-                Ok(d_model)
-            } else {
-                Err(TrainError::InvalidConfig)
-            }
-        }
-        LexemeSoftmaxHeadLayout::HiddenBottleneck => {
-            if hidden_dim == 0 {
-                Err(TrainError::InvalidConfig)
-            } else {
-                Ok(hidden_dim)
-            }
-        }
-        LexemeSoftmaxHeadLayout::ResidualHidden => {
-            if hidden_dim == 0 {
-                return Err(TrainError::InvalidConfig);
-            }
-            d_model
-                .checked_add(hidden_dim)
-                .ok_or(TrainError::InvalidConfig)
-        }
-        LexemeSoftmaxHeadLayout::ResidualAdapter => {
-            if hidden_dim == 0 {
-                return Err(TrainError::InvalidConfig);
-            }
-            d_model
-                .checked_add(hidden_dim)
-                .ok_or(TrainError::InvalidConfig)
-        }
-    }
-}
-
-fn lexeme_hard_silu_q15(value: i16) -> i16 {
-    let gate = ((i32::from(value) >> 2) + 16384).clamp(0, i32::from(i16::MAX));
-    saturate_i16(round_shift_rhu_i64(
-        i64::from(value) * i64::from(gate),
-        Q15_SHIFT,
-    ))
-}
-
-fn lexeme_hard_silu_derivative_q15(value: i16) -> i16 {
-    saturate_i16(i64::from((i32::from(value) >> 1) + 16384))
-}
-
-fn lexeme_hidden_forward_q15(
-    hidden_weights: &[i8],
-    features: &[i16],
-    hidden_dim: usize,
-) -> Result<(Vec<i16>, Vec<i16>), TrainError> {
-    let d_model = features.len();
-    if hidden_dim == 0 || d_model == 0 || hidden_weights.len() != hidden_dim * d_model {
-        return Err(TrainError::InvalidConfig);
-    }
-    let mut pre = vec![0_i16; hidden_dim];
-    let mut activated = vec![0_i16; hidden_dim];
-    for hidden_index in 0..hidden_dim {
-        let row_start = hidden_index * d_model;
-        let mut acc = 0_i64;
-        for feature_index in 0..d_model {
-            acc = acc.saturating_add(
-                i64::from(features[feature_index])
-                    * i64::from(hidden_weights[row_start + feature_index]),
-            );
-        }
-        let value = saturate_i16(round_shift_rhu_i64(acc, LEXEME_LOGIT_RIGHT_SHIFT));
-        pre[hidden_index] = value;
-        activated[hidden_index] = lexeme_hard_silu_q15(value);
-    }
-    Ok((pre, activated))
-}
-
-fn lexeme_head_forward_for_training_q15(
-    embedding_model: &LexemeEmbeddingModel,
-    context: &[u16],
-    context_features: LexemeContextFeatures,
-    hidden_weights: &[i8],
-    hidden_dim: usize,
-    head_layout: LexemeSoftmaxHeadLayout,
-) -> Result<LexemeHeadForward, TrainError> {
-    let context_features_q15 =
-        lexeme_context_features_for_training_q15(embedding_model, context, context_features)?;
-    match head_layout {
-        LexemeSoftmaxHeadLayout::Linear => {
-            if hidden_dim != 0 {
-                return Err(TrainError::InvalidConfig);
-            }
-            Ok(LexemeHeadForward {
-                context_features_q15: context_features_q15.clone(),
-                hidden_pre_q15: Vec::new(),
-                head_features_q15: context_features_q15,
-            })
-        }
-        LexemeSoftmaxHeadLayout::HiddenBottleneck => {
-            let (hidden_pre_q15, head_features_q15) =
-                lexeme_hidden_forward_q15(hidden_weights, &context_features_q15, hidden_dim)?;
-            Ok(LexemeHeadForward {
-                context_features_q15,
-                hidden_pre_q15,
-                head_features_q15,
-            })
-        }
-        LexemeSoftmaxHeadLayout::ResidualHidden => {
-            let (hidden_pre_q15, hidden_features_q15) =
-                lexeme_hidden_forward_q15(hidden_weights, &context_features_q15, hidden_dim)?;
-            let mut head_features_q15 =
-                Vec::with_capacity(context_features_q15.len() + hidden_features_q15.len());
-            head_features_q15.extend_from_slice(&context_features_q15);
-            head_features_q15.extend_from_slice(&hidden_features_q15);
-            Ok(LexemeHeadForward {
-                context_features_q15,
-                hidden_pre_q15,
-                head_features_q15,
-            })
-        }
-        LexemeSoftmaxHeadLayout::ResidualAdapter => {
-            let (hidden_pre_q15, hidden_features_q15) =
-                lexeme_hidden_forward_q15(hidden_weights, &context_features_q15, hidden_dim)?;
-            let mut head_features_q15 =
-                Vec::with_capacity(context_features_q15.len() + hidden_features_q15.len());
-            head_features_q15.extend_from_slice(&context_features_q15);
-            head_features_q15.extend_from_slice(&hidden_features_q15);
-            Ok(LexemeHeadForward {
-                context_features_q15,
-                hidden_pre_q15,
-                head_features_q15,
-            })
-        }
-    }
-}
-
-fn lexeme_head_forward_for_model_q15(
-    model: &LexemeSoftmaxModel,
-    context: &[u16],
-) -> Result<LexemeHeadForward, TrainError> {
-    let context_features_q15 = lexeme_context_features_for_model_q15(model, context)?;
-    match model.head_layout {
-        LexemeSoftmaxHeadLayout::Linear => {
-            if model.hidden_dim != 0 {
-                return Err(TrainError::InvalidConfig);
-            }
-            Ok(LexemeHeadForward {
-                context_features_q15: context_features_q15.clone(),
-                hidden_pre_q15: Vec::new(),
-                head_features_q15: context_features_q15,
-            })
-        }
-        LexemeSoftmaxHeadLayout::HiddenBottleneck => {
-            let (hidden_pre_q15, head_features_q15) = lexeme_hidden_forward_q15(
-                &model.hidden_weights,
-                &context_features_q15,
-                model.hidden_dim,
-            )?;
-            Ok(LexemeHeadForward {
-                context_features_q15,
-                hidden_pre_q15,
-                head_features_q15,
-            })
-        }
-        LexemeSoftmaxHeadLayout::ResidualHidden => {
-            let (hidden_pre_q15, hidden_features_q15) = lexeme_hidden_forward_q15(
-                &model.hidden_weights,
-                &context_features_q15,
-                model.hidden_dim,
-            )?;
-            let mut head_features_q15 =
-                Vec::with_capacity(context_features_q15.len() + hidden_features_q15.len());
-            head_features_q15.extend_from_slice(&context_features_q15);
-            head_features_q15.extend_from_slice(&hidden_features_q15);
-            Ok(LexemeHeadForward {
-                context_features_q15,
-                hidden_pre_q15,
-                head_features_q15,
-            })
-        }
-        LexemeSoftmaxHeadLayout::ResidualAdapter => {
-            let (hidden_pre_q15, hidden_features_q15) = lexeme_hidden_forward_q15(
-                &model.hidden_weights,
-                &context_features_q15,
-                model.hidden_dim,
-            )?;
-            let mut head_features_q15 =
-                Vec::with_capacity(context_features_q15.len() + hidden_features_q15.len());
-            head_features_q15.extend_from_slice(&context_features_q15);
-            head_features_q15.extend_from_slice(&hidden_features_q15);
-            Ok(LexemeHeadForward {
-                context_features_q15,
-                hidden_pre_q15,
-                head_features_q15,
-            })
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LexemeHeadForward {
-    context_features_q15: Vec<i16>,
-    hidden_pre_q15: Vec<i16>,
-    head_features_q15: Vec<i16>,
-}
-
-fn lexeme_context_features_for_model_q15(
-    model: &LexemeSoftmaxModel,
-    context: &[u16],
-) -> Result<Vec<i16>, TrainError> {
-    lexeme_context_features_q15_from_parts(
-        &model.embeddings,
-        model.vocab_size,
-        model.embedding_dim,
-        context,
-        model.context_features,
-    )
-}
-
-fn lexeme_context_features_for_training_q15(
-    embedding_model: &LexemeEmbeddingModel,
-    context: &[u16],
-    context_features: LexemeContextFeatures,
-) -> Result<Vec<i16>, TrainError> {
-    lexeme_context_features_q15_from_parts(
-        &embedding_model.embeddings,
-        embedding_model.vocab_size,
-        embedding_model.embedding_dim,
-        context,
-        context_features,
-    )
-}
-
-fn lexeme_generation_context_window(
-    context: &[u16],
-    seq_len: usize,
-) -> Result<Vec<u16>, TrainError> {
-    if context.is_empty() || seq_len == 0 {
-        return Err(TrainError::InvalidConfig);
-    }
-    if context.len() >= seq_len {
-        Ok(context[context.len() - seq_len..].to_vec())
-    } else {
-        let pad = context[0];
-        let mut window = Vec::with_capacity(seq_len);
-        window.resize(seq_len - context.len(), pad);
-        window.extend_from_slice(context);
-        Ok(window)
-    }
-}
-
-fn rounded_per_mille(numerator: usize, denominator: usize) -> u16 {
-    if denominator == 0 {
-        return 0;
-    }
-    let scaled = ((numerator as u128) * 1000 + (denominator as u128 / 2)) / denominator as u128;
-    scaled.min(u128::from(u16::MAX)) as u16
-}
-
-fn add_decode_reject_stats(left: &mut DecodeRejectStats, right: DecodeRejectStats) {
-    left.non_printable = left.non_printable.saturating_add(right.non_printable);
-    left.outside_ascii_lower = left
-        .outside_ascii_lower
-        .saturating_add(right.outside_ascii_lower);
-    left.byte_fallback = left.byte_fallback.saturating_add(right.byte_fallback);
-    left.banned_token = left.banned_token.saturating_add(right.banned_token);
-    left.repeat_run = left.repeat_run.saturating_add(right.repeat_run);
-    left.repeat_ngram = left.repeat_ngram.saturating_add(right.repeat_ngram);
-    left.function_word_run = left
-        .function_word_run
-        .saturating_add(right.function_word_run);
-    left.local_frequency = left.local_frequency.saturating_add(right.local_frequency);
-    left.topic = left.topic.saturating_add(right.topic);
-    left.memory = left.memory.saturating_add(right.memory);
-    left.adjacency = left.adjacency.saturating_add(right.adjacency);
-    left.top_k_truncated = left.top_k_truncated.saturating_add(right.top_k_truncated);
-}
-
-fn lexeme_generation_metrics(
-    generated_tokens: &[u16],
-    steps: &[LexemeGenerationStepTrace],
-) -> LexemeGenerationMetrics {
-    let mut token_counts = std::collections::HashMap::<u16, usize>::new();
-    let mut max_token_count = 0_usize;
-    let mut max_token_run = 0_usize;
-    let mut current_run = 0_usize;
-    let mut previous_token = None;
-    for &token in generated_tokens {
-        let count = token_counts.entry(token).or_insert(0);
-        *count = (*count).saturating_add(1);
-        max_token_count = max_token_count.max(*count);
-        if previous_token == Some(token) {
-            current_run = current_run.saturating_add(1);
-        } else {
-            current_run = 1;
-            previous_token = Some(token);
-        }
-        max_token_run = max_token_run.max(current_run);
-    }
-
-    let mut bigram_counts = std::collections::HashMap::<(u16, u16), usize>::new();
-    for window in generated_tokens.windows(2) {
-        let count = bigram_counts.entry((window[0], window[1])).or_insert(0);
-        *count = (*count).saturating_add(1);
-    }
-    let repeated_bigram_count = bigram_counts.values().filter(|&&count| count > 1).count();
-    let max_bigram_count = bigram_counts.values().copied().max().unwrap_or(0);
-
-    let mut trigram_counts = std::collections::HashMap::<(u16, u16, u16), usize>::new();
-    for window in generated_tokens.windows(3) {
-        let count = trigram_counts
-            .entry((window[0], window[1], window[2]))
-            .or_insert(0);
-        *count = (*count).saturating_add(1);
-    }
-    let repeated_trigram_count = trigram_counts.values().filter(|&&count| count > 1).count();
-    let max_trigram_count = trigram_counts.values().copied().max().unwrap_or(0);
-
-    let mut probability_sum = 0_u64;
-    let mut candidate_count_sum = 0_usize;
-    let mut total_rejected_candidates = DecodeRejectStats::default();
-    let mut steps_with_any_decode_adjust = 0_usize;
-    let mut steps_with_quality_adjust = 0_usize;
-    let mut steps_with_frequency_adjust = 0_usize;
-    let mut steps_with_local_frequency_adjust = 0_usize;
-    let mut steps_with_island_adjust = 0_usize;
-    let mut steps_with_topic_adjust = 0_usize;
-    let mut steps_with_memory_adjust = 0_usize;
-    let mut steps_with_corpus_prior_adjust = 0_usize;
-    let mut steps_with_memory_context = 0_usize;
-    let mut max_memory_context_order = 0_u8;
-    for step in steps {
-        probability_sum =
-            probability_sum.saturating_add(i32::from(step.predicted_probability_q15).max(0) as u64);
-        candidate_count_sum = candidate_count_sum.saturating_add(step.candidate_count);
-        add_decode_reject_stats(&mut total_rejected_candidates, step.rejected_candidates);
-
-        let score = step.selected_score;
-        let quality_adjusted = score.quality_logit_adjust_q8 != 0;
-        let frequency_adjusted = score.frequency_logit_adjust_q8 != 0;
-        let local_frequency_adjusted = score.local_frequency_logit_adjust_q8 != 0;
-        let island_adjusted = score.island_logit_adjust_q8 != 0;
-        let topic_adjusted = score.topic_logit_adjust_q8 != 0;
-        let memory_adjusted = score.memory_logit_adjust_q8 != 0;
-        let corpus_prior_adjusted = score.corpus_prior_logit_adjust_q8 != 0;
-        if quality_adjusted
-            || frequency_adjusted
-            || local_frequency_adjusted
-            || island_adjusted
-            || topic_adjusted
-            || memory_adjusted
-            || corpus_prior_adjusted
-        {
-            steps_with_any_decode_adjust = steps_with_any_decode_adjust.saturating_add(1);
-        }
-        if quality_adjusted {
-            steps_with_quality_adjust = steps_with_quality_adjust.saturating_add(1);
-        }
-        if frequency_adjusted {
-            steps_with_frequency_adjust = steps_with_frequency_adjust.saturating_add(1);
-        }
-        if local_frequency_adjusted {
-            steps_with_local_frequency_adjust = steps_with_local_frequency_adjust.saturating_add(1);
-        }
-        if island_adjusted {
-            steps_with_island_adjust = steps_with_island_adjust.saturating_add(1);
-        }
-        if topic_adjusted {
-            steps_with_topic_adjust = steps_with_topic_adjust.saturating_add(1);
-        }
-        if memory_adjusted {
-            steps_with_memory_adjust = steps_with_memory_adjust.saturating_add(1);
-        }
-        if corpus_prior_adjusted {
-            steps_with_corpus_prior_adjust = steps_with_corpus_prior_adjust.saturating_add(1);
-        }
-        if score.memory_context_order > 0 {
-            steps_with_memory_context = steps_with_memory_context.saturating_add(1);
-            max_memory_context_order = max_memory_context_order.max(score.memory_context_order);
-        }
-    }
-
-    LexemeGenerationMetrics {
-        generated_token_count: generated_tokens.len(),
-        distinct_generated_tokens: token_counts.len(),
-        distinct_token_per_mille: rounded_per_mille(token_counts.len(), generated_tokens.len()),
-        max_token_count,
-        max_token_run,
-        repeated_bigram_count,
-        repeated_bigram_per_mille: rounded_per_mille(
-            repeated_bigram_count,
-            generated_tokens.len().saturating_sub(1),
-        ),
-        max_bigram_count,
-        repeated_trigram_count,
-        repeated_trigram_per_mille: rounded_per_mille(
-            repeated_trigram_count,
-            generated_tokens.len().saturating_sub(2),
-        ),
-        max_trigram_count,
-        mean_selected_probability_q15: if steps.is_empty() {
-            0
-        } else {
-            (probability_sum / steps.len() as u64).min(u64::from(u16::MAX)) as u16
-        },
-        mean_candidate_count: if steps.is_empty() {
-            0
-        } else {
-            candidate_count_sum / steps.len()
-        },
-        steps_with_any_decode_adjust,
-        steps_with_quality_adjust,
-        steps_with_frequency_adjust,
-        steps_with_local_frequency_adjust,
-        steps_with_island_adjust,
-        steps_with_topic_adjust,
-        steps_with_memory_adjust,
-        steps_with_corpus_prior_adjust,
-        steps_with_memory_context,
-        max_memory_context_order,
-        total_rejected_candidates,
-    }
-}
-
-fn lexeme_pair_dot_i64(
-    embeddings: &[i16],
-    embedding_dim: usize,
-    left_token: u16,
-    right_token: u16,
-) -> i64 {
-    let left_start = usize::from(left_token) * embedding_dim;
-    let right_start = usize::from(right_token) * embedding_dim;
-    let mut acc = 0_i64;
-    for dim in 0..embedding_dim {
-        acc = acc.saturating_add(
-            i64::from(embeddings[left_start + dim]) * i64::from(embeddings[right_start + dim]),
-        );
-    }
-    acc
-}
-
-fn lexeme_total_positive_dot_i64(
-    tokens: &[u16],
-    starts: &[usize],
-    embeddings: &[i16],
-    config: LexemeEmbeddingTrainConfig,
-) -> i64 {
-    let mut total = 0_i64;
-    for &center in starts {
-        let center_token = tokens[center];
-        for (context, &context_token) in tokens
-            .iter()
-            .enumerate()
-            .take(center + config.context_radius + 1)
-            .skip(center - config.context_radius)
-        {
-            if context == center {
-                continue;
-            }
-            total = total.saturating_add(lexeme_pair_dot_i64(
-                embeddings,
-                config.embedding_dim,
-                center_token,
-                context_token,
-            ));
-        }
-    }
-    total
-}
-
-fn lexeme_total_negative_dot_i64(
-    tokens: &[u16],
-    starts: &[usize],
-    embeddings: &[i16],
-    config: LexemeEmbeddingTrainConfig,
-) -> i64 {
-    let mut total = 0_i64;
-    let mut update_index = 0_usize;
-    for &center in starts {
-        let center_token = tokens[center];
-        for (context, &context_token) in tokens
-            .iter()
-            .enumerate()
-            .take(center + config.context_radius + 1)
-            .skip(center - config.context_radius)
-        {
-            if context == center {
-                continue;
-            }
-            let negative_token =
-                lexeme_negative_token(center_token, context_token, update_index, config.vocab_size);
-            total = total.saturating_add(lexeme_pair_dot_i64(
-                embeddings,
-                config.embedding_dim,
-                center_token,
-                negative_token,
-            ));
-            update_index = update_index.saturating_add(1);
-        }
-    }
-    total
-}
-
-fn lexeme_negative_token(
-    center_token: u16,
-    context_token: u16,
-    update_index: usize,
-    vocab_size: usize,
-) -> u16 {
-    let mut hasher = StableHasher::new();
-    hasher.update_usize(usize::from(center_token));
-    hasher.update_usize(usize::from(context_token));
-    hasher.update_usize(update_index);
-    let mut candidate = (hasher.finish() % vocab_size as u64) as usize;
-    if candidate == usize::from(center_token) || candidate == usize::from(context_token) {
-        candidate = (candidate + 1) % vocab_size;
-    }
-    if candidate == usize::from(center_token) || candidate == usize::from(context_token) {
-        candidate = (candidate + 1) % vocab_size;
-    }
-    candidate as u16
 }
 
 fn checked_u32(value: usize, message: &'static str) -> Result<u32, TrainError> {
@@ -19576,202 +18769,76 @@ fn read_i8_vec(bytes: &[u8], offset: &mut usize, count: usize) -> Result<Vec<i8>
     Ok(chunk.iter().map(|&byte| byte as i8).collect())
 }
 
+fn read_i16_vec(bytes: &[u8], offset: &mut usize, count: usize) -> Result<Vec<i16>, TrainError> {
+    let byte_count = count
+        .checked_mul(2)
+        .ok_or(TrainError::InvalidModel("i16 tensor length overflow"))?;
+    let end = offset
+        .checked_add(byte_count)
+        .ok_or(TrainError::InvalidModel("offset overflow"))?;
+    let chunk = bytes
+        .get(*offset..end)
+        .ok_or(TrainError::InvalidModel("missing i16 tensor"))?;
+    let mut values = Vec::with_capacity(count);
+    for bytes in chunk.chunks_exact(2) {
+        values.push(i16::from_le_bytes(
+            bytes
+                .try_into()
+                .map_err(|_| TrainError::InvalidModel("bad i16 tensor"))?,
+        ));
+    }
+    *offset = end;
+    Ok(values)
+}
+
+fn read_i64_vec(bytes: &[u8], offset: &mut usize, count: usize) -> Result<Vec<i64>, TrainError> {
+    let byte_count = count
+        .checked_mul(8)
+        .ok_or(TrainError::InvalidModel("i64 tensor length overflow"))?;
+    let end = offset
+        .checked_add(byte_count)
+        .ok_or(TrainError::InvalidModel("offset overflow"))?;
+    let chunk = bytes
+        .get(*offset..end)
+        .ok_or(TrainError::InvalidModel("missing i64 tensor"))?;
+    let mut values = Vec::with_capacity(count);
+    for bytes in chunk.chunks_exact(8) {
+        values.push(i64::from_le_bytes(
+            bytes
+                .try_into()
+                .map_err(|_| TrainError::InvalidModel("bad i64 tensor"))?,
+        ));
+    }
+    *offset = end;
+    Ok(values)
+}
+
+fn read_u64_vec(bytes: &[u8], offset: &mut usize, count: usize) -> Result<Vec<u64>, TrainError> {
+    let byte_count = count
+        .checked_mul(8)
+        .ok_or(TrainError::InvalidModel("u64 tensor length overflow"))?;
+    let end = offset
+        .checked_add(byte_count)
+        .ok_or(TrainError::InvalidModel("offset overflow"))?;
+    let chunk = bytes
+        .get(*offset..end)
+        .ok_or(TrainError::InvalidModel("missing u64 tensor"))?;
+    let mut values = Vec::with_capacity(count);
+    for bytes in chunk.chunks_exact(8) {
+        values.push(u64::from_le_bytes(
+            bytes
+                .try_into()
+                .map_err(|_| TrainError::InvalidModel("bad u64 tensor"))?,
+        ));
+    }
+    *offset = end;
+    Ok(values)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ByteVocabOutputRow {
     logits_q8: [i32; BYTE_VOCAB],
     probabilities_q15: [i16; BYTE_VOCAB],
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LexemeSoftmaxRow {
-    logits_q8: Vec<i32>,
-    probabilities_q15: Vec<i16>,
-}
-
-fn lexeme_softmax_row_for(
-    weights: &[i8],
-    features: &[i16],
-    vocab_size: usize,
-    d_model: usize,
-) -> Result<LexemeSoftmaxRow, TrainError> {
-    if vocab_size == 0
-        || d_model == 0
-        || features.len() != d_model
-        || weights.len()
-            != vocab_size
-                .checked_mul(d_model)
-                .ok_or(TrainError::InvalidConfig)?
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut logits_q8 = vec![0_i32; vocab_size];
-    for (class_id, out) in logits_q8.iter_mut().enumerate() {
-        let row_start = class_id * d_model;
-        let mut acc = 0_i64;
-        for feature_index in 0..d_model {
-            acc = acc.saturating_add(
-                i64::from(features[feature_index]) * i64::from(weights[row_start + feature_index]),
-            );
-        }
-        *out = saturate_i16(round_shift_rhu_i64(acc, LEXEME_LOGIT_RIGHT_SHIFT)) as i32;
-    }
-
-    let mut probabilities_q15 = vec![0_i16; vocab_size];
-    base2_softmax_i32_q15(&logits_q8, &mut probabilities_q15)
-        .ok_or(TrainError::CoreRejected("lexeme_output_head_softmax"))?;
-
-    Ok(LexemeSoftmaxRow {
-        logits_q8,
-        probabilities_q15,
-    })
-}
-
-fn lexeme_softmax_row_for_layout(
-    weights: &[i8],
-    features: &[i16],
-    vocab_size: usize,
-    d_model: usize,
-    hidden_dim: usize,
-    head_layout: LexemeSoftmaxHeadLayout,
-    adapter_logit_shift: u8,
-) -> Result<LexemeSoftmaxRow, TrainError> {
-    let head_dim = lexeme_softmax_head_dim_for_layout(d_model, hidden_dim, head_layout)?;
-    if head_layout != LexemeSoftmaxHeadLayout::ResidualAdapter {
-        return lexeme_softmax_row_for(weights, features, vocab_size, head_dim);
-    }
-    if adapter_logit_shift == 0
-        || usize::from(LEXEME_LOGIT_RIGHT_SHIFT).saturating_add(usize::from(adapter_logit_shift))
-            > usize::from(MAX_RIGHT_SHIFT)
-        || features.len() != head_dim
-        || weights.len()
-            != vocab_size
-                .checked_mul(head_dim)
-                .ok_or(TrainError::InvalidConfig)?
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let adapter_shift = LEXEME_LOGIT_RIGHT_SHIFT
-        .checked_add(adapter_logit_shift)
-        .ok_or(TrainError::InvalidConfig)?;
-    let mut logits_q8 = vec![0_i32; vocab_size];
-    for (class_id, out) in logits_q8.iter_mut().enumerate() {
-        let row_start = class_id * head_dim;
-        let mut base_acc = 0_i64;
-        for feature_index in 0..d_model {
-            base_acc = base_acc.saturating_add(
-                i64::from(features[feature_index]) * i64::from(weights[row_start + feature_index]),
-            );
-        }
-        let mut adapter_acc = 0_i64;
-        for hidden_index in 0..hidden_dim {
-            let feature_index = d_model + hidden_index;
-            adapter_acc = adapter_acc.saturating_add(
-                i64::from(features[feature_index]) * i64::from(weights[row_start + feature_index]),
-            );
-        }
-        let base_logit = round_shift_rhu_i64(base_acc, LEXEME_LOGIT_RIGHT_SHIFT);
-        let adapter_logit = round_shift_rhu_i64(adapter_acc, adapter_shift);
-        *out = i32::from(saturate_i16(base_logit.saturating_add(adapter_logit)));
-    }
-
-    let mut probabilities_q15 = vec![0_i16; vocab_size];
-    base2_softmax_i32_q15(&logits_q8, &mut probabilities_q15)
-        .ok_or(TrainError::CoreRejected("lexeme_output_head_softmax"))?;
-
-    Ok(LexemeSoftmaxRow {
-        logits_q8,
-        probabilities_q15,
-    })
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_backward_head_features_q15(
-    grad_output_q15: &[i16],
-    weights: &[i8],
-    vocab_size: usize,
-    d_model: usize,
-    hidden_dim: usize,
-    head_layout: LexemeSoftmaxHeadLayout,
-    adapter_logit_shift: u8,
-    forward_scales: &[FixedScale],
-    grad_head_scales: &[FixedScale],
-    scaled_grad_output: &mut [i32],
-    grad_head_features_q15: &mut [i16],
-) -> Result<(), TrainError> {
-    let head_dim = lexeme_softmax_head_dim_for_layout(d_model, hidden_dim, head_layout)?;
-    if head_layout != LexemeSoftmaxHeadLayout::ResidualAdapter {
-        linear_backward_input_i16_i8_i16_per_channel_checked(
-            grad_output_q15,
-            LinearBackwardInputI16I8Params {
-                weights,
-                forward_scales,
-                grad_input_scales: grad_head_scales,
-                input_dim: head_dim,
-                output_dim: vocab_size,
-            },
-            LinearBackwardInputWorkspace { scaled_grad_output },
-            grad_head_features_q15,
-        )
-        .ok_or(TrainError::CoreRejected("lexeme_softmax_backward_head"))?;
-        return Ok(());
-    }
-    if adapter_logit_shift == 0
-        || grad_output_q15.len() != vocab_size
-        || scaled_grad_output.len() != vocab_size
-        || grad_head_features_q15.len() != head_dim
-        || weights.len()
-            != vocab_size
-                .checked_mul(head_dim)
-                .ok_or(TrainError::InvalidConfig)?
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    let adapter_shift = LEXEME_LOGIT_RIGHT_SHIFT
-        .checked_add(adapter_logit_shift)
-        .ok_or(TrainError::InvalidConfig)?;
-
-    for (feature_index, grad_feature) in
-        grad_head_features_q15.iter_mut().enumerate().take(head_dim)
-    {
-        let forward_shift = if feature_index < d_model {
-            LEXEME_LOGIT_RIGHT_SHIFT
-        } else {
-            adapter_shift
-        };
-        let mut acc = 0_i64;
-        for (class_id, &grad) in grad_output_q15.iter().enumerate() {
-            let scaled_grad = round_shift_rhu_i64(i64::from(grad), forward_shift);
-            let weight_index = class_id
-                .checked_mul(head_dim)
-                .and_then(|row| row.checked_add(feature_index))
-                .ok_or(TrainError::CoreRejected("lexeme_adapter_backward_index"))?;
-            acc = acc
-                .checked_add(
-                    scaled_grad
-                        .checked_mul(i64::from(weights[weight_index]))
-                        .ok_or(TrainError::CoreRejected("lexeme_adapter_backward_product"))?,
-                )
-                .ok_or(TrainError::CoreRejected("lexeme_adapter_backward_acc"))?;
-        }
-        *grad_feature = saturate_i16(round_shift_rhu_i64(acc, LEXEME_LOGIT_RIGHT_SHIFT));
-    }
-    scaled_grad_output.fill(0);
-
-    Ok(())
-}
-
-fn lexeme_softmax_gradient_q15(probabilities_q15: &[i16], target: u16) -> Vec<i32> {
-    let target = usize::from(target);
-    let mut gradient = vec![0_i32; probabilities_q15.len()];
-    for (class_id, out) in gradient.iter_mut().enumerate() {
-        *out = i32::from(probabilities_q15[class_id]);
-        if class_id == target {
-            *out -= i32::from(i16::MAX);
-        }
-    }
-    gradient
 }
 
 fn byte_vocab_softmax_gradient_q15(
@@ -19880,18 +18947,6 @@ fn byte_gradient_i32_to_i16(gradient: &[i32; BYTE_VOCAB]) -> [i16; BYTE_VOCAB] {
     out
 }
 
-fn lexeme_gradient_i32_to_i16(gradient: &[i32]) -> Vec<i16> {
-    let mut out = vec![0_i16; gradient.len()];
-    for (dst, &src) in out.iter_mut().zip(gradient.iter()) {
-        *dst = saturate_i16(i64::from(src));
-    }
-    out
-}
-
-fn lexeme_gradient_i16_to_i32(gradient: &[i16]) -> Vec<i32> {
-    gradient.iter().map(|&value| i32::from(value)).collect()
-}
-
 fn byte_argmax_i32(logits: &[i32; BYTE_VOCAB]) -> u8 {
     logits
         .iter()
@@ -19899,25 +18954,6 @@ fn byte_argmax_i32(logits: &[i32; BYTE_VOCAB]) -> u8 {
         .max_by_key(|&(index, &logit)| (logit, core::cmp::Reverse(index)))
         .map(|(index, _)| index as u8)
         .unwrap_or(0)
-}
-
-fn lexeme_argmax_i32(logits: &[i32]) -> u16 {
-    logits
-        .iter()
-        .enumerate()
-        .max_by_key(|&(index, &logit)| (logit, core::cmp::Reverse(index)))
-        .map(|(index, _)| index as u16)
-        .unwrap_or(0)
-}
-
-fn lexeme_argmax_concept_i32(logits: &[i32]) -> u16 {
-    logits
-        .iter()
-        .enumerate()
-        .skip(256)
-        .max_by_key(|&(index, &logit)| (logit, core::cmp::Reverse(index)))
-        .map(|(index, _)| index as u16)
-        .unwrap_or_else(|| lexeme_argmax_i32(logits))
 }
 
 #[cfg(test)]
@@ -20302,1038 +19338,6 @@ fn decode_sample_u64(seed: u64, step_index: usize, context: &[u8]) -> u64 {
     splitmix64(hasher.finish())
 }
 
-#[allow(clippy::too_many_arguments)]
-#[cfg(test)]
-fn select_lexeme_from_row(
-    logits_q8: &[i32],
-    probabilities_q15: &[i16],
-    decode: DecodeConfig,
-    step_index: usize,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-) -> LexemeDecodeSelection {
-    let mut scratch = LexemeDecodeScratch::default();
-    select_lexeme_from_row_with_scratch(
-        logits_q8,
-        probabilities_q15,
-        &decode,
-        step_index,
-        context,
-        decode_priors,
-        quality_weights_q15,
-        topic_priors,
-        memory_priors,
-        &mut scratch,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn select_lexeme_from_row_with_scratch(
-    logits_q8: &[i32],
-    probabilities_q15: &[i16],
-    decode: &DecodeConfig,
-    step_index: usize,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-    scratch: &mut LexemeDecodeScratch,
-) -> LexemeDecodeSelection {
-    match decode.strategy {
-        DecodeStrategy::Greedy => lexeme_decode_fallback_selection(
-            logits_q8,
-            probabilities_q15,
-            decode,
-            step_index,
-            context,
-            decode_priors,
-            quality_weights_q15,
-            topic_priors,
-            memory_priors,
-            scratch,
-        ),
-        DecodeStrategy::Sample => lexeme_sample_from_probabilities_q15(
-            logits_q8,
-            probabilities_q15,
-            decode,
-            step_index,
-            context,
-            decode_priors,
-            quality_weights_q15,
-            topic_priors,
-            memory_priors,
-            scratch,
-        )
-        .unwrap_or_else(|| {
-            lexeme_decode_fallback_selection(
-                logits_q8,
-                probabilities_q15,
-                decode,
-                step_index,
-                context,
-                decode_priors,
-                quality_weights_q15,
-                topic_priors,
-                memory_priors,
-                scratch,
-            )
-        }),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_sample_from_probabilities_q15(
-    logits_q8: &[i32],
-    probabilities_q15: &[i16],
-    decode: &DecodeConfig,
-    step_index: usize,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-    scratch: &mut LexemeDecodeScratch,
-) -> Option<LexemeDecodeSelection> {
-    let rejected_candidates = lexeme_decode_candidates(
-        logits_q8,
-        decode,
-        step_index,
-        context,
-        decode_priors,
-        quality_weights_q15,
-        topic_priors,
-        memory_priors,
-        scratch,
-    );
-    let candidates = scratch.candidates.as_slice();
-    let mut mass = 0_u64;
-    for &candidate in candidates.iter() {
-        mass = mass.saturating_add(lexeme_decode_candidate_weight_q15(
-            probabilities_q15,
-            candidate,
-            decode,
-            context,
-            decode_priors,
-            quality_weights_q15,
-            topic_priors,
-            memory_priors,
-        ));
-    }
-    if mass == 0 {
-        return None;
-    }
-
-    let mut threshold = lexeme_decode_sample_u64(decode.sample_seed, step_index, context) % mass;
-    for &candidate in candidates.iter() {
-        let weight = lexeme_decode_candidate_weight_q15(
-            probabilities_q15,
-            candidate,
-            decode,
-            context,
-            decode_priors,
-            quality_weights_q15,
-            topic_priors,
-            memory_priors,
-        );
-        if threshold < weight {
-            return Some(LexemeDecodeSelection {
-                token: candidate as u16,
-                candidate_count: candidates.len(),
-                rejected_candidates,
-                selected_score: lexeme_decode_score_trace(
-                    logits_q8,
-                    probabilities_q15,
-                    candidate,
-                    decode,
-                    context,
-                    decode_priors,
-                    quality_weights_q15,
-                    topic_priors,
-                    memory_priors,
-                ),
-            });
-        }
-        threshold -= weight;
-    }
-    None
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_decode_fallback_selection(
-    logits_q8: &[i32],
-    probabilities_q15: &[i16],
-    decode: &DecodeConfig,
-    step_index: usize,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-    scratch: &mut LexemeDecodeScratch,
-) -> LexemeDecodeSelection {
-    let rejected_candidates = lexeme_decode_candidates(
-        logits_q8,
-        decode,
-        step_index,
-        context,
-        decode_priors,
-        quality_weights_q15,
-        topic_priors,
-        memory_priors,
-        scratch,
-    );
-    let candidates = scratch.candidates.as_slice();
-    let token = if decode.repeat_window == 0
-        && decode.repeat_penalty_shift == 0
-        && !decode.corpus_prior
-    {
-        candidates
-            .first()
-            .copied()
-            .unwrap_or_else(|| usize::from(lexeme_argmax_concept_i32(logits_q8))) as u16
-    } else {
-        candidates
-            .iter()
-            .copied()
-            .max_by_key(|&candidate| {
-                (
-                    lexeme_decode_candidate_weight_q15(
-                        probabilities_q15,
-                        candidate,
-                        decode,
-                        context,
-                        decode_priors,
-                        quality_weights_q15,
-                        topic_priors,
-                        memory_priors,
-                    ),
-                    lexeme_decode_effective_logit_q8(
-                        logits_q8,
-                        candidate,
-                        decode,
-                        context,
-                        decode_priors,
-                        quality_weights_q15,
-                        topic_priors,
-                        memory_priors,
-                    ),
-                    core::cmp::Reverse(candidate),
-                )
-            })
-            .unwrap_or_else(|| usize::from(lexeme_argmax_concept_i32(logits_q8))) as u16
-    };
-    LexemeDecodeSelection {
-        token,
-        candidate_count: candidates.len(),
-        rejected_candidates,
-        selected_score: lexeme_decode_score_trace(
-            logits_q8,
-            probabilities_q15,
-            usize::from(token),
-            decode,
-            context,
-            decode_priors,
-            quality_weights_q15,
-            topic_priors,
-            memory_priors,
-        ),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_decode_candidates(
-    logits_q8: &[i32],
-    decode: &DecodeConfig,
-    step_index: usize,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-    scratch: &mut LexemeDecodeScratch,
-) -> DecodeRejectStats {
-    let vocab_size = logits_q8.len();
-    let top_k = if decode.top_k == 0 || decode.top_k > vocab_size {
-        vocab_size
-    } else {
-        decode.top_k
-    };
-    let strict_memory_active =
-        lexeme_strict_memory_active(decode, step_index, context, memory_priors);
-    let mut rejected_candidates = DecodeRejectStats::default();
-    scratch.scored_candidates.clear();
-    scratch.candidates.clear();
-    for candidate in 0..vocab_size {
-        if candidate < 256 {
-            rejected_candidates.byte_fallback += 1;
-            continue;
-        }
-        let token = candidate as u16;
-        if lexeme_decode_token_set_contains(token, &decode.banned_tokens, decode.banned_token_count)
-        {
-            rejected_candidates.banned_token += 1;
-            continue;
-        }
-        if decode.max_repeat_run > 0
-            && lexeme_would_exceed_repeat_run(token, context, decode.max_repeat_run)
-        {
-            rejected_candidates.repeat_run += 1;
-            continue;
-        }
-        if would_repeat_ngram(token, context, decode.no_repeat_ngram_order) {
-            rejected_candidates.repeat_ngram += 1;
-            continue;
-        }
-        if lexeme_would_exceed_function_word_run(token, context, decode) {
-            rejected_candidates.function_word_run += 1;
-            continue;
-        }
-        if lexeme_decode_exceeds_local_frequency_hard_cap(token, context, decode) {
-            rejected_candidates.local_frequency += 1;
-            continue;
-        }
-        if lexeme_decode_rejects_strict_topic(token, decode, topic_priors, quality_weights_q15) {
-            rejected_candidates.topic += 1;
-            continue;
-        }
-        if strict_memory_active
-            && lexeme_decode_memory_probability_q15(
-                memory_priors,
-                context,
-                candidate,
-                decode,
-                topic_priors,
-            ) == 0
-        {
-            rejected_candidates.memory += 1;
-            continue;
-        }
-        if decode.strict_adjacency
-            && let (Some(priors), Some(&previous)) = (decode_priors, context.last())
-            && !priors.allows_transition(previous, token)
-        {
-            rejected_candidates.adjacency += 1;
-            continue;
-        }
-        let score_q8 = lexeme_decode_effective_logit_q8(
-            logits_q8,
-            candidate,
-            decode,
-            context,
-            decode_priors,
-            quality_weights_q15,
-            topic_priors,
-            memory_priors,
-        );
-        scratch.scored_candidates.push(ScoredLexemeDecodeCandidate {
-            score_q8,
-            candidate,
-        });
-    }
-    if scratch.scored_candidates.len() > top_k {
-        rejected_candidates.top_k_truncated = scratch.scored_candidates.len() - top_k;
-        scratch
-            .scored_candidates
-            .select_nth_unstable_by(top_k, compare_scored_lexeme_decode_candidates);
-        scratch.scored_candidates.truncate(top_k);
-    }
-    scratch
-        .scored_candidates
-        .sort_unstable_by(compare_scored_lexeme_decode_candidates);
-    scratch.candidates.extend(
-        scratch
-            .scored_candidates
-            .iter()
-            .map(|scored| scored.candidate),
-    );
-    if scratch.candidates.is_empty() {
-        scratch
-            .candidates
-            .push(usize::from(lexeme_argmax_concept_i32(logits_q8)));
-    }
-    rejected_candidates
-}
-
-fn lexeme_strict_memory_active(
-    decode: &DecodeConfig,
-    step_index: usize,
-    context: &[u16],
-    memory_priors: Option<&LexemeMemoryPriors>,
-) -> bool {
-    if !decode.strict_memory
-        || lexeme_decode_memory_context_order(memory_priors, context, decode).is_none()
-    {
-        return false;
-    }
-    if decode.strict_memory_on_steps == 0 || decode.strict_memory_off_steps == 0 {
-        return true;
-    }
-    let cycle = decode
-        .strict_memory_on_steps
-        .saturating_add(decode.strict_memory_off_steps);
-    cycle == 0 || step_index % cycle < decode.strict_memory_on_steps
-}
-
-fn compare_scored_lexeme_decode_candidates(
-    left: &ScoredLexemeDecodeCandidate,
-    right: &ScoredLexemeDecodeCandidate,
-) -> core::cmp::Ordering {
-    right
-        .score_q8
-        .cmp(&left.score_q8)
-        .then_with(|| left.candidate.cmp(&right.candidate))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_decode_score_trace(
-    logits_q8: &[i32],
-    probabilities_q15: &[i16],
-    candidate: usize,
-    decode: &DecodeConfig,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-) -> LexemeDecodeScoreTrace {
-    let base_logit_q8 = logits_q8[candidate];
-    let quality_logit_adjust_q8 = quality_weights_q15
-        .map(|weights| lexeme_decode_quality_logit_adjust_q8(weights, candidate))
-        .unwrap_or(0);
-    let frequency_logit_adjust_q8 =
-        lexeme_decode_frequency_logit_adjust_q8(decode_priors, candidate, decode);
-    let local_frequency_logit_adjust_q8 =
-        lexeme_decode_local_frequency_logit_adjust_q8(candidate, context, decode);
-    let island_logit_adjust_q8 =
-        lexeme_decode_island_logit_adjust_q8(decode_priors, candidate, decode);
-    let topic_logit_adjust_q8 =
-        lexeme_decode_topic_logit_adjust_q8(topic_priors, candidate, decode);
-    let memory_logit_adjust_q8 = lexeme_decode_memory_logit_adjust_q8(
-        memory_priors,
-        context,
-        candidate,
-        decode,
-        topic_priors,
-    );
-    let corpus_prior_probability_q15 = if decode.corpus_prior {
-        decode_priors
-            .and_then(|priors| u16::try_from(candidate).ok().map(|token| (priors, token)))
-            .map(|(priors, token)| {
-                priors.context_transition_probability_q15(
-                    context,
-                    token,
-                    decode.corpus_prior_order.min(MAX_CORPUS_PRIOR_ORDER),
-                )
-            })
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    let corpus_prior_logit_adjust_q8 = if decode.corpus_prior {
-        i32::from(corpus_prior_probability_q15) >> decode.corpus_prior_logit_shift.min(30)
-    } else {
-        0
-    };
-    let memory_context_order =
-        lexeme_decode_memory_context_order(memory_priors, context, decode).unwrap_or(0);
-    let memory_probability_q15 = lexeme_decode_memory_probability_q15(
-        memory_priors,
-        context,
-        candidate,
-        decode,
-        topic_priors,
-    );
-    let effective_logit_q8 = base_logit_q8
-        .saturating_add(quality_logit_adjust_q8)
-        .saturating_add(frequency_logit_adjust_q8)
-        .saturating_add(local_frequency_logit_adjust_q8)
-        .saturating_add(island_logit_adjust_q8)
-        .saturating_add(topic_logit_adjust_q8)
-        .saturating_add(memory_logit_adjust_q8)
-        .saturating_add(corpus_prior_logit_adjust_q8);
-
-    LexemeDecodeScoreTrace {
-        base_logit_q8,
-        quality_logit_adjust_q8,
-        frequency_logit_adjust_q8,
-        local_frequency_logit_adjust_q8,
-        island_logit_adjust_q8,
-        topic_logit_adjust_q8,
-        memory_logit_adjust_q8,
-        corpus_prior_logit_adjust_q8,
-        effective_logit_q8,
-        model_probability_q15: probabilities_q15[candidate],
-        memory_context_order,
-        quality_weight_q15: quality_weights_q15
-            .and_then(|weights| weights.get(candidate).copied())
-            .unwrap_or(i16::MAX),
-        frequency_weight_q15: clamp_u64_to_i16_q15(lexeme_decode_frequency_weight_q15(
-            decode_priors,
-            candidate,
-            decode,
-        )),
-        local_frequency_weight_q15: clamp_u64_to_i16_q15(lexeme_decode_local_frequency_weight_q15(
-            candidate, context, decode,
-        )),
-        island_weight_q15: clamp_u64_to_i16_q15(lexeme_decode_island_weight_q15(
-            decode_priors,
-            candidate,
-            decode,
-        )),
-        topic_weight_q15: clamp_u64_to_i16_q15(lexeme_decode_topic_weight_q15(
-            topic_priors,
-            candidate,
-            decode,
-        )),
-        memory_probability_q15,
-        corpus_prior_probability_q15,
-    }
-}
-
-fn clamp_u64_to_i16_q15(value: u64) -> i16 {
-    value.min(i16::MAX as u64) as i16
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_decode_candidate_weight_q15(
-    probabilities_q15: &[i16],
-    candidate: usize,
-    decode: &DecodeConfig,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-) -> u64 {
-    let mut weight = i32::from(probabilities_q15[candidate]).max(0) as u64;
-    if let Some(weights) = quality_weights_q15 {
-        weight = (weight.saturating_mul(lexeme_decode_quality_weight_q15(weights, candidate)))
-            >> Q15_SHIFT;
-    }
-    weight = (weight.saturating_mul(lexeme_decode_frequency_weight_q15(
-        decode_priors,
-        candidate,
-        decode,
-    ))) >> Q15_SHIFT;
-    weight = (weight.saturating_mul(lexeme_decode_local_frequency_weight_q15(
-        candidate, context, decode,
-    ))) >> Q15_SHIFT;
-    weight = (weight.saturating_mul(lexeme_decode_island_weight_q15(
-        decode_priors,
-        candidate,
-        decode,
-    ))) >> Q15_SHIFT;
-    weight = (weight.saturating_mul(lexeme_decode_topic_weight_q15(
-        topic_priors,
-        candidate,
-        decode,
-    ))) >> Q15_SHIFT;
-    let memory_q15 = lexeme_decode_memory_probability_q15(
-        memory_priors,
-        context,
-        candidate,
-        decode,
-        topic_priors,
-    );
-    weight = weight.saturating_add(u64::from(memory_q15));
-    if decode.corpus_prior
-        && let Some(priors) = decode_priors
-    {
-        let prior_q15 = priors.context_transition_probability_q15(
-            context,
-            candidate as u16,
-            decode.corpus_prior_order.min(MAX_CORPUS_PRIOR_ORDER),
-        );
-        let bonus = (weight.saturating_mul(u64::from(prior_q15))) >> Q15_SHIFT;
-        weight = weight.saturating_add(bonus);
-    }
-    if decode.repeat_window > 0 && decode.repeat_penalty_shift > 0 {
-        let repeat_count = recent_lexeme_count(candidate as u16, context, decode.repeat_window);
-        let penalty_shift = repeat_count
-            .saturating_mul(usize::from(decode.repeat_penalty_shift))
-            .min(63);
-        weight >>= penalty_shift;
-    }
-    weight
-}
-
-fn validate_lexeme_decode_priors(
-    vocab_size: usize,
-    decode: DecodeConfig,
-    decode_priors: Option<&LexemeDecodePriors>,
-) -> Result<(), TrainError> {
-    if decode.corpus_prior
-        && (decode.corpus_prior_order == 0 || decode.corpus_prior_order > MAX_CORPUS_PRIOR_ORDER)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    if decode.frequency_penalty_cap > 0
-        && !valid_q15_weight_floor(decode.frequency_penalty_min_weight_q15)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    if decode.local_frequency_penalty_cap > 0
-        && !valid_q15_weight_floor(decode.local_frequency_penalty_min_weight_q15)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    if decode.banned_token_count > LEXEME_DECODE_TOKEN_SET_CAP
-        || decode.function_word_token_count > LEXEME_DECODE_TOKEN_SET_CAP
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    if decode.island_penalty_count_cap > 0
-        && !valid_q15_weight_floor(decode.island_penalty_min_weight_q15)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    if (decode.corpus_prior
-        || decode.strict_adjacency
-        || decode.frequency_penalty_cap > 0
-        || decode.island_penalty_count_cap > 0)
-        && decode_priors.is_none()
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    if let Some(priors) = decode_priors
-        && priors.vocab_size != vocab_size
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    Ok(())
-}
-
-fn validate_lexeme_decode_quality_weights(
-    vocab_size: usize,
-    profile: LexemeQualityWeightProfile,
-    weights: Option<&[i16]>,
-) -> Result<(), TrainError> {
-    match profile {
-        LexemeQualityWeightProfile::Off => Ok(()),
-        LexemeQualityWeightProfile::CruftAware | LexemeQualityWeightProfile::ProseAware => {
-            let weights = weights.ok_or(TrainError::InvalidConfig)?;
-            if weights.len() != vocab_size
-                || weights
-                    .iter()
-                    .any(|&weight| !valid_q15_weight_floor(weight))
-            {
-                return Err(TrainError::InvalidConfig);
-            }
-            Ok(())
-        }
-    }
-}
-
-fn validate_lexeme_topic_priors(
-    vocab_size: usize,
-    decode: DecodeConfig,
-    topic_priors: Option<&LexemeTopicPriors>,
-) -> Result<(), TrainError> {
-    if decode.prompt_topic_radius > 0 && !valid_q15_weight_floor(decode.prompt_topic_min_weight_q15)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    if decode.prompt_topic_strict_min_weight_q15 < 0 {
-        return Err(TrainError::InvalidConfig);
-    }
-    if decode.prompt_topic_radius == 0 && !decode.strict_topic {
-        return Ok(());
-    }
-    let priors = topic_priors.ok_or(TrainError::InvalidConfig)?;
-    if priors.vocab_size != vocab_size || priors.radius != decode.prompt_topic_radius {
-        return Err(TrainError::InvalidConfig);
-    }
-    Ok(())
-}
-
-fn validate_lexeme_memory_priors(
-    vocab_size: usize,
-    decode: DecodeConfig,
-    memory_priors: Option<&LexemeMemoryPriors>,
-) -> Result<(), TrainError> {
-    if decode.memory_context_order == 0 {
-        if decode.strict_memory {
-            return Err(TrainError::InvalidConfig);
-        }
-        return Ok(());
-    }
-    if decode.memory_context_order > MAX_LEXEME_MEMORY_CONTEXT_ORDER
-        || decode.memory_min_context_order == 0
-        || decode.memory_min_context_order > decode.memory_context_order
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    if decode.strict_memory_on_steps > 4096 || decode.strict_memory_off_steps > 4096 {
-        return Err(TrainError::InvalidConfig);
-    }
-    let priors = memory_priors.ok_or(TrainError::InvalidConfig)?;
-    if priors.vocab_size != vocab_size || priors.max_context_order != decode.memory_context_order {
-        return Err(TrainError::InvalidConfig);
-    }
-    Ok(())
-}
-
-fn lexeme_decode_quality_weight_q15(weights: &[i16], candidate: usize) -> u64 {
-    weights.get(candidate).copied().unwrap_or(i16::MAX).max(1) as u64
-}
-
-fn lexeme_decode_quality_logit_adjust_q8(weights: &[i16], candidate: usize) -> i32 {
-    let quality = weights.get(candidate).copied().unwrap_or(i16::MAX);
-    (i32::from(quality) - i32::from(i16::MAX)) >> 4
-}
-
-fn lexeme_decode_frequency_weight_q15(
-    priors: Option<&LexemeDecodePriors>,
-    candidate: usize,
-    decode: &DecodeConfig,
-) -> u64 {
-    if decode.frequency_penalty_cap == 0 {
-        return i16::MAX as u64;
-    }
-    let Some(priors) = priors else {
-        return i16::MAX as u64;
-    };
-    let Ok(token) = u16::try_from(candidate) else {
-        return 0;
-    };
-    lexeme_frequency_weight_q15(
-        priors.unigram_count(token),
-        decode.frequency_penalty_cap,
-        decode.frequency_penalty_min_weight_q15,
-    )
-    .max(1) as u64
-}
-
-fn lexeme_decode_frequency_logit_adjust_q8(
-    priors: Option<&LexemeDecodePriors>,
-    candidate: usize,
-    decode: &DecodeConfig,
-) -> i32 {
-    if decode.frequency_penalty_cap == 0 {
-        return 0;
-    }
-    let frequency_weight = lexeme_decode_frequency_weight_q15(priors, candidate, decode);
-    let shift = decode.frequency_penalty_logit_shift.min(30);
-    ((frequency_weight as i32) - i32::from(i16::MAX)) >> shift
-}
-
-fn lexeme_decode_local_frequency_weight_q15(
-    candidate: usize,
-    context: &[u16],
-    decode: &DecodeConfig,
-) -> u64 {
-    if decode.local_frequency_penalty_cap == 0 {
-        return i16::MAX as u64;
-    }
-    let Ok(token) = u16::try_from(candidate) else {
-        return 0;
-    };
-    let count = context
-        .iter()
-        .filter(|&&context_token| context_token == token)
-        .count();
-    let count = u32::try_from(count).unwrap_or(u32::MAX);
-    let cap = u32::try_from(decode.local_frequency_penalty_cap).unwrap_or(u32::MAX);
-    lexeme_frequency_weight_q15(count, cap, decode.local_frequency_penalty_min_weight_q15).max(1)
-        as u64
-}
-
-fn lexeme_decode_exceeds_local_frequency_hard_cap(
-    candidate: u16,
-    context: &[u16],
-    decode: &DecodeConfig,
-) -> bool {
-    decode.local_frequency_hard_cap > 0
-        && context
-            .iter()
-            .filter(|&&context_token| context_token == candidate)
-            .take(decode.local_frequency_hard_cap)
-            .count()
-            >= decode.local_frequency_hard_cap
-}
-
-fn lexeme_decode_token_set_contains(token: u16, tokens: &[u16], count: usize) -> bool {
-    tokens[..count.min(tokens.len())].contains(&token)
-}
-
-fn lexeme_decode_is_function_word(token: u16, decode: &DecodeConfig) -> bool {
-    lexeme_decode_token_set_contains(
-        token,
-        &decode.function_word_tokens,
-        decode.function_word_token_count,
-    )
-}
-
-fn lexeme_would_exceed_function_word_run(
-    candidate: u16,
-    context: &[u16],
-    decode: &DecodeConfig,
-) -> bool {
-    if decode.function_word_run_cap == 0 || !lexeme_decode_is_function_word(candidate, decode) {
-        return false;
-    }
-    let run_len = 1_usize.saturating_add(
-        context
-            .iter()
-            .rev()
-            .take_while(|&&token| lexeme_decode_is_function_word(token, decode))
-            .count(),
-    );
-    run_len > decode.function_word_run_cap
-}
-
-fn lexeme_decode_local_frequency_logit_adjust_q8(
-    candidate: usize,
-    context: &[u16],
-    decode: &DecodeConfig,
-) -> i32 {
-    if decode.local_frequency_penalty_cap == 0 {
-        return 0;
-    }
-    let frequency_weight = lexeme_decode_local_frequency_weight_q15(candidate, context, decode);
-    let shift = decode.local_frequency_penalty_logit_shift.min(30);
-    ((frequency_weight as i32) - i32::from(i16::MAX)) >> shift
-}
-
-fn lexeme_decode_island_weight_q15(
-    priors: Option<&LexemeDecodePriors>,
-    candidate: usize,
-    decode: &DecodeConfig,
-) -> u64 {
-    if decode.island_penalty_count_cap == 0 || decode.island_penalty_min_degree == 0 {
-        return i16::MAX as u64;
-    }
-    let Some(priors) = priors else {
-        return i16::MAX as u64;
-    };
-    let Ok(token) = u16::try_from(candidate) else {
-        return 0;
-    };
-    let count = priors.unigram_count(token);
-    if count == 0 || count > decode.island_penalty_count_cap {
-        return i16::MAX as u64;
-    }
-    let degree = priors.transition_degree(token);
-    if degree >= decode.island_penalty_min_degree {
-        return i16::MAX as u64;
-    }
-    let floor = u64::from(decode.island_penalty_min_weight_q15 as u16);
-    let span = u64::from(i16::MAX as u16).saturating_sub(floor);
-    let weight = floor.saturating_add(
-        (degree as u64).saturating_mul(span) / (decode.island_penalty_min_degree as u64),
-    );
-    weight.max(1).min(i16::MAX as u64)
-}
-
-fn lexeme_decode_island_logit_adjust_q8(
-    priors: Option<&LexemeDecodePriors>,
-    candidate: usize,
-    decode: &DecodeConfig,
-) -> i32 {
-    if decode.island_penalty_count_cap == 0 {
-        return 0;
-    }
-    let island_weight = lexeme_decode_island_weight_q15(priors, candidate, decode);
-    let shift = decode.island_penalty_logit_shift.min(30);
-    ((island_weight as i32) - i32::from(i16::MAX)) >> shift
-}
-
-fn lexeme_decode_rejects_strict_topic(
-    token: u16,
-    decode: &DecodeConfig,
-    topic_priors: Option<&LexemeTopicPriors>,
-    quality_weights_q15: Option<&[i16]>,
-) -> bool {
-    if !decode.strict_topic || decode.prompt_topic_radius == 0 {
-        return false;
-    }
-    let Some(priors) = topic_priors else {
-        return false;
-    };
-    let strict_min = if decode.prompt_topic_strict_min_weight_q15 > 0 {
-        decode.prompt_topic_strict_min_weight_q15
-    } else {
-        decode.prompt_topic_min_weight_q15
-    };
-    if priors.anchor_count == 0 || priors.weight_q15(token) > strict_min {
-        return false;
-    }
-    let quality_weight = quality_weights_q15
-        .and_then(|weights| weights.get(usize::from(token)).copied())
-        .unwrap_or(i16::MAX);
-    quality_weight > 24576
-}
-
-fn lexeme_decode_topic_weight_q15(
-    priors: Option<&LexemeTopicPriors>,
-    candidate: usize,
-    decode: &DecodeConfig,
-) -> u64 {
-    if decode.prompt_topic_radius == 0 {
-        return i16::MAX as u64;
-    }
-    let Some(priors) = priors else {
-        return i16::MAX as u64;
-    };
-    let Ok(token) = u16::try_from(candidate) else {
-        return 0;
-    };
-    priors.weight_q15(token).max(1) as u64
-}
-
-fn lexeme_decode_topic_logit_adjust_q8(
-    priors: Option<&LexemeTopicPriors>,
-    candidate: usize,
-    decode: &DecodeConfig,
-) -> i32 {
-    if decode.prompt_topic_radius == 0 {
-        return 0;
-    }
-    let topic_weight = lexeme_decode_topic_weight_q15(priors, candidate, decode);
-    let shift = decode.prompt_topic_logit_shift.min(30);
-    ((topic_weight as i32) - i32::from(decode.prompt_topic_min_weight_q15)) >> shift
-}
-
-fn lexeme_decode_memory_logit_adjust_q8(
-    priors: Option<&LexemeMemoryPriors>,
-    context: &[u16],
-    candidate: usize,
-    decode: &DecodeConfig,
-    topic_priors: Option<&LexemeTopicPriors>,
-) -> i32 {
-    let memory_q15 = i32::from(lexeme_decode_memory_probability_q15(
-        priors,
-        context,
-        candidate,
-        decode,
-        topic_priors,
-    ));
-    let shift = decode.memory_logit_shift.min(30);
-    memory_q15 >> shift
-}
-
-fn lexeme_decode_memory_probability_q15(
-    priors: Option<&LexemeMemoryPriors>,
-    context: &[u16],
-    candidate: usize,
-    decode: &DecodeConfig,
-    topic_priors: Option<&LexemeTopicPriors>,
-) -> u16 {
-    let Some((priors, token)) =
-        priors.and_then(|priors| u16::try_from(candidate).ok().map(|token| (priors, token)))
-    else {
-        return 0;
-    };
-    if lexeme_decode_memory_context_order(Some(priors), context, decode)
-        .is_none_or(|order| order < decode.memory_min_context_order)
-    {
-        return 0;
-    }
-    let memory_q15 = priors.context_transition_probability_q15(context, token);
-    if decode.prompt_topic_radius == 0 {
-        return memory_q15;
-    }
-    let topic_weight_q15 = lexeme_decode_topic_weight_q15(topic_priors, candidate, decode);
-    ((u64::from(memory_q15) * topic_weight_q15) >> Q15_SHIFT).min(u16::MAX as u64) as u16
-}
-
-fn lexeme_decode_memory_context_order(
-    priors: Option<&LexemeMemoryPriors>,
-    context: &[u16],
-    decode: &DecodeConfig,
-) -> Option<u8> {
-    if decode.memory_context_order == 0 {
-        return None;
-    }
-    let priors = priors?;
-    let order = priors.matched_context_order(context);
-    (order >= decode.memory_min_context_order).then_some(order)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn lexeme_decode_effective_logit_q8(
-    logits_q8: &[i32],
-    candidate: usize,
-    decode: &DecodeConfig,
-    context: &[u16],
-    decode_priors: Option<&LexemeDecodePriors>,
-    quality_weights_q15: Option<&[i16]>,
-    topic_priors: Option<&LexemeTopicPriors>,
-    memory_priors: Option<&LexemeMemoryPriors>,
-) -> i32 {
-    let mut logit = logits_q8[candidate];
-    if let Some(weights) = quality_weights_q15 {
-        logit = logit.saturating_add(lexeme_decode_quality_logit_adjust_q8(weights, candidate));
-    }
-    logit = logit.saturating_add(lexeme_decode_frequency_logit_adjust_q8(
-        decode_priors,
-        candidate,
-        decode,
-    ));
-    logit = logit.saturating_add(lexeme_decode_local_frequency_logit_adjust_q8(
-        candidate, context, decode,
-    ));
-    logit = logit.saturating_add(lexeme_decode_island_logit_adjust_q8(
-        decode_priors,
-        candidate,
-        decode,
-    ));
-    logit = logit.saturating_add(lexeme_decode_topic_logit_adjust_q8(
-        topic_priors,
-        candidate,
-        decode,
-    ));
-    logit = logit.saturating_add(lexeme_decode_memory_logit_adjust_q8(
-        memory_priors,
-        context,
-        candidate,
-        decode,
-        topic_priors,
-    ));
-    if decode.corpus_prior
-        && let Some(priors) = decode_priors
-    {
-        let prior_q15 = i32::from(priors.context_transition_probability_q15(
-            context,
-            candidate as u16,
-            decode.corpus_prior_order.min(MAX_CORPUS_PRIOR_ORDER),
-        ));
-        let shift = decode.corpus_prior_logit_shift.min(30);
-        logit = logit.saturating_add(prior_q15 >> shift);
-    }
-    logit
-}
-
-fn recent_lexeme_count(candidate: u16, context: &[u16], repeat_window: usize) -> usize {
-    context
-        .iter()
-        .rev()
-        .take(repeat_window)
-        .filter(|&&token| token == candidate)
-        .count()
-}
-
-fn lexeme_would_exceed_repeat_run(candidate: u16, context: &[u16], max_repeat_run: usize) -> bool {
-    let run_len = context
-        .iter()
-        .rev()
-        .take_while(|&&token| token == candidate)
-        .count();
-    run_len >= max_repeat_run
-}
-
-fn lexeme_decode_sample_u64(seed: u64, step_index: usize, context: &[u16]) -> u64 {
-    let mut hasher = StableHasher::new();
-    hasher.update_bytes(&seed.to_le_bytes());
-    hasher.update_usize(step_index);
-    hasher.update_u16_slice(context);
-    splitmix64(hasher.finish())
-}
-
 fn splitmix64(mut value: u64) -> u64 {
     value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
     value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -21346,1049 +19350,6 @@ struct SoftmaxUpdateStats {
     gradient_saturation_count: usize,
     zero_delta_count: usize,
     weight_delta_l1: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LexemeSoftmaxOutputHeadGradientI64 {
-    vocab_size: usize,
-    d_model: usize,
-    sample_count: usize,
-    accumulators: Vec<i64>,
-}
-
-impl LexemeSoftmaxOutputHeadGradientI64 {
-    fn new(vocab_size: usize, d_model: usize) -> Option<Self> {
-        if vocab_size == 0 || d_model == 0 {
-            return None;
-        }
-        let len = vocab_size.checked_mul(d_model)?;
-        Some(Self {
-            vocab_size,
-            d_model,
-            sample_count: 0,
-            accumulators: vec![0_i64; len],
-        })
-    }
-
-    fn clear(&mut self) {
-        self.sample_count = 0;
-        self.accumulators.fill(0);
-    }
-
-    fn merge(&mut self, source: &Self) -> Result<(), TrainError> {
-        if self.vocab_size != source.vocab_size
-            || self.d_model != source.d_model
-            || self.accumulators.len() != source.accumulators.len()
-        {
-            return Err(TrainError::InvalidConfig);
-        }
-        self.sample_count =
-            self.sample_count
-                .checked_add(source.sample_count)
-                .ok_or(TrainError::CoreRejected(
-                    "lexeme_head_gradient_merge_sample_count",
-                ))?;
-        for (target, source) in self.accumulators.iter_mut().zip(source.accumulators.iter()) {
-            *target = target.checked_add(*source).ok_or(TrainError::CoreRejected(
-                "lexeme_head_gradient_merge_accumulator",
-            ))?;
-        }
-        Ok(())
-    }
-}
-
-fn accumulate_lexeme_softmax_output_head_gradient_i64(
-    features: &[i16],
-    gradient_q15: &[i32],
-    gradient: &mut LexemeSoftmaxOutputHeadGradientI64,
-) -> Result<(), TrainError> {
-    if features.len() != gradient.d_model || gradient_q15.len() != gradient.vocab_size {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    for (class_id, &class_gradient) in gradient_q15.iter().enumerate() {
-        if class_gradient == 0 {
-            continue;
-        }
-        let row_start = class_id
-            .checked_mul(gradient.d_model)
-            .ok_or(TrainError::CoreRejected("lexeme_head_gradient_row"))?;
-        for (feature_index, &activation) in features.iter().enumerate() {
-            if activation == 0 {
-                continue;
-            }
-            let product = i64::from(class_gradient)
-                .checked_mul(i64::from(activation))
-                .ok_or(TrainError::CoreRejected("lexeme_head_gradient_product"))?;
-            let index = row_start
-                .checked_add(feature_index)
-                .ok_or(TrainError::CoreRejected("lexeme_head_gradient_index"))?;
-            gradient.accumulators[index] = gradient.accumulators[index]
-                .checked_add(product)
-                .ok_or(TrainError::CoreRejected("lexeme_head_gradient_accumulate"))?;
-        }
-    }
-
-    gradient.sample_count =
-        gradient
-            .sample_count
-            .checked_add(1)
-            .ok_or(TrainError::CoreRejected(
-                "lexeme_head_gradient_sample_count",
-            ))?;
-    Ok(())
-}
-
-fn apply_lexeme_softmax_output_head_gradient_i64(
-    gradient: &mut LexemeSoftmaxOutputHeadGradientI64,
-    weights: &mut [i8],
-    learning_rate: i32,
-    learning_rate_shift: u8,
-    max_weight_delta: i32,
-    frozen_feature_prefix: usize,
-) -> Result<SoftmaxUpdateStats, TrainError> {
-    if weights.len() != gradient.accumulators.len()
-        || learning_rate <= 0
-        || learning_rate_shift > MAX_RIGHT_SHIFT
-        || max_weight_delta <= 0
-        || frozen_feature_prefix > gradient.d_model
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut stats = empty_softmax_update_stats();
-    if gradient.sample_count == 0 {
-        return Ok(stats);
-    }
-    let max_delta = i64::from(max_weight_delta);
-
-    for (index, (raw_sum, weight)) in gradient
-        .accumulators
-        .iter()
-        .zip(weights.iter_mut())
-        .enumerate()
-    {
-        if index % gradient.d_model < frozen_feature_prefix {
-            continue;
-        }
-        if *raw_sum == 0 {
-            continue;
-        }
-        let averaged = round_div_i64(*raw_sum, gradient.sample_count)?;
-        let product =
-            averaged
-                .checked_mul(i64::from(learning_rate))
-                .ok_or(TrainError::CoreRejected(
-                    "lexeme_head_gradient_apply_product",
-                ))?;
-        let scaled_gradient = round_shift_rhu_i64(product, learning_rate_shift);
-        let delta = (-scaled_gradient).clamp(-max_delta, max_delta);
-        if delta == 0 {
-            stats.zero_delta_count = stats.zero_delta_count.saturating_add(1);
-        }
-
-        let previous = *weight;
-        let unclamped = i64::from(previous)
-            .checked_add(delta)
-            .ok_or(TrainError::CoreRejected("lexeme_head_gradient_apply_delta"))?;
-        let clamped = saturate_i8(unclamped);
-        if i64::from(clamped) != unclamped {
-            stats.gradient_saturation_count = stats.gradient_saturation_count.saturating_add(1);
-        }
-        let applied_delta = i64::from(clamped) - i64::from(previous);
-        stats.weight_delta_l1 = stats
-            .weight_delta_l1
-            .saturating_add(applied_delta.unsigned_abs());
-        *weight = clamped;
-    }
-
-    gradient.clear();
-    Ok(stats)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn apply_lexeme_softmax_output_head_update(
-    weights: &mut [i8],
-    features: &[i16],
-    gradient_q15: &[i32],
-    vocab_size: usize,
-    d_model: usize,
-    learning_rate: i32,
-    learning_rate_shift: u8,
-    max_weight_delta: i32,
-    frozen_feature_prefix: usize,
-) -> Result<SoftmaxUpdateStats, TrainError> {
-    if vocab_size == 0
-        || d_model == 0
-        || features.len() != d_model
-        || gradient_q15.len() != vocab_size
-        || weights.len()
-            != vocab_size
-                .checked_mul(d_model)
-                .ok_or(TrainError::InvalidConfig)?
-        || learning_rate <= 0
-        || learning_rate_shift > MAX_RIGHT_SHIFT
-        || max_weight_delta <= 0
-        || frozen_feature_prefix > d_model
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut gradient_saturation_count = 0_usize;
-    let mut zero_delta_count = 0_usize;
-    let mut weight_delta_l1 = 0_u64;
-    let max_delta = i64::from(max_weight_delta);
-
-    for (class_id, &gradient) in gradient_q15.iter().enumerate() {
-        let row_start = class_id * d_model;
-        for (feature_index, &activation) in features.iter().enumerate() {
-            if feature_index < frozen_feature_prefix {
-                continue;
-            }
-            if activation == 0 || gradient == 0 {
-                continue;
-            }
-
-            let product = i64::from(gradient)
-                .saturating_mul(i64::from(activation))
-                .saturating_mul(i64::from(learning_rate));
-            let scaled_gradient = round_shift_rhu_i64(product, learning_rate_shift);
-            let delta = (-scaled_gradient).clamp(-max_delta, max_delta);
-            if delta == 0 {
-                zero_delta_count = zero_delta_count.saturating_add(1);
-            }
-
-            let weight = &mut weights[row_start + feature_index];
-            let previous = *weight;
-            let unclamped = i64::from(previous).saturating_add(delta);
-            let clamped = saturate_i8(unclamped);
-            if i64::from(clamped) != unclamped {
-                gradient_saturation_count = gradient_saturation_count.saturating_add(1);
-            }
-            let applied_delta = i64::from(clamped) - i64::from(previous);
-            weight_delta_l1 = weight_delta_l1.saturating_add(applied_delta.unsigned_abs());
-            *weight = clamped;
-        }
-    }
-
-    Ok(SoftmaxUpdateStats {
-        gradient_saturation_count,
-        zero_delta_count,
-        weight_delta_l1,
-    })
-}
-
-#[derive(Debug, Clone, Copy)]
-struct LexemeSoftmaxEmbeddingUpdateParams {
-    vocab_size: usize,
-    embedding_dim: usize,
-    context_features: LexemeContextFeatures,
-    learning_rate: i32,
-    learning_rate_shift: u8,
-    max_delta: i32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LexemeSoftmaxEmbeddingGradientI64 {
-    vocab_size: usize,
-    embedding_dim: usize,
-    sample_count: usize,
-    accumulators: Vec<i64>,
-}
-
-impl LexemeSoftmaxEmbeddingGradientI64 {
-    fn new(vocab_size: usize, embedding_dim: usize) -> Option<Self> {
-        if vocab_size == 0 || embedding_dim == 0 {
-            return None;
-        }
-        let len = vocab_size.checked_mul(embedding_dim)?;
-        Some(Self {
-            vocab_size,
-            embedding_dim,
-            sample_count: 0,
-            accumulators: vec![0_i64; len],
-        })
-    }
-
-    fn clear(&mut self) {
-        self.sample_count = 0;
-        self.accumulators.fill(0);
-    }
-
-    fn merge(&mut self, source: &Self) -> Result<(), TrainError> {
-        if self.vocab_size != source.vocab_size
-            || self.embedding_dim != source.embedding_dim
-            || self.accumulators.len() != source.accumulators.len()
-        {
-            return Err(TrainError::InvalidConfig);
-        }
-        self.sample_count =
-            self.sample_count
-                .checked_add(source.sample_count)
-                .ok_or(TrainError::CoreRejected(
-                    "lexeme_embedding_gradient_merge_sample_count",
-                ))?;
-        for (target, source) in self.accumulators.iter_mut().zip(source.accumulators.iter()) {
-            *target = target.checked_add(*source).ok_or(TrainError::CoreRejected(
-                "lexeme_embedding_gradient_merge_accumulator",
-            ))?;
-        }
-        Ok(())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Parallel map-reduce for lexeme softmax batch accumulation.
-//
-// When batch_windows > 1 and map_reduce_workers > 1, each batch's windows are
-// chunked across threads.  Each thread runs the forward → backward → accumulate
-// loop on immutable model references and its own scratch buffers + gradient
-// accumulators.  Results are merged (sum of i64 accumulators + sample_count),
-// which is bit-identical to serial accumulation because the i64 gradient sums
-// are additive and commutative.
-// ---------------------------------------------------------------------------
-
-struct LexemeSoftmaxBatchResult {
-    output_head_gradient: Option<LexemeSoftmaxOutputHeadGradientI64>,
-    hidden_weight_gradient: Option<LexemeSoftmaxOutputHeadGradientI64>,
-    embedding_gradient: Option<LexemeSoftmaxEmbeddingGradientI64>,
-    steps: Vec<LexemeSoftmaxTrainingStepTrace>,
-}
-
-impl LexemeSoftmaxBatchResult {
-    fn new(
-        config: LexemeSoftmaxTrainConfig,
-        vocab_size: usize,
-        head_dim: usize,
-        d_model: usize,
-        embedding_vocab_size: usize,
-        embedding_dim: usize,
-    ) -> Result<Self, TrainError> {
-        let output_head_gradient = if config.batch_windows > 1 {
-            Some(
-                LexemeSoftmaxOutputHeadGradientI64::new(vocab_size, head_dim)
-                    .ok_or(TrainError::InvalidConfig)?,
-            )
-        } else {
-            None
-        };
-        let hidden_weight_gradient = if config.batch_windows > 1 && config.hidden_dim > 0 {
-            Some(
-                LexemeSoftmaxOutputHeadGradientI64::new(config.hidden_dim, d_model)
-                    .ok_or(TrainError::InvalidConfig)?,
-            )
-        } else {
-            None
-        };
-        let embedding_gradient = if config.batch_windows > 1 && config.train_embeddings {
-            Some(
-                LexemeSoftmaxEmbeddingGradientI64::new(embedding_vocab_size, embedding_dim)
-                    .ok_or(TrainError::InvalidConfig)?,
-            )
-        } else {
-            None
-        };
-        Ok(Self {
-            output_head_gradient,
-            hidden_weight_gradient,
-            embedding_gradient,
-            steps: Vec::new(),
-        })
-    }
-}
-
-fn lexeme_softmax_effective_map_reduce_workers(config: LexemeSoftmaxTrainConfig) -> usize {
-    if config.map_reduce_workers == 0 {
-        std::thread::available_parallelism()
-            .map(|parallelism| parallelism.get())
-            .unwrap_or(1)
-            .max(1)
-    } else {
-        config.map_reduce_workers.max(1)
-    }
-}
-
-fn lexeme_softmax_merge_batch_result(
-    target: &mut LexemeSoftmaxBatchResult,
-    source: LexemeSoftmaxBatchResult,
-) -> Result<(), TrainError> {
-    if let (Some(target_grad), Some(source_grad)) = (
-        target.output_head_gradient.as_mut(),
-        source.output_head_gradient.as_ref(),
-    ) {
-        target_grad.merge(source_grad)?;
-    }
-    if let (Some(target_grad), Some(source_grad)) = (
-        target.hidden_weight_gradient.as_mut(),
-        source.hidden_weight_gradient.as_ref(),
-    ) {
-        target_grad.merge(source_grad)?;
-    }
-    if let (Some(target_grad), Some(source_grad)) = (
-        target.embedding_gradient.as_mut(),
-        source.embedding_gradient.as_ref(),
-    ) {
-        target_grad.merge(source_grad)?;
-    }
-    target.steps.extend(source.steps);
-    Ok(())
-}
-
-/// Per-window forward → backward → accumulate for the lexeme softmax trainer.
-///
-/// Operates on immutable model references (`embedding_model`, `hidden_weights`,
-/// `output_weights`) and writes into thread-local scratch buffers and gradient
-/// accumulators.  This is the "map" side of map-reduce: no weight updates
-/// happen here, only gradient accumulation.
-#[allow(clippy::too_many_arguments)]
-fn lexeme_softmax_accumulate_window(
-    tokens: &[u16],
-    start: usize,
-    window_index: usize,
-    epoch: usize,
-    embedding_model: &LexemeEmbeddingModel,
-    hidden_weights: &[i8],
-    output_weights: &[i8],
-    config: LexemeSoftmaxTrainConfig,
-    head_layout: LexemeSoftmaxHeadLayout,
-    _output_head_frozen_prefix: usize,
-    vocab_size: usize,
-    d_model: usize,
-    _head_dim: usize,
-    forward_scales: &[FixedScale],
-    grad_feature_scales: &[FixedScale],
-    grad_head_scales: &[FixedScale],
-    hidden_forward_scales: &[FixedScale],
-    target_frequency_weights_q15: &[i16],
-    quality_weights_q15: &[i16],
-    // Thread-local scratch (mutated but not shared):
-    grad_features_q15: &mut [i16],
-    grad_hidden_input_q15: &mut [i16],
-    grad_head_features_q15: &mut [i16],
-    grad_hidden_pre_q15: &mut [i16],
-    scaled_grad_output: &mut [i32],
-    scaled_hidden_grad_output: &mut [i32],
-    // Gradient accumulators:
-    output_head_gradient: Option<&mut LexemeSoftmaxOutputHeadGradientI64>,
-    hidden_weight_gradient: Option<&mut LexemeSoftmaxOutputHeadGradientI64>,
-    embedding_gradient: Option<&mut LexemeSoftmaxEmbeddingGradientI64>,
-    // Step trace output (only first 16 per run):
-    steps: &mut Vec<LexemeSoftmaxTrainingStepTrace>,
-    updates_before_batch: usize,
-    max_steps: usize,
-) -> Result<(), TrainError> {
-    let previous_token = tokens[start + config.seq_len - 1];
-    let target_token = tokens[start + config.seq_len];
-    let forward = lexeme_head_forward_for_training_q15(
-        embedding_model,
-        &tokens[start..start + config.seq_len],
-        config.context_features,
-        hidden_weights,
-        config.hidden_dim,
-        head_layout,
-    )?;
-    let row = lexeme_softmax_row_for_layout(
-        output_weights,
-        &forward.head_features_q15,
-        vocab_size,
-        d_model,
-        config.hidden_dim,
-        head_layout,
-        config.adapter_logit_shift,
-    )?;
-    let predicted_token_before = lexeme_argmax_i32(&row.logits_q8);
-    let gradient_q15 = lexeme_softmax_gradient_q15(&row.probabilities_q15, target_token);
-    let target_frequency_weight_q15 = target_frequency_weights_q15[usize::from(target_token)];
-    let target_quality_weight_q15 = quality_weights_q15[usize::from(target_token)];
-    let context_quality_weight_q15 = lexeme_context_quality_weight_q15(
-        &tokens[start..start + config.seq_len],
-        quality_weights_q15,
-    );
-    let target_update_weight_q15 = lexeme_combine_q15_weights(
-        lexeme_combine_q15_weights(target_frequency_weight_q15, target_quality_weight_q15),
-        context_quality_weight_q15,
-    );
-    let weighted_gradient_q15 = lexeme_scale_gradient_q15(&gradient_q15, target_update_weight_q15);
-    let grad_output_q15 = lexeme_gradient_i32_to_i16(&weighted_gradient_q15);
-    if config.hidden_dim > 0 || config.train_embeddings {
-        lexeme_backward_head_features_q15(
-            &grad_output_q15,
-            output_weights,
-            vocab_size,
-            d_model,
-            config.hidden_dim,
-            head_layout,
-            config.adapter_logit_shift,
-            forward_scales,
-            grad_head_scales,
-            scaled_grad_output,
-            grad_head_features_q15,
-        )?;
-    }
-    if config.hidden_dim > 0 {
-        if config.train_embeddings {
-            grad_features_q15.fill(0);
-        }
-        let hidden_grad_start = match head_layout {
-            LexemeSoftmaxHeadLayout::HiddenBottleneck => 0,
-            LexemeSoftmaxHeadLayout::ResidualHidden | LexemeSoftmaxHeadLayout::ResidualAdapter => {
-                if config.train_embeddings {
-                    grad_features_q15.copy_from_slice(&grad_head_features_q15[..d_model]);
-                }
-                d_model
-            }
-            LexemeSoftmaxHeadLayout::Linear => return Err(TrainError::InvalidConfig),
-        };
-        for hidden_index in 0..config.hidden_dim {
-            let derivative = lexeme_hard_silu_derivative_q15(forward.hidden_pre_q15[hidden_index]);
-            grad_hidden_pre_q15[hidden_index] = saturate_i16(round_shift_rhu_i64(
-                i64::from(grad_head_features_q15[hidden_grad_start + hidden_index])
-                    * i64::from(derivative),
-                Q15_SHIFT,
-            ));
-        }
-        if config.train_embeddings {
-            linear_backward_input_i16_i8_i16_per_channel_checked(
-                grad_hidden_pre_q15,
-                LinearBackwardInputI16I8Params {
-                    weights: hidden_weights,
-                    forward_scales: hidden_forward_scales,
-                    grad_input_scales: grad_feature_scales,
-                    input_dim: d_model,
-                    output_dim: config.hidden_dim,
-                },
-                LinearBackwardInputWorkspace {
-                    scaled_grad_output: scaled_hidden_grad_output,
-                },
-                grad_hidden_input_q15,
-            )
-            .ok_or(TrainError::CoreRejected("lexeme_softmax_backward_hidden"))?;
-            if matches!(
-                head_layout,
-                LexemeSoftmaxHeadLayout::ResidualHidden | LexemeSoftmaxHeadLayout::ResidualAdapter
-            ) {
-                for feature_index in 0..d_model {
-                    grad_features_q15[feature_index] = saturate_i16(
-                        i64::from(grad_features_q15[feature_index])
-                            + i64::from(grad_hidden_input_q15[feature_index]),
-                    );
-                }
-            } else {
-                grad_features_q15.copy_from_slice(&grad_hidden_input_q15);
-            }
-        }
-    } else if config.train_embeddings {
-        grad_features_q15.copy_from_slice(&grad_head_features_q15);
-    }
-
-    // Accumulate gradients (no weight update — that happens after merge).
-    if let Some(output_head_gradient) = output_head_gradient {
-        accumulate_lexeme_softmax_output_head_gradient_i64(
-            &forward.head_features_q15,
-            &weighted_gradient_q15,
-            output_head_gradient,
-        )?;
-        if let Some(hidden_weight_gradient) = hidden_weight_gradient {
-            let grad_hidden_pre_i32 = lexeme_gradient_i16_to_i32(grad_hidden_pre_q15);
-            accumulate_lexeme_softmax_output_head_gradient_i64(
-                &forward.context_features_q15,
-                &grad_hidden_pre_i32,
-                hidden_weight_gradient,
-            )?;
-        }
-        if let Some(embedding_gradient) = embedding_gradient {
-            accumulate_lexeme_softmax_embedding_gradient_i64(
-                &tokens[start..start + config.seq_len],
-                grad_features_q15,
-                config.context_features,
-                embedding_gradient,
-            )?;
-        }
-    }
-
-    // Record step trace (no "after" state since no weight update in accumulate).
-    if steps.len() < max_steps {
-        let weight_hash_before = hash_i8_slice(output_weights);
-        let embedding_hash_before = embedding_model.embedding_hash();
-        let update_index = updates_before_batch
-            .saturating_add(window_index)
-            .saturating_add(1);
-        let learning_rate_shift =
-            lexeme_softmax_learning_rate_shift_for_update(config, update_index.saturating_sub(1));
-        steps.push(LexemeSoftmaxTrainingStepTrace {
-            update_index,
-            epoch,
-            window_index,
-            previous_token,
-            target_token,
-            predicted_token_before,
-            predicted_token_after: predicted_token_before,
-            target_probability_before_q15: row.probabilities_q15[usize::from(target_token)],
-            target_probability_after_q15: row.probabilities_q15[usize::from(target_token)],
-            target_frequency_weight_q15,
-            target_quality_weight_q15,
-            context_quality_weight_q15,
-            target_update_weight_q15,
-            learning_rate_shift,
-            embedding_learning_rate_shift: config.embedding_learning_rate_shift,
-            embedding_hash_before,
-            embedding_hash_after: embedding_hash_before,
-            weight_hash_before,
-            weight_hash_after: weight_hash_before,
-            gradient_saturation_count: 0,
-            embedding_saturation_count: 0,
-            zero_delta_count: 0,
-            embedding_zero_delta_count: 0,
-            weight_delta_l1: 0,
-            embedding_delta_l1: 0,
-        });
-    }
-
-    Ok(())
-}
-
-/// Dispatch a batch of windows across threads for parallel accumulation.
-#[allow(clippy::too_many_arguments)]
-fn lexeme_softmax_map_reduce_batch(
-    tokens: &[u16],
-    starts: &[usize],
-    batch_start_index: usize,
-    batch_end_index: usize,
-    epoch: usize,
-    embedding_model: &LexemeEmbeddingModel,
-    hidden_weights: &[i8],
-    output_weights: &[i8],
-    config: LexemeSoftmaxTrainConfig,
-    head_layout: LexemeSoftmaxHeadLayout,
-    output_head_frozen_prefix: usize,
-    vocab_size: usize,
-    d_model: usize,
-    head_dim: usize,
-    forward_scales: &[FixedScale],
-    grad_feature_scales: &[FixedScale],
-    grad_head_scales: &[FixedScale],
-    hidden_forward_scales: &[FixedScale],
-    target_frequency_weights_q15: &[i16],
-    quality_weights_q15: &[i16],
-    updates_before_batch: usize,
-) -> Result<LexemeSoftmaxBatchResult, TrainError> {
-    if batch_start_index >= batch_end_index || batch_end_index > starts.len() {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let batch_len = batch_end_index - batch_start_index;
-    let worker_count = lexeme_softmax_effective_map_reduce_workers(config)
-        .min(batch_len)
-        .max(1);
-
-    if worker_count == 1 {
-        return lexeme_softmax_map_reduce_worker_batch(
-            tokens,
-            starts,
-            batch_start_index,
-            batch_end_index,
-            epoch,
-            embedding_model,
-            hidden_weights,
-            output_weights,
-            config,
-            head_layout,
-            output_head_frozen_prefix,
-            vocab_size,
-            d_model,
-            head_dim,
-            forward_scales,
-            grad_feature_scales,
-            grad_head_scales,
-            hidden_forward_scales,
-            target_frequency_weights_q15,
-            quality_weights_q15,
-            updates_before_batch,
-        );
-    }
-
-    let chunk_size = batch_len.div_ceil(worker_count);
-    let embedding_dim = embedding_model.embedding_dim;
-    std::thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(worker_count);
-        let mut chunk_start = batch_start_index;
-        while chunk_start < batch_end_index {
-            let chunk_end = (chunk_start + chunk_size).min(batch_end_index);
-            let range_start = chunk_start;
-            let range_end = chunk_end;
-            handles.push(scope.spawn(move || {
-                lexeme_softmax_map_reduce_worker_batch(
-                    tokens,
-                    starts,
-                    range_start,
-                    range_end,
-                    epoch,
-                    embedding_model,
-                    hidden_weights,
-                    output_weights,
-                    config,
-                    head_layout,
-                    output_head_frozen_prefix,
-                    vocab_size,
-                    d_model,
-                    head_dim,
-                    forward_scales,
-                    grad_feature_scales,
-                    grad_head_scales,
-                    hidden_forward_scales,
-                    target_frequency_weights_q15,
-                    quality_weights_q15,
-                    updates_before_batch,
-                )
-            }));
-            chunk_start = chunk_end;
-        }
-
-        let mut result = LexemeSoftmaxBatchResult::new(
-            config,
-            vocab_size,
-            head_dim,
-            d_model,
-            embedding_model.vocab_size,
-            embedding_dim,
-        )?;
-        for handle in handles {
-            let worker = match handle.join() {
-                Ok(worker) => worker?,
-                Err(payload) => std::panic::resume_unwind(payload),
-            };
-            lexeme_softmax_merge_batch_result(&mut result, worker)?;
-        }
-        Ok(result)
-    })
-}
-
-/// Worker function: accumulate gradients for a range of windows.
-#[allow(clippy::too_many_arguments)]
-fn lexeme_softmax_map_reduce_worker_batch(
-    tokens: &[u16],
-    starts: &[usize],
-    range_start_index: usize,
-    range_end_index: usize,
-    epoch: usize,
-    embedding_model: &LexemeEmbeddingModel,
-    hidden_weights: &[i8],
-    output_weights: &[i8],
-    config: LexemeSoftmaxTrainConfig,
-    head_layout: LexemeSoftmaxHeadLayout,
-    output_head_frozen_prefix: usize,
-    vocab_size: usize,
-    d_model: usize,
-    head_dim: usize,
-    forward_scales: &[FixedScale],
-    grad_feature_scales: &[FixedScale],
-    grad_head_scales: &[FixedScale],
-    hidden_forward_scales: &[FixedScale],
-    target_frequency_weights_q15: &[i16],
-    quality_weights_q15: &[i16],
-    updates_before_batch: usize,
-) -> Result<LexemeSoftmaxBatchResult, TrainError> {
-    if range_start_index > range_end_index || range_end_index > starts.len() {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut result = LexemeSoftmaxBatchResult::new(
-        config,
-        vocab_size,
-        head_dim,
-        d_model,
-        embedding_model.vocab_size,
-        embedding_model.embedding_dim,
-    )?;
-
-    // Thread-local scratch buffers.
-    let mut grad_features_q15 = vec![0_i16; d_model];
-    let mut grad_hidden_input_q15 = vec![0_i16; d_model];
-    let mut grad_head_features_q15 = vec![0_i16; head_dim];
-    let mut grad_hidden_pre_q15 = vec![0_i16; config.hidden_dim];
-    let mut scaled_grad_output = vec![0_i32; vocab_size];
-    let mut scaled_hidden_grad_output = vec![0_i32; config.hidden_dim];
-
-    for (relative_index, &window_start) in starts
-        .iter()
-        .enumerate()
-        .take(range_end_index)
-        .skip(range_start_index)
-    {
-        lexeme_softmax_accumulate_window(
-            tokens,
-            window_start,
-            relative_index,
-            epoch,
-            embedding_model,
-            hidden_weights,
-            output_weights,
-            config,
-            head_layout,
-            output_head_frozen_prefix,
-            vocab_size,
-            d_model,
-            head_dim,
-            forward_scales,
-            grad_feature_scales,
-            grad_head_scales,
-            hidden_forward_scales,
-            target_frequency_weights_q15,
-            quality_weights_q15,
-            &mut grad_features_q15,
-            &mut grad_hidden_input_q15,
-            &mut grad_head_features_q15,
-            &mut grad_hidden_pre_q15,
-            &mut scaled_grad_output,
-            &mut scaled_hidden_grad_output,
-            result.output_head_gradient.as_mut(),
-            result.hidden_weight_gradient.as_mut(),
-            result.embedding_gradient.as_mut(),
-            &mut result.steps,
-            updates_before_batch,
-            16,
-        )?;
-    }
-
-    Ok(result)
-}
-
-fn accumulate_lexeme_softmax_embedding_gradient_i64(
-    context: &[u16],
-    grad_features_q15: &[i16],
-    context_features: LexemeContextFeatures,
-    gradient: &mut LexemeSoftmaxEmbeddingGradientI64,
-) -> Result<(), TrainError> {
-    if context.is_empty() || !context.len().is_power_of_two() {
-        return Err(TrainError::InvalidConfig);
-    }
-    let expected_features =
-        lexeme_context_d_model(gradient.embedding_dim, context.len(), context_features)?;
-    if grad_features_q15.len() != expected_features {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    match context_features {
-        LexemeContextFeatures::Mean => {
-            for &token in context {
-                let row_start =
-                    lexeme_embedding_row_start(token, gradient.vocab_size, gradient.embedding_dim)?;
-                for dim in 0..gradient.embedding_dim {
-                    let value = i64::from(grad_features_q15[dim + 1]);
-                    if value == 0 {
-                        continue;
-                    }
-                    gradient.accumulators[row_start + dim] = gradient.accumulators[row_start + dim]
-                        .checked_add(value)
-                        .ok_or(TrainError::CoreRejected(
-                            "lexeme_embedding_gradient_accumulate",
-                        ))?;
-                }
-            }
-        }
-        LexemeContextFeatures::Ordered => {
-            for (position, &token) in context.iter().enumerate() {
-                let row_start =
-                    lexeme_embedding_row_start(token, gradient.vocab_size, gradient.embedding_dim)?;
-                let feature_start = 1 + position * gradient.embedding_dim;
-                for dim in 0..gradient.embedding_dim {
-                    let value = i64::from(grad_features_q15[feature_start + dim]);
-                    if value == 0 {
-                        continue;
-                    }
-                    gradient.accumulators[row_start + dim] = gradient.accumulators[row_start + dim]
-                        .checked_add(value)
-                        .ok_or(TrainError::CoreRejected(
-                            "lexeme_embedding_gradient_accumulate",
-                        ))?;
-                }
-            }
-        }
-    }
-
-    gradient.sample_count =
-        gradient
-            .sample_count
-            .checked_add(1)
-            .ok_or(TrainError::CoreRejected(
-                "lexeme_embedding_gradient_sample_count",
-            ))?;
-    Ok(())
-}
-
-fn lexeme_softmax_embedding_update_shift(
-    base_shift: u8,
-    seq_len: usize,
-    context_features: LexemeContextFeatures,
-) -> Result<u8, TrainError> {
-    if base_shift > MAX_RIGHT_SHIFT || seq_len == 0 || !seq_len.is_power_of_two() {
-        return Err(TrainError::InvalidConfig);
-    }
-    match context_features {
-        LexemeContextFeatures::Mean => base_shift
-            .checked_add(seq_len.trailing_zeros() as u8)
-            .filter(|shift| *shift <= MAX_RIGHT_SHIFT)
-            .ok_or(TrainError::InvalidConfig),
-        LexemeContextFeatures::Ordered => Ok(base_shift),
-    }
-}
-
-fn apply_lexeme_softmax_embedding_gradient_i64(
-    gradient: &mut LexemeSoftmaxEmbeddingGradientI64,
-    embeddings: &mut [i16],
-    learning_rate: i32,
-    learning_rate_shift: u8,
-    max_delta: i32,
-) -> Result<SoftmaxUpdateStats, TrainError> {
-    if embeddings.len() != gradient.accumulators.len()
-        || learning_rate <= 0
-        || learning_rate_shift > MAX_RIGHT_SHIFT
-        || max_delta <= 0
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut stats = empty_softmax_update_stats();
-    if gradient.sample_count == 0 {
-        return Ok(stats);
-    }
-    let max_delta = i64::from(max_delta);
-
-    for (raw_sum, embedding) in gradient.accumulators.iter().zip(embeddings.iter_mut()) {
-        if *raw_sum == 0 {
-            continue;
-        }
-        let averaged = round_div_i64(*raw_sum, gradient.sample_count)?;
-        let product =
-            averaged
-                .checked_mul(i64::from(learning_rate))
-                .ok_or(TrainError::CoreRejected(
-                    "lexeme_embedding_gradient_apply_product",
-                ))?;
-        let scaled_update = round_shift_rhu_i64(product, learning_rate_shift);
-        let delta = (-scaled_update).clamp(-max_delta, max_delta);
-        if delta == 0 {
-            stats.zero_delta_count = stats.zero_delta_count.saturating_add(1);
-        }
-        apply_embedding_delta_i16(embedding, delta, &mut stats);
-    }
-
-    gradient.clear();
-    Ok(stats)
-}
-
-fn apply_lexeme_softmax_embedding_update(
-    embeddings: &mut [i16],
-    context: &[u16],
-    grad_features_q15: &[i16],
-    params: LexemeSoftmaxEmbeddingUpdateParams,
-) -> Result<SoftmaxUpdateStats, TrainError> {
-    if params.vocab_size == 0
-        || params.embedding_dim == 0
-        || context.is_empty()
-        || !context.len().is_power_of_two()
-        || embeddings.len()
-            != params
-                .vocab_size
-                .checked_mul(params.embedding_dim)
-                .ok_or(TrainError::InvalidConfig)?
-        || grad_features_q15.len()
-            != lexeme_context_d_model(params.embedding_dim, context.len(), params.context_features)?
-        || params.learning_rate <= 0
-        || params.learning_rate_shift > MAX_RIGHT_SHIFT
-        || params.max_delta <= 0
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut stats = SoftmaxUpdateStats {
-        gradient_saturation_count: 0,
-        zero_delta_count: 0,
-        weight_delta_l1: 0,
-    };
-
-    match params.context_features {
-        LexemeContextFeatures::Mean => {
-            let seq_shift = context.len().trailing_zeros() as u8;
-            let total_shift = params
-                .learning_rate_shift
-                .checked_add(seq_shift)
-                .ok_or(TrainError::InvalidConfig)?;
-            if total_shift > MAX_RIGHT_SHIFT {
-                return Err(TrainError::InvalidConfig);
-            }
-            for &token in context {
-                let row_start =
-                    lexeme_embedding_row_start(token, params.vocab_size, params.embedding_dim)?;
-                for dim in 0..params.embedding_dim {
-                    let gradient = grad_features_q15[dim + 1];
-                    apply_lexeme_embedding_gradient_delta(
-                        &mut embeddings[row_start + dim],
-                        gradient,
-                        params.learning_rate,
-                        total_shift,
-                        params.max_delta,
-                        &mut stats,
-                    );
-                }
-            }
-        }
-        LexemeContextFeatures::Ordered => {
-            for (position, &token) in context.iter().enumerate() {
-                let row_start =
-                    lexeme_embedding_row_start(token, params.vocab_size, params.embedding_dim)?;
-                let feature_start = 1 + position * params.embedding_dim;
-                for dim in 0..params.embedding_dim {
-                    let gradient = grad_features_q15[feature_start + dim];
-                    apply_lexeme_embedding_gradient_delta(
-                        &mut embeddings[row_start + dim],
-                        gradient,
-                        params.learning_rate,
-                        params.learning_rate_shift,
-                        params.max_delta,
-                        &mut stats,
-                    );
-                }
-            }
-        }
-    }
-
-    Ok(stats)
-}
-
-fn lexeme_embedding_row_start(
-    token: u16,
-    vocab_size: usize,
-    embedding_dim: usize,
-) -> Result<usize, TrainError> {
-    let token = usize::from(token);
-    if token >= vocab_size {
-        return Err(TrainError::InvalidConfig);
-    }
-    token
-        .checked_mul(embedding_dim)
-        .ok_or(TrainError::InvalidConfig)
-}
-
-fn apply_lexeme_embedding_gradient_delta(
-    embedding: &mut i16,
-    gradient: i16,
-    learning_rate: i32,
-    right_shift: u8,
-    max_delta: i32,
-    stats: &mut SoftmaxUpdateStats,
-) {
-    if gradient == 0 {
-        return;
-    }
-    let product = i64::from(gradient).saturating_mul(i64::from(learning_rate));
-    let scaled_update = round_shift_rhu_i64(product, right_shift);
-    let max_delta = i64::from(max_delta);
-    let delta = (-scaled_update).clamp(-max_delta, max_delta);
-    if delta == 0 {
-        stats.zero_delta_count = stats.zero_delta_count.saturating_add(1);
-    }
-    apply_embedding_delta_i16(embedding, delta, stats);
 }
 
 fn apply_mini_transformer_embedding_update_with_position_policy(
@@ -22463,77 +19424,6 @@ fn apply_mini_transformer_embedding_update_with_position_policy(
     Ok(stats)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn apply_lexeme_embedding_pair_update(
-    embeddings: &mut [i16],
-    embedding_dim: usize,
-    left_token: u16,
-    right_token: u16,
-    direction: i32,
-    learning_rate: i32,
-    learning_rate_shift: u8,
-    frequency_weight_q15: i16,
-) -> Result<SoftmaxUpdateStats, TrainError> {
-    if embedding_dim == 0
-        || direction == 0
-        || learning_rate <= 0
-        || learning_rate_shift > MAX_RIGHT_SHIFT
-        || !valid_q15_weight_floor(frequency_weight_q15)
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-    let total_shift = learning_rate_shift
-        .checked_add(Q15_SHIFT)
-        .ok_or(TrainError::InvalidConfig)?;
-    if total_shift > MAX_RIGHT_SHIFT {
-        return Err(TrainError::InvalidConfig);
-    }
-    let left_start = usize::from(left_token)
-        .checked_mul(embedding_dim)
-        .ok_or(TrainError::InvalidConfig)?;
-    let right_start = usize::from(right_token)
-        .checked_mul(embedding_dim)
-        .ok_or(TrainError::InvalidConfig)?;
-    if left_start + embedding_dim > embeddings.len()
-        || right_start + embedding_dim > embeddings.len()
-    {
-        return Err(TrainError::InvalidConfig);
-    }
-
-    let mut stats = SoftmaxUpdateStats {
-        gradient_saturation_count: 0,
-        zero_delta_count: 0,
-        weight_delta_l1: 0,
-    };
-
-    for dim in 0..embedding_dim {
-        let left_index = left_start + dim;
-        let right_index = right_start + dim;
-        let left_before = embeddings[left_index];
-        let right_before = embeddings[right_index];
-        let left_product = i64::from(right_before)
-            .saturating_mul(i64::from(direction))
-            .saturating_mul(i64::from(learning_rate))
-            .saturating_mul(i64::from(frequency_weight_q15));
-        let right_product = i64::from(left_before)
-            .saturating_mul(i64::from(direction))
-            .saturating_mul(i64::from(learning_rate))
-            .saturating_mul(i64::from(frequency_weight_q15));
-        let left_delta = round_shift_rhu_i64(left_product, total_shift);
-        let right_delta = round_shift_rhu_i64(right_product, total_shift);
-        if left_delta == 0 {
-            stats.zero_delta_count = stats.zero_delta_count.saturating_add(1);
-        }
-        if right_delta == 0 {
-            stats.zero_delta_count = stats.zero_delta_count.saturating_add(1);
-        }
-        apply_embedding_delta_i16(&mut embeddings[left_index], left_delta, &mut stats);
-        apply_embedding_delta_i16(&mut embeddings[right_index], right_delta, &mut stats);
-    }
-
-    Ok(stats)
-}
-
 fn apply_embedding_delta_i16(embedding: &mut i16, delta: i64, stats: &mut SoftmaxUpdateStats) {
     let previous = *embedding;
     let unclamped = i64::from(previous).saturating_add(delta);
@@ -22571,12 +19461,6 @@ fn hash_i16_slice(values: &[i16]) -> u64 {
 fn hash_u8_slice(values: &[u8]) -> u64 {
     let mut hasher = StableHasher::new();
     hasher.update_u8_slice(values);
-    hasher.finish()
-}
-
-fn hash_u16_slice(values: &[u16]) -> u64 {
-    let mut hasher = StableHasher::new();
-    hasher.update_u16_slice(values);
     hasher.finish()
 }
 
@@ -22628,13 +19512,6 @@ impl StableHasher {
         self.update_bytes(values);
     }
 
-    fn update_u16_slice(&mut self, values: &[u16]) {
-        self.update_usize(values.len());
-        for &value in values {
-            self.update_bytes(&value.to_le_bytes());
-        }
-    }
-
     fn update_usize(&mut self, value: usize) {
         self.update_bytes(&(value as u64).to_le_bytes());
     }
@@ -22665,208 +19542,6 @@ fn push_string_array_field(out: &mut String, name: &str, values: &[&str]) {
 fn push_string_vec_field(out: &mut String, name: &str, values: &[String]) {
     let values = values.iter().map(String::as_str).collect::<Vec<_>>();
     push_string_array_field(out, name, &values);
-}
-
-fn push_lexeme_embedding_steps_field(
-    out: &mut String,
-    name: &str,
-    steps: &[LexemeEmbeddingTrainingStepTrace],
-) {
-    push_quoted(out, name);
-    out.push_str(":[");
-    for (index, step) in steps.iter().enumerate() {
-        if index != 0 {
-            comma(out);
-        }
-        out.push('{');
-        push_usize_field(out, "update_index", step.update_index);
-        comma(out);
-        push_usize_field(out, "epoch", step.epoch);
-        comma(out);
-        push_usize_field(out, "window_index", step.window_index);
-        comma(out);
-        push_usize_field(out, "center_index", step.center_index);
-        comma(out);
-        push_usize_field(out, "center_token", usize::from(step.center_token));
-        comma(out);
-        push_usize_field(out, "context_token", usize::from(step.context_token));
-        comma(out);
-        push_usize_field(out, "negative_token", usize::from(step.negative_token));
-        comma(out);
-        push_i16_field(
-            out,
-            "positive_frequency_weight_q15",
-            step.positive_frequency_weight_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "negative_frequency_weight_q15",
-            step.negative_frequency_weight_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "positive_quality_weight_q15",
-            step.positive_quality_weight_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "negative_quality_weight_q15",
-            step.negative_quality_weight_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "positive_update_weight_q15",
-            step.positive_update_weight_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "negative_update_weight_q15",
-            step.negative_update_weight_q15,
-        );
-        comma(out);
-        push_i64_field(out, "positive_dot_before_i64", step.positive_dot_before_i64);
-        comma(out);
-        push_i64_field(out, "positive_dot_after_i64", step.positive_dot_after_i64);
-        comma(out);
-        push_i64_field(out, "negative_dot_before_i64", step.negative_dot_before_i64);
-        comma(out);
-        push_i64_field(out, "negative_dot_after_i64", step.negative_dot_after_i64);
-        comma(out);
-        push_hash_field(out, "embedding_hash_before", step.embedding_hash_before);
-        comma(out);
-        push_hash_field(out, "embedding_hash_after", step.embedding_hash_after);
-        comma(out);
-        push_usize_field(out, "saturation_count", step.saturation_count);
-        comma(out);
-        push_usize_field(out, "zero_delta_count", step.zero_delta_count);
-        comma(out);
-        push_u64_field(out, "embedding_delta_l1", step.embedding_delta_l1);
-        out.push('}');
-    }
-    out.push(']');
-}
-
-fn push_lexeme_softmax_steps_field(
-    out: &mut String,
-    name: &str,
-    steps: &[LexemeSoftmaxTrainingStepTrace],
-) {
-    push_quoted(out, name);
-    out.push_str(":[");
-    for (index, step) in steps.iter().enumerate() {
-        if index != 0 {
-            comma(out);
-        }
-        out.push('{');
-        push_usize_field(out, "update_index", step.update_index);
-        comma(out);
-        push_usize_field(out, "epoch", step.epoch);
-        comma(out);
-        push_usize_field(out, "window_index", step.window_index);
-        comma(out);
-        push_usize_field(out, "previous_token", usize::from(step.previous_token));
-        comma(out);
-        push_usize_field(out, "target_token", usize::from(step.target_token));
-        comma(out);
-        push_usize_field(
-            out,
-            "predicted_token_before",
-            usize::from(step.predicted_token_before),
-        );
-        comma(out);
-        push_usize_field(
-            out,
-            "predicted_token_after",
-            usize::from(step.predicted_token_after),
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "target_probability_before_q15",
-            step.target_probability_before_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "target_probability_after_q15",
-            step.target_probability_after_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "target_frequency_weight_q15",
-            step.target_frequency_weight_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "target_quality_weight_q15",
-            step.target_quality_weight_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "context_quality_weight_q15",
-            step.context_quality_weight_q15,
-        );
-        comma(out);
-        push_i16_field(
-            out,
-            "target_update_weight_q15",
-            step.target_update_weight_q15,
-        );
-        comma(out);
-        push_usize_field(
-            out,
-            "learning_rate_shift",
-            usize::from(step.learning_rate_shift),
-        );
-        comma(out);
-        push_usize_field(
-            out,
-            "embedding_learning_rate_shift",
-            usize::from(step.embedding_learning_rate_shift),
-        );
-        comma(out);
-        push_hash_field(out, "embedding_hash_before", step.embedding_hash_before);
-        comma(out);
-        push_hash_field(out, "embedding_hash_after", step.embedding_hash_after);
-        comma(out);
-        push_hash_field(out, "weight_hash_before", step.weight_hash_before);
-        comma(out);
-        push_hash_field(out, "weight_hash_after", step.weight_hash_after);
-        comma(out);
-        push_usize_field(
-            out,
-            "gradient_saturation_count",
-            step.gradient_saturation_count,
-        );
-        comma(out);
-        push_usize_field(
-            out,
-            "embedding_saturation_count",
-            step.embedding_saturation_count,
-        );
-        comma(out);
-        push_usize_field(out, "zero_delta_count", step.zero_delta_count);
-        comma(out);
-        push_usize_field(
-            out,
-            "embedding_zero_delta_count",
-            step.embedding_zero_delta_count,
-        );
-        comma(out);
-        push_u64_field(out, "weight_delta_l1", step.weight_delta_l1);
-        comma(out);
-        push_u64_field(out, "embedding_delta_l1", step.embedding_delta_l1);
-        out.push('}');
-    }
-    out.push(']');
 }
 
 fn push_mini_transformer_mlp_steps_field(
@@ -23117,240 +19792,6 @@ fn push_mini_transformer_ttt_stats_field(
     }
 }
 
-fn push_lexeme_generation_steps_field(
-    out: &mut String,
-    name: &str,
-    steps: &[LexemeGenerationStepTrace],
-) {
-    push_quoted(out, name);
-    out.push_str(":[");
-    for (index, step) in steps.iter().enumerate() {
-        if index != 0 {
-            comma(out);
-        }
-        out.push('{');
-        push_usize_field(out, "step_index", step.step_index);
-        comma(out);
-        push_usize_field(out, "input_token", usize::from(step.input_token));
-        comma(out);
-        push_usize_field(out, "predicted_token", usize::from(step.predicted_token));
-        comma(out);
-        push_i32_field(out, "predicted_logit_q8", step.predicted_logit_q8);
-        comma(out);
-        push_i16_field(
-            out,
-            "predicted_probability_q15",
-            step.predicted_probability_q15,
-        );
-        comma(out);
-        push_lexeme_decode_score_field(out, "selected_score", step.selected_score);
-        comma(out);
-        push_usize_field(out, "candidate_count", step.candidate_count);
-        comma(out);
-        push_decode_reject_stats_field(out, "rejected_candidates", step.rejected_candidates);
-        out.push('}');
-    }
-    out.push(']');
-}
-
-fn push_lexeme_generation_metrics_field(
-    out: &mut String,
-    name: &str,
-    metrics: LexemeGenerationMetrics,
-) {
-    push_quoted(out, name);
-    out.push_str(":{");
-    push_usize_field(out, "generated_token_count", metrics.generated_token_count);
-    comma(out);
-    push_usize_field(
-        out,
-        "distinct_generated_tokens",
-        metrics.distinct_generated_tokens,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "distinct_token_per_mille",
-        usize::from(metrics.distinct_token_per_mille),
-    );
-    comma(out);
-    push_usize_field(out, "max_token_count", metrics.max_token_count);
-    comma(out);
-    push_usize_field(out, "max_token_run", metrics.max_token_run);
-    comma(out);
-    push_usize_field(out, "repeated_bigram_count", metrics.repeated_bigram_count);
-    comma(out);
-    push_usize_field(
-        out,
-        "repeated_bigram_per_mille",
-        usize::from(metrics.repeated_bigram_per_mille),
-    );
-    comma(out);
-    push_usize_field(out, "max_bigram_count", metrics.max_bigram_count);
-    comma(out);
-    push_usize_field(
-        out,
-        "repeated_trigram_count",
-        metrics.repeated_trigram_count,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "repeated_trigram_per_mille",
-        usize::from(metrics.repeated_trigram_per_mille),
-    );
-    comma(out);
-    push_usize_field(out, "max_trigram_count", metrics.max_trigram_count);
-    comma(out);
-    push_usize_field(
-        out,
-        "mean_selected_probability_q15",
-        usize::from(metrics.mean_selected_probability_q15),
-    );
-    comma(out);
-    push_usize_field(out, "mean_candidate_count", metrics.mean_candidate_count);
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_any_decode_adjust",
-        metrics.steps_with_any_decode_adjust,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_quality_adjust",
-        metrics.steps_with_quality_adjust,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_frequency_adjust",
-        metrics.steps_with_frequency_adjust,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_local_frequency_adjust",
-        metrics.steps_with_local_frequency_adjust,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_island_adjust",
-        metrics.steps_with_island_adjust,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_topic_adjust",
-        metrics.steps_with_topic_adjust,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_memory_adjust",
-        metrics.steps_with_memory_adjust,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_corpus_prior_adjust",
-        metrics.steps_with_corpus_prior_adjust,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "steps_with_memory_context",
-        metrics.steps_with_memory_context,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "max_memory_context_order",
-        usize::from(metrics.max_memory_context_order),
-    );
-    comma(out);
-    push_decode_reject_stats_field(
-        out,
-        "total_rejected_candidates",
-        metrics.total_rejected_candidates,
-    );
-    out.push('}');
-}
-
-fn push_lexeme_decode_score_field(out: &mut String, name: &str, score: LexemeDecodeScoreTrace) {
-    push_quoted(out, name);
-    out.push_str(":{");
-    push_i32_field(out, "base_logit_q8", score.base_logit_q8);
-    comma(out);
-    push_i32_field(
-        out,
-        "quality_logit_adjust_q8",
-        score.quality_logit_adjust_q8,
-    );
-    comma(out);
-    push_i32_field(
-        out,
-        "frequency_logit_adjust_q8",
-        score.frequency_logit_adjust_q8,
-    );
-    comma(out);
-    push_i32_field(
-        out,
-        "local_frequency_logit_adjust_q8",
-        score.local_frequency_logit_adjust_q8,
-    );
-    comma(out);
-    push_i32_field(out, "island_logit_adjust_q8", score.island_logit_adjust_q8);
-    comma(out);
-    push_i32_field(out, "topic_logit_adjust_q8", score.topic_logit_adjust_q8);
-    comma(out);
-    push_i32_field(out, "memory_logit_adjust_q8", score.memory_logit_adjust_q8);
-    comma(out);
-    push_i32_field(
-        out,
-        "corpus_prior_logit_adjust_q8",
-        score.corpus_prior_logit_adjust_q8,
-    );
-    comma(out);
-    push_i32_field(out, "effective_logit_q8", score.effective_logit_q8);
-    comma(out);
-    push_i16_field(out, "model_probability_q15", score.model_probability_q15);
-    comma(out);
-    push_usize_field(
-        out,
-        "memory_context_order",
-        usize::from(score.memory_context_order),
-    );
-    comma(out);
-    push_i16_field(out, "quality_weight_q15", score.quality_weight_q15);
-    comma(out);
-    push_i16_field(out, "frequency_weight_q15", score.frequency_weight_q15);
-    comma(out);
-    push_i16_field(
-        out,
-        "local_frequency_weight_q15",
-        score.local_frequency_weight_q15,
-    );
-    comma(out);
-    push_i16_field(out, "island_weight_q15", score.island_weight_q15);
-    comma(out);
-    push_i16_field(out, "topic_weight_q15", score.topic_weight_q15);
-    comma(out);
-    push_usize_field(
-        out,
-        "memory_probability_q15",
-        usize::from(score.memory_probability_q15),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "corpus_prior_probability_q15",
-        usize::from(score.corpus_prior_probability_q15),
-    );
-    out.push('}');
-}
-
 fn push_decode_config_field(out: &mut String, name: &str, config: ByteGenerationConfig) {
     push_quoted(out, name);
     out.push_str(":{");
@@ -23528,234 +19969,6 @@ fn push_decode_config_field(out: &mut String, name: &str, config: ByteGeneration
     out.push('}');
 }
 
-fn push_lexeme_decode_config_field(out: &mut String, name: &str, config: LexemeGenerationConfig) {
-    push_quoted(out, name);
-    out.push_str(":{");
-    push_usize_field(out, "max_new_tokens", config.max_new_tokens);
-    comma(out);
-    push_bool_field(
-        out,
-        "stop_on_sentence_terminal",
-        config.stop_on_sentence_terminal,
-    );
-    comma(out);
-    let terminal_count = config
-        .sentence_terminal_token_count
-        .min(LEXEME_SENTENCE_STOP_TOKEN_CAP);
-    push_usize_field(out, "sentence_terminal_token_count", terminal_count);
-    comma(out);
-    push_u16_array_field(
-        out,
-        "sentence_terminal_tokens",
-        &config.sentence_terminal_tokens[..terminal_count],
-    );
-    comma(out);
-    push_string_field(
-        out,
-        "strategy",
-        decode_strategy_name(config.decode.strategy),
-    );
-    comma(out);
-    push_u64_field(out, "sample_seed", config.decode.sample_seed);
-    comma(out);
-    push_usize_field(out, "top_k", config.decode.top_k);
-    comma(out);
-    push_usize_field(out, "repeat_window", config.decode.repeat_window);
-    comma(out);
-    push_usize_field(
-        out,
-        "repeat_penalty_shift",
-        usize::from(config.decode.repeat_penalty_shift),
-    );
-    comma(out);
-    push_usize_field(out, "max_repeat_run", config.decode.max_repeat_run);
-    comma(out);
-    push_usize_field(
-        out,
-        "no_repeat_ngram_order",
-        config.decode.no_repeat_ngram_order,
-    );
-    comma(out);
-    push_bool_field(out, "corpus_prior", config.decode.corpus_prior);
-    comma(out);
-    push_usize_field(
-        out,
-        "corpus_prior_logit_shift",
-        usize::from(config.decode.corpus_prior_logit_shift),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "corpus_prior_order",
-        usize::from(config.decode.corpus_prior_order),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "frequency_penalty_cap",
-        config.decode.frequency_penalty_cap as usize,
-    );
-    comma(out);
-    push_i16_field(
-        out,
-        "frequency_penalty_min_weight_q15",
-        config.decode.frequency_penalty_min_weight_q15,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "frequency_penalty_logit_shift",
-        usize::from(config.decode.frequency_penalty_logit_shift),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "local_frequency_penalty_cap",
-        config.decode.local_frequency_penalty_cap,
-    );
-    comma(out);
-    push_i16_field(
-        out,
-        "local_frequency_penalty_min_weight_q15",
-        config.decode.local_frequency_penalty_min_weight_q15,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "local_frequency_penalty_logit_shift",
-        usize::from(config.decode.local_frequency_penalty_logit_shift),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "local_frequency_hard_cap",
-        config.decode.local_frequency_hard_cap,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "island_penalty_count_cap",
-        config.decode.island_penalty_count_cap as usize,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "island_penalty_min_degree",
-        config.decode.island_penalty_min_degree,
-    );
-    comma(out);
-    push_i16_field(
-        out,
-        "island_penalty_min_weight_q15",
-        config.decode.island_penalty_min_weight_q15,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "island_penalty_logit_shift",
-        usize::from(config.decode.island_penalty_logit_shift),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "prompt_topic_radius",
-        config.decode.prompt_topic_radius,
-    );
-    comma(out);
-    push_i16_field(
-        out,
-        "prompt_topic_min_weight_q15",
-        config.decode.prompt_topic_min_weight_q15,
-    );
-    comma(out);
-    push_i16_field(
-        out,
-        "prompt_topic_strict_min_weight_q15",
-        config.decode.prompt_topic_strict_min_weight_q15,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "prompt_topic_logit_shift",
-        usize::from(config.decode.prompt_topic_logit_shift),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "memory_context_order",
-        usize::from(config.decode.memory_context_order),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "memory_min_context_order",
-        usize::from(config.decode.memory_min_context_order),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "memory_logit_shift",
-        usize::from(config.decode.memory_logit_shift),
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "strict_memory_on_steps",
-        config.decode.strict_memory_on_steps,
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "strict_memory_off_steps",
-        config.decode.strict_memory_off_steps,
-    );
-    comma(out);
-    push_bool_field(out, "strict_memory", config.decode.strict_memory);
-    comma(out);
-    push_bool_field(out, "strict_topic", config.decode.strict_topic);
-    comma(out);
-    push_bool_field(out, "strict_adjacency", config.decode.strict_adjacency);
-    comma(out);
-    push_usize_field(out, "banned_token_count", config.decode.banned_token_count);
-    comma(out);
-    push_u16_array_field(
-        out,
-        "banned_tokens",
-        &config.decode.banned_tokens[..config
-            .decode
-            .banned_token_count
-            .min(LEXEME_DECODE_TOKEN_SET_CAP)],
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "function_word_token_count",
-        config.decode.function_word_token_count,
-    );
-    comma(out);
-    push_u16_array_field(
-        out,
-        "function_word_tokens",
-        &config.decode.function_word_tokens[..config
-            .decode
-            .function_word_token_count
-            .min(LEXEME_DECODE_TOKEN_SET_CAP)],
-    );
-    comma(out);
-    push_usize_field(
-        out,
-        "function_word_run_cap",
-        config.decode.function_word_run_cap,
-    );
-    comma(out);
-    push_string_field(
-        out,
-        "quality_weight_profile",
-        config.quality_weight_profile.as_str(),
-    );
-    out.push('}');
-}
-
 fn push_decode_priors_field(out: &mut String, name: &str, trace: Option<ByteDecodePriorTrace>) {
     push_quoted(out, name);
     out.push(':');
@@ -23766,96 +19979,6 @@ fn push_decode_priors_field(out: &mut String, name: &str, trace: Option<ByteDeco
         push_hash_field(out, "token_hash", trace.token_hash);
         comma(out);
         push_usize_field(out, "observed_bigrams", trace.observed_bigrams);
-        out.push('}');
-    } else {
-        out.push_str("null");
-    }
-}
-
-fn push_lexeme_decode_priors_field(
-    out: &mut String,
-    name: &str,
-    trace: Option<LexemeDecodePriorTrace>,
-) {
-    push_quoted(out, name);
-    out.push(':');
-    if let Some(trace) = trace {
-        out.push('{');
-        push_usize_field(out, "token_count", trace.token_count);
-        comma(out);
-        push_hash_field(out, "token_hash", trace.token_hash);
-        comma(out);
-        push_usize_field(out, "vocab_size", trace.vocab_size);
-        comma(out);
-        push_usize_field(out, "observed_bigrams", trace.observed_bigrams);
-        comma(out);
-        push_usize_field(out, "observed_trigrams", trace.observed_trigrams);
-        comma(out);
-        push_usize_field(out, "observed_quadgrams", trace.observed_quadgrams);
-        out.push('}');
-    } else {
-        out.push_str("null");
-    }
-}
-
-fn push_lexeme_topic_priors_field(
-    out: &mut String,
-    name: &str,
-    trace: Option<LexemeTopicPriorTrace>,
-) {
-    push_quoted(out, name);
-    out.push(':');
-    if let Some(trace) = trace {
-        out.push('{');
-        push_usize_field(out, "token_count", trace.token_count);
-        comma(out);
-        push_hash_field(out, "token_hash", trace.token_hash);
-        comma(out);
-        push_usize_field(out, "vocab_size", trace.vocab_size);
-        comma(out);
-        push_usize_field(out, "radius", trace.radius);
-        comma(out);
-        push_hash_field(out, "anchor_hash", trace.anchor_hash);
-        comma(out);
-        push_usize_field(out, "anchor_count", trace.anchor_count);
-        comma(out);
-        push_usize_field(out, "anchor_occurrences", trace.anchor_occurrences);
-        comma(out);
-        push_usize_field(out, "observed_neighbors", trace.observed_neighbors);
-        out.push('}');
-    } else {
-        out.push_str("null");
-    }
-}
-
-fn push_lexeme_memory_priors_field(
-    out: &mut String,
-    name: &str,
-    trace: Option<LexemeMemoryPriorTrace>,
-) {
-    push_quoted(out, name);
-    out.push(':');
-    if let Some(trace) = trace {
-        out.push('{');
-        push_usize_field(out, "token_count", trace.token_count);
-        comma(out);
-        push_hash_field(out, "token_hash", trace.token_hash);
-        comma(out);
-        push_usize_field(out, "vocab_size", trace.vocab_size);
-        comma(out);
-        push_usize_field(
-            out,
-            "max_context_order",
-            usize::from(trace.max_context_order),
-        );
-        comma(out);
-        push_usize_field(out, "terminal_token_count", trace.terminal_token_count);
-        comma(out);
-        push_hash_field(out, "terminal_token_hash", trace.terminal_token_hash);
-        comma(out);
-        push_usize_field(out, "observed_contexts", trace.observed_contexts);
-        comma(out);
-        push_usize_field(out, "observed_transitions", trace.observed_transitions);
         out.push('}');
     } else {
         out.push_str("null");
@@ -23996,18 +20119,6 @@ fn push_u8_array_field(out: &mut String, name: &str, values: &[u8]) {
     out.push(']');
 }
 
-fn push_u16_array_field(out: &mut String, name: &str, values: &[u16]) {
-    push_quoted(out, name);
-    out.push_str(":[");
-    for (index, value) in values.iter().enumerate() {
-        if index != 0 {
-            comma(out);
-        }
-        out.push_str(&value.to_string());
-    }
-    out.push(']');
-}
-
 fn push_quoted(out: &mut String, value: &str) {
     out.push('"');
     for ch in value.chars() {
@@ -24027,84 +20138,6 @@ fn push_quoted(out: &mut String, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn encode_u16_test_tokens(tokens: &[u16]) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(tokens.len() * 2);
-        for &token in tokens {
-            bytes.extend_from_slice(&token.to_le_bytes());
-        }
-        bytes
-    }
-
-    #[test]
-    fn lexeme_embedding_training_moves_context_pairs() {
-        let tokens =
-            encode_u16_test_tokens(&[256, 300, 256, 300, 400, 401, 400, 401, 256, 300, 256, 300]);
-        let config = LexemeEmbeddingTrainConfig {
-            epochs: 1,
-            context_radius: 1,
-            stride: 1,
-            window_offset: 0,
-            max_windows: Some(8),
-            vocab_size: 512,
-            embedding_dim: 8,
-            learning_rate: 1,
-            learning_rate_shift: 8,
-            concept_frequency_cap: 0,
-            concept_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-        };
-        let trace = run_lexeme_embedding_training(&tokens, config).expect("lexeme train");
-
-        assert_eq!(trace.token_count, 12);
-        assert_eq!(trace.windows, 8);
-        assert_eq!(trace.examined_windows, 8);
-        assert_eq!(trace.positive_pair_count, trace.negative_pair_count);
-        assert_eq!(trace.updates, trace.positive_pair_count);
-        assert_eq!(trace.saturation_count, 0);
-        assert!(trace.embedding_delta_l1 > 0);
-        assert_ne!(trace.initial_embedding_hash, trace.final_embedding_hash);
-        assert!(trace.final_positive_dot_i64 > trace.initial_positive_dot_i64);
-        assert!(trace.final_negative_dot_i64 < trace.initial_negative_dot_i64);
-        assert!(!trace.steps.is_empty());
-        assert!(trace.steps[0].positive_dot_after_i64 > trace.steps[0].positive_dot_before_i64);
-        if trace.steps[0].negative_dot_before_i64 > LEXEME_NEGATIVE_DOT_MARGIN_I64 {
-            assert!(trace.steps[0].negative_dot_after_i64 < trace.steps[0].negative_dot_before_i64);
-        }
-        let line = trace.to_json_line();
-        assert!(line.contains("\"schema\":\"nsrl.training_lexeme_embedding_trace.v1\""));
-        assert!(line.contains("\"tokenizer\":\"lexeme_ascii_lower_u16_v1\""));
-        assert!(line.contains("\"trained_component\":\"lexeme_embedding_i16\""));
-    }
-
-    #[test]
-    fn lexeme_embedding_model_round_trips() {
-        let tokens = encode_u16_test_tokens(&[256, 300, 256, 300, 400, 401, 400, 401]);
-        let config = LexemeEmbeddingTrainConfig {
-            epochs: 1,
-            context_radius: 1,
-            stride: 1,
-            window_offset: 0,
-            max_windows: Some(4),
-            vocab_size: 512,
-            embedding_dim: 8,
-            learning_rate: 1,
-            learning_rate_shift: 8,
-            concept_frequency_cap: 0,
-            concept_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-        };
-        let run =
-            run_lexeme_embedding_training_with_model(&tokens, config).expect("lexeme model train");
-        let bytes = run.model.to_bytes();
-        let decoded = LexemeEmbeddingModel::from_bytes(&bytes).expect("model");
-
-        assert_eq!(decoded, run.model);
-        assert_eq!(decoded.embedding_hash(), run.trace.final_embedding_hash);
-        assert_eq!(decoded.vocab_size, config.vocab_size);
-        assert_eq!(decoded.embedding_dim, config.embedding_dim);
-    }
-
     #[test]
     fn checked_model_serialization_rejects_oversized_public_shapes() {
         if usize::BITS <= 32 {
@@ -24113,31 +20146,12 @@ mod tests {
 
         let too_large = u32::MAX as usize + 1;
 
-        let lexeme_embedding = LexemeEmbeddingModel {
-            vocab_size: too_large,
-            embedding_dim: 1,
-            embeddings: Vec::new(),
-        };
-        assert!(lexeme_embedding.try_to_bytes().is_err());
-
-        let lexeme_softmax = LexemeSoftmaxModel {
-            seq_len: too_large,
-            vocab_size: 1,
-            embedding_dim: 1,
-            context_features: LexemeContextFeatures::Mean,
-            hidden_dim: 0,
-            head_layout: LexemeSoftmaxHeadLayout::Linear,
-            adapter_logit_shift: 0,
-            embeddings: Vec::new(),
-            hidden_weights: Vec::new(),
-            output_weights: Vec::new(),
-        };
-        assert!(lexeme_softmax.try_to_bytes().is_err());
-
         let mini = MiniTransformerMlpModel {
             context_seq_len: too_large,
             embeddings: Vec::new(),
             position_embeddings: Vec::new(),
+            attention_rms_weights: Vec::new(),
+            mlp_rms_weights: Vec::new(),
             q_weights: Vec::new(),
             k_weights: Vec::new(),
             v_weights: Vec::new(),
@@ -24151,995 +20165,638 @@ mod tests {
     }
 
     #[test]
-    fn lexeme_frequency_weights_downweight_repetitive_concepts() {
-        let tokens = [256, 256, 256, 256, 300, 301];
-        let weights = lexeme_frequency_weights_q15(&tokens, 512, 2, 4096).expect("weights");
+    fn mini_transformer_adam_state_round_trips_separately_from_model() {
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len(8);
+        let mut state =
+            MiniTransformerAdamOptimizerState::new_for_model(&model, IntegerAdamConfig::default())
+                .expect("new Adam state");
+        state.step = 17;
+        let last_parameter = state.parameter_count() - 1;
+        state.first_moments[0] = -123;
+        state.first_moments[last_parameter] = 456;
+        state.second_moments[1] = 789;
+        state.update_residuals[2] = -321;
 
-        assert!(weights[256] < i16::MAX);
-        assert_eq!(weights[300], i16::MAX);
-        assert_eq!(weights[301], i16::MAX);
-        assert!(weights[256] >= 4096);
+        let bytes = state.to_bytes();
+        let decoded =
+            MiniTransformerAdamOptimizerState::from_bytes(&bytes).expect("decode Adam state");
+
+        assert_eq!(decoded, state);
+        decoded
+            .validate_for_model(&model)
+            .expect("state remains bound to model");
+        assert_eq!(&bytes[..8], MINI_TRANSFORMER_ADAM_STATE_MAGIC);
+        assert_ne!(&bytes[..8], MINI_TRANSFORMER_MODEL_MAGIC);
     }
 
     #[test]
-    fn lexeme_quality_weights_downweight_document_cruft_without_deleting_it() {
-        let mut vocab = vec![String::new(); 260];
-        vocab[256] = "class".to_string();
-        vocab[257] = "king".to_string();
-        vocab[258] = "gutenberg".to_string();
-        vocab[259] = "www".to_string();
-        vocab.push("bgcolor".to_string());
-        vocab.push("fefefe".to_string());
-        vocab.push("d".to_string());
-        vocab.push("january".to_string());
-        vocab.push("km".to_string());
-        vocab.push("february-february".to_string());
-        vocab.push("february-align".to_string());
-        vocab.push("minister-february".to_string());
-        vocab.push(".".to_string());
-        vocab.push("!".to_string());
-        vocab.push("?".to_string());
+    fn mini_transformer_adam_state_rejects_corruption_and_wrong_model() {
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        let state =
+            MiniTransformerAdamOptimizerState::new_for_model(&model, IntegerAdamConfig::default())
+                .expect("new Adam state");
+        let mut corrupt = state.to_bytes();
+        corrupt[80] ^= 0x40;
+        assert!(MiniTransformerAdamOptimizerState::from_bytes(&corrupt).is_err());
+        assert!(MiniTransformerAdamOptimizerState::from_bytes(&corrupt[..64]).is_err());
 
-        let weights =
-            lexeme_quality_weights_from_vocab(&vocab, 271, LexemeQualityWeightProfile::CruftAware)
-                .expect("weights");
+        let mut changed_model = model.clone();
+        changed_model.output_weights[0] = changed_model.output_weights[0].saturating_add(1);
+        assert!(state.validate_for_model(&changed_model).is_err());
 
-        assert_eq!(weights[256], 4096);
-        assert_eq!(weights[257], i16::MAX);
-        assert_eq!(weights[258], 4096);
-        assert_eq!(weights[259], 4096);
-        assert_eq!(weights[260], 4096);
-        assert_eq!(weights[261], 4096);
-        assert_eq!(weights[262], 8192);
-        assert_eq!(weights[263], 16384);
-        assert_eq!(weights[264], 16384);
-        assert_eq!(weights[265], 4096);
-        assert_eq!(weights[266], 4096);
-        assert_eq!(weights[267], 8192);
-        assert_eq!(weights[268], i16::MAX);
-        assert_eq!(weights[269], i16::MAX);
-        assert_eq!(weights[270], i16::MAX);
+        let mut rebound = state.clone();
+        rebound
+            .bind_to_model(&changed_model)
+            .expect("same-shape model can receive state after an accepted update");
+        rebound
+            .validate_for_model(&changed_model)
+            .expect("rebound state/model pair");
     }
 
     #[test]
-    fn prose_aware_quality_weights_demote_scaffold_words() {
-        let mut vocab = vec![String::new(); 260];
-        vocab[256] = "the".to_string();
-        vocab[257] = "because".to_string();
-        vocab[258] = "earth".to_string();
-        vocab[259] = "class".to_string();
+    fn mini_transformer_rms_model_round_trips_and_same_geometry_v4_stays_disabled() {
+        let mut rms_model = MiniTransformerMlpModel::new_initial_with_seq_len(8);
+        rms_model.enable_rms_norm().expect("enable RMSNorm");
+        assert!(rms_model.rms_norm_enabled());
+        let rms_bytes = rms_model.to_bytes();
+        assert_eq!(&rms_bytes[..8], MINI_TRANSFORMER_MODEL_MAGIC);
+        let decoded = MiniTransformerMlpModel::from_bytes(&rms_bytes).expect("RMS model decode");
+        assert_eq!(decoded, rms_model);
 
-        let cruft =
-            lexeme_quality_weights_from_vocab(&vocab, 260, LexemeQualityWeightProfile::CruftAware)
-                .expect("cruft weights");
-        let prose =
-            lexeme_quality_weights_from_vocab(&vocab, 260, LexemeQualityWeightProfile::ProseAware)
-                .expect("prose weights");
+        let legacy_model = MiniTransformerMlpModel::new_initial_with_seq_len(8);
+        let mut legacy_bytes = legacy_model.to_bytes();
+        legacy_bytes[..8].copy_from_slice(MINI_TRANSFORMER_LEGACY_MODEL_MAGIC);
+        let decoded_legacy =
+            MiniTransformerMlpModel::from_bytes(&legacy_bytes).expect("legacy v4 decode");
+        assert_eq!(decoded_legacy, legacy_model);
+        assert!(!decoded_legacy.rms_norm_enabled());
+    }
 
-        assert_eq!(cruft[256], i16::MAX);
-        assert_eq!(cruft[257], i16::MAX);
-        assert_eq!(prose[256], 16384);
-        assert_eq!(prose[257], 24576);
-        assert_eq!(prose[258], i16::MAX);
-        assert_eq!(prose[259], 4096);
+    fn historical_v4_fixture_bytes(context_seq_len: usize) -> Vec<u8> {
+        let embeddings = vec![0_i16; BYTE_VOCAB * MINI_TRANSFORMER_LEGACY_V4_D_MODEL];
+        let position_embeddings = vec![0_i16; context_seq_len * MINI_TRANSFORMER_LEGACY_V4_D_MODEL];
+        let attention_count =
+            MINI_TRANSFORMER_LEGACY_V4_D_MODEL * MINI_TRANSFORMER_LEGACY_V4_D_MODEL;
+        let mut q_weights = vec![0_i8; attention_count];
+        let mut k_weights = vec![0_i8; attention_count];
+        let mut v_weights = vec![0_i8; attention_count];
+        let mut o_weights = vec![0_i8; attention_count];
+        for index in 0..MINI_TRANSFORMER_LEGACY_V4_D_MODEL {
+            let diagonal = index * MINI_TRANSFORMER_LEGACY_V4_D_MODEL + index;
+            q_weights[diagonal] = 1;
+            k_weights[diagonal] = 1;
+            v_weights[diagonal] = 1;
+            o_weights[diagonal] = 1;
+        }
+        let up_weights =
+            vec![0_i8; MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM * MINI_TRANSFORMER_LEGACY_V4_D_MODEL];
+        let gate_weights = up_weights.clone();
+        let down_weights =
+            vec![0_i8; MINI_TRANSFORMER_LEGACY_V4_D_MODEL * MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM];
+        let output_weights = vec![0_i8; BYTE_VOCAB * MINI_TRANSFORMER_LEGACY_V4_D_MODEL];
+
+        let mut embedding_hasher = StableHasher::new();
+        embedding_hasher.update_i16_slice(&embeddings);
+        embedding_hasher.update_i16_slice(&position_embeddings);
+        let mut model_hasher = StableHasher::new();
+        model_hasher.update_usize(context_seq_len);
+        model_hasher.update_i16_slice(&embeddings);
+        model_hasher.update_i16_slice(&position_embeddings);
+        model_hasher.update_i8_slice(&q_weights);
+        model_hasher.update_i8_slice(&k_weights);
+        model_hasher.update_i8_slice(&v_weights);
+        model_hasher.update_i8_slice(&o_weights);
+        model_hasher.update_i8_slice(&up_weights);
+        model_hasher.update_i8_slice(&gate_weights);
+        model_hasher.update_i8_slice(&down_weights);
+        model_hasher.update_i8_slice(&output_weights);
+
+        let tensors = [
+            q_weights.as_slice(),
+            k_weights.as_slice(),
+            v_weights.as_slice(),
+            o_weights.as_slice(),
+            up_weights.as_slice(),
+            gate_weights.as_slice(),
+            down_weights.as_slice(),
+            output_weights.as_slice(),
+        ];
+        let counts = [
+            embeddings.len(),
+            position_embeddings.len(),
+            q_weights.len(),
+            k_weights.len(),
+            v_weights.len(),
+            o_weights.len(),
+            up_weights.len(),
+            gate_weights.len(),
+            down_weights.len(),
+            output_weights.len(),
+        ];
+        let hashes = [
+            embedding_hasher.finish(),
+            hash_i8_slice(&q_weights),
+            hash_i8_slice(&k_weights),
+            hash_i8_slice(&v_weights),
+            hash_i8_slice(&o_weights),
+            hash_three_i8_slices(&up_weights, &gate_weights, &down_weights),
+            hash_i8_slice(&output_weights),
+            model_hasher.finish(),
+        ];
+        let mut out = Vec::new();
+        out.extend_from_slice(MINI_TRANSFORMER_LEGACY_MODEL_MAGIC);
+        for value in [
+            BYTE_VOCAB,
+            MINI_TRANSFORMER_LEGACY_V4_D_MODEL,
+            MINI_TRANSFORMER_LEGACY_V4_HEADS,
+            MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM,
+            context_seq_len,
+        ] {
+            out.extend_from_slice(&(value as u32).to_le_bytes());
+        }
+        for count in counts {
+            out.extend_from_slice(&(count as u64).to_le_bytes());
+        }
+        for hash in hashes {
+            out.extend_from_slice(&hash.to_le_bytes());
+        }
+        for value in embeddings.iter().chain(position_embeddings.iter()) {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        for tensor in tensors {
+            out.extend(tensor.iter().map(|&value| value as u8));
+        }
+        out
     }
 
     #[test]
-    fn lexeme_embedding_training_traces_concept_frequency_weight() {
-        let tokens = encode_u16_test_tokens(&[256, 256, 256, 256, 300, 301, 302, 303]);
-        let trace = run_lexeme_embedding_training(
-            &tokens,
-            LexemeEmbeddingTrainConfig {
-                epochs: 1,
-                context_radius: 1,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(2),
-                vocab_size: 512,
-                embedding_dim: 8,
-                learning_rate: 1,
-                learning_rate_shift: 8,
-                concept_frequency_cap: 2,
-                concept_frequency_min_weight_q15: 4096,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-            },
-        )
-        .expect("lexeme train");
-
-        assert!(trace.steps[0].positive_frequency_weight_q15 < i16::MAX);
-        let line = trace.to_json_line();
-        assert!(line.contains("\"concept_frequency_cap\":2"));
-        assert!(line.contains("\"positive_frequency_weight_q15\""));
-    }
-
-    #[test]
-    fn lexeme_embedding_training_traces_quality_weight() {
-        let tokens = encode_u16_test_tokens(&[256, 257, 256, 257, 300, 301]);
-        let mut quality = vec![i16::MAX; 512];
-        quality[256] = 4096;
-        let run = run_lexeme_embedding_training_with_model_and_quality(
-            &tokens,
-            LexemeEmbeddingTrainConfig {
-                epochs: 1,
-                context_radius: 1,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(2),
-                vocab_size: 512,
-                embedding_dim: 8,
-                learning_rate: 1,
-                learning_rate_shift: 8,
-                concept_frequency_cap: 0,
-                concept_frequency_min_weight_q15: 4096,
-                quality_weight_profile: LexemeQualityWeightProfile::CruftAware,
-            },
-            Some(&quality),
-        )
-        .expect("lexeme train");
-
-        assert_eq!(run.trace.steps[0].positive_quality_weight_q15, 4096);
-        assert_eq!(run.trace.steps[0].positive_update_weight_q15, 4096);
-        let line = run.trace.to_json_line();
-        assert!(line.contains("\"quality_weight_profile\":\"cruft-aware\""));
-        assert!(line.contains("\"positive_quality_weight_q15\""));
-    }
-
-    #[test]
-    fn lexeme_softmax_training_updates_head_with_frozen_embeddings() {
-        let tokens =
-            encode_u16_test_tokens(&[256, 300, 256, 300, 256, 300, 256, 300, 256, 300, 256, 300]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let initial_embedding_hash = embedding_model.embedding_hash();
-        let trace = run_lexeme_softmax_training(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 2,
-                seq_len: 2,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(10),
-                batch_windows: 1,
-                learning_rate: 1,
-                learning_rate_shift: 20,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 20,
-                max_weight_delta: 1,
-                max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Mean,
-                train_embeddings: false,
-                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-                ..LexemeSoftmaxTrainConfig::default()
-            },
-        )
-        .expect("lexeme softmax train");
-
-        assert_eq!(trace.token_count, 12);
-        assert_eq!(trace.windows, 10);
-        assert_eq!(trace.initial_embedding_hash, initial_embedding_hash);
-        assert_eq!(trace.final_embedding_hash, initial_embedding_hash);
-        assert_ne!(trace.initial_weight_hash, trace.final_weight_hash);
-        assert!(trace.weight_delta_l1 > 0);
-        assert!(!trace.steps.is_empty());
-        assert!(
-            trace.steps[0].target_probability_after_q15
-                > trace.steps[0].target_probability_before_q15
-        );
-        assert_eq!(trace.steps[0].learning_rate_shift, 20);
-        let line = trace.to_json_line();
-        assert!(line.contains("\"schema\":\"nsrl.training_lexeme_softmax_trace.v1\""));
-        assert!(line.contains("\"model\":{\"id\":\"lexeme_softmax_embedding_head_v1\""));
-    }
-
-    #[test]
-    fn lexeme_softmax_evaluate_respects_window_offset() {
-        let tokens =
-            encode_u16_test_tokens(&[256, 300, 256, 300, 256, 300, 256, 300, 256, 300, 256, 300]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 1,
-                seq_len: 2,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(4),
-                batch_windows: 1,
-                learning_rate: 1,
-                learning_rate_shift: 20,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 20,
-                max_weight_delta: 1,
-                max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Mean,
-                train_embeddings: false,
-                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-                ..LexemeSoftmaxTrainConfig::default()
-            },
-        )
-        .expect("lexeme softmax train");
-
-        let full = run_lexeme_softmax_evaluate(&tokens, run.model.clone(), 2, 1, 0, None)
-            .expect("full eval");
-        let offset =
-            run_lexeme_softmax_evaluate(&tokens, run.model, 2, 1, 3, None).expect("offset eval");
-
-        assert_eq!(full.windows, 10);
-        assert_eq!(offset.windows, 7);
-    }
-
-    #[test]
-    fn lexeme_softmax_training_can_update_embeddings_through_head_gradient() {
-        let tokens =
-            encode_u16_test_tokens(&[256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let initial_embedding_hash = embedding_model.embedding_hash();
-        let run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 2,
-                seq_len: 2,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(10),
-                batch_windows: 1,
-                learning_rate: 1,
-                learning_rate_shift: 18,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 18,
-                max_weight_delta: 1,
-                max_embedding_delta: 1,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Ordered,
-                train_embeddings: true,
-                embedding_learning_rate_shift: 0,
-                ..LexemeSoftmaxTrainConfig::default()
-            },
-        )
-        .expect("lexeme softmax train embeddings");
-
-        assert_ne!(run.trace.final_embedding_hash, initial_embedding_hash);
-        assert!(run.trace.embedding_delta_l1 > 0);
-        assert_ne!(run.trace.initial_weight_hash, run.trace.final_weight_hash);
-        assert!(
-            run.trace
-                .steps
-                .iter()
-                .any(|step| step.embedding_hash_before != step.embedding_hash_after)
-        );
-        let line = run.trace.to_json_line();
-        assert!(line.contains("\"train_embeddings\":true"));
-        assert!(line.contains("\"embedding_delta_l1\""));
-    }
-
-    #[test]
-    fn lexeme_softmax_reduction_averages_matching_models() {
-        let left = LexemeSoftmaxModel::new_with_context_features_hidden_layout_and_adapter_shift(
-            2,
-            4,
-            2,
-            LexemeContextFeatures::Mean,
-            1,
-            LexemeSoftmaxHeadLayout::ResidualHidden,
-            0,
-            vec![1, -1, 10, -10, 100, -100, i16::MAX, i16::MIN],
-            vec![1, -1, 127],
-            vec![
-                1, -1, 10, -10, 100, -100, 127, -128, 4, 5, 6, 7, 8, 9, 10, 11,
-            ],
-        )
-        .expect("left model");
-        let right = LexemeSoftmaxModel::new_with_context_features_hidden_layout_and_adapter_shift(
-            2,
-            4,
-            2,
-            LexemeContextFeatures::Mean,
-            1,
-            LexemeSoftmaxHeadLayout::ResidualHidden,
-            0,
-            vec![2, -2, 11, -11, 101, -101, i16::MAX, i16::MIN],
-            vec![2, -2, 126],
-            vec![
-                2, -2, 11, -11, 101, -101, 126, -127, 5, 6, 7, 8, 9, 10, 11, 12,
-            ],
-        )
-        .expect("right model");
-
-        let (reduced, trace) =
-            reduce_lexeme_softmax_models(vec![left.clone(), right.clone()]).expect("reduce");
-
+    fn historical_v4_geometry_upgrades_for_eval_and_resume() {
+        let bytes = historical_v4_fixture_bytes(4);
+        let source_hash =
+            MiniTransformerMlpModel::serialized_model_hash(&bytes).expect("serialized source hash");
+        let upgraded = MiniTransformerMlpModel::from_bytes(&bytes).expect("historical V4 decode");
+        assert_eq!(upgraded.context_seq_len, 4);
         assert_eq!(
-            reduced.embeddings,
-            vec![2, -2, 11, -11, 101, -101, i16::MAX, i16::MIN]
+            upgraded.embeddings.len(),
+            BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
         );
-        assert_eq!(reduced.hidden_weights, vec![2, -2, 127]);
-        assert_eq!(
-            reduced.output_weights,
-            vec![
-                2, -2, 11, -11, 101, -101, 127, -128, 5, 6, 7, 8, 9, 10, 11, 12,
-            ]
-        );
-        assert_eq!(trace.model_count, 2);
-        assert_eq!(
-            trace.input_model_hashes,
-            vec![left.model_hash(), right.model_hash()]
-        );
-        assert_eq!(trace.output_model_hash, reduced.model_hash());
-        let line = trace.to_json_line();
-        assert!(line.contains("\"schema\":\"nsrl.lexeme_softmax_reduce_trace.v1\""));
-        assert!(line.contains("\"kind\":\"equal_weight_integer_average_v1\""));
-    }
+        assert_eq!(upgraded.transformer_layers(), 1);
+        assert_ne!(upgraded.model_hash(), source_hash);
+        assert_eq!(&upgraded.to_bytes()[..8], MINI_TRANSFORMER_MODEL_MAGIC);
 
-    #[test]
-    fn lexeme_softmax_reduction_rejects_shape_mismatch() {
-        let left = LexemeSoftmaxModel::new(2, 4, 2, vec![0; 8], vec![0; 12]).expect("left model");
-        let right = LexemeSoftmaxModel::new(4, 4, 2, vec![0; 8], vec![0; 12]).expect("right model");
-
-        assert!(reduce_lexeme_softmax_models(vec![left, right]).is_err());
-    }
-
-    #[test]
-    fn lexeme_softmax_batch_windows_accumulate_head_and_embeddings() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 1,
-                seq_len: 2,
+        evaluate_mini_transformer_mlp_model(
+            b"legacy checkpoint evaluation",
+            &upgraded,
+            MiniTransformerMlpEvalConfig {
+                seq_len: 4,
                 stride: 1,
-                window_offset: 0,
-                max_windows: Some(9),
-                batch_windows: 4,
-                learning_rate: 1,
-                learning_rate_shift: 18,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 18,
-                max_weight_delta: 1,
-                max_embedding_delta: 1,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Ordered,
-                train_embeddings: true,
-                embedding_learning_rate_shift: 0,
-                ..LexemeSoftmaxTrainConfig::default()
+                max_windows: Some(1),
+                attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+                position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
             },
         )
-        .expect("lexeme softmax batch train embeddings");
+        .expect("upgraded model evaluates");
 
-        assert_eq!(run.trace.examined_windows, 9);
-        assert_eq!(run.trace.updates, 3);
-        assert!(run.trace.weight_delta_l1 > 0);
-        assert!(run.trace.embedding_delta_l1 > 0);
-        assert_ne!(run.trace.initial_weight_hash, run.trace.final_weight_hash);
-        assert_ne!(
-            run.trace.initial_embedding_hash,
-            run.trace.final_embedding_hash
-        );
-        let line = run.trace.to_json_line();
-        assert!(line.contains("\"batch_windows\":4"));
+        run_mini_transformer_mlp_training_from_model(
+            b"legacy checkpoint resume",
+            MiniTransformerMlpTrainConfig {
+                epochs: 1,
+                seq_len: 4,
+                stride: 1,
+                max_windows: Some(1),
+                batch_windows: 1,
+                attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+                position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+                ..MiniTransformerMlpTrainConfig::default()
+            },
+            upgraded,
+        )
+        .expect("upgraded model resumes training");
     }
 
-    #[test]
-    fn lexeme_softmax_parallel_map_reduce_matches_serial() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300, 257, 301, 256,
-            300, 257, 302, 256, 300, 257, 301, 256,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-
-        let base_config = LexemeSoftmaxTrainConfig {
-            epochs: 2,
-            seq_len: 2,
+    fn tiny_integer_adam_training_config() -> MiniTransformerMlpTrainConfig {
+        MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
             stride: 1,
-            window_offset: 0,
-            max_windows: Some(20),
+            max_windows: Some(8),
             batch_windows: 4,
-            learning_rate: 1,
-            learning_rate_shift: 18,
-            lr_shift_decay_windows: 0,
-            lr_shift_decay_step: 1,
-            max_learning_rate_shift: 18,
-            max_weight_delta: 1,
-            max_embedding_delta: 1,
-            target_frequency_cap: 0,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Ordered,
-            train_embeddings: true,
-            embedding_learning_rate_shift: 0,
-            ..LexemeSoftmaxTrainConfig::default()
+            attention_kind: MiniTransformerAttentionKind::Linear,
+            position_policy: MiniTransformerPositionPolicy::Nope,
+            batch_mode: MiniTransformerBatchMode::Serial,
+            ..MiniTransformerMlpTrainConfig::default()
+        }
+    }
+
+    #[test]
+    fn mini_transformer_integer_adam_replay_is_deterministic() {
+        let tokens = b"to be or not to be, that is the question";
+        let config = tiny_integer_adam_training_config();
+        let optimizer = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
         };
 
-        // Serial baseline (map_reduce_workers = 1, the default).
-        let serial_run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model.clone(),
-            LexemeSoftmaxTrainConfig {
-                map_reduce_workers: 1,
-                ..base_config
-            },
-        )
-        .expect("serial lexeme train");
+        let left = run_mini_transformer_mlp_integer_adam_training(tokens, config, optimizer)
+            .expect("left Adam run");
+        let right = run_mini_transformer_mlp_integer_adam_training(tokens, config, optimizer)
+            .expect("right Adam run");
 
-        // Parallel path with 4 workers.
-        let parallel_run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                map_reduce_workers: 4,
-                ..base_config
-            },
-        )
-        .expect("parallel lexeme train");
+        assert_eq!(left, right);
+        assert_eq!(left.trace.updates, 8);
+        assert_eq!(left.trace.optimizer_step, 2);
+        assert_ne!(left.trace.initial_model_hash, left.trace.final_model_hash);
+        assert!(left.trace.output_head_delta_l1 > 0);
+        assert!(left.trace.mlp_delta_l1 > 0);
+        assert!(left.trace.embedding_delta_l1 > 0);
+        assert!(left.trace.attention_delta_l1 > 0);
+        assert!(left.trace.attention_q_delta_l1 > 0);
+        assert!(left.trace.attention_k_delta_l1 > 0);
+        assert!(left.trace.attention_v_delta_l1 > 0);
+        assert!(left.trace.attention_o_delta_l1 > 0);
+        assert_eq!(left.trace.transformer_layers, 2);
+        let json = left.trace.to_json_line();
+        assert!(json.contains("\"architecture_profile\""));
+        assert!(json.contains("\"argmax_margin_weight_q15\":0"));
+        assert!(json.contains("\"attention_q\":"));
+        assert!(json.contains("\"saturation\":"));
+        left.optimizer_state
+            .validate_for_model(&left.model)
+            .expect("final optimizer binding");
+    }
 
-        // The final model weights and embeddings must be bit-identical.
-        assert_eq!(
-            serial_run.model.output_weights, parallel_run.model.output_weights,
-            "output weights differ between serial and parallel"
-        );
-        assert_eq!(
-            serial_run.model.embeddings, parallel_run.model.embeddings,
-            "embeddings differ between serial and parallel"
-        );
-        assert_eq!(
-            serial_run.model.hidden_weights, parallel_run.model.hidden_weights,
-            "hidden weights differ between serial and parallel"
-        );
+    #[cfg(feature = "mini-calibrated")]
+    #[test]
+    fn calibrated_suffix_memory_is_deterministic_and_uses_longest_suffix() {
+        let tokens = b"abcaabdxabcaabdy";
+        let mut first = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        let mut replay = first.clone();
 
-        // Trace-level checks: same update count, same final hashes.
-        assert_eq!(serial_run.trace.updates, parallel_run.trace.updates);
+        let first_records =
+            mini_transformer_install_ngram_cache(&mut first, tokens).expect("first cache");
+        let replay_records =
+            mini_transformer_install_ngram_cache(&mut replay, tokens).expect("replayed cache");
+
+        assert_eq!(first_records, replay_records);
+        assert_eq!(first.position_embeddings, replay.position_embeddings);
         assert_eq!(
-            serial_run.trace.final_weight_hash,
-            parallel_run.trace.final_weight_hash
+            mini_transformer_ngram_cache_prediction(&first.position_embeddings, b"zzabc"),
+            Some(b'a')
         );
         assert_eq!(
-            serial_run.trace.final_embedding_hash,
-            parallel_run.trace.final_embedding_hash
+            mini_transformer_ngram_cache_prediction(&first.position_embeddings, b"zzabd"),
+            Some(b'x')
         );
         assert_eq!(
-            serial_run.trace.final_accuracy_per_mille,
-            parallel_run.trace.final_accuracy_per_mille
-        );
-        assert_eq!(
-            serial_run.trace.weight_delta_l1,
-            parallel_run.trace.weight_delta_l1
-        );
-        assert_eq!(
-            serial_run.trace.embedding_delta_l1,
-            parallel_run.trace.embedding_delta_l1
+            mini_transformer_ngram_cache_prediction(&first.position_embeddings, b"qqqq"),
+            Some(b'a')
         );
     }
 
     #[test]
-    fn lexeme_softmax_parallel_map_reduce_matches_serial_hidden_head() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300, 257, 301, 256,
-            300, 257, 302, 256, 300, 257, 301, 256,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-
-        let base_config = LexemeSoftmaxTrainConfig {
-            epochs: 2,
-            seq_len: 2,
-            stride: 1,
-            window_offset: 0,
-            max_windows: Some(20),
-            batch_windows: 4,
-            learning_rate: 1,
-            learning_rate_shift: 20,
-            lr_shift_decay_windows: 0,
-            lr_shift_decay_step: 1,
-            max_learning_rate_shift: 20,
-            max_weight_delta: 1,
-            max_embedding_delta: 1,
-            target_frequency_cap: 0,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Mean,
-            train_embeddings: false,
-            embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-            hidden_dim: 4,
-            hidden_learning_rate_shift: 8,
-            max_hidden_weight_delta: 4,
-            adapter_logit_shift: 0,
-            map_reduce_workers: 1,
-            ..LexemeSoftmaxTrainConfig::default()
+    fn mini_transformer_integer_adam_updates_rmsnorm_gamma() {
+        let tokens = b"Every thing that lives is holy, and each breath returns.";
+        let config = tiny_integer_adam_training_config();
+        let optimizer = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
         };
+        let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+        model.enable_rms_norm().expect("enable RMSNorm");
+        let initial_attention_gamma = model.attention_rms_weights.clone();
+        let initial_mlp_gamma = model.mlp_rms_weights.clone();
 
-        let serial_run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            LexemeEmbeddingModel::new(512, 8, embeddings.clone()).expect("model"),
-            base_config,
+        let run = run_mini_transformer_mlp_integer_adam_training_from_model(
+            tokens, config, optimizer, model, None,
         )
-        .expect("serial hidden train");
+        .expect("RMSNorm Adam run");
 
-        let parallel_run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            LexemeEmbeddingModel::new(512, 8, embeddings).expect("model"),
-            LexemeSoftmaxTrainConfig {
-                map_reduce_workers: 4,
-                ..base_config
-            },
-        )
-        .expect("parallel hidden train");
-
-        assert_eq!(
-            serial_run.model.output_weights, parallel_run.model.output_weights,
-            "output weights differ"
-        );
-        assert_eq!(
-            serial_run.model.hidden_weights, parallel_run.model.hidden_weights,
-            "hidden weights differ"
-        );
-        assert_eq!(serial_run.trace.updates, parallel_run.trace.updates);
-        assert_eq!(
-            serial_run.trace.final_weight_hash,
-            parallel_run.trace.final_weight_hash
-        );
-        assert_eq!(
-            serial_run.trace.weight_delta_l1,
-            parallel_run.trace.weight_delta_l1
-        );
+        assert!(run.model.rms_norm_enabled());
+        assert_ne!(run.model.attention_rms_weights, initial_attention_gamma);
+        assert_ne!(run.model.mlp_rms_weights, initial_mlp_gamma);
+        assert!(run.trace.rms_norm_delta_l1 > 0);
+        run.optimizer_state
+            .validate_for_model(&run.model)
+            .expect("RMS optimizer binding");
     }
 
     #[test]
-    fn lexeme_softmax_training_can_resume_from_softmax_model() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let config = LexemeSoftmaxTrainConfig {
-            epochs: 1,
-            seq_len: 2,
-            stride: 1,
-            window_offset: 0,
-            max_windows: Some(6),
-            batch_windows: 2,
-            learning_rate: 1,
-            learning_rate_shift: 18,
-            lr_shift_decay_windows: 0,
-            lr_shift_decay_step: 1,
-            max_learning_rate_shift: 18,
-            max_weight_delta: 1,
-            max_embedding_delta: 1,
-            target_frequency_cap: 0,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Ordered,
-            train_embeddings: true,
-            embedding_learning_rate_shift: 0,
-            ..LexemeSoftmaxTrainConfig::default()
+    fn mini_transformer_rmsnorm_scope_updates_only_internal_gamma() {
+        let tokens = b"The imagination is not a state; it is existence itself.";
+        let config = tiny_integer_adam_training_config();
+        let optimizer = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
         };
-        let first = run_lexeme_softmax_training_with_model(&tokens, embedding_model, config)
-            .expect("first train");
-        let initial_resume_hash = first.model.output_weight_hash();
-        let mut resume_config = config;
-        resume_config.window_offset = 6;
-        resume_config.max_windows = Some(4);
-        let resumed = run_lexeme_softmax_training_from_softmax_model_and_quality(
-            &tokens,
-            first.model,
-            resume_config,
+        let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+        model.enable_rms_norm().expect("enable RMSNorm");
+        let initial = model.clone();
+
+        let run = run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
+            tokens,
+            config,
+            optimizer,
+            model,
             None,
+            MiniTransformerAdamTrainScope::RmsNorm,
         )
-        .expect("resume train");
+        .expect("RMSNorm-only Adam run");
 
-        assert_eq!(resumed.trace.initial_weight_hash, initial_resume_hash);
+        assert_eq!(
+            run.trace.train_scope,
+            MiniTransformerAdamTrainScope::RmsNorm
+        );
+        assert!(run.trace.rms_norm_delta_l1 > 0);
+        assert_eq!(run.trace.output_head_delta_l1, 0);
+        assert_eq!(run.trace.mlp_delta_l1, 0);
+        assert_eq!(run.trace.embedding_delta_l1, 0);
+        assert_eq!(run.trace.attention_delta_l1, 0);
         assert_ne!(
-            resumed.trace.initial_weight_hash,
-            resumed.trace.final_weight_hash
+            run.model.attention_rms_weights,
+            initial.attention_rms_weights
         );
-        assert_eq!(resumed.trace.examined_windows, 4);
-        assert_eq!(resumed.trace.updates, 2);
+        assert_ne!(run.model.mlp_rms_weights, initial.mlp_rms_weights);
+        assert_eq!(run.model.embeddings, initial.embeddings);
+        assert_eq!(run.model.position_embeddings, initial.position_embeddings);
+        assert_eq!(run.model.q_weights, initial.q_weights);
+        assert_eq!(run.model.k_weights, initial.k_weights);
+        assert_eq!(run.model.v_weights, initial.v_weights);
+        assert_eq!(run.model.o_weights, initial.o_weights);
+        assert_eq!(run.model.up_weights, initial.up_weights);
+        assert_eq!(run.model.gate_weights, initial.gate_weights);
+        assert_eq!(run.model.down_weights, initial.down_weights);
+        assert_eq!(run.model.output_weights, initial.output_weights);
     }
 
     #[test]
-    fn mean_lexeme_softmax_training_can_resume_with_longer_seq_len() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300, 257, 302, 256,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let config = LexemeSoftmaxTrainConfig {
-            epochs: 1,
-            seq_len: 2,
-            stride: 1,
-            window_offset: 0,
-            max_windows: Some(6),
-            batch_windows: 2,
-            learning_rate: 1,
-            learning_rate_shift: 18,
-            lr_shift_decay_windows: 0,
-            lr_shift_decay_step: 1,
-            max_learning_rate_shift: 18,
-            max_weight_delta: 1,
-            max_embedding_delta: 1,
-            target_frequency_cap: 0,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Mean,
-            train_embeddings: false,
-            embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-            ..LexemeSoftmaxTrainConfig::default()
+    fn mini_transformer_final_mlp_scope_freezes_shared_trunk() {
+        let tokens = b"The tygers of wrath are wiser than the horses of instruction.";
+        let config = tiny_integer_adam_training_config();
+        let optimizer = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
         };
-        let first = run_lexeme_softmax_training_with_model(&tokens, embedding_model, config)
-            .expect("first train");
-        let initial_resume_hash = first.model.output_weight_hash();
-        let mut resume_config = config;
-        resume_config.seq_len = 4;
-        resume_config.window_offset = 6;
-        resume_config.max_windows = Some(4);
-        let resumed = run_lexeme_softmax_training_from_softmax_model_and_quality(
-            &tokens,
-            first.model,
-            resume_config,
-            None,
-        )
-        .expect("longer context resume train");
+        let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+        model.enable_rms_norm().expect("enable RMSNorm");
+        let initial = model.clone();
+        let layers = model.transformer_layers();
+        assert!(layers > 1);
+        let final_up = model
+            .mlp_up_or_gate_weight_range(layers - 1)
+            .expect("final up range");
+        let final_down = model
+            .mlp_down_weight_range(layers - 1)
+            .expect("final down range");
 
-        assert_eq!(resumed.model.seq_len, 4);
-        assert_eq!(resumed.trace.config.seq_len, 4);
-        assert_eq!(resumed.trace.initial_weight_hash, initial_resume_hash);
-        assert_eq!(resumed.trace.examined_windows, 4);
+        let run = run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
+            tokens,
+            config,
+            optimizer,
+            model,
+            None,
+            MiniTransformerAdamTrainScope::FinalMlp,
+        )
+        .expect("final MLP Adam run");
+
+        assert_eq!(
+            run.trace.train_scope,
+            MiniTransformerAdamTrainScope::FinalMlp
+        );
+        assert_eq!(run.trace.output_head_delta_l1, 0);
+        assert_eq!(run.trace.embedding_delta_l1, 0);
+        assert_eq!(run.trace.rms_norm_delta_l1, 0);
+        assert_eq!(run.trace.attention_delta_l1, 0);
+        assert!(run.trace.mlp_delta_l1 > 0);
+        assert_eq!(run.model.embeddings, initial.embeddings);
+        assert_eq!(run.model.position_embeddings, initial.position_embeddings);
+        assert_eq!(
+            run.model.attention_rms_weights,
+            initial.attention_rms_weights
+        );
+        assert_eq!(run.model.mlp_rms_weights, initial.mlp_rms_weights);
+        assert_eq!(run.model.q_weights, initial.q_weights);
+        assert_eq!(run.model.k_weights, initial.k_weights);
+        assert_eq!(run.model.v_weights, initial.v_weights);
+        assert_eq!(run.model.o_weights, initial.o_weights);
+        assert_eq!(run.model.output_weights, initial.output_weights);
+        assert_eq!(
+            run.model.up_weights[..final_up.start],
+            initial.up_weights[..final_up.start]
+        );
+        assert_eq!(
+            run.model.gate_weights[..final_up.start],
+            initial.gate_weights[..final_up.start]
+        );
+        assert_eq!(
+            run.model.down_weights[..final_down.start],
+            initial.down_weights[..final_down.start]
+        );
+        assert_ne!(
+            run.model.up_weights[final_up.clone()],
+            initial.up_weights[final_up]
+        );
+        assert_ne!(
+            run.model.down_weights[final_down.clone()],
+            initial.down_weights[final_down]
+        );
+        run.optimizer_state
+            .validate_for_model(&run.model)
+            .expect("final MLP optimizer binding");
     }
 
     #[test]
-    fn ordered_lexeme_softmax_training_rejects_longer_seq_len_resume() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let config = LexemeSoftmaxTrainConfig {
-            epochs: 1,
-            seq_len: 2,
-            stride: 1,
-            window_offset: 0,
+    fn mini_transformer_final_mlp_output_scope_updates_expert_only() {
+        let tokens = b"Energy is eternal delight, carried by the speaking flame.";
+        let config = tiny_integer_adam_training_config();
+        let optimizer = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
+        };
+        let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+        model.enable_rms_norm().expect("enable RMSNorm");
+        let initial = model.clone();
+
+        let run = run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
+            tokens,
+            config,
+            optimizer,
+            model,
+            None,
+            MiniTransformerAdamTrainScope::FinalMlpAndOutput,
+        )
+        .expect("final MLP and output Adam run");
+
+        assert_eq!(
+            run.trace.train_scope,
+            MiniTransformerAdamTrainScope::FinalMlpAndOutput
+        );
+        assert!(run.trace.output_head_delta_l1 > 0);
+        assert!(run.trace.mlp_delta_l1 > 0);
+        assert_eq!(run.trace.embedding_delta_l1, 0);
+        assert_eq!(run.trace.rms_norm_delta_l1, 0);
+        assert_eq!(run.trace.attention_delta_l1, 0);
+        assert_eq!(run.model.embeddings, initial.embeddings);
+        assert_eq!(run.model.position_embeddings, initial.position_embeddings);
+        assert_eq!(
+            run.model.attention_rms_weights,
+            initial.attention_rms_weights
+        );
+        assert_eq!(run.model.mlp_rms_weights, initial.mlp_rms_weights);
+        assert_eq!(run.model.q_weights, initial.q_weights);
+        assert_eq!(run.model.k_weights, initial.k_weights);
+        assert_eq!(run.model.v_weights, initial.v_weights);
+        assert_eq!(run.model.o_weights, initial.o_weights);
+        assert_ne!(run.model.output_weights, initial.output_weights);
+    }
+
+    #[test]
+    fn mini_transformer_output_scope_freezes_all_hidden_layers() {
+        let tokens = b"All deities reside in the human breast.";
+        let config = tiny_integer_adam_training_config();
+        let optimizer = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
+        };
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+        let initial = model.clone();
+        let run = run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
+            tokens,
+            config,
+            optimizer,
+            model,
+            None,
+            MiniTransformerAdamTrainScope::Output,
+        )
+        .expect("output-only Adam run");
+
+        assert_eq!(run.trace.train_scope, MiniTransformerAdamTrainScope::Output);
+        assert!(run.trace.output_head_delta_l1 > 0);
+        assert_eq!(run.trace.mlp_delta_l1, 0);
+        assert_eq!(run.trace.embedding_delta_l1, 0);
+        assert_eq!(run.trace.rms_norm_delta_l1, 0);
+        assert_eq!(run.trace.attention_delta_l1, 0);
+        assert_eq!(run.model.embeddings, initial.embeddings);
+        assert_eq!(run.model.q_weights, initial.q_weights);
+        assert_eq!(run.model.up_weights, initial.up_weights);
+        assert_ne!(run.model.output_weights, initial.output_weights);
+    }
+
+    #[test]
+    fn mini_transformer_rmsnorm_adam_serial_map_reduce_parity() {
+        let tokens = b"The road of excess leads to the palace of wisdom.";
+        let serial_config = MiniTransformerMlpTrainConfig {
             max_windows: Some(4),
-            batch_windows: 2,
-            learning_rate: 1,
-            learning_rate_shift: 18,
-            lr_shift_decay_windows: 0,
-            lr_shift_decay_step: 1,
-            max_learning_rate_shift: 18,
-            max_weight_delta: 1,
-            max_embedding_delta: 1,
-            target_frequency_cap: 0,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Ordered,
-            train_embeddings: false,
-            embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-            ..LexemeSoftmaxTrainConfig::default()
+            ..tiny_integer_adam_training_config()
         };
-        let first = run_lexeme_softmax_training_with_model(&tokens, embedding_model, config)
-            .expect("first train");
-        let mut resume_config = config;
-        resume_config.seq_len = 4;
-        resume_config.window_offset = 4;
-        resume_config.max_windows = Some(4);
+        let map_reduce_config = MiniTransformerMlpTrainConfig {
+            batch_mode: MiniTransformerBatchMode::MapReduce,
+            map_reduce_workers: 2,
+            ..serial_config
+        };
+        let optimizer = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
+        };
+        let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(serial_config.seq_len);
+        model.enable_rms_norm().expect("enable RMSNorm");
+        let serial = run_mini_transformer_mlp_integer_adam_training_from_model(
+            tokens,
+            serial_config,
+            optimizer,
+            model.clone(),
+            None,
+        )
+        .expect("serial RMSNorm run");
+        let map_reduce = run_mini_transformer_mlp_integer_adam_training_from_model(
+            tokens,
+            map_reduce_config,
+            optimizer,
+            model,
+            None,
+        )
+        .expect("map-reduce RMSNorm run");
 
-        assert!(
-            run_lexeme_softmax_training_from_softmax_model_and_quality(
-                &tokens,
-                first.model,
-                resume_config,
-                None,
-            )
-            .is_err()
+        assert_eq!(serial.model, map_reduce.model);
+        assert_eq!(serial.optimizer_state, map_reduce.optimizer_state);
+        assert_eq!(
+            serial.trace.rms_norm_delta_l1,
+            map_reduce.trace.rms_norm_delta_l1
         );
     }
 
     #[test]
-    fn lexeme_softmax_training_can_migrate_mean_model_to_ordered_context() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300, 257, 302, 256,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let config = LexemeSoftmaxTrainConfig {
-            epochs: 1,
-            seq_len: 2,
-            stride: 1,
-            window_offset: 0,
-            max_windows: Some(6),
-            batch_windows: 2,
-            learning_rate: 1,
-            learning_rate_shift: 18,
-            lr_shift_decay_windows: 0,
-            lr_shift_decay_step: 1,
-            max_learning_rate_shift: 18,
-            max_weight_delta: 1,
-            max_embedding_delta: 1,
-            target_frequency_cap: 0,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Mean,
-            train_embeddings: false,
-            embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-            ..LexemeSoftmaxTrainConfig::default()
+    fn mini_transformer_integer_adam_serial_map_reduce_parity() {
+        let tokens = b"Tyger Tyger, burning bright, in the forests of the night";
+        let serial_config = tiny_integer_adam_training_config();
+        let map_reduce_config = MiniTransformerMlpTrainConfig {
+            batch_mode: MiniTransformerBatchMode::MapReduce,
+            map_reduce_workers: 2,
+            ..serial_config
         };
-        let mean = run_lexeme_softmax_training_with_model(&tokens, embedding_model, config)
-            .expect("mean train");
-        let embedding_hash = mean.model.embedding_hash();
-        let mut ordered_config = config;
-        ordered_config.seq_len = 4;
-        ordered_config.window_offset = 0;
-        ordered_config.max_windows = Some(4);
-        ordered_config.context_features = LexemeContextFeatures::Ordered;
-        let ordered = run_lexeme_softmax_training_from_softmax_model_and_quality(
-            &tokens,
-            mean.model,
-            ordered_config,
-            None,
-        )
-        .expect("ordered migration train");
+        let optimizer = IntegerAdamConfig {
+            step_shift: 1,
+            ..IntegerAdamConfig::default()
+        };
 
-        assert_eq!(ordered.model.seq_len, 4);
+        let serial =
+            run_mini_transformer_mlp_integer_adam_training(tokens, serial_config, optimizer)
+                .expect("serial Adam run");
+        let map_reduce =
+            run_mini_transformer_mlp_integer_adam_training(tokens, map_reduce_config, optimizer)
+                .expect("map-reduce Adam run");
+
+        assert_eq!(serial.model, map_reduce.model);
+        assert_eq!(serial.optimizer_state, map_reduce.optimizer_state);
         assert_eq!(
-            ordered.model.context_features,
-            LexemeContextFeatures::Ordered
+            serial.trace.final_model_hash,
+            map_reduce.trace.final_model_hash
         );
-        assert_eq!(ordered.model.embedding_hash(), embedding_hash);
-        assert_eq!(ordered.model.output_weights.len(), 512 * (1 + 4 * 8));
         assert_eq!(
-            ordered.trace.initial_weight_hash,
-            hash_i8_slice(&vec![0; 512 * 33])
+            serial.trace.optimizer_state_hash,
+            map_reduce.trace.optimizer_state_hash
         );
     }
 
     #[test]
-    fn lexeme_softmax_training_can_upgrade_linear_model_to_residual_hidden_head() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let config = LexemeSoftmaxTrainConfig {
-            epochs: 1,
-            seq_len: 2,
-            stride: 1,
-            window_offset: 0,
-            max_windows: Some(4),
-            batch_windows: 2,
-            learning_rate: 1,
-            learning_rate_shift: 18,
-            lr_shift_decay_windows: 0,
-            lr_shift_decay_step: 1,
-            max_learning_rate_shift: 18,
-            max_weight_delta: 1,
-            max_embedding_delta: 1,
-            target_frequency_cap: 0,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Ordered,
-            train_embeddings: false,
-            embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-            ..LexemeSoftmaxTrainConfig::default()
+    fn mini_transformer_integer_adam_resume_matches_uninterrupted_training() {
+        let tokens = b"Shall I compare thee to a summer's day? Thou art more lovely.";
+        let one_epoch = tiny_integer_adam_training_config();
+        let two_epochs = MiniTransformerMlpTrainConfig {
+            epochs: 2,
+            ..one_epoch
         };
-        let linear = run_lexeme_softmax_training_with_model(&tokens, embedding_model, config)
-            .expect("linear");
-        assert_eq!(linear.model.head_layout, LexemeSoftmaxHeadLayout::Linear);
-        let linear_output_weights = linear.model.output_weights.clone();
-
-        let mut upgrade_config = config;
-        upgrade_config.window_offset = 4;
-        upgrade_config.max_windows = Some(4);
-        upgrade_config.hidden_dim = 4;
-        upgrade_config.hidden_learning_rate_shift = 8;
-        let upgraded = run_lexeme_softmax_training_from_softmax_model_and_quality(
-            &tokens,
-            linear.model,
-            upgrade_config,
-            None,
-        )
-        .expect("upgrade train");
-        let d_model =
-            lexeme_context_d_model(8, 2, LexemeContextFeatures::Ordered).expect("d_model");
-
-        assert_eq!(
-            upgraded.model.head_layout,
-            LexemeSoftmaxHeadLayout::ResidualHidden
-        );
-        assert_eq!(upgraded.model.hidden_dim, 4);
-        assert_eq!(upgraded.model.output_weights.len(), 512 * (d_model + 4));
-        assert_eq!(
-            upgraded.trace.head_layout,
-            LexemeSoftmaxHeadLayout::ResidualHidden
-        );
-        assert_eq!(upgraded.trace.output_head_frozen_prefix, d_model);
-        assert!(
-            upgraded
-                .trace
-                .to_json_line()
-                .contains(&format!("\"output_head_frozen_prefix\":{d_model}"))
-        );
-        for row in 0..512 {
-            let old_start = row * d_model;
-            let new_start = row * (d_model + 4);
-            assert_eq!(
-                &upgraded.model.output_weights[new_start..new_start + d_model],
-                &linear_output_weights[old_start..old_start + d_model]
-            );
-        }
-    }
-
-    #[test]
-    fn lexeme_softmax_training_can_upgrade_linear_model_to_shifted_residual_adapter() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256, 300,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let config = LexemeSoftmaxTrainConfig {
-            epochs: 1,
-            seq_len: 2,
-            stride: 1,
-            window_offset: 0,
-            max_windows: Some(4),
-            batch_windows: 2,
-            learning_rate: 1,
-            learning_rate_shift: 18,
-            lr_shift_decay_windows: 0,
-            lr_shift_decay_step: 1,
-            max_learning_rate_shift: 18,
-            max_weight_delta: 1,
-            max_embedding_delta: 1,
-            target_frequency_cap: 0,
-            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-            quality_weight_profile: LexemeQualityWeightProfile::Off,
-            context_features: LexemeContextFeatures::Ordered,
-            train_embeddings: false,
-            embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-            ..LexemeSoftmaxTrainConfig::default()
+        let optimizer = IntegerAdamConfig {
+            step_shift: 1,
+            ..IntegerAdamConfig::default()
         };
-        let linear = run_lexeme_softmax_training_with_model(&tokens, embedding_model, config)
-            .expect("linear");
-        let linear_output_weights = linear.model.output_weights.clone();
-
-        let mut upgrade_config = config;
-        upgrade_config.window_offset = 4;
-        upgrade_config.max_windows = Some(4);
-        upgrade_config.hidden_dim = 4;
-        upgrade_config.hidden_learning_rate_shift = 8;
-        upgrade_config.adapter_logit_shift = 2;
-        let upgraded = run_lexeme_softmax_training_from_softmax_model_and_quality(
-            &tokens,
-            linear.model,
-            upgrade_config,
-            None,
+        let uninterrupted =
+            run_mini_transformer_mlp_integer_adam_training(tokens, two_epochs, optimizer)
+                .expect("uninterrupted Adam run");
+        let first = run_mini_transformer_mlp_integer_adam_training(tokens, one_epoch, optimizer)
+            .expect("first resumed epoch");
+        let state_bytes = first.optimizer_state.to_bytes();
+        let resumed_state = MiniTransformerAdamOptimizerState::from_bytes(&state_bytes)
+            .expect("resume state decode");
+        let resumed = run_mini_transformer_mlp_integer_adam_training_from_model(
+            tokens,
+            one_epoch,
+            optimizer,
+            MiniTransformerMlpModel::from_bytes(&first.model.to_bytes())
+                .expect("resume model decode"),
+            Some(resumed_state),
         )
-        .expect("adapter train");
-        let d_model =
-            lexeme_context_d_model(8, 2, LexemeContextFeatures::Ordered).expect("d_model");
+        .expect("resumed Adam run");
 
+        assert_eq!(uninterrupted.model, resumed.model);
+        assert_eq!(uninterrupted.optimizer_state, resumed.optimizer_state);
         assert_eq!(
-            upgraded.model.head_layout,
-            LexemeSoftmaxHeadLayout::ResidualAdapter
+            uninterrupted.trace.final_model_hash,
+            resumed.trace.final_model_hash
         );
-        assert_eq!(upgraded.model.adapter_logit_shift, 2);
-        assert_eq!(upgraded.trace.adapter_logit_shift, 2);
-        assert_eq!(upgraded.trace.output_head_frozen_prefix, d_model);
-        for row in 0..512 {
-            let old_start = row * d_model;
-            let new_start = row * (d_model + 4);
-            assert_eq!(
-                &upgraded.model.output_weights[new_start..new_start + d_model],
-                &linear_output_weights[old_start..old_start + d_model]
-            );
-        }
-
-        let upgraded_weights = upgraded.model.output_weights.clone();
-        let mut resume_config = upgrade_config;
-        resume_config.window_offset = 8;
-        resume_config.max_windows = Some(2);
-        let resumed = run_lexeme_softmax_training_from_softmax_model_and_quality(
-            &tokens,
-            upgraded.model.clone(),
-            resume_config,
-            None,
-        )
-        .expect("adapter resume");
-        assert_eq!(resumed.trace.output_head_frozen_prefix, d_model);
         assert_eq!(
-            resumed.model.head_layout,
-            LexemeSoftmaxHeadLayout::ResidualAdapter
+            uninterrupted.trace.optimizer_step,
+            resumed.trace.optimizer_step
         );
-        for row in 0..512 {
-            let row_start = row * (d_model + 4);
-            assert_eq!(
-                &resumed.model.output_weights[row_start..row_start + d_model],
-                &upgraded_weights[row_start..row_start + d_model]
-            );
-        }
-
-        let bytes = upgraded.model.to_bytes();
-        assert_eq!(
-            &bytes[..LEXEME_SOFTMAX_MODEL_MAGIC.len()],
-            LEXEME_SOFTMAX_MODEL_MAGIC
-        );
-        let decoded = LexemeSoftmaxModel::from_bytes(&bytes).expect("adapter model");
-        assert_eq!(decoded, upgraded.model);
-        let generation =
-            generate_lexeme_softmax(&decoded, &[256, 300], LexemeGenerationConfig::greedy(2))
-                .expect("adapter generation");
-        assert_eq!(
-            generation.head_layout,
-            LexemeSoftmaxHeadLayout::ResidualAdapter
-        );
-        assert_eq!(generation.adapter_logit_shift, 2);
-        let train_line = upgraded.trace.to_json_line();
-        assert!(train_line.contains("\"head_layout\":\"residual_adapter\""));
-        assert!(train_line.contains("\"adapter_logit_shift\":2"));
-        assert!(
-            generation
-                .to_json_line()
-                .contains("\"adapter_logit_shift\":2")
-        );
-    }
-
-    #[test]
-    fn lexeme_softmax_training_traces_target_frequency_weight() {
-        let tokens = encode_u16_test_tokens(&[256, 256, 256, 256, 300, 301, 302, 303]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let trace = run_lexeme_softmax_training(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 1,
-                seq_len: 1,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(3),
-                batch_windows: 1,
-                learning_rate: 1,
-                learning_rate_shift: 20,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 20,
-                max_weight_delta: 1,
-                max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
-                target_frequency_cap: 2,
-                target_frequency_min_weight_q15: 4096,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Mean,
-                train_embeddings: false,
-                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-                ..LexemeSoftmaxTrainConfig::default()
-            },
-        )
-        .expect("lexeme softmax train");
-
-        assert!(trace.steps[0].target_frequency_weight_q15 < i16::MAX);
-        let line = trace.to_json_line();
-        assert!(line.contains("\"target_frequency_cap\":2"));
-        assert!(line.contains("\"target_frequency_weight_q15\""));
     }
 
     #[test]
@@ -25178,736 +20835,6 @@ mod tests {
         apply_byte_argmax_margin_gradient_q15(&mut gradient, &logits, b'a', i16::MAX);
         assert_eq!(gradient[usize::from(b'a')], pushed_target);
         assert_eq!(gradient[usize::from(b'b')], pushed_competitor);
-    }
-
-    #[test]
-    fn lexeme_softmax_training_traces_quality_weight() {
-        let tokens = encode_u16_test_tokens(&[256, 256, 256, 256, 300, 301, 302, 303]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let mut quality = vec![i16::MAX; 512];
-        quality[256] = 4096;
-        let run = run_lexeme_softmax_training_with_model_and_quality(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 1,
-                seq_len: 1,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(3),
-                batch_windows: 1,
-                learning_rate: 1,
-                learning_rate_shift: 20,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 20,
-                max_weight_delta: 1,
-                max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: 4096,
-                quality_weight_profile: LexemeQualityWeightProfile::CruftAware,
-                context_features: LexemeContextFeatures::Mean,
-                train_embeddings: false,
-                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-                ..LexemeSoftmaxTrainConfig::default()
-            },
-            Some(&quality),
-        )
-        .expect("lexeme softmax train");
-
-        assert_eq!(run.trace.steps[0].target_quality_weight_q15, 4096);
-        assert_eq!(run.trace.steps[0].context_quality_weight_q15, 4096);
-        assert_eq!(run.trace.steps[0].target_update_weight_q15, 512);
-        let line = run.trace.to_json_line();
-        assert!(line.contains("\"quality_weight_profile\":\"cruft-aware\""));
-        assert!(line.contains("\"target_quality_weight_q15\""));
-        assert!(line.contains("\"context_quality_weight_q15\""));
-    }
-
-    #[test]
-    fn lexeme_softmax_model_round_trips_and_generates() {
-        let tokens =
-            encode_u16_test_tokens(&[256, 300, 256, 300, 256, 300, 256, 300, 256, 300, 256, 300]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 2,
-                seq_len: 2,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(10),
-                batch_windows: 1,
-                learning_rate: 1,
-                learning_rate_shift: 20,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 20,
-                max_weight_delta: 1,
-                max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Mean,
-                train_embeddings: false,
-                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-                ..LexemeSoftmaxTrainConfig::default()
-            },
-        )
-        .expect("lexeme softmax train");
-        let bytes = run.model.to_bytes();
-        let decoded = LexemeSoftmaxModel::from_bytes(&bytes).expect("model");
-        let generation = generate_lexeme_softmax(
-            &decoded,
-            &[256],
-            LexemeGenerationConfig::deterministic_sample(4, 7, 8),
-        )
-        .expect("generate");
-
-        assert_eq!(decoded, run.model);
-        assert_eq!(decoded.model_hash(), run.model.model_hash());
-        assert_eq!(generation.generated_tokens.len(), 4);
-        assert_eq!(generation.model_hash, decoded.model_hash());
-        assert_eq!(generation.embedding_hash, decoded.embedding_hash());
-        assert_eq!(generation.output_weight_hash, decoded.output_weight_hash());
-        assert_eq!(generation.metrics.generated_token_count, 4);
-        assert!(generation.metrics.distinct_generated_tokens > 0);
-        let line = generation.to_json_line();
-        assert!(line.contains("\"schema\":\"nsrl.lexeme_generation_trace.v1\""));
-        assert!(line.contains("\"tokenizer\":\"lexeme_ascii_lower_u16_v1\""));
-        assert!(line.contains("\"metrics\":{"));
-        assert!(line.contains("\"distinct_token_per_mille\""));
-    }
-
-    #[test]
-    fn lexeme_generation_can_stop_on_sentence_terminal_token() {
-        let tokens =
-            encode_u16_test_tokens(&[256, 300, 256, 300, 256, 300, 256, 300, 256, 300, 256, 300]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 2,
-                seq_len: 2,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(10),
-                batch_windows: 1,
-                learning_rate: 1,
-                learning_rate_shift: 20,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 20,
-                max_weight_delta: 1,
-                max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Mean,
-                train_embeddings: false,
-                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-                ..LexemeSoftmaxTrainConfig::default()
-            },
-        )
-        .expect("lexeme softmax train");
-        let mut config = LexemeGenerationConfig::greedy(4);
-        config.stop_on_sentence_terminal = true;
-        config.sentence_terminal_token_count = 1;
-        config.sentence_terminal_tokens[0] = 300;
-        let generation = generate_lexeme_softmax(&run.model, &[256], config).expect("generate");
-
-        assert_eq!(generation.generated_tokens, vec![300]);
-        assert!(generation.stopped_on_sentence_terminal);
-        let line = generation.to_json_line();
-        assert!(line.contains("\"stopped_on_sentence_terminal\":true"));
-        assert!(line.contains("\"sentence_terminal_token_count\":1"));
-    }
-
-    #[test]
-    fn lexeme_softmax_hidden_head_trains_and_round_trips() {
-        let tokens = encode_u16_test_tokens(&[
-            256, 300, 257, 301, 256, 300, 257, 302, 256, 300, 257, 301, 256,
-        ]);
-        let embeddings = initial_lexeme_embeddings(512, 8).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 8, embeddings).expect("model");
-        let d_model =
-            lexeme_context_d_model(8, 2, LexemeContextFeatures::Ordered).expect("d_model");
-        let initial_hidden =
-            initial_lexeme_hidden_weights(d_model, 4).expect("initial hidden weights");
-        let run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 2,
-                seq_len: 2,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(9),
-                batch_windows: 2,
-                learning_rate: 1,
-                learning_rate_shift: 18,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 18,
-                max_weight_delta: 1,
-                max_embedding_delta: 1,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Ordered,
-                train_embeddings: false,
-                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-                hidden_dim: 4,
-                hidden_learning_rate_shift: 8,
-                max_hidden_weight_delta: 4,
-                adapter_logit_shift: 0,
-                map_reduce_workers: 1,
-            },
-        )
-        .expect("hidden lexeme softmax train");
-
-        assert_eq!(run.model.hidden_dim, 4);
-        assert_eq!(
-            run.model.head_layout,
-            LexemeSoftmaxHeadLayout::ResidualHidden
-        );
-        assert_eq!(run.model.hidden_weights.len(), 4 * d_model);
-        assert_eq!(run.model.output_weights.len(), 512 * (d_model + 4));
-        assert_ne!(
-            run.model.hidden_weight_hash(),
-            hash_i8_slice(&initial_hidden)
-        );
-
-        let bytes = run.model.to_bytes();
-        assert_eq!(
-            &bytes[..LEXEME_SOFTMAX_MODEL_MAGIC.len()],
-            LEXEME_SOFTMAX_MODEL_MAGIC
-        );
-        let decoded = LexemeSoftmaxModel::from_bytes(&bytes).expect("hidden model");
-        assert_eq!(decoded, run.model);
-
-        let line = run.trace.to_json_line();
-        assert!(line.contains("\"hidden_dim\":4"));
-        assert!(line.contains("\"head_dim\":21"));
-        assert!(line.contains("\"head_layout\":\"residual_hidden\""));
-        assert!(line.contains("hidden_i8_plus_output_head_i8"));
-    }
-
-    #[test]
-    fn lexeme_softmax_model_loads_legacy_v4_hidden_bottleneck_hash() {
-        let seq_len = 2_usize;
-        let vocab_size = 512_usize;
-        let embedding_dim = 4_usize;
-        let context_features = LexemeContextFeatures::Ordered;
-        let hidden_dim = 3_usize;
-        let embeddings = initial_lexeme_embeddings(vocab_size, embedding_dim).expect("embeddings");
-        let d_model =
-            lexeme_context_d_model(embedding_dim, seq_len, context_features).expect("d_model");
-        let hidden_weights =
-            initial_lexeme_hidden_weights(d_model, hidden_dim).expect("hidden weights");
-        let output_weights = vec![0_i8; vocab_size * hidden_dim];
-        let model = LexemeSoftmaxModel::new_with_context_features_hidden_and_layout(
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            context_features,
-            hidden_dim,
-            LexemeSoftmaxHeadLayout::HiddenBottleneck,
-            embeddings,
-            hidden_weights,
-            output_weights,
-        )
-        .expect("model");
-        let legacy_hash = model.legacy_v4_model_hash();
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(LEXEME_SOFTMAX_MODEL_MAGIC_V4);
-        bytes.extend_from_slice(&(seq_len as u32).to_le_bytes());
-        bytes.extend_from_slice(&(vocab_size as u32).to_le_bytes());
-        bytes.extend_from_slice(&(embedding_dim as u32).to_le_bytes());
-        bytes.extend_from_slice(
-            &(lexeme_context_features_id(context_features) as u32).to_le_bytes(),
-        );
-        bytes.extend_from_slice(&(hidden_dim as u32).to_le_bytes());
-        bytes.extend_from_slice(&(model.embeddings.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&(model.hidden_weights.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&(model.output_weights.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&model.embedding_hash().to_le_bytes());
-        bytes.extend_from_slice(&model.hidden_weight_hash().to_le_bytes());
-        bytes.extend_from_slice(&model.output_weight_hash().to_le_bytes());
-        bytes.extend_from_slice(&legacy_hash.to_le_bytes());
-        for &embedding in model.embeddings.iter() {
-            bytes.extend_from_slice(&embedding.to_le_bytes());
-        }
-        bytes.extend(model.hidden_weights.iter().map(|&weight| weight as u8));
-        bytes.extend(model.output_weights.iter().map(|&weight| weight as u8));
-
-        let decoded = LexemeSoftmaxModel::from_bytes(&bytes).expect("legacy v4 model");
-
-        assert_eq!(
-            decoded.head_layout,
-            LexemeSoftmaxHeadLayout::HiddenBottleneck
-        );
-        assert_eq!(decoded.output_weights.len(), vocab_size * hidden_dim);
-        assert_eq!(decoded.legacy_v4_model_hash(), legacy_hash);
-        assert_ne!(decoded.model_hash(), legacy_hash);
-    }
-
-    #[test]
-    fn lexeme_softmax_model_loads_legacy_v2_mean_context_hash() {
-        let seq_len = 2_usize;
-        let vocab_size = 512_usize;
-        let embedding_dim = 8_usize;
-        let embeddings = initial_lexeme_embeddings(vocab_size, embedding_dim).expect("embeddings");
-        let output_weights = vec![0_i8; vocab_size * (1 + embedding_dim)];
-        let model = LexemeSoftmaxModel::new(
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            embeddings,
-            output_weights,
-        )
-        .expect("model");
-        let legacy_hash = model.legacy_v2_model_hash();
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(LEXEME_SOFTMAX_MODEL_MAGIC_V2);
-        bytes.extend_from_slice(&(seq_len as u32).to_le_bytes());
-        bytes.extend_from_slice(&(vocab_size as u32).to_le_bytes());
-        bytes.extend_from_slice(&(embedding_dim as u32).to_le_bytes());
-        bytes.extend_from_slice(&(model.embeddings.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&(model.output_weights.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&model.embedding_hash().to_le_bytes());
-        bytes.extend_from_slice(&model.output_weight_hash().to_le_bytes());
-        bytes.extend_from_slice(&legacy_hash.to_le_bytes());
-        for &embedding in model.embeddings.iter() {
-            bytes.extend_from_slice(&embedding.to_le_bytes());
-        }
-        bytes.extend(model.output_weights.iter().map(|&weight| weight as u8));
-
-        let decoded = LexemeSoftmaxModel::from_bytes(&bytes).expect("legacy v2 model");
-
-        assert_eq!(decoded.context_features, LexemeContextFeatures::Mean);
-        assert_eq!(decoded.legacy_v2_model_hash(), legacy_hash);
-        assert_ne!(decoded.model_hash(), legacy_hash);
-    }
-
-    #[test]
-    fn lexeme_softmax_model_loads_legacy_v3_context_feature_hash() {
-        let seq_len = 2_usize;
-        let vocab_size = 512_usize;
-        let embedding_dim = 4_usize;
-        let context_features = LexemeContextFeatures::Ordered;
-        let embeddings = initial_lexeme_embeddings(vocab_size, embedding_dim).expect("embeddings");
-        let d_model =
-            lexeme_context_d_model(embedding_dim, seq_len, context_features).expect("d_model");
-        let output_weights = vec![0_i8; vocab_size * d_model];
-        let model = LexemeSoftmaxModel::new_with_context_features(
-            seq_len,
-            vocab_size,
-            embedding_dim,
-            context_features,
-            embeddings,
-            output_weights,
-        )
-        .expect("model");
-        let legacy_hash = model.legacy_v3_model_hash();
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(LEXEME_SOFTMAX_MODEL_MAGIC_V3);
-        bytes.extend_from_slice(&(seq_len as u32).to_le_bytes());
-        bytes.extend_from_slice(&(vocab_size as u32).to_le_bytes());
-        bytes.extend_from_slice(&(embedding_dim as u32).to_le_bytes());
-        bytes.extend_from_slice(
-            &(lexeme_context_features_id(context_features) as u32).to_le_bytes(),
-        );
-        bytes.extend_from_slice(&(model.embeddings.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&(model.output_weights.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&model.embedding_hash().to_le_bytes());
-        bytes.extend_from_slice(&model.output_weight_hash().to_le_bytes());
-        bytes.extend_from_slice(&legacy_hash.to_le_bytes());
-        for &embedding in model.embeddings.iter() {
-            bytes.extend_from_slice(&embedding.to_le_bytes());
-        }
-        bytes.extend(model.output_weights.iter().map(|&weight| weight as u8));
-
-        let decoded = LexemeSoftmaxModel::from_bytes(&bytes).expect("legacy v3 model");
-
-        assert_eq!(decoded.context_features, LexemeContextFeatures::Ordered);
-        assert_eq!(decoded.hidden_dim, 0);
-        assert_eq!(decoded.legacy_v3_model_hash(), legacy_hash);
-        assert_ne!(decoded.model_hash(), legacy_hash);
-    }
-
-    #[test]
-    fn ordered_lexeme_softmax_model_round_trips_and_traces_feature_mode() {
-        let tokens =
-            encode_u16_test_tokens(&[256, 300, 301, 256, 300, 302, 256, 300, 301, 256, 300, 302]);
-        let embeddings = initial_lexeme_embeddings(512, 4).expect("embeddings");
-        let embedding_model = LexemeEmbeddingModel::new(512, 4, embeddings).expect("model");
-        let run = run_lexeme_softmax_training_with_model(
-            &tokens,
-            embedding_model,
-            LexemeSoftmaxTrainConfig {
-                epochs: 1,
-                seq_len: 2,
-                stride: 1,
-                window_offset: 0,
-                max_windows: Some(8),
-                batch_windows: 1,
-                learning_rate: 1,
-                learning_rate_shift: 20,
-                lr_shift_decay_windows: 0,
-                lr_shift_decay_step: 1,
-                max_learning_rate_shift: 20,
-                max_weight_delta: 1,
-                max_embedding_delta: DEFAULT_LEXEME_SOFTMAX_MAX_EMBEDDING_DELTA,
-                target_frequency_cap: 0,
-                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
-                quality_weight_profile: LexemeQualityWeightProfile::Off,
-                context_features: LexemeContextFeatures::Ordered,
-                train_embeddings: false,
-                embedding_learning_rate_shift: DEFAULT_LEXEME_SOFTMAX_EMBEDDING_LEARNING_RATE_SHIFT,
-                ..LexemeSoftmaxTrainConfig::default()
-            },
-        )
-        .expect("ordered lexeme softmax train");
-
-        assert_eq!(run.model.context_features, LexemeContextFeatures::Ordered);
-        assert_eq!(run.model.output_weights.len(), 512 * (1 + 2 * 4));
-
-        let bytes = run.model.to_bytes();
-        assert_eq!(
-            &bytes[..LEXEME_SOFTMAX_MODEL_MAGIC.len()],
-            LEXEME_SOFTMAX_MODEL_MAGIC
-        );
-        let decoded = LexemeSoftmaxModel::from_bytes(&bytes).expect("model");
-        assert_eq!(decoded, run.model);
-
-        let train_line = run.trace.to_json_line();
-        assert!(train_line.contains("\"context_features\":\"ordered\""));
-        assert!(
-            train_line.contains("\"features\":\"bias_plus_ordered_context_lexeme_embeddings_q15\"")
-        );
-
-        let generation =
-            generate_lexeme_softmax(&decoded, &[256, 300], LexemeGenerationConfig::greedy(2))
-                .expect("generate");
-        assert_eq!(generation.context_features, LexemeContextFeatures::Ordered);
-        assert_eq!(generation.generated_tokens.len(), 2);
-    }
-
-    #[test]
-    fn lexeme_decode_priors_handle_large_sparse_vocab() {
-        let tokens = [4095_u16, 17, 4095, 42];
-        let priors = LexemeDecodePriors::from_tokens(&tokens, 65536).expect("sparse priors");
-
-        assert_eq!(priors.vocab_size, 65536);
-        assert_eq!(priors.observed_bigrams(), 3);
-        assert_eq!(priors.observed_trigrams(), 2);
-        assert_eq!(priors.observed_quadgrams(), 1);
-        assert_eq!(priors.transition_count(4095, 17), 1);
-        assert_eq!(priors.transition_count(17, 4095), 1);
-        assert_eq!(priors.transition_count(4095, 42), 1);
-        assert_eq!(priors.transition_count(42, 4095), 0);
-    }
-
-    #[test]
-    fn lexeme_decode_priors_oov_queries_are_disallowed() {
-        let priors = LexemeDecodePriors::from_tokens(&[256, 257, 256], 300).expect("priors");
-
-        assert_eq!(priors.transition_count(256, 65535), 0);
-        assert_eq!(priors.transition_count(65535, 256), 0);
-        assert!(!priors.allows_transition(256, 65535));
-        assert!(!priors.allows_transition(65535, 256));
-        assert_eq!(priors.transition_probability_q15(256, 65535), 0);
-        assert_eq!(priors.transition_probability_q15(65535, 256), 0);
-        assert!(priors.allows_transition(258, 256));
-    }
-
-    #[test]
-    fn lexeme_no_repeat_ngram_rejects_seen_phrase_continuation() {
-        let mut logits = vec![0_i32; 300];
-        let probabilities = vec![1_i16; 300];
-        logits[258] = 2_000;
-        logits[259] = 1_900;
-        let context = [256_u16, 257, 258, 256, 257];
-        let decode = DecodeConfig {
-            no_repeat_ngram_order: 3,
-            ..DecodeConfig::greedy()
-        };
-
-        assert!(would_repeat_ngram(258, &context, 3));
-        assert!(!would_repeat_ngram(259, &context, 3));
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &context,
-            None,
-            None,
-            None,
-            None,
-        );
-
-        assert_eq!(selection.token, 259);
-        assert_eq!(selection.rejected_candidates.repeat_ngram, 1);
-    }
-
-    #[test]
-    fn lexeme_memory_priors_use_longest_available_suffix() {
-        let tokens = [
-            256_u16, 257, 258, 300, 400, 256, 257, 258, 300, 401, 256, 257, 258, 301,
-        ];
-        let memory = LexemeMemoryPriors::from_tokens(&tokens, 512, 4).expect("memory");
-
-        assert_eq!(memory.max_context_order, 4);
-        assert!(memory.observed_contexts() > 0);
-        assert!(memory.observed_transitions() > 0);
-        assert_eq!(memory.matched_context_order(&[900, 256, 257, 258]), 3);
-        assert!(
-            memory.context_transition_probability_q15(&[900, 256, 257, 258], 300)
-                > memory.context_transition_probability_q15(&[900, 256, 257, 258], 301)
-        );
-        assert_eq!(
-            memory.context_transition_probability_q15(&[900, 901, 902], 300),
-            0
-        );
-    }
-
-    #[test]
-    fn lexeme_memory_decode_can_rerank_by_long_context() {
-        let tokens = [
-            256_u16, 257, 258, 300, 256, 257, 258, 300, 256, 257, 258, 300,
-        ];
-        let memory = LexemeMemoryPriors::from_tokens(&tokens, 512, 4).expect("memory");
-        let mut logits = vec![0_i32; 512];
-        let mut probabilities = vec![0_i16; 512];
-        logits[300] = 1_900;
-        logits[301] = 2_000;
-        probabilities[301] = 30_000;
-        let decode = DecodeConfig {
-            memory_context_order: 4,
-            memory_logit_shift: 1,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[900, 256, 257, 258],
-            None,
-            None,
-            None,
-            Some(&memory),
-        );
-
-        assert_eq!(selection.token, 300);
-    }
-
-    #[test]
-    fn strict_lexeme_memory_decode_requires_observed_continuations_when_context_matches() {
-        let memory = LexemeMemoryPriors::from_tokens(&[300, 301, 302, 350, 351, 352], 400, 2)
-            .expect("memory");
-        let mut logits = vec![0_i32; 400];
-        let probabilities = vec![1_i16; 400];
-        logits[350] = 10_000;
-        logits[302] = 1;
-        let decode = DecodeConfig {
-            memory_context_order: 2,
-            memory_min_context_order: 2,
-            strict_memory: true,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[300, 301],
-            None,
-            None,
-            None,
-            Some(&memory),
-        );
-
-        assert_eq!(selection.token, 302);
-        assert!(selection.rejected_candidates.memory > 0);
-
-        let pulsed_decode = DecodeConfig {
-            memory_context_order: 2,
-            memory_min_context_order: 2,
-            strict_memory: true,
-            strict_memory_on_steps: 1,
-            strict_memory_off_steps: 1,
-            ..DecodeConfig::greedy()
-        };
-        let released_selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            pulsed_decode,
-            1,
-            &[300, 301],
-            None,
-            None,
-            None,
-            Some(&memory),
-        );
-
-        assert_eq!(released_selection.token, 350);
-        assert_eq!(released_selection.rejected_candidates.memory, 0);
-
-        let relaxed_selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[301, 300],
-            None,
-            None,
-            None,
-            Some(&memory),
-        );
-
-        assert_eq!(relaxed_selection.token, 350);
-        assert_eq!(relaxed_selection.rejected_candidates.memory, 0);
-    }
-
-    #[test]
-    fn lexeme_memory_priors_can_ignore_terminal_boundary_transitions() {
-        let tokens = [300_u16, 301, 256, 3756, 301, 256, 400];
-        let memory = LexemeMemoryPriors::from_tokens_with_terminal_tokens(&tokens, 4096, 2, &[256])
-            .expect("memory");
-
-        assert_eq!(
-            memory.context_transition_probability_q15(&[300, 301], 256),
-            i16::MAX as u16
-        );
-        assert_eq!(
-            memory.context_transition_probability_q15(&[301, 256], 3756),
-            0
-        );
-        assert_eq!(
-            memory.context_transition_probability_q15(&[301, 256], 400),
-            0
-        );
-    }
-
-    #[test]
-    fn lexeme_order_two_corpus_prior_prefers_phrase_continuations() {
-        let tokens = [
-            300_u16, 257, 258, 301, 257, 258, 302, 257, 258, 256, 257, 259,
-        ];
-        let priors = LexemeDecodePriors::from_tokens(&tokens, 512).expect("priors");
-        let mut logits = vec![0_i32; 512];
-        let probabilities = vec![1_i16; 512];
-        logits[258] = 2_000;
-        logits[259] = 1_950;
-        let decode = DecodeConfig {
-            corpus_prior: true,
-            corpus_prior_logit_shift: 1,
-            ..DecodeConfig::greedy()
-        };
-
-        assert_eq!(priors.observed_trigrams(), 10);
-        assert_eq!(priors.transition_count(257, 258), 3);
-        assert_eq!(priors.trigram_transition_count(256, 257, 259), 1);
-        assert!(
-            priors.context_transition_probability_q15(&[256, 257], 259, 2)
-                > priors.context_transition_probability_q15(&[256, 257], 258, 2)
-        );
-
-        let bigram_selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[256, 257],
-            Some(&priors),
-            None,
-            None,
-            None,
-        );
-        let trigram_selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            DecodeConfig {
-                corpus_prior_order: 2,
-                ..decode
-            },
-            0,
-            &[256, 257],
-            Some(&priors),
-            None,
-            None,
-            None,
-        );
-
-        assert_eq!(bigram_selection.token, 258);
-        assert_eq!(trigram_selection.token, 259);
-    }
-
-    #[test]
-    fn lexeme_order_three_corpus_prior_prefers_longer_phrase_continuations() {
-        let tokens = [
-            300_u16, 257, 258, 259, 301, 257, 258, 259, 302, 257, 258, 259, 256, 257, 258, 260,
-        ];
-        let priors = LexemeDecodePriors::from_tokens(&tokens, 512).expect("priors");
-        let mut logits = vec![0_i32; 512];
-        let probabilities = vec![1_i16; 512];
-        logits[259] = 2_000;
-        logits[260] = 1_950;
-        let decode = DecodeConfig {
-            corpus_prior: true,
-            corpus_prior_logit_shift: 1,
-            ..DecodeConfig::greedy()
-        };
-
-        assert_eq!(priors.transition_count(258, 259), 3);
-        assert_eq!(priors.trigram_transition_count(257, 258, 259), 3);
-        assert_eq!(priors.quadgram_transition_count(256, 257, 258, 260), 1);
-        assert!(
-            priors.context_transition_probability_q15(&[256, 257, 258], 260, 3)
-                > priors.context_transition_probability_q15(&[256, 257, 258], 259, 3)
-        );
-
-        let trigram_selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            DecodeConfig {
-                corpus_prior_order: 2,
-                ..decode
-            },
-            0,
-            &[256, 257, 258],
-            Some(&priors),
-            None,
-            None,
-            None,
-        );
-        let quadgram_selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            DecodeConfig {
-                corpus_prior_order: 3,
-                ..decode
-            },
-            0,
-            &[256, 257, 258],
-            Some(&priors),
-            None,
-            None,
-            None,
-        );
-
-        assert_eq!(trigram_selection.token, 259);
-        assert_eq!(quadgram_selection.token, 260);
     }
 
     #[test]
@@ -26068,344 +20995,6 @@ mod tests {
     }
 
     #[test]
-    fn lexeme_quality_weighted_decode_demotes_cruft_candidates() {
-        let mut logits = vec![0_i32; 260];
-        let mut probabilities = vec![1_i16; 260];
-        let mut quality_weights = vec![i16::MAX; 260];
-        logits[256] = 2_000;
-        probabilities[256] = 30_000;
-        quality_weights[256] = 4096;
-        logits[257] = 1_900;
-        probabilities[257] = 29_000;
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            DecodeConfig::greedy(),
-            0,
-            &[257],
-            None,
-            Some(&quality_weights),
-            None,
-            None,
-        );
-
-        assert_eq!(selection.token, 257);
-    }
-
-    #[test]
-    fn lexeme_frequency_weighted_decode_demotes_overrepresented_concepts() {
-        let priors = LexemeDecodePriors::from_tokens(&[256, 256, 256, 256, 256, 256, 257], 260)
-            .expect("priors");
-        let mut logits = vec![0_i32; 260];
-        let mut probabilities = vec![1_i16; 260];
-        logits[256] = 2_000;
-        probabilities[256] = 30_000;
-        logits[257] = 1_980;
-        probabilities[257] = 29_000;
-        let decode = DecodeConfig {
-            frequency_penalty_cap: 2,
-            frequency_penalty_min_weight_q15: 4096,
-            frequency_penalty_logit_shift: 4,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[257],
-            Some(&priors),
-            None,
-            None,
-            None,
-        );
-
-        assert_eq!(priors.unigram_count(256), 6);
-        assert_eq!(selection.token, 257);
-    }
-
-    #[test]
-    fn lexeme_local_frequency_weighted_decode_demotes_reused_concepts() {
-        let mut logits = vec![0_i32; 260];
-        let mut probabilities = vec![1_i16; 260];
-        logits[256] = 2_000;
-        probabilities[256] = 30_000;
-        logits[257] = 1_980;
-        probabilities[257] = 29_000;
-        let decode = DecodeConfig {
-            local_frequency_penalty_cap: 1,
-            local_frequency_penalty_min_weight_q15: 4096,
-            local_frequency_penalty_logit_shift: 4,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[256, 256],
-            None,
-            None,
-            None,
-            None,
-        );
-
-        let reused_score = lexeme_decode_score_trace(
-            &logits,
-            &probabilities,
-            256,
-            &decode,
-            &[256, 256],
-            None,
-            None,
-            None,
-            None,
-        );
-        assert_eq!(selection.token, 257);
-        assert!(reused_score.local_frequency_logit_adjust_q8 < 0);
-        assert!(reused_score.local_frequency_weight_q15 < i16::MAX);
-    }
-
-    #[test]
-    fn lexeme_local_frequency_hard_cap_rejects_reused_concepts() {
-        let mut logits = vec![0_i32; 260];
-        let mut probabilities = vec![1_i16; 260];
-        logits[256] = 3_000;
-        probabilities[256] = 30_000;
-        logits[257] = 2_000;
-        probabilities[257] = 20_000;
-        let decode = DecodeConfig {
-            local_frequency_hard_cap: 2,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[256, 256],
-            None,
-            None,
-            None,
-            None,
-        );
-
-        assert_eq!(selection.token, 257);
-        assert_eq!(selection.rejected_candidates.local_frequency, 1);
-    }
-
-    #[test]
-    fn lexeme_decode_banned_token_rejects_configured_concepts() {
-        let mut logits = vec![0_i32; 260];
-        let mut probabilities = vec![1_i16; 260];
-        logits[256] = 3_000;
-        probabilities[256] = 30_000;
-        logits[257] = 2_000;
-        probabilities[257] = 20_000;
-        let mut banned_tokens = [0_u16; LEXEME_DECODE_TOKEN_SET_CAP];
-        banned_tokens[0] = 256;
-        let decode = DecodeConfig {
-            banned_token_count: 1,
-            banned_tokens,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[300],
-            None,
-            None,
-            None,
-            None,
-        );
-
-        assert_eq!(selection.token, 257);
-        assert_eq!(selection.rejected_candidates.banned_token, 1);
-    }
-
-    #[test]
-    fn lexeme_function_word_run_cap_rejects_continued_glue_words() {
-        let mut logits = vec![0_i32; 260];
-        let mut probabilities = vec![1_i16; 260];
-        logits[256] = 3_000;
-        probabilities[256] = 30_000;
-        logits[258] = 2_000;
-        probabilities[258] = 20_000;
-        let mut function_word_tokens = [0_u16; LEXEME_DECODE_TOKEN_SET_CAP];
-        function_word_tokens[0] = 256;
-        function_word_tokens[1] = 257;
-        let decode = DecodeConfig {
-            function_word_token_count: 2,
-            function_word_tokens,
-            function_word_run_cap: 2,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[300, 256, 257],
-            None,
-            None,
-            None,
-            None,
-        );
-
-        assert_eq!(selection.token, 258);
-        assert!(selection.rejected_candidates.function_word_run >= 1);
-    }
-
-    #[test]
-    fn lexeme_decode_priors_track_transition_degree() {
-        let priors =
-            LexemeDecodePriors::from_tokens(&[256, 300, 256, 301, 256, 302, 257, 300], 400)
-                .expect("priors");
-
-        assert_eq!(priors.transition_degree(256), 3);
-        assert_eq!(priors.transition_degree(257), 1);
-        assert_eq!(priors.transition_degree(399), 0);
-    }
-
-    #[test]
-    fn lexeme_island_weighted_decode_demotes_rare_low_degree_concepts() {
-        let priors = LexemeDecodePriors::from_tokens(
-            &[256, 300, 301, 260, 300, 301, 257, 301, 257, 302],
-            400,
-        )
-        .expect("priors");
-        let mut logits = vec![0_i32; 400];
-        let mut probabilities = vec![1_i16; 400];
-        logits[300] = 2_000;
-        probabilities[300] = 30_000;
-        logits[257] = 1_980;
-        probabilities[257] = 29_000;
-        let decode = DecodeConfig {
-            island_penalty_count_cap: 4,
-            island_penalty_min_degree: 2,
-            island_penalty_min_weight_q15: 4096,
-            island_penalty_logit_shift: 4,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[256],
-            Some(&priors),
-            None,
-            None,
-            None,
-        );
-
-        assert_eq!(priors.unigram_count(300), 2);
-        assert_eq!(priors.transition_degree(300), 1);
-        assert_eq!(priors.transition_degree(257), 2);
-        assert_eq!(selection.token, 257);
-    }
-
-    #[test]
-    fn lexeme_prompt_topic_decode_prefers_prompt_neighbors() {
-        let corpus = [300_u16, 400, 401, 300, 400, 402, 301, 500, 501];
-        let topic =
-            LexemeTopicPriors::from_tokens(&corpus, 512, &[300], 2, 4096).expect("topic priors");
-        let mut logits = vec![0_i32; 512];
-        let mut probabilities = vec![1_i16; 512];
-        logits[500] = 2_000;
-        probabilities[500] = 30_000;
-        logits[400] = 1_980;
-        probabilities[400] = 29_000;
-        let decode = DecodeConfig {
-            prompt_topic_radius: 2,
-            prompt_topic_min_weight_q15: 4096,
-            prompt_topic_logit_shift: 4,
-            ..DecodeConfig::greedy()
-        };
-
-        let selection = select_lexeme_from_row(
-            &logits,
-            &probabilities,
-            decode,
-            0,
-            &[300],
-            None,
-            None,
-            Some(&topic),
-            None,
-        );
-
-        assert!(topic.weight_q15(400) > topic.weight_q15(500));
-        assert_eq!(topic.anchor_occurrences, 2);
-        assert_eq!(selection.token, 400);
-    }
-
-    #[test]
-    fn lexeme_prompt_topic_prior_normalizes_common_neighbors() {
-        let corpus = [
-            300_u16, 400, 401, 400, 400, 400, 400, 400, 400, 400, 400, 400,
-        ];
-        let topic =
-            LexemeTopicPriors::from_tokens(&corpus, 512, &[300], 2, 4096).expect("topic priors");
-
-        assert!(topic.weight_q15(401) > topic.weight_q15(400));
-    }
-
-    #[test]
-    fn lexeme_prompt_topic_prior_ignores_common_prompt_anchors() {
-        let mut corpus = vec![258_u16; DEFAULT_PROMPT_TOPIC_ANCHOR_FREQUENCY_CAP as usize + 1];
-        corpus.extend_from_slice(&[300, 401, 402, 300, 401]);
-        let topic = LexemeTopicPriors::from_tokens(&corpus, 512, &[258, 300], 2, 4096)
-            .expect("topic priors");
-
-        assert_eq!(topic.anchor_count, 1);
-        assert_eq!(topic.anchor_occurrences, 2);
-        assert!(topic.weight_q15(401) > topic.weight_q15(258));
-    }
-
-    #[test]
-    fn strict_topic_decode_rejects_off_topic_content_but_keeps_scaffold() {
-        let topic = LexemeTopicPriors::from_tokens(&[300_u16, 401, 402], 512, &[300], 1, 4096)
-            .expect("topic priors");
-        let mut quality_weights = vec![i16::MAX; 512];
-        quality_weights[258] = 16384;
-        let decode = DecodeConfig {
-            prompt_topic_radius: 1,
-            prompt_topic_min_weight_q15: 4096,
-            strict_topic: true,
-            ..DecodeConfig::greedy()
-        };
-
-        assert!(lexeme_decode_rejects_strict_topic(
-            500,
-            &decode,
-            Some(&topic),
-            Some(&quality_weights)
-        ));
-        assert!(!lexeme_decode_rejects_strict_topic(
-            258,
-            &decode,
-            Some(&topic),
-            Some(&quality_weights)
-        ));
-        assert!(!lexeme_decode_rejects_strict_topic(
-            401,
-            &decode,
-            Some(&topic),
-            Some(&quality_weights)
-        ));
-    }
-
-    #[test]
     fn mini_transformer_embedding_sequence_includes_trainable_position_embedding() {
         let mut embeddings = vec![0_i16; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
         let position_embeddings = initial_mini_transformer_position_embeddings(2);
@@ -26447,6 +21036,7 @@ mod tests {
         assert!(sequence.iter().all(|&value| value == 256));
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     #[test]
     fn mini_transformer_mlp_training_updates_head_mlp_and_attention() {
         let tokens =
@@ -26498,10 +21088,12 @@ mod tests {
         assert_ne!(trace.initial_embedding_hash, trace.final_embedding_hash);
         assert_ne!(trace.initial_output_head_hash, trace.final_output_head_hash);
         assert_ne!(trace.initial_mlp_hash, trace.final_mlp_hash);
+        assert_ne!(trace.initial_attention_hash, trace.final_attention_hash);
         assert_eq!(trace.output_head_saturation_count, 0);
         assert!(trace.output_head_delta_l1 > 0);
         assert!(trace.mlp_delta_l1 > 0);
         assert!(trace.embedding_delta_l1 > 0);
+        assert!(trace.attention_delta_l1 > 0);
         assert!(
             trace
                 .steps
@@ -26512,7 +21104,91 @@ mod tests {
             trace
                 .steps
                 .iter()
-                .any(|step| step.embedding_hash_before != step.embedding_hash_after)
+                .any(|step| step.attention_hash_before != step.attention_hash_after)
+        );
+    }
+
+    #[test]
+    fn mini_transformer_stacked_serial_training_updates_lower_layer() {
+        let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        assert_eq!(model.transformer_layers(), 2);
+        let context = b"To b";
+        let cache = mini_transformer_forward_for_attention_and_position(
+            &model,
+            context,
+            MiniTransformerAttentionKind::Base2Softmax,
+            MiniTransformerPositionPolicy::LearnedAbsolute,
+        )
+        .expect("stacked forward");
+        let first_attention_range = model
+            .attention_weight_range(0)
+            .expect("first attention range");
+        let first_down_range = model.mlp_down_weight_range(0).expect("first down range");
+        let initial_first_o_hash = hash_i8_slice(&model.o_weights[first_attention_range.clone()]);
+        let initial_first_down_hash = hash_i8_slice(&model.down_weights[first_down_range.clone()]);
+        let mut workspace =
+            MiniTransformerHostTrainCoreWorkspaceBuffers::new(context.len()).expect("workspace");
+        let mut grad_block_output = vec![0_i16; context.len() * MINI_TRANSFORMER_D_MODEL];
+        for (index, gradient) in grad_block_output.iter_mut().enumerate() {
+            *gradient = if index.is_multiple_of(3) { 2048 } else { -1024 };
+        }
+
+        let update = mini_transformer_block_backward_update_i8_checked(
+            &cache.layers[0],
+            &grad_block_output,
+            &mut model,
+            0,
+            MiniTransformerMlpTrainConfig {
+                epochs: 1,
+                seq_len: context.len(),
+                stride: 1,
+                window_offset: 0,
+                max_windows: Some(1),
+                batch_windows: 1,
+                target_token_min: u8::MIN,
+                target_token_max: u8::MAX,
+                target_segment: MiniTransformerTargetSegment::All,
+                target_frequency_cap: 0,
+                target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+                argmax_margin_weight_q15: 0,
+                tokenizer_id: ByteTokenizerId::Identity,
+                attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+                position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+                learning_rate: 2,
+                output_learning_rate_shift: 16,
+                mlp_learning_rate_shift: 10,
+                embedding_learning_rate_shift: 12,
+                attention_learning_rate_shift: 10,
+                attention_q_learning_rate_shift: 10,
+                attention_qk_learning_rate_shift: 10,
+                adaptive_rule_shifts: false,
+                adaptive_rule_interval_batches:
+                    DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+                adaptive_attention_shifts: false,
+                adaptive_holographic_shifts: false,
+                attention_vo_error_feedback: false,
+                attention_vo_oracle: false,
+                reject_loss_regression: false,
+                batch_mode: MiniTransformerBatchMode::Serial,
+                map_reduce_workers: 1,
+            },
+            &mut workspace,
+        )
+        .expect("lower block backward");
+
+        assert!(update.mlp_update.weight_delta_l1().unwrap_or(0) > 0);
+        assert!(update.attention_update.weight_delta_l1 > 0);
+        assert_ne!(
+            hash_i8_slice(&model.down_weights[first_down_range]),
+            initial_first_down_hash
+        );
+        assert_ne!(
+            hash_i8_slice(&model.o_weights[first_attention_range]),
+            initial_first_o_hash
+        );
+        assert_eq!(
+            update.grad_input.len(),
+            context.len() * MINI_TRANSFORMER_D_MODEL
         );
     }
 
@@ -26547,6 +21223,7 @@ mod tests {
         assert!(grad_v.iter().any(|&value| value != 0));
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     #[test]
     fn mini_transformer_mlp_training_can_use_linear_attention() {
         let tokens =
@@ -27066,8 +21743,8 @@ mod tests {
             target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
             argmax_margin_weight_q15: 0,
             tokenizer_id: ByteTokenizerId::Identity,
-            attention_kind: MiniTransformerAttentionKind::Linear,
-            position_policy: MiniTransformerPositionPolicy::Nope,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
             learning_rate: 1,
             output_learning_rate_shift: 18,
             mlp_learning_rate_shift: 16,
@@ -27639,6 +22316,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     struct MiniTransformerTrainCoreWorkspaceBuffers {
         embedding_output: Vec<i16>,
         attention_norm: Vec<i16>,
@@ -27688,6 +22366,7 @@ mod tests {
         grad_embedding_output: Vec<i16>,
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     impl MiniTransformerTrainCoreWorkspaceBuffers {
         fn new(seq_len: usize) -> Self {
             assert_eq!(
@@ -27816,6 +22495,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     #[test]
     fn mini_transformer_train_core_linear_nope_step_matches_std_single_window() {
         let tokens = b"To be";
@@ -27853,7 +22533,9 @@ mod tests {
             batch_mode: MiniTransformerBatchMode::Serial,
             map_reduce_workers: 1,
         };
-        let initial_model = MiniTransformerMlpModel::new_initial_with_seq_len(seq_len);
+        let initial_model =
+            MiniTransformerMlpModel::new_initial_with_seq_len_and_layers(seq_len, 1)
+                .expect("single-layer model");
         let std_run =
             run_mini_transformer_mlp_training_from_model(tokens, config, initial_model.clone())
                 .expect("std training");
@@ -27889,7 +22571,6 @@ mod tests {
                     attention_learning_rate_shift: config.attention_learning_rate_shift,
                     attention_q_learning_rate_shift: config.attention_q_learning_rate_shift,
                     attention_qk_learning_rate_shift: config.attention_qk_learning_rate_shift,
-                    output_scale: nsrl_train_core::MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE,
                 },
                 &mut workspace,
             )
@@ -27981,7 +22662,8 @@ mod tests {
     #[test]
     fn mini_transformer_nope_training_does_not_update_position_embeddings() {
         let tokens = b"To be or not to be, that is the question. To be or not to be. ";
-        let initial_model = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        let initial_model = MiniTransformerMlpModel::new_initial_with_seq_len_and_layers(4, 1)
+            .expect("single-layer model");
         let initial_positions = initial_model.position_embeddings.clone();
         let initial_token_embedding_hash = hash_i16_slice(&initial_model.embeddings);
         let run = run_mini_transformer_mlp_training_from_model(
@@ -28036,7 +22718,9 @@ mod tests {
     fn mini_transformer_batch_windows_are_traced() {
         let tokens =
             b"To be or not to be, that is the question. To be or not to be, that is the question. ";
-        let trace = run_mini_transformer_mlp_training(
+        let initial_model = MiniTransformerMlpModel::new_initial_with_seq_len_and_layers(4, 1)
+            .expect("single-layer model");
+        let trace = run_mini_transformer_mlp_training_from_model(
             tokens,
             MiniTransformerMlpTrainConfig {
                 epochs: 1,
@@ -28072,8 +22756,10 @@ mod tests {
                 batch_mode: MiniTransformerBatchMode::Serial,
                 map_reduce_workers: 1,
             },
+            initial_model,
         )
-        .expect("mini batch train");
+        .expect("mini batch train")
+        .trace;
 
         assert_eq!(trace.examined_windows, 8);
         assert_eq!(trace.accepted_batch_count + trace.rejected_batch_count, 2);
@@ -28139,6 +22825,101 @@ mod tests {
         assert!(line.contains("\"batch_mode\":\"map-reduce\""));
         assert!(line.contains("\"map_reduce_workers\":1"));
         assert!(line.contains("\"effective_map_reduce_workers\":1"));
+    }
+
+    #[test]
+    fn mini_transformer_map_reduce_stacked_accumulates_lower_layers_and_embeddings() {
+        let tokens =
+            b"To be or not to be, that is the question. To be or not to be, that is the question. ";
+        let initial_model = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        assert_eq!(initial_model.transformer_layers(), 2);
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            window_offset: 0,
+            max_windows: Some(4),
+            batch_windows: 2,
+            target_token_min: u8::MIN,
+            target_token_max: u8::MAX,
+            target_segment: MiniTransformerTargetSegment::All,
+            target_frequency_cap: 0,
+            target_frequency_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
+            argmax_margin_weight_q15: 0,
+            tokenizer_id: ByteTokenizerId::Identity,
+            attention_kind: MiniTransformerAttentionKind::Base2Softmax,
+            position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 17,
+            embedding_learning_rate_shift: 13,
+            attention_learning_rate_shift: 22,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 16,
+            adaptive_rule_shifts: false,
+            adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
+            adaptive_attention_shifts: false,
+            adaptive_holographic_shifts: false,
+            attention_vo_error_feedback: false,
+            attention_vo_oracle: false,
+            reject_loss_regression: false,
+            batch_mode: MiniTransformerBatchMode::MapReduce,
+            map_reduce_workers: 1,
+        };
+        let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, config);
+        let target_frequency_weights_q15 = byte_target_frequency_weights_q15(
+            tokens,
+            &starts,
+            config.seq_len,
+            config.target_frequency_cap,
+            config.target_frequency_min_weight_q15,
+        )
+        .expect("frequency weights");
+        let batch_result = mini_transformer_map_reduce_batch(
+            tokens,
+            &starts,
+            &target_frequency_weights_q15,
+            0,
+            config.batch_windows,
+            0,
+            &initial_model,
+            config,
+            0,
+            MiniTransformerTraceDetail::None,
+            1,
+        )
+        .expect("stacked map-reduce batch");
+
+        assert_eq!(batch_result.mlp_weight_gradients.len(), 2);
+        assert_eq!(batch_result.attention_weight_gradients.len(), 2);
+        assert!(batch_result.embedding_gradient.sample_count > 0);
+        assert!(
+            batch_result.mlp_weight_gradients[0]
+                .down
+                .accumulators
+                .iter()
+                .any(|&value| value != 0)
+        );
+        assert!(
+            batch_result.attention_weight_gradients[0]
+                .o
+                .accumulators
+                .iter()
+                .any(|&value| value != 0)
+        );
+
+        let run = run_mini_transformer_mlp_training_from_model(tokens, config, initial_model)
+            .expect("stacked map-reduce train");
+        assert_eq!(run.model.transformer_layers(), 2);
+        assert_eq!(run.trace.mlp_accumulator_window_count, run.trace.updates);
+        assert_eq!(
+            run.trace.attention_accumulator_window_count,
+            run.trace.updates
+        );
+        assert_eq!(
+            run.trace.embedding_accumulator_window_count,
+            run.trace.updates
+        );
     }
 
     #[test]
@@ -28220,7 +23001,9 @@ mod tests {
     fn mini_transformer_map_reduce_matches_serial_with_ascii_lower_adaptive_rule_shifts() {
         let tokens =
             b"To be or not to be, that is the question. To be or not to be, that is the question. ";
-        let serial = run_mini_transformer_mlp_training_with_model(
+        let initial_model = MiniTransformerMlpModel::new_initial_with_seq_len_and_layers(4, 1)
+            .expect("single-layer model");
+        let serial = run_mini_transformer_mlp_training_from_model(
             tokens,
             MiniTransformerMlpTrainConfig {
                 epochs: 1,
@@ -28255,23 +23038,26 @@ mod tests {
                 batch_mode: MiniTransformerBatchMode::Serial,
                 map_reduce_workers: 1,
             },
+            initial_model.clone(),
         )
         .expect("serial adaptive ascii-lower");
-        let single_worker = run_mini_transformer_mlp_training_with_model(
+        let single_worker = run_mini_transformer_mlp_training_from_model(
             tokens,
             MiniTransformerMlpTrainConfig {
                 batch_mode: MiniTransformerBatchMode::MapReduce,
                 ..serial.trace.config
             },
+            initial_model.clone(),
         )
         .expect("single-worker map-reduce adaptive ascii-lower");
-        let multi_worker = run_mini_transformer_mlp_training_with_model(
+        let multi_worker = run_mini_transformer_mlp_training_from_model(
             tokens,
             MiniTransformerMlpTrainConfig {
                 batch_mode: MiniTransformerBatchMode::MapReduce,
                 map_reduce_workers: 3,
                 ..serial.trace.config
             },
+            initial_model,
         )
         .expect("multi-worker map-reduce adaptive ascii-lower");
 
@@ -28485,6 +23271,7 @@ mod tests {
         assert_eq!(gradient.gate.sample_count, 0);
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     #[test]
     fn attention_weight_gradient_i64_averages_then_updates_i8() {
         let mut embedding_output = vec![0_i16; MINI_TRANSFORMER_D_MODEL];
@@ -28493,9 +23280,9 @@ mod tests {
         let mut attention_context = vec![0_i16; MINI_TRANSFORMER_D_MODEL];
         attention_context[0] = 4096;
         attention_context[1] = -4096;
-        let cache = MiniTransformerMlpForwardCache {
+        let cache = MiniTransformerBlockForwardCache {
+            block_input: embedding_output.clone(),
             attention_norm: embedding_output.clone(),
-            embedding_output,
             attention_q: Vec::new(),
             attention_k: Vec::new(),
             attention_v: Vec::new(),
@@ -28509,8 +23296,6 @@ mod tests {
             mlp_gated: Vec::new(),
             mlp_output: Vec::new(),
             block_output: Vec::new(),
-            logits_q8: [0_i32; BYTE_VOCAB],
-            probabilities_q15: [0_i16; BYTE_VOCAB],
             residual_saturation_count: 0,
         };
         let mut grad_q = vec![0_i16; MINI_TRANSFORMER_D_MODEL];
@@ -28551,6 +23336,8 @@ mod tests {
             context_seq_len: 1,
             embeddings: vec![0_i16; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL],
             position_embeddings: vec![0_i16; MINI_TRANSFORMER_D_MODEL],
+            attention_rms_weights: Vec::new(),
+            mlp_rms_weights: Vec::new(),
             q_weights: vec![10_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL],
             k_weights: vec![10_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL],
             v_weights: vec![10_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL],
@@ -28623,6 +23410,8 @@ mod tests {
             context_seq_len: 1,
             embeddings: vec![0_i16; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL],
             position_embeddings: vec![0_i16; MINI_TRANSFORMER_D_MODEL],
+            attention_rms_weights: Vec::new(),
+            mlp_rms_weights: Vec::new(),
             q_weights: vec![10_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL],
             k_weights: vec![10_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL],
             v_weights: vec![10_i8; MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_D_MODEL],
@@ -28946,7 +23735,7 @@ mod tests {
                 target_token_min: b'a',
                 target_token_max: b'z',
                 target_segment: MiniTransformerTargetSegment::first_after_sequence_before_any(
-                    &[b'H', b'e', b' '],
+                    b"He ",
                     &[4, 5],
                 )
                 .expect("segment"),
@@ -28990,6 +23779,15 @@ mod tests {
         let seq_len = 4;
         let starts = byte_window_starts(tokens.len(), seq_len, 1, 0, Some(4));
         let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(seq_len);
+        if MINI_TRANSFORMER_D_MODEL > MINI_TRANSFORMER_ATTENTION_VO_ORACLE_MAX_D_MODEL {
+            assert_eq!(
+                mini_transformer_attention_vo_oracle_update_i8_checked(
+                    &mut model, tokens, &starts, seq_len, 1,
+                ),
+                Err(TrainError::InvalidConfig)
+            );
+            return;
+        }
         let before = mini_transformer_total_probability_error_q15(tokens, &starts, &model, seq_len)
             .expect("before loss");
         let (v, o) = mini_transformer_attention_vo_oracle_update_i8_checked(
@@ -29108,7 +23906,8 @@ mod tests {
 
     #[test]
     fn mini_transformer_generation_can_use_streaming_linear_attention_nope() {
-        let model = MiniTransformerMlpModel::new_initial_with_seq_len(16);
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len_and_layers(16, 1)
+            .expect("single-layer model");
         let generation = generate_mini_transformer_with_attention_kind(
             &model,
             b"To be",
@@ -29134,7 +23933,8 @@ mod tests {
 
     #[test]
     fn mini_transformer_generation_can_use_streaming_linear_ttt_attention_nope() {
-        let model = MiniTransformerMlpModel::new_initial_with_seq_len(16);
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len_and_layers(16, 1)
+            .expect("single-layer model");
         let generation =
             generate_mini_transformer_with_attention_kind_position_policy_priors_and_ttt_shift(
                 &model,
@@ -29180,5 +23980,203 @@ mod tests {
         assert_eq!(short.context_seq_len, 16);
         assert_eq!(short.steps[0], explicit.steps[0]);
         assert_eq!(short.generated_bytes, explicit.generated_bytes);
+    }
+
+    #[test]
+    fn mini_transformer_eval_is_deterministic_and_read_only() {
+        let tokens = b"crowley shakespeare blake literary evaluation fixture";
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len(8);
+        let config = MiniTransformerMlpEvalConfig {
+            seq_len: 8,
+            stride: 3,
+            max_windows: Some(7),
+            attention_kind: MiniTransformerAttentionKind::Linear,
+            position_policy: MiniTransformerPositionPolicy::Nope,
+        };
+        let before_hash = model.model_hash();
+        let left = evaluate_mini_transformer_mlp_model(tokens, &model, config).expect("left");
+        let right = evaluate_mini_transformer_mlp_model(tokens, &model, config).expect("right");
+
+        assert_eq!(left, right);
+        assert_eq!(left.windows, 7);
+        assert_eq!(left.model_hash, before_hash);
+        assert_eq!(model.model_hash(), before_hash);
+        assert_eq!(left.invalid_forward_count, 0);
+        assert!(left.unique_predicted_tokens > 0);
+        assert!(left.unique_predicted_tokens <= BYTE_VOCAB);
+        assert!(left.most_predicted_token.is_some());
+        assert!(left.most_predicted_token_count <= left.windows);
+        assert_eq!(
+            left.most_predicted_token_share_per_mille,
+            left.most_predicted_token_count * 1000 / left.windows
+        );
+        let json = left.to_json_line();
+        assert!(json.contains(MINI_TRANSFORMER_EVAL_SCHEMA));
+        assert!(json.contains("\"most_predicted_token_share_per_mille\":"));
+    }
+
+    #[test]
+    fn mini_transformer_block_expert_zero_identity_and_artifact_are_locked() {
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        let expert =
+            MiniTransformerBlockLowRankExpert::new_for_model(&model, 4, 17).expect("block expert");
+        let base = mini_transformer_next_token_row_with_attention_kind_position_policy(
+            &model,
+            b"Blak",
+            MiniTransformerAttentionKind::Base2Softmax,
+            MiniTransformerPositionPolicy::LearnedAbsolute,
+        )
+        .expect("base row");
+        let adapted = mini_transformer_next_token_row_with_block_expert(
+            &model,
+            &expert,
+            b"Blak",
+            MiniTransformerAttentionKind::Base2Softmax,
+            MiniTransformerPositionPolicy::LearnedAbsolute,
+        )
+        .expect("adapted row");
+        assert_eq!(adapted, base);
+
+        let bytes = expert.to_bytes();
+        assert_eq!(
+            MiniTransformerBlockLowRankExpert::from_bytes(&bytes).expect("decode"),
+            expert
+        );
+        let mut corrupt = bytes;
+        corrupt[64] ^= 1;
+        assert!(MiniTransformerBlockLowRankExpert::from_bytes(&corrupt).is_err());
+    }
+
+    #[test]
+    fn mini_transformer_block_expert_training_updates_only_expert() {
+        let tokens = b"Crowley Shakespeare Blake sing through the integer swarm.";
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        let model_hash = model.model_hash();
+        let mut expert =
+            MiniTransformerBlockLowRankExpert::new_for_model(&model, 4, 23).expect("block expert");
+        let stats = train_mini_transformer_block_expert(
+            tokens,
+            &model,
+            &mut expert,
+            MiniTransformerMlpTrainConfig {
+                epochs: 1,
+                seq_len: 4,
+                stride: 1,
+                max_windows: Some(4),
+                batch_windows: 2,
+                ..MiniTransformerMlpTrainConfig::default()
+            },
+            2,
+            1024,
+            0,
+        )
+        .expect("train block expert");
+        assert_eq!(model.model_hash(), model_hash);
+        assert_eq!(stats.optimizer_steps, 2);
+        assert!(stats.weight_delta_l1 > 0);
+        assert!(
+            expert
+                .expansion_weights_q15
+                .iter()
+                .any(|&weight| weight != 0)
+        );
+    }
+
+    #[test]
+    fn mini_transformer_block_expert_raw_probability_gradient_and_guard_are_locked() {
+        let tokens = b"Crowley Shakespeare Blake sing through the integer swarm.";
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len_and_layers(4, 2)
+            .expect("two-layer model");
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            max_windows: Some(4),
+            batch_windows: 4,
+            ..MiniTransformerMlpTrainConfig::default()
+        };
+
+        let mut unguarded =
+            MiniTransformerBlockLowRankExpert::new_for_model(&model, 4, 29).expect("expert");
+        let unguarded_stats = train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
+            tokens,
+            &model,
+            &mut unguarded,
+            config,
+            4,
+            1024,
+            0,
+            Some(1),
+            false,
+            MiniTransformerBlockExpertObjective::ProbabilityError,
+        )
+        .expect("metric-aligned update");
+        assert_eq!(unguarded_stats.optimizer_steps, 1);
+        assert!(unguarded_stats.weight_delta_l1 > 0);
+        let parameters_per_layer = MINI_TRANSFORMER_D_MODEL * unguarded.rank;
+        assert!(
+            unguarded.expansion_weights_q15[..parameters_per_layer]
+                .iter()
+                .all(|&weight| weight == 0)
+        );
+        assert!(
+            unguarded.expansion_weights_q15[parameters_per_layer..]
+                .iter()
+                .any(|&weight| weight != 0)
+        );
+
+        let mut guarded =
+            MiniTransformerBlockLowRankExpert::new_for_model(&model, 4, 29).expect("expert");
+        let baseline = evaluate_mini_transformer_block_expert(
+            tokens,
+            &model,
+            &guarded,
+            MiniTransformerMlpEvalConfig {
+                seq_len: 4,
+                stride: 1,
+                max_windows: Some(4),
+                attention_kind: config.attention_kind,
+                position_policy: config.position_policy,
+            },
+        )
+        .expect("baseline");
+        let guarded_stats = train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
+            tokens,
+            &model,
+            &mut guarded,
+            config,
+            4,
+            1024,
+            0,
+            Some(1),
+            true,
+            MiniTransformerBlockExpertObjective::ProbabilityError,
+        )
+        .expect("guarded update");
+        let final_metrics = evaluate_mini_transformer_block_expert(
+            tokens,
+            &model,
+            &guarded,
+            MiniTransformerMlpEvalConfig {
+                seq_len: 4,
+                stride: 1,
+                max_windows: Some(4),
+                attention_kind: config.attention_kind,
+                position_policy: config.position_policy,
+            },
+        )
+        .expect("final metrics");
+        assert!(final_metrics.probability_error_q15 <= baseline.probability_error_q15);
+        assert_eq!(
+            guarded_stats.accepted_forward_steps
+                + guarded_stats.accepted_reverse_steps
+                + guarded_stats.rejected_steps,
+            guarded_stats.optimizer_steps
+        );
+        assert!(
+            guarded.expansion_weights_q15[..parameters_per_layer]
+                .iter()
+                .all(|&weight| weight == 0)
+        );
     }
 }

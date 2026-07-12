@@ -760,7 +760,7 @@ fn clean_target_image(
             };
         }
     }
-    if strength >= u16::from(u8::MAX) + 1 {
+    if strength > u16::from(u8::MAX) {
         return Ok(out);
     }
     let keep = (u16::from(u8::MAX) + 1).saturating_sub(strength);

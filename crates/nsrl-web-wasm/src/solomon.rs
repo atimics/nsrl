@@ -421,7 +421,7 @@ fn read_text_targets(text: &str) -> Result<Vec<TextTarget>, String> {
             score: 0,
         });
     }
-    targets.sort_by(|left, right| left.number.cmp(&right.number));
+    targets.sort_by_key(|target| target.number);
     if targets.is_empty() {
         return Err("Solomon text index has no target rows".to_string());
     }
@@ -720,6 +720,10 @@ fn apply_multichannel_layer_condition(
     Ok(out)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "arguments mirror the serialized native/WASM conditioning contract"
+)]
 fn conditioned_features(
     input: &[u8],
     image_size: usize,
@@ -940,11 +944,11 @@ fn signature_stats(signature: &[u16; TEXT_SIGNATURE_BINS]) -> SignatureStats {
     let global_mean = signature_global_mean(signature);
     let mut row_means = [0_i16; TEXT_SIGNATURE_GRID];
     let mut col_means = [0_i16; TEXT_SIGNATURE_GRID];
-    for row in 0..TEXT_SIGNATURE_GRID {
-        row_means[row] = signature_row_mean(signature, row);
+    for (row, mean) in row_means.iter_mut().enumerate() {
+        *mean = signature_row_mean(signature, row);
     }
-    for col in 0..TEXT_SIGNATURE_GRID {
-        col_means[col] = signature_col_mean(signature, col);
+    for (col, mean) in col_means.iter_mut().enumerate() {
+        *mean = signature_col_mean(signature, col);
     }
     SignatureStats {
         global_mean,
@@ -1312,12 +1316,13 @@ fn neighbor_ink_count(image: &[u8], image_size: usize, x: usize, y: usize) -> u8
             }
             let nx = x.checked_add(dx).and_then(|value| value.checked_sub(1));
             let ny = y.checked_add(dy).and_then(|value| value.checked_sub(1));
-            if let (Some(nx), Some(ny)) = (nx, ny) {
-                if nx < image_size && ny < image_size {
-                    let value = image[pixel_index(image_size, nx, ny)];
-                    if value > INK_THRESHOLD {
-                        count = count.saturating_add(1);
-                    }
+            if let (Some(nx), Some(ny)) = (nx, ny)
+                && nx < image_size
+                && ny < image_size
+            {
+                let value = image[pixel_index(image_size, nx, ny)];
+                if value > INK_THRESHOLD {
+                    count = count.saturating_add(1);
                 }
             }
         }
@@ -1492,19 +1497,11 @@ fn abs_i64(value: i64) -> i64 {
 }
 
 fn abs_diff_u8(left: u8, right: u8) -> u8 {
-    if left >= right {
-        left - right
-    } else {
-        right - left
-    }
+    left.abs_diff(right)
 }
 
 fn abs_diff_u16(left: u16, right: u16) -> u16 {
-    if left >= right {
-        left - right
-    } else {
-        right - left
-    }
+    left.abs_diff(right)
 }
 
 fn json_escape(value: &str) -> String {
@@ -1621,7 +1618,7 @@ mod parity_tests {
         );
     }
 
-    fn load_model_at(path: &str) -> MultichannelModel {
+    fn load_model_at(path: &std::path::Path) -> MultichannelModel {
         read_text_conditioned_model(&std::fs::read(path).unwrap()).unwrap()
     }
 
@@ -1640,7 +1637,7 @@ mod parity_tests {
     }
 
     #[test]
-    #[ignore] // run explicitly: compares deployed vs scaled seal crispness
+    #[ignore] // set NSRL_SCALED_MODEL and run explicitly to compare crispness
     fn compare_scaled_seal_crispness() {
         let root = env!("CARGO_MANIFEST_DIR");
         let tsv = std::fs::read_to_string(format!(
@@ -1669,8 +1666,20 @@ mod parity_tests {
             .unwrap()
             .image
         };
-        let deployed = load_model_at(&format!("{root}/../../web/assets/solomon-model.nsrltch"));
-        let scaled = load_model_at("/tmp/solomon-seal-scaled/model.nsrltch");
+        let deployed_path =
+            std::path::PathBuf::from(format!("{root}/../../web/assets/solomon-model.nsrltch"));
+        let Some(scaled_path) = std::env::var_os("NSRL_SCALED_MODEL").map(std::path::PathBuf::from)
+        else {
+            eprintln!("skipped: set NSRL_SCALED_MODEL to a scaled .nsrltch artifact");
+            return;
+        };
+        assert!(
+            scaled_path.is_file(),
+            "NSRL_SCALED_MODEL does not exist: {}",
+            scaled_path.display()
+        );
+        let deployed = load_model_at(&deployed_path);
+        let scaled = load_model_at(&scaled_path);
         let bd = blur_permille(&render(&deployed));
         let bs = blur_permille(&render(&scaled));
         println!(
