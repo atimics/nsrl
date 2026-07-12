@@ -26,10 +26,13 @@ artifacts exist, but the Solomon product proof is incomplete.
 
 The repository now has one substrate promotion contract:
 `integer-transformer-proof-v1`. Run `cargo run -p nsrl-eval -- contract` to
-inspect it and `cargo run -p nsrl-eval -- check --results PATH` to validate a
-candidate/baseline matrix. No passing frozen matrix is checked in yet, so the
-substrate milestone remains open. Solomon and literary results are experiment
-evidence rather than alternate headline criteria.
+inspect it and `cargo run -p nsrl-eval -- check --manifest MANIFEST --results
+PATH` to validate a candidate/baseline matrix. The frozen manifest contains 5,896 held-out targets
+with dataset hash `0x8fe7b86378f81951`; deterministic retrieval, byte n-gram,
+and offline floating-point reference rows are checked in. No candidate row or
+passing full matrix is checked in yet, so the substrate milestone remains open.
+Solomon and literary results are experiment evidence rather than alternate
+headline criteria.
 
 The project headline is `NSRL-MME v0`, a model-native multimodal LLM eval
 defined in `docs/multimodal-llm-eval.md`. The current local score is **371 per

@@ -933,9 +933,9 @@ flags.
 
 The active work is `integer-transformer-proof-v1`:
 
-- freeze one next-token evaluation corpus and hash,
-- produce retrieval, byte n-gram, and independent floating-point reference
-  rows under the typed `nsrl-eval` contract,
+- preserve the frozen 5,896-target corpus and dataset hash,
+- keep retrieval, byte n-gram, and independent floating-point reference rows
+  byte-reproducible under the typed `nsrl-eval` contract,
 - evaluate one `NSRLMT5` candidate on the identical target set,
 - promote only if it wins Q15 probability error without increasing mistakes,
 - keep literary and Solomon work isolated as experiment suites that nominate

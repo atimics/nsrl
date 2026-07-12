@@ -1,12 +1,20 @@
 use std::collections::HashSet;
+use std::fs;
+use std::path::{Component, Path, PathBuf};
 
 use crate::json_escape;
 
 pub const PROOF_CONTRACT_SCHEMA: &str = "nsrl.integer_transformer_proof_contract.v1";
+pub const PROOF_MANIFEST_SCHEMA: &str = "nsrl.integer_transformer_proof_manifest.v1";
 pub const PROOF_RESULT_SCHEMA: &str = "nsrl.integer_transformer_proof_result.v1";
 pub const PROOF_CONTRACT_ID: &str = "integer-transformer-proof-v1";
 pub const PROOF_PARTITION: &str = "eval";
 pub const PROOF_RESULTS_HEADER: &str = "schema\tcontract\tsuite\tpartition\tdataset_hash\tsystem\ttargets\tmistakes\tprobability_error_q15\treplay_hash";
+pub const PROOF_MANIFEST_HEADER: &str =
+    "schema\tcontract\ttrain\teval\tcontext\tstride\tmin_targets\tdataset_hash";
+
+const FNV64_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV64_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExperimentSuite {
@@ -81,6 +89,66 @@ pub struct ProofCheck {
     pub passed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProofManifest {
+    pub manifest_path: PathBuf,
+    pub train_path: PathBuf,
+    pub eval_path: PathBuf,
+    pub context: usize,
+    pub stride: usize,
+    pub min_targets: usize,
+    pub dataset_hash: String,
+    pub targets: usize,
+}
+
+impl ProofManifest {
+    pub fn to_json_line(&self) -> String {
+        format!(
+            "{{\"schema\":\"{}\",\"contract\":\"{}\",\"manifest\":\"{}\",\"train\":\"{}\",\"eval\":\"{}\",\"context\":{},\"stride\":{},\"min_targets\":{},\"targets\":{},\"dataset_hash\":\"{}\",\"valid\":true}}\n",
+            PROOF_MANIFEST_SCHEMA,
+            PROOF_CONTRACT_ID,
+            json_escape(&self.manifest_path.to_string_lossy()),
+            json_escape(&self.train_path.to_string_lossy()),
+            json_escape(&self.eval_path.to_string_lossy()),
+            self.context,
+            self.stride,
+            self.min_targets,
+            self.targets,
+            self.dataset_hash,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProofBaselineCheck {
+    pub dataset_hash: String,
+    pub targets: usize,
+    pub baselines: Vec<ProofResult>,
+}
+
+impl ProofBaselineCheck {
+    pub fn to_json_line(&self) -> String {
+        let baselines = self
+            .baselines
+            .iter()
+            .map(result_json)
+            .collect::<Vec<_>>()
+            .join(",");
+        format!(
+            "{{\"schema\":\"{}\",\"contract\":\"{}\",\"dataset_hash\":\"{}\",\"targets\":{},\"baselines\":[{}],\"valid\":true}}\n",
+            PROOF_RESULT_SCHEMA, PROOF_CONTRACT_ID, self.dataset_hash, self.targets, baselines,
+        )
+    }
+}
+
+#[derive(Debug)]
+struct ParsedProofResults {
+    dataset_hash: String,
+    targets: usize,
+    systems: HashSet<ProofSystem>,
+    results: Vec<ProofResult>,
+}
+
 impl ProofCheck {
     pub fn to_json_line(&self) -> String {
         let baselines = self
@@ -110,6 +178,134 @@ pub fn proof_contract_json_line() -> String {
 }
 
 pub fn check_proof_results(input: &str) -> Result<ProofCheck, String> {
+    let parsed = parse_proof_results(input)?;
+    for required in ProofSystem::REQUIRED {
+        if !parsed.systems.contains(&required) {
+            return Err(format!(
+                "missing required proof system {}",
+                required.as_str()
+            ));
+        }
+    }
+    if parsed.results.len() != ProofSystem::REQUIRED.len() {
+        return Err("full proof results must contain exactly four systems".to_string());
+    }
+    let candidate = parsed
+        .results
+        .iter()
+        .find(|result| result.system == ProofSystem::Candidate)
+        .cloned()
+        .ok_or("missing candidate")?;
+    let baselines = required_baselines(&parsed.results)?;
+    let passed = baselines.iter().all(|baseline| {
+        candidate.probability_error_q15 < baseline.probability_error_q15
+            && candidate.mistakes <= baseline.mistakes
+    });
+    Ok(ProofCheck {
+        dataset_hash: parsed.dataset_hash,
+        targets: parsed.targets,
+        candidate,
+        baselines,
+        passed,
+    })
+}
+
+pub fn check_proof_baselines(
+    input: &str,
+    manifest: &ProofManifest,
+) -> Result<ProofBaselineCheck, String> {
+    let parsed = parse_proof_results(input)?;
+    if parsed.systems.contains(&ProofSystem::Candidate) || parsed.results.len() != 3 {
+        return Err(
+            "baseline artifact must contain exactly the three required baselines".to_string(),
+        );
+    }
+    let baselines = required_baselines(&parsed.results)?;
+    if parsed.dataset_hash != manifest.dataset_hash || parsed.targets != manifest.targets {
+        return Err("baseline artifact does not match the frozen manifest".to_string());
+    }
+    Ok(ProofBaselineCheck {
+        dataset_hash: parsed.dataset_hash,
+        targets: parsed.targets,
+        baselines,
+    })
+}
+
+pub fn load_proof_manifest(path: &Path) -> Result<ProofManifest, String> {
+    let input = fs::read_to_string(path)
+        .map_err(|error| format!("cannot read manifest {}: {error}", path.display()))?;
+    let mut lines = input.lines();
+    if lines.next() != Some(PROOF_MANIFEST_HEADER) {
+        return Err(format!(
+            "proof manifest header must be {PROOF_MANIFEST_HEADER}"
+        ));
+    }
+    let row = lines.next().ok_or("proof manifest row is missing")?;
+    if lines.any(|line| !line.trim().is_empty()) {
+        return Err("proof manifest must contain exactly one row".to_string());
+    }
+    let fields = row.split('\t').collect::<Vec<_>>();
+    if fields.len() != 8 || fields[0] != PROOF_MANIFEST_SCHEMA || fields[1] != PROOF_CONTRACT_ID {
+        return Err("proof manifest schema or contract is invalid".to_string());
+    }
+    let directory = path.parent().unwrap_or_else(|| Path::new("."));
+    let train_path = resolve_manifest_path(directory, fields[2], "train")?;
+    let eval_path = resolve_manifest_path(directory, fields[3], "eval")?;
+    let context = parse_positive(fields[4], "context")?;
+    let stride = parse_positive(fields[5], "stride")?;
+    let min_targets = parse_positive(fields[6], "min_targets")?;
+    validate_hash(fields[7], "dataset_hash")?;
+    let train = fs::read(&train_path)
+        .map_err(|error| format!("cannot read train corpus {}: {error}", train_path.display()))?;
+    let eval = fs::read(&eval_path)
+        .map_err(|error| format!("cannot read eval corpus {}: {error}", eval_path.display()))?;
+    let dataset_hash = proof_dataset_hash(&train, &eval);
+    if dataset_hash != fields[7] {
+        return Err(format!(
+            "manifest dataset_hash {} does not match {dataset_hash}",
+            fields[7]
+        ));
+    }
+    let targets = proof_target_count(eval.len(), context, stride);
+    if targets < min_targets {
+        return Err(format!(
+            "benchmark has {targets} targets, below frozen minimum {min_targets}"
+        ));
+    }
+    Ok(ProofManifest {
+        manifest_path: path.to_path_buf(),
+        train_path,
+        eval_path,
+        context,
+        stride,
+        min_targets,
+        dataset_hash,
+        targets,
+    })
+}
+
+pub fn proof_dataset_hash(train: &[u8], eval: &[u8]) -> String {
+    let mut hash = FNV64_OFFSET;
+    for byte in train
+        .iter()
+        .copied()
+        .chain([u8::MAX])
+        .chain(eval.iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(FNV64_PRIME);
+    }
+    format!("0x{hash:016x}")
+}
+
+pub fn proof_target_count(eval_bytes: usize, context: usize, stride: usize) -> usize {
+    if context == 0 || stride == 0 || eval_bytes <= context {
+        return 0;
+    }
+    (eval_bytes - context).div_ceil(stride)
+}
+
+fn parse_proof_results(input: &str) -> Result<ParsedProofResults, String> {
     let mut lines = input.lines();
     let header = lines.next().ok_or("proof results are empty")?;
     if header != PROOF_RESULTS_HEADER {
@@ -174,20 +370,16 @@ pub fn check_proof_results(input: &str) -> Result<ProofCheck, String> {
         });
     }
 
-    for required in ProofSystem::REQUIRED {
-        if !systems.contains(&required) {
-            return Err(format!(
-                "missing required proof system {}",
-                required.as_str()
-            ));
-        }
-    }
-    let candidate = results
-        .iter()
-        .find(|result| result.system == ProofSystem::Candidate)
-        .cloned()
-        .ok_or("missing candidate")?;
-    let baselines = ProofSystem::BASELINES
+    Ok(ParsedProofResults {
+        dataset_hash: dataset_hash.ok_or("missing dataset_hash")?,
+        targets: targets.ok_or("missing target count")?,
+        systems,
+        results,
+    })
+}
+
+fn required_baselines(results: &[ProofResult]) -> Result<Vec<ProofResult>, String> {
+    ProofSystem::BASELINES
         .iter()
         .map(|system| {
             results
@@ -196,18 +388,21 @@ pub fn check_proof_results(input: &str) -> Result<ProofCheck, String> {
                 .cloned()
                 .ok_or_else(|| format!("missing baseline {}", system.as_str()))
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    let passed = baselines.iter().all(|baseline| {
-        candidate.probability_error_q15 < baseline.probability_error_q15
-            && candidate.mistakes <= baseline.mistakes
-    });
-    Ok(ProofCheck {
-        dataset_hash: dataset_hash.ok_or("missing dataset_hash")?,
-        targets: targets.ok_or("missing target count")?,
-        candidate,
-        baselines,
-        passed,
-    })
+        .collect()
+}
+
+fn resolve_manifest_path(directory: &Path, value: &str, field: &str) -> Result<PathBuf, String> {
+    let relative = Path::new(value);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(format!(
+            "manifest {field} path must be a simple relative path"
+        ));
+    }
+    Ok(directory.join(relative))
 }
 
 fn validate_hash(value: &str, field: &str) -> Result<(), String> {
@@ -298,5 +493,24 @@ mod tests {
         ]
         .join("\n");
         assert!(!check_proof_results(&input).expect("valid proof").passed);
+    }
+
+    #[test]
+    fn dataset_hash_binds_train_eval_boundary() {
+        assert_eq!(
+            proof_dataset_hash(b"abc", b"def"),
+            proof_dataset_hash(b"abc", b"def")
+        );
+        assert_ne!(
+            proof_dataset_hash(b"abc", b"def"),
+            proof_dataset_hash(b"abcd", b"ef")
+        );
+    }
+
+    #[test]
+    fn target_count_matches_context_windows() {
+        assert_eq!(proof_target_count(65, 64, 1), 1);
+        assert_eq!(proof_target_count(70, 64, 2), 3);
+        assert_eq!(proof_target_count(64, 64, 1), 0);
     }
 }

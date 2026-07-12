@@ -19,15 +19,21 @@ the project headline until the substrate passes this proof.
 - Primary metric: aggregate `probability_error_q15`, lower is better
 - Secondary metric: `mistakes`, lower is better
 - Replay: every result row carries a deterministic 64-bit replay hash
+- Manifest: `benchmarks/integer-transformer-proof-v1/manifest.tsv`
+- Dataset hash: `0x8fe7b86378f81951`
+- Context: 64 bytes
+- Stride: 1
+- Held-out targets: 5,896
 
 The candidate passes only when its probability error is strictly lower than
 every baseline and its mistake count is no higher than every baseline on the
 same frozen dataset hash and target count. A routing oracle is diagnostic and
 cannot occupy a baseline or candidate row.
 
-The dataset content and hash are intentionally not declared by prose. They are
-frozen together when the benchmark corpus is promoted; changing either creates
-a new contract version.
+The train and evaluation bytes are checked in beside the manifest. The hash
+binds `train.txt`, a partition separator, and `eval.txt`; changing content,
+partition boundaries, geometry, or the minimum target count requires a new
+contract version.
 
 ## Typed result surface
 
@@ -43,14 +49,59 @@ Inspect the machine-readable contract:
 cargo run -p nsrl-eval -- contract
 ```
 
-Check a result matrix:
+Validate the frozen manifest and checked-in baseline matrix:
 
 ```bash
-cargo run -p nsrl-eval -- check --results path/to/proof-results.tsv
+cargo run -p nsrl-eval -- manifest \
+  --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv
+
+cargo run -p nsrl-eval -- check-baselines \
+  --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv \
+  --results benchmarks/integer-transformer-proof-v1/baselines.tsv
 ```
 
-The checker exits zero only for a valid passing proof, one for a valid failing
-proof, and two for a malformed or contract-incompatible artifact.
+Regenerate the deterministic baseline matrix:
+
+```bash
+node scripts/run-integer-transformer-proof-baselines.mjs \
+  --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv \
+  --out benchmarks/integer-transformer-proof-v1/baselines.tsv
+```
+
+Evaluate a context-64 candidate and assemble the full matrix:
+
+```bash
+cargo run -p nsrl-train --bin nsrl-mini-transformer-eval -- \
+  --tokens benchmarks/integer-transformer-proof-v1/eval.txt \
+  --model path/to/candidate.nsrlmt \
+  --stride 1 \
+  --attention linear \
+  --position nope \
+  --out path/to/candidate-eval.json
+
+node scripts/build-integer-transformer-proof-results.mjs \
+  --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv \
+  --baselines benchmarks/integer-transformer-proof-v1/baselines.tsv \
+  --candidate-trace path/to/candidate-eval.json \
+  --out path/to/proof-results.tsv
+
+cargo run -p nsrl-eval -- check \
+  --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv \
+  --results path/to/proof-results.tsv
+```
+
+The final checker exits zero only for a valid passing proof, one for a valid
+failing proof, and two for a malformed or contract-incompatible artifact.
+
+For a reproducible train-evaluate-check run using the repository defaults:
+
+```bash
+scripts/run-integer-transformer-proof-candidate.sh \
+  data/experiments/integer-transformer-proof-v1/candidate-default
+```
+
+The runner exits one when the candidate is valid but fails the benchmark; a
+failed proof is measured evidence, not an infrastructure failure.
 
 ## Experiment boundaries
 
