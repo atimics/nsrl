@@ -24,6 +24,7 @@ const ROUTER_FEATURE_COUNT: usize = 32;
 enum RouterFeatureKind {
     Pooled,
     SignedProjection,
+    FullHidden,
 }
 
 impl RouterFeatureKind {
@@ -31,6 +32,7 @@ impl RouterFeatureKind {
         match self {
             Self::Pooled => "pooled",
             Self::SignedProjection => "signed_projection",
+            Self::FullHidden => "full_hidden",
         }
     }
 }
@@ -543,7 +545,8 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
                 router_feature_kind = match required(&mut args, "--router-features")?.as_str() {
                     "pooled" => RouterFeatureKind::Pooled,
                     "signed" | "signed-projection" => RouterFeatureKind::SignedProjection,
-                    _ => return Err("--router-features requires pooled or signed".into()),
+                    "full" | "full-hidden" => RouterFeatureKind::FullHidden,
+                    _ => return Err("--router-features requires pooled, signed, or full".into()),
                 }
             }
             "--router-feature-seed" => {
@@ -683,12 +686,14 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
         }
         for (index, record) in records.iter().enumerate() {
             let router_features = match router_feature_kind {
-                RouterFeatureKind::Pooled => record.router_hidden_features_q15,
+                RouterFeatureKind::Pooled => record.router_hidden_features_q15.to_vec(),
                 RouterFeatureKind::SignedProjection => signed_router_features_q15(
                     &record.last_hidden_q15,
                     router_feature_projection_seed,
                     router_feature_projection_shift,
-                ),
+                )
+                .to_vec(),
+                RouterFeatureKind::FullHidden => record.last_hidden_q15.to_vec(),
             };
             writeln!(
                 details,
@@ -733,15 +738,18 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
     } else {
         "nsrl.shared_trunk_block_low_rank_routing_ablation.v2"
     };
-    let router_feature_json = if router_feature_kind == RouterFeatureKind::Pooled {
-        String::new()
-    } else {
-        format!(
+    let router_feature_json = match router_feature_kind {
+        RouterFeatureKind::Pooled => String::new(),
+        RouterFeatureKind::SignedProjection => format!(
             ",\"router_features\":{{\"kind\":\"{}\",\"count\":32,\"projection_seed\":{},\"projection_shift\":{}}}",
             router_feature_kind.as_str(),
             router_feature_projection_seed,
             router_feature_projection_shift,
-        )
+        ),
+        RouterFeatureKind::FullHidden => format!(
+            ",\"router_features\":{{\"kind\":\"{}\",\"count\":128}}",
+            router_feature_kind.as_str(),
+        ),
     };
     writeln!(
         output,
@@ -1073,7 +1081,7 @@ fn help() {
          train --tokens PATH --model PATH --out PATH --trace PATH [--resume-expert PATH] [--rank N] [--residual-shift N] [--train-layer all|final|N] [--bidirectional-loss-guard] [--objective cross-entropy|probability-error] [--epochs N] [--token-offset N] [--stride N] [--max-windows N] [--batch-windows N] [--learning-rate N] [--learning-rate-shift N] [--attention base2|linear] [--position learned|nope]\n\
          eval --tokens PATH --model PATH --expert PATH --trace PATH [--stride N] [--max-windows N] [--attention base2|linear] [--position learned|nope]\n\
          signature --input PATH --model PATH --out PATH --trace PATH [--stride N] [--max-samples N] [--attention base2|linear] [--position learned|nope]\n\
-         score --input PATH --model PATH --expert ID=PATH --expert ID=PATH --expert ID=PATH --out PATH --details-out PATH [--stride N] [--span-len N] [--max-samples N] [--router-features pooled|signed] [--router-feature-seed N] [--router-feature-shift N] [--attention base2|linear] [--position learned|nope]\n\
+         score --input PATH --model PATH --expert ID=PATH --expert ID=PATH --expert ID=PATH --out PATH --details-out PATH [--stride N] [--span-len N] [--max-samples N] [--router-features pooled|signed|full] [--router-feature-seed N] [--router-feature-shift N] [--attention base2|linear] [--position learned|nope]\n\
          generate --model PATH --expert PATH --prompt TEXT --text-out PATH --trace PATH [--max-new-tokens N] [--top-k N] [--sample-seed N] [--printable-only] [--attention base2|linear] [--position learned|nope]"
     );
 }

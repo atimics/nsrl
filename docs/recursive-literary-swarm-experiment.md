@@ -604,6 +604,34 @@ transformer block. Generation still fails the prose gate. Consolidated
 evidence is
 `data/experiments/literary-h8-gradient-block-curriculum-v1/report.json`.
 
+### Signed-projection router swarm
+
+The next router feature mode replaces each contiguous four-channel mean with
+32 deterministic signed projections over all 128 final contextual channels.
+It is opt-in: pooled scoring remains byte-identical, while signed scoring uses
+a v2 report that binds projection seed and shift. The experts, losses, data
+splits, and oracle labels remain frozen.
+
+An unscaled shift-4 probe saturates projected features in 5,881 of 5,887
+calibration rows. Shift 7 eliminates saturation and is selected before fitting
+routers. Two independent projection seeds are then compared without opening
+seed 2's final split. Seed 1 gives the better calibration route: an
+expected-regret span child improves fixed by 199 Q15 with two switches.
+
+On final data that child makes no switches and exactly equals the fixed expert,
+improving on the pooled expected-regret router's 109-Q15 regression. Three
+projected child routers feed direct-regret token and span root networks; both
+roots also collapse safely to fixed. Thus signed projection is a validated
+runtime but not a promoted routing checkpoint. The remaining final token
+oracle ceiling is still 12,854 Q15.
+
+This negative result narrows the next architecture: do not tune more random
+32-channel projections. Add a versioned integer router with 137 inputs (all
+128 contextual channels plus nine prior-token probes), width 32, and the same
+expected-regret/calibration gates. Only then distill a passing policy into a
+block-local dispatcher. Consolidated evidence is
+`data/experiments/literary-h8-gradient-block-projected-router-shift7-v1/report.json`.
+
 ## Promotion gates
 
 - Recursive top-two must beat the best single leaf on frozen final data.

@@ -361,6 +361,29 @@ Generation remains space-heavy and fails every prose gate. Consolidated
 evidence is in
 `data/experiments/literary-h8-gradient-block-curriculum-v1/report.json`.
 
+The first observability follow-up adds an opt-in signed-projection feature mode
+to the block-expert scorer. It maps all 128 final contextual channels into 32
+deterministic features while leaving the historical contiguous-pooling mode
+byte-exact by default. The projection seed and scale are bound into the v2
+score report. A unit test verifies that the projection preserves within-bucket
+signals that pooled features erase.
+
+Scale matters: projection shift 4 clips at least one feature in 5,881 of 5,887
+calibration rows and is rejected before router fitting. Shift 7 has zero
+calibration saturation. Two projection seeds are compared on train and
+calibration only; seed 1 wins. Its expected-regret span router improves fixed
+by 199 Q15 on calibration, then exactly ties fixed on final by making no final
+switches. Three projected child routers and direct-regret token/span roots also
+tie fixed. This removes the pooled router's 109-Q15 regression but does not
+capture any of the 12,854-Q15 final token-oracle ceiling.
+
+The signed-projection runtime is validated, but no routed checkpoint is
+promoted. The evidence now rejects further 32-channel compression tuning as
+the next scale step. A versioned router should consume all 128 contextual
+channels plus nine prior-token probes directly and widen its hidden layer from
+16 to 32. Evidence is in
+`data/experiments/literary-h8-gradient-block-projected-router-shift7-v1/report.json`.
+
 ## Next experiment ladder
 
 After each phase, use the same corpus and frozen holdout:
@@ -400,9 +423,12 @@ After each phase, use the same corpus and frozen holdout:
    implemented and measured; it closes most of the router gap but finishes 109
    Q15 behind the best fixed expert.
 14. Replace contiguous four-channel hidden averaging with deterministic signed
-   projections of all 128 contextual channels and integrate the winning router
+   projections of all 128 contextual channels: implemented and measured;
+   saturation-free projection removes router regression but only ties fixed.
+15. Add a versioned 137-input, width-32 integer router over all 128 contextual
+   channels plus nine prior-token probes, then integrate a winning checkpoint
    as a block-local top-one/top-two dispatcher.
-15. Expand source data again before a 64K aggregate experiment; do not
+16. Expand source data again before a 64K aggregate experiment; do not
    manufacture scale through repeated overlapping windows alone.
 
 Four single-trunk expert runtimes are complete. Bias, diagonal hidden,

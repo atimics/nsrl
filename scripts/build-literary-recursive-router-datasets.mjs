@@ -5,15 +5,24 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.argv[2] ?? "data/experiments/literary-h8-author-block-swarm-v1";
+const dataDirectory = process.argv[3]
+  ?? (fs.existsSync(path.join(root, "data-projected")) ? "data-projected" : "data-hidden");
+const contextualFeatureCount = dataDirectory === "data-full-hidden" ? 128 : 32;
+const routerFeatureCount = contextualFeatureCount + 9;
 const views = ["hidden-a", "hidden-b", "full"];
 const outDir = path.join(root, "data-recursive");
 const manifest = {
   schema: "nsrl.literary_recursive_router_datasets.v1",
   root,
+  feature_data_directory: dataDirectory,
   child_views: views,
   feature_layout: {
     child_router_probabilities_q15: { start: 0, end: 9, routers: 3, classes_each: 3 },
-    shared_trunk_hidden_q15: { start: 9, end: 41, channels: 32 },
+    shared_trunk_hidden_q15: {
+      start: 9,
+      end: routerFeatureCount,
+      channels: contextualFeatureCount,
+    },
     current_target_excluded: true,
   },
   granularities: {},
@@ -24,7 +33,7 @@ for (const granularity of ["token", "span"]) {
   fs.mkdirSync(directory, { recursive: true });
   manifest.granularities[granularity] = {};
   for (const split of ["train", "calibration", "final"]) {
-    const sourcePath = path.join(root, "data-hidden", granularity, `${split}.tsv`);
+    const sourcePath = path.join(root, dataDirectory, granularity, `${split}.tsv`);
     const sourceBytes = fs.readFileSync(sourcePath);
     const source = parseDataset(sourceBytes.toString("utf8"));
     const predictions = views.map((view) => {
@@ -48,8 +57,10 @@ for (const granularity of ["token", "span"]) {
         if (prediction.target !== row.target) throw new Error(`target mismatch for ${row.sampleId}`);
         return prediction.probabilities;
       });
-      const features = [...child.flat(), ...row.features.slice(0, 32)];
-      if (features.length !== 41) throw new Error("recursive feature count mismatch");
+      const features = [...child.flat(), ...row.features.slice(0, contextualFeatureCount)];
+      if (features.length !== routerFeatureCount) {
+        throw new Error("recursive feature count mismatch");
+      }
       lines.push(
         `${row.sampleId}\t${row.target}\t${features.join(",")}\t${row.losses.join(",")}`,
       );
@@ -84,7 +95,7 @@ function parseDataset(content) {
       features: tripletOrVector(features),
       losses: tripletOrVector(losses),
     };
-    if (row.features.length !== 41 || row.losses.length !== 3) {
+    if (row.features.length !== routerFeatureCount || row.losses.length !== 3) {
       throw new Error(`invalid source row ${sampleId}`);
     }
     return row;

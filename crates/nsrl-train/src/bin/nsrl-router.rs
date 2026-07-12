@@ -7,9 +7,12 @@ use std::path::PathBuf;
 
 use nsrl_core::base2_softmax_i32_q15;
 
-const MAGIC: &[u8; 8] = b"NSRLRT1\n";
-const FEATURE_COUNT: usize = 41;
-const HIDDEN_DIM: usize = 16;
+const MAGIC_V1: &[u8; 8] = b"NSRLRT1\n";
+const MAGIC_V2: &[u8; 8] = b"NSRLRT2\n";
+const LEGACY_FEATURE_COUNT: usize = 41;
+const WIDE_FEATURE_COUNT: usize = 137;
+const LEGACY_HIDDEN_DIM: usize = 16;
+const WIDE_HIDDEN_DIM: usize = 32;
 const OUTPUT_DIM: usize = 3;
 const OUTPUT_LOGIT_SHIFT: u8 = 8;
 const OUTPUT_WEIGHT_GRAD_SHIFT: u8 = 27;
@@ -67,6 +70,9 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
     let mut seed = 1_u64;
     let mut objective = RouterObjective::HardLabel;
     let mut regret_gradient_shift = 3_u8;
+    let mut hidden_dim = LEGACY_HIDDEN_DIM;
+    let mut shuffle_rows = false;
+    let mut max_train_rows = None;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--train" => train_path = Some(PathBuf::from(required(&mut args, "--train")?)),
@@ -81,6 +87,11 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
             "--features" => feature_spec = required(&mut args, "--features")?,
             "--epochs" => epochs = required(&mut args, "--epochs")?.parse()?,
             "--seed" => seed = required(&mut args, "--seed")?.parse()?,
+            "--hidden-dim" => hidden_dim = required(&mut args, "--hidden-dim")?.parse()?,
+            "--shuffle" => shuffle_rows = true,
+            "--max-train-rows" => {
+                max_train_rows = Some(required(&mut args, "--max-train-rows")?.parse()?)
+            }
             "--objective" => {
                 objective = match required(&mut args, "--objective")?.as_str() {
                     "hard-label" => RouterObjective::HardLabel,
@@ -100,8 +111,12 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
             other => return Err(format!("unknown train argument: {other}").into()),
         }
     }
-    if epochs == 0 || regret_gradient_shift > 30 {
-        return Err("--epochs must be positive and --regret-gradient-shift at most 30".into());
+    if epochs == 0
+        || regret_gradient_shift > 30
+        || ![LEGACY_HIDDEN_DIM, WIDE_HIDDEN_DIM].contains(&hidden_dim)
+        || max_train_rows == Some(0)
+    {
+        return Err("epochs/shift are invalid or --hidden-dim is not 16 or 32".into());
     }
     let train_path = train_path.ok_or("--train is required")?;
     let calibration_path = calibration_path.ok_or("--calibration is required")?;
@@ -110,7 +125,7 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
     let feature_indices = parse_feature_indices(&feature_spec)?;
     let train_rows = read_dataset(&train_path)?;
     let calibration_rows = read_dataset(&calibration_path)?;
-    let mut model = RouterModel::new(feature_indices, seed);
+    let mut model = RouterModel::new(feature_indices, seed, hidden_dim)?;
     let initial_train = evaluate(&model, &train_rows)?;
     let initial_calibration = evaluate(&model, &calibration_rows)?;
     let update = train(
@@ -119,6 +134,8 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         epochs,
         objective,
         regret_gradient_shift,
+        shuffle_rows,
+        max_train_rows,
     )?;
     let final_train = evaluate(&model, &train_rows)?;
     let final_calibration = evaluate(&model, &calibration_rows)?;
@@ -130,6 +147,8 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
             epochs,
             objective,
             regret_gradient_shift,
+            shuffle_rows,
+            max_train_rows,
             update,
             initial_train,
             final_train,
@@ -175,7 +194,7 @@ fn run_eval(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::e
 fn print_help() {
     println!("Usage:");
     println!(
-        "  nsrl-router train --train DATA.tsv --calibration DATA.tsv --features 0-23|24-40|0-40 --epochs N --seed N [--objective hard-label|utility-soft|expected-regret] [--regret-gradient-shift N] --model-out PATH --trace PATH [--predictions-out PATH]"
+        "  nsrl-router train --train DATA.tsv --calibration DATA.tsv --features START-END [--hidden-dim 16|32] [--shuffle] [--max-train-rows N] --epochs N --seed N [--objective hard-label|utility-soft|expected-regret] [--regret-gradient-shift N] --model-out PATH --trace PATH [--predictions-out PATH]"
     );
     println!(
         "  nsrl-router eval --data DATA.tsv --model PATH --trace PATH [--predictions-out PATH]"
@@ -186,7 +205,7 @@ fn print_help() {
 struct RouterRow {
     sample_id: String,
     target: usize,
-    features_q15: [i16; FEATURE_COUNT],
+    features_q15: Vec<i16>,
     child_losses_q15: [usize; OUTPUT_DIM],
 }
 
@@ -208,17 +227,17 @@ fn read_dataset(path: &PathBuf) -> Result<Vec<RouterRow>, Box<dyn std::error::Er
         }
         let features = parse_i16_csv(fields[2])?;
         let losses = parse_usize_csv(fields[3])?;
-        if features.len() != FEATURE_COUNT || losses.len() != OUTPUT_DIM {
+        if ![LEGACY_FEATURE_COUNT, WIDE_FEATURE_COUNT].contains(&features.len())
+            || losses.len() != OUTPUT_DIM
+        {
             return Err("router row has the wrong feature/loss shape".into());
         }
-        let mut features_q15 = [0_i16; FEATURE_COUNT];
-        features_q15.copy_from_slice(&features);
         let mut child_losses_q15 = [0_usize; OUTPUT_DIM];
         child_losses_q15.copy_from_slice(&losses);
         rows.push(RouterRow {
             sample_id: fields[0].to_string(),
             target,
-            features_q15,
+            features_q15: features,
             child_losses_q15,
         });
     }
@@ -248,7 +267,7 @@ fn parse_feature_indices(value: &str) -> Result<Vec<usize>, Box<dyn std::error::
         .ok_or("--features requires START-END")?;
     let start = start.parse::<usize>()?;
     let end = end.parse::<usize>()?;
-    if start > end || end >= FEATURE_COUNT {
+    if start > end || end >= WIDE_FEATURE_COUNT {
         return Err("feature range is invalid".into());
     }
     Ok((start..=end).collect())
@@ -258,14 +277,27 @@ fn parse_feature_indices(value: &str) -> Result<Vec<usize>, Box<dyn std::error::
 struct RouterModel {
     feature_indices: Vec<usize>,
     seed: u64,
+    hidden_dim: usize,
     input_weights: Vec<i8>,
-    hidden_bias_q15: [i32; HIDDEN_DIM],
-    output_weights: [i8; HIDDEN_DIM * OUTPUT_DIM],
+    hidden_bias_q15: Vec<i32>,
+    output_weights: Vec<i8>,
     output_bias_q8: [i32; OUTPUT_DIM],
 }
 
 impl RouterModel {
-    fn new(feature_indices: Vec<usize>, seed: u64) -> Self {
+    fn new(
+        feature_indices: Vec<usize>,
+        seed: u64,
+        hidden_dim: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        if feature_indices.is_empty()
+            || feature_indices
+                .iter()
+                .any(|&index| index >= WIDE_FEATURE_COUNT)
+            || ![LEGACY_HIDDEN_DIM, WIDE_HIDDEN_DIM].contains(&hidden_dim)
+        {
+            return Err("invalid router geometry".into());
+        }
         let mut state = seed ^ 0x9e37_79b9_7f4a_7c15;
         let mut next_weight = || {
             state = state
@@ -273,25 +305,33 @@ impl RouterModel {
                 .wrapping_add(1_442_695_040_888_963_407);
             ((state >> 32) % 9) as i8 - 4
         };
-        let input_weights = (0..feature_indices.len() * HIDDEN_DIM)
+        let input_weights = (0..feature_indices.len() * hidden_dim)
             .map(|_| next_weight())
             .collect();
-        let mut output_weights = [0_i8; HIDDEN_DIM * OUTPUT_DIM];
+        let mut output_weights = vec![0_i8; hidden_dim * OUTPUT_DIM];
         for value in &mut output_weights {
             *value = next_weight();
         }
-        Self {
+        Ok(Self {
             feature_indices,
             seed,
+            hidden_dim,
             input_weights,
-            hidden_bias_q15: [0; HIDDEN_DIM],
+            hidden_bias_q15: vec![0; hidden_dim],
             output_weights,
             output_bias_q8: [0; OUTPUT_DIM],
-        }
+        })
     }
 
-    fn forward(&self, features: &[i16; FEATURE_COUNT]) -> Result<RouterForward, &'static str> {
-        let mut hidden = [0_i16; HIDDEN_DIM];
+    fn forward(&self, features: &[i16]) -> Result<RouterForward, &'static str> {
+        if self
+            .feature_indices
+            .iter()
+            .any(|&feature_index| feature_index >= features.len())
+        {
+            return Err("router feature row is too narrow");
+        }
+        let mut hidden = vec![0_i16; self.hidden_dim];
         for (hidden_index, hidden_value) in hidden.iter_mut().enumerate() {
             let mut acc = i64::from(self.hidden_bias_q15[hidden_index]);
             for (local_index, &feature_index) in self.feature_indices.iter().enumerate() {
@@ -307,7 +347,7 @@ impl RouterModel {
         for output_index in 0..OUTPUT_DIM {
             let mut acc = i64::from(self.output_bias_q8[output_index]);
             for (hidden_index, &hidden_value) in hidden.iter().enumerate() {
-                let weight = self.output_weights[output_index * HIDDEN_DIM + hidden_index];
+                let weight = self.output_weights[output_index * self.hidden_dim + hidden_index];
                 acc = acc
                     .checked_add(
                         (i64::from(hidden_value) * i64::from(weight)) >> OUTPUT_LOGIT_SHIFT,
@@ -327,9 +367,9 @@ impl RouterModel {
 
     fn to_bytes(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut out = Vec::new();
-        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(self.magic()?);
         out.extend_from_slice(&(self.feature_indices.len() as u32).to_le_bytes());
-        out.extend_from_slice(&(HIDDEN_DIM as u32).to_le_bytes());
+        out.extend_from_slice(&(self.hidden_dim as u32).to_le_bytes());
         out.extend_from_slice(&(OUTPUT_DIM as u32).to_le_bytes());
         out.extend_from_slice(&self.seed.to_le_bytes());
         for &index in &self.feature_indices {
@@ -356,36 +396,43 @@ impl RouterModel {
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         let mut cursor = 0_usize;
-        if take(bytes, &mut cursor, MAGIC.len())? != MAGIC {
+        let magic = take(bytes, &mut cursor, MAGIC_V1.len())?;
+        if magic != MAGIC_V1 && magic != MAGIC_V2 {
             return Err("invalid router artifact magic".into());
         }
         let input_dim = read_u32(bytes, &mut cursor)? as usize;
         let hidden_dim = read_u32(bytes, &mut cursor)? as usize;
         let output_dim = read_u32(bytes, &mut cursor)? as usize;
         let seed = read_u64(bytes, &mut cursor)?;
-        if input_dim == 0
-            || input_dim > FEATURE_COUNT
-            || hidden_dim != HIDDEN_DIM
-            || output_dim != OUTPUT_DIM
-        {
+        let valid_shape = if magic == MAGIC_V1 {
+            input_dim > 0 && input_dim <= LEGACY_FEATURE_COUNT && hidden_dim == LEGACY_HIDDEN_DIM
+        } else {
+            input_dim > 0 && input_dim <= WIDE_FEATURE_COUNT && hidden_dim == WIDE_HIDDEN_DIM
+        };
+        if !valid_shape || output_dim != OUTPUT_DIM {
             return Err("invalid router artifact shape".into());
         }
         let feature_indices = take(bytes, &mut cursor, input_dim)?
             .iter()
             .map(|&value| usize::from(value))
             .collect::<Vec<_>>();
-        if feature_indices.iter().any(|&index| index >= FEATURE_COUNT) {
+        let feature_limit = if magic == MAGIC_V1 {
+            LEGACY_FEATURE_COUNT
+        } else {
+            WIDE_FEATURE_COUNT
+        };
+        if feature_indices.iter().any(|&index| index >= feature_limit) {
             return Err("invalid router feature index".into());
         }
-        let input_weights = take(bytes, &mut cursor, input_dim * HIDDEN_DIM)?
+        let input_weights = take(bytes, &mut cursor, input_dim * hidden_dim)?
             .iter()
             .map(|&value| i8::from_le_bytes([value]))
             .collect::<Vec<_>>();
-        let mut hidden_bias_q15 = [0_i32; HIDDEN_DIM];
+        let mut hidden_bias_q15 = vec![0_i32; hidden_dim];
         for value in &mut hidden_bias_q15 {
             *value = read_i32(bytes, &mut cursor)?;
         }
-        let mut output_weights = [0_i8; HIDDEN_DIM * OUTPUT_DIM];
+        let mut output_weights = vec![0_i8; hidden_dim * OUTPUT_DIM];
         for value in &mut output_weights {
             *value = i8::from_le_bytes([take(bytes, &mut cursor, 1)?[0]]);
         }
@@ -399,6 +446,7 @@ impl RouterModel {
         Ok(Self {
             feature_indices,
             seed,
+            hidden_dim,
             input_weights,
             hidden_bias_q15,
             output_weights,
@@ -409,10 +457,38 @@ impl RouterModel {
     fn model_hash(&self) -> Result<u64, Box<dyn std::error::Error>> {
         Ok(fnv64(&self.to_bytes()?))
     }
+
+    fn magic(&self) -> Result<&'static [u8; 8], Box<dyn std::error::Error>> {
+        if self.hidden_dim == LEGACY_HIDDEN_DIM
+            && self
+                .feature_indices
+                .iter()
+                .all(|&index| index < LEGACY_FEATURE_COUNT)
+        {
+            Ok(MAGIC_V1)
+        } else if self.hidden_dim == WIDE_HIDDEN_DIM
+            && self
+                .feature_indices
+                .iter()
+                .all(|&index| index < WIDE_FEATURE_COUNT)
+        {
+            Ok(MAGIC_V2)
+        } else {
+            Err("router geometry has no artifact version".into())
+        }
+    }
+
+    fn artifact_name(&self) -> Result<&'static str, Box<dyn std::error::Error>> {
+        Ok(if self.magic()? == MAGIC_V1 {
+            "NSRLRT1"
+        } else {
+            "NSRLRT2"
+        })
+    }
 }
 
 struct RouterForward {
-    hidden: [i16; HIDDEN_DIM],
+    hidden: Vec<i16>,
     logits_q8: [i32; OUTPUT_DIM],
     probabilities_q15: [i16; OUTPUT_DIM],
 }
@@ -432,10 +508,12 @@ fn train(
     epochs: usize,
     objective: RouterObjective,
     regret_gradient_shift: u8,
+    shuffle_rows: bool,
+    max_train_rows: Option<usize>,
 ) -> Result<RouterUpdateStats, Box<dyn std::error::Error>> {
     let mut input_carry = vec![0_i64; model.input_weights.len()];
-    let mut output_carry = [0_i64; HIDDEN_DIM * OUTPUT_DIM];
-    let mut hidden_bias_carry = [0_i64; HIDDEN_DIM];
+    let mut output_carry = vec![0_i64; model.hidden_dim * OUTPUT_DIM];
+    let mut hidden_bias_carry = vec![0_i64; model.hidden_dim];
     let mut output_bias_carry = [0_i64; OUTPUT_DIM];
     let mut stats = RouterUpdateStats::default();
     let mut label_counts = [0_usize; OUTPUT_DIM];
@@ -443,8 +521,16 @@ fn train(
         label_counts[row.target] += 1;
     }
     let max_label_count = *label_counts.iter().max().ok_or("no router labels")?;
-    for _ in 0..epochs {
-        for row in rows {
+    for epoch in 0..epochs {
+        let mut row_order = (0..rows.len()).collect::<Vec<_>>();
+        if shuffle_rows {
+            deterministic_shuffle(&mut row_order, model.seed ^ epoch as u64);
+        }
+        if let Some(limit) = max_train_rows {
+            row_order.truncate(limit.min(row_order.len()));
+        }
+        for row_index in row_order {
+            let row = &rows[row_index];
             let forward = model.forward(&row.features_q15)?;
             let soft_targets = match objective {
                 RouterObjective::HardLabel | RouterObjective::ExpectedRegret => None,
@@ -478,9 +564,9 @@ fn train(
                 }
                 errors
             };
-            let output_weights_before = model.output_weights;
-            let mut hidden_grad_q15 = [0_i64; HIDDEN_DIM];
-            for hidden_index in 0..HIDDEN_DIM {
+            let output_weights_before = model.output_weights.clone();
+            let mut hidden_grad_q15 = vec![0_i64; model.hidden_dim];
+            for hidden_index in 0..model.hidden_dim {
                 if forward.hidden[hidden_index] <= 0 {
                     continue;
                 }
@@ -488,15 +574,15 @@ fn train(
                 for output_index in 0..OUTPUT_DIM {
                     acc += i64::from(errors_q15[output_index])
                         * i64::from(
-                            output_weights_before[output_index * HIDDEN_DIM + hidden_index],
+                            output_weights_before[output_index * model.hidden_dim + hidden_index],
                         );
                 }
                 hidden_grad_q15[hidden_index] = acc >> 7;
             }
 
             for output_index in 0..OUTPUT_DIM {
-                for hidden_index in 0..HIDDEN_DIM {
-                    let index = output_index * HIDDEN_DIM + hidden_index;
+                for hidden_index in 0..model.hidden_dim {
+                    let index = output_index * model.hidden_dim + hidden_index;
                     output_carry[index] += i64::from(errors_q15[output_index])
                         * i64::from(forward.hidden[hidden_index]);
                     apply_i8_gradient(
@@ -516,7 +602,7 @@ fn train(
                 );
             }
 
-            for hidden_index in 0..HIDDEN_DIM {
+            for hidden_index in 0..model.hidden_dim {
                 for (local_index, &feature_index) in model.feature_indices.iter().enumerate() {
                     let index = hidden_index * model.feature_indices.len() + local_index;
                     input_carry[index] +=
@@ -540,6 +626,17 @@ fn train(
         }
     }
     Ok(stats)
+}
+
+fn deterministic_shuffle(indices: &mut [usize], seed: u64) {
+    let mut state = seed ^ 0xd1b5_4a32_d192_ed03;
+    for end in (1..indices.len()).rev() {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        let selected = (state as usize) % (end + 1);
+        indices.swap(end, selected);
+    }
 }
 
 fn utility_target_probabilities(
@@ -723,18 +820,36 @@ fn training_trace_json(
     epochs: usize,
     objective: RouterObjective,
     regret_gradient_shift: u8,
+    shuffle_rows: bool,
+    max_train_rows: Option<usize>,
     update: RouterUpdateStats,
     initial_train: RouterMetrics,
     final_train: RouterMetrics,
     initial_calibration: RouterMetrics,
     final_calibration: RouterMetrics,
 ) -> String {
+    let artifact = model.artifact_name().unwrap_or("invalid");
+    let schema = if artifact == "NSRLRT1" {
+        "nsrl.router_training.v2"
+    } else {
+        "nsrl.router_training.v3"
+    };
+    let shuffle_json = if shuffle_rows {
+        ",\"shuffle\":\"deterministic_fisher_yates_v1\""
+    } else {
+        ""
+    };
+    let max_train_rows_json = max_train_rows.map_or_else(String::new, |value| {
+        format!(",\"max_train_rows_per_epoch\":{value}")
+    });
     format!(
-        "{{\"schema\":\"nsrl.router_training.v2\",\"model\":{{\"artifact\":\"NSRLRT1\",\"model_hash\":\"0x{:016x}\",\"seed\":{},\"input_dim\":{},\"hidden_dim\":{},\"output_dim\":{},\"feature_indices\":[{}]}},\"training\":{{\"epochs\":{},\"optimizer\":\"integer_error_feedback_sgd\",\"objective\":\"{}\",\"class_balanced\":{},\"utility_loss_logit_shift\":{},\"regret_gradient_shift\":{},\"output_logit_shift\":{},\"output_weight_grad_shift\":{},\"input_weight_grad_shift\":{},\"updates\":{{\"input_weights\":{},\"output_weights\":{},\"hidden_bias\":{},\"output_bias\":{},\"saturation_count\":{}}}}},\"initial_train\":{},\"final_train\":{},\"initial_calibration\":{},\"final_calibration\":{}}}\n",
+        "{{\"schema\":\"{}\",\"model\":{{\"artifact\":\"{}\",\"model_hash\":\"0x{:016x}\",\"seed\":{},\"input_dim\":{},\"hidden_dim\":{},\"output_dim\":{},\"feature_indices\":[{}]}},\"training\":{{\"epochs\":{},\"optimizer\":\"integer_error_feedback_sgd\"{}{},\"objective\":\"{}\",\"class_balanced\":{},\"utility_loss_logit_shift\":{},\"regret_gradient_shift\":{},\"output_logit_shift\":{},\"output_weight_grad_shift\":{},\"input_weight_grad_shift\":{},\"updates\":{{\"input_weights\":{},\"output_weights\":{},\"hidden_bias\":{},\"output_bias\":{},\"saturation_count\":{}}}}},\"initial_train\":{},\"final_train\":{},\"initial_calibration\":{},\"final_calibration\":{}}}\n",
+        schema,
+        artifact,
         model.model_hash().unwrap_or(0),
         model.seed,
         model.feature_indices.len(),
-        HIDDEN_DIM,
+        model.hidden_dim,
         OUTPUT_DIM,
         model
             .feature_indices
@@ -743,6 +858,8 @@ fn training_trace_json(
             .collect::<Vec<_>>()
             .join(","),
         epochs,
+        shuffle_json,
+        max_train_rows_json,
         objective.as_str(),
         objective == RouterObjective::HardLabel,
         UTILITY_LOSS_LOGIT_SHIFT,
@@ -838,7 +955,7 @@ mod tests {
         (0..12)
             .map(|index| {
                 let target = index % 3;
-                let mut features_q15 = [0_i16; FEATURE_COUNT];
+                let mut features_q15 = vec![0_i16; LEGACY_FEATURE_COUNT];
                 features_q15[target] = i16::MAX;
                 RouterRow {
                     sample_id: format!("row-{index}"),
@@ -854,20 +971,49 @@ mod tests {
 
     #[test]
     fn artifact_round_trip_is_exact() {
-        let model = RouterModel::new((0..32).collect(), 7);
+        let model = RouterModel::new((0..32).collect(), 7, LEGACY_HIDDEN_DIM).expect("model");
         let bytes = model.to_bytes().expect("bytes");
+        assert_eq!(&bytes[..MAGIC_V1.len()], MAGIC_V1);
         assert_eq!(RouterModel::from_bytes(&bytes).expect("model"), model);
+    }
+
+    #[test]
+    fn wide_artifact_round_trip_binds_v2_geometry() {
+        let model = RouterModel::new((0..WIDE_FEATURE_COUNT).collect(), 9, WIDE_HIDDEN_DIM)
+            .expect("wide model");
+        let bytes = model.to_bytes().expect("bytes");
+        assert_eq!(&bytes[..MAGIC_V2.len()], MAGIC_V2);
+        assert_eq!(RouterModel::from_bytes(&bytes).expect("decode"), model);
+        assert_eq!(model.hidden_dim, WIDE_HIDDEN_DIM);
+        assert_eq!(model.feature_indices.len(), WIDE_FEATURE_COUNT);
     }
 
     #[test]
     fn training_is_deterministic_and_moves_weights() {
         let rows = fixture_rows();
-        let mut left = RouterModel::new((0..32).collect(), 11);
+        let mut left = RouterModel::new((0..32).collect(), 11, LEGACY_HIDDEN_DIM).expect("model");
         let mut right = left.clone();
         let before = left.model_hash().expect("before");
-        let left_stats = train(&mut left, &rows, 16, RouterObjective::HardLabel, 3).expect("left");
-        let right_stats =
-            train(&mut right, &rows, 16, RouterObjective::HardLabel, 3).expect("right");
+        let left_stats = train(
+            &mut left,
+            &rows,
+            16,
+            RouterObjective::HardLabel,
+            3,
+            false,
+            None,
+        )
+        .expect("left");
+        let right_stats = train(
+            &mut right,
+            &rows,
+            16,
+            RouterObjective::HardLabel,
+            3,
+            false,
+            None,
+        )
+        .expect("right");
         assert_eq!(left, right);
         assert_eq!(
             left_stats.output_weight_updates,
@@ -900,5 +1046,18 @@ mod tests {
         assert_eq!(errors[1], 0);
         assert!(errors[2] > 0);
         assert!(errors.iter().any(|&error| error != 0));
+    }
+
+    #[test]
+    fn deterministic_shuffle_replays_and_changes_order() {
+        let mut left = (0..32).collect::<Vec<_>>();
+        let mut right = left.clone();
+        let original = left.clone();
+        deterministic_shuffle(&mut left, 71);
+        deterministic_shuffle(&mut right, 71);
+        assert_eq!(left, right);
+        assert_ne!(left, original);
+        left.sort_unstable();
+        assert_eq!(left, original);
     }
 }

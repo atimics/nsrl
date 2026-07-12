@@ -16,11 +16,13 @@ floating-point operations with integer operations. It actively protects signal
 range, residual precision, rounding determinism, optimizer scale, and
 normalization behavior across every layer.
 
-The strategic target is the agentic edge: many small NSRL-born expert models,
-each narrow enough to keep its active working set cache-friendly and cheap to
-ship, connected by a deterministic Rust router. NSRL competes on
-tokens-per-watt, cold-start latency, reproducible traces, and sub-100ms local
-routing rather than monolithic cloud-model scale.
+The strategic target is the agentic edge, but routing is not a substitute for a
+competent generator. NSRL must first train one dense NSRL-born language backbone
+that produces coherent, diverse, prompt-responsive text without retrieval,
+memorized continuations, corpus priors, or expert-oracle assistance. Only then
+should small domain experts and a deterministic Rust router extend that base.
+NSRL competes on quality per active byte, tokens per watt, cold-start latency,
+and reproducible traces rather than frontier-scale parameter count.
 
 The first proof target remains a small, inspectable native base-2 Transformer
 that validates the numeric foundation: quantized QK attention, base-2 softmax,
@@ -40,11 +42,18 @@ Literary routing and Solomon multimodal generation are experiment suites. They
 may produce candidate architectures and product evidence, but they do not
 replace or redefine the substrate promotion milestone.
 
+Passing the substrate milestone is necessary but not sufficient for a language
+product. It proves that integer training learns a frozen next-token task; it
+does not establish free-running coherence, instruction following, long-context
+use, or open-ended generation quality. Those claims require the separate
+quality gates defined below.
+
 ## Vision
 
-NSRL should not become a smaller imitation of a general cloud LLM. It should
-become the reference stack for local, deterministic, inspectable AI components:
+NSRL should not become a smaller imitation of a frontier cloud LLM. It should
+become the reference stack for local, deterministic, inspectable generation:
 
+- a useful dense base generator before specialization,
 - micro-model experts packaged with explicit capability manifests,
 - symbolic or learned routers that compose experts without leaving the local
   process,
@@ -58,6 +67,12 @@ The core bet is that integer-only local agents can own niches where large
 floating-point stacks are physically and operationally awkward: private browser
 apps, offline-first software, embedded tools, local game logic, deterministic
 automation, and inexpensive client-side inference.
+
+"High quality" in this product means high quality for the declared local model
+envelope, not parity with frontier cloud systems. A promoted generator must be
+coherent over multi-paragraph continuations, respond to varied unseen prompts,
+avoid obvious repetition collapse, use its supported context, and compare
+credibly with a floating-point architectural twin of the same size and data.
 
 ## Current Status
 
@@ -97,9 +112,14 @@ multimodal pipeline (`nsrl-solomon-attention`, `nsrl-solomon-multimodal`,
 `nsrl-solomon-latent-train`): deterministic joint text/image-token training and
 sampling with checked integer traces at every step.
 
-The next product frontier is turning this into an agentic micro-model system:
-expert packaging, deterministic routing, integer topic/memory state, adaptive
-integer optimization, and browser deployment.
+The current gap is generation quality. The checked-in attention artifacts are
+smoke-scale, the frozen substrate proof has no passing candidate, and coherent
+Solomon text still depends on prompted or memory-assisted paths. The next
+product frontier is therefore a quality-capable dense generator: deterministic
+subword tokenization, fully trained normalization and position handling,
+incremental decoding, stronger data, scalable integer optimization, and an
+unassisted held-out generation suite. Expert packaging and routing follow that
+gate rather than preceding it.
 
 ## Problem
 
@@ -132,6 +152,8 @@ This project aims to expose the full design from first principles:
 
 - Build a pure Rust, `no_std`-compatible CPU neural network runtime from
   scratch.
+- Produce one NSRL-born dense language model that supports useful unassisted
+  open-ended generation within a measured local memory and latency envelope.
 - Make WASM/browser deployment a first-class runtime target.
 - Use no floating-point operations in the inference runtime.
 - Use deterministic integer and fixed-point arithmetic.
@@ -151,6 +173,12 @@ This project aims to expose the full design from first principles:
   hints, tokenizer contracts, and trace authority.
 - Support deterministic composition of multiple local experts through a Rust
   router.
+- Make byte tokenization the universal fallback while supporting a
+  deterministic learned subword tokenizer for language-quality profiles.
+- Support incremental causal generation with a KV cache, bounded sampling, and
+  fixed-point positional encoding that can extend beyond tiny fixed windows.
+- Evaluate free-running generation separately from retrieval, prompted replay,
+  and memory-assisted composition.
 - Provide strong tests for numeric correctness, stability, and performance
   assumptions.
 - Keep the codebase small enough to audit and reason about.
@@ -159,7 +187,8 @@ This project aims to expose the full design from first principles:
 
 - Competing with PyTorch, TensorFlow, ONNX Runtime, or vendor inference engines.
 - Supporting GPUs or accelerators in the first phase.
-- Training monolithic frontier-scale or cloud-replacement models.
+- Training frontier-scale or cloud-replacement models. Dense local backbones up
+  to the evidence-backed quality envelope are in scope.
 - Implementing every neural network layer type.
 - Running standard Llama, GPT, or HuggingFace checkpoints through post-training
   quantization. NSRL models must be born into NSRL's base-2 attention contract.
@@ -167,6 +196,8 @@ This project aims to expose the full design from first principles:
   allowed only when the emitted Rust is deterministic, reviewable, testable, and
   bound to the same trace contracts as hand-written kernels.
 - Optimizing before the numeric contract is proven.
+- Reporting retrieval-assisted, corpus-prior-assisted, copied, or
+  memory-assisted output as native open-ended generation quality.
 
 ## Users
 
@@ -196,7 +227,12 @@ Secondary users:
 - **Inspectable generation:** code generated from graph definitions must be
   readable Rust with stable tests and explicit range checks.
 - **Agentic edge:** small expert models and deterministic routing are the default
-  scaling strategy.
+  specialization strategy after a capable base generator exists.
+- **Quality before composition:** routing may improve specialization and active
+  memory, but it cannot close a weak base model's grammar, coherence, or
+  decoding gaps.
+- **Unassisted evidence:** native generation claims are based on held-out prompts
+  with retrieval, memory, corpus priors, and target lookup disabled.
 - **Local-first portability:** CPU and WASM targets are product surfaces, not
   afterthoughts.
 - **Adaptive training:** integer optimizer state should replace manual
@@ -254,37 +290,52 @@ Planned components:
 
 ## Initial Proof Model Target
 
-The first advanced model target is a tiny native base-2 Transformer character
-predictor:
+The active substrate target is the checked-in `NSRLMT5` profile used by
+`integer-transformer-proof-v1`:
 
 ```text
-vocab:       character or byte-level
+vocab:       256 bytes
 d_model:     128
-layers:      4
-heads:       2
-d_k:         64
-sequence:    128 tokens initially
-parameters:  about 1.1M
+layers:      2
+heads:       8 promoted / 2 control
+d_k:         16 promoted / 64 control
+hidden:      256
+sequence:    64 bytes for the frozen proof
 ```
 
-This is intentionally smaller than a TinyStories-scale language model. It is
-large enough to test whether base-2 attention heads learn useful structure, but
+This is a substrate probe, not the open-ended model target. It is intentionally
 small enough that numeric traces and training failures remain inspectable.
 
 ## Strategic Model Target
 
-After the first character-level models learn, the project scales outward
-toward expert swarms rather than upward toward a single giant model.
+After the substrate proof passes, the project must scale upward to the smallest
+dense backbone that clears free-running quality gates. It may then scale outward
+through expert routing. The sequence is deliberate: substrate proof, dense
+quality, efficient decoding, then specialization.
 
 Target envelopes:
 
 ```text
-micro expert:    1M-10M parameters
-large expert:    10M-50M parameters
-active route:    1-3 experts per request
-deployment:      native CPU and WASM bundles
-latency goal:    sub-100ms route + first useful output on ordinary clients
+substrate probe:       <5M parameters; byte tokens; numeric proof only
+quality development:  10M-30M parameters; 8K-16K subword vocabulary
+open-gen candidate:   30M-100M parameters; measured by quality/byte, not size
+domain adapter/expert: 1M-20M incremental parameters over a competent trunk
+active route:          base trunk plus 0-2 experts per request
+deployment:            native CPU first; WASM where bundle budgets permit
 ```
+
+The first quality-development profile should use 8-12 layers, `d_model` 256 or
+384, a gated MLP ratio near 3-4x, fully trained RMSNorm, fixed-point relative or
+rotary position handling, tied input/output embeddings where measurement
+supports it, causal base-2 attention, and a reusable KV cache. The first
+open-generation candidate should scale only after that profile shows a clean
+validation-loss scaling trend and healthy integer numerics.
+
+The 30M-100M envelope is a hypothesis, not a promise. If the largest healthy
+candidate still fails the frozen open-generation gate, the project must choose
+explicitly between expanding the local memory envelope and narrowing the
+product claim. It must not route around the failure or promote assisted demos as
+native quality.
 
 Each expert may still use the same native base-2 Transformer-style block:
 
@@ -301,9 +352,10 @@ input
   -> raw residual add
 ```
 
-Attention is no longer deferred. It is part of the numeric core. The strategic
-architecture, however, is not "make this block enormous"; it is "package many
-small, typed, traceable experts and route between them deterministically."
+Attention is no longer deferred. It is part of the numeric core. Neither is the
+dense trunk optional: a swarm of weak generators does not become a strong
+generator through routing. Expert packaging begins after the base trunk clears
+the unassisted generation gate.
 
 ## Functional Requirements
 
@@ -340,6 +392,22 @@ small, typed, traceable experts and route between them deterministically."
   order before applying integer updates.
 - Provide WASM conformance tests for no-runtime-float inference, startup latency,
   bundle size, and SIMD/no-SIMD fallback behavior.
+- Provide a versioned deterministic subword tokenizer and retain a byte fallback
+  for arbitrary input and tokenizer recovery.
+- Provide fixed-point relative or rotary position handling with an explicit
+  extrapolation contract; learned absolute positions remain a diagnostic
+  baseline, not the quality default.
+- Provide an incremental causal path with a reusable KV cache that is bit-exact
+  with full-prefix inference for the same context.
+- Provide bounded greedy, top-k, and top-p/temperature sampling using fixed-point
+  probabilities and deterministic seeds.
+- Support tied input/output embeddings as an ablation and measure its
+  quality-per-byte effect; do not assume tying is free while embeddings and the
+  output matrix use different integer representations.
+- Provide corpus manifests with source, license, split, deduplication,
+  contamination, tokenizer, and token-count provenance.
+- Provide an unassisted open-generation evaluation that disables retrieval,
+  memory, corpus priors, target lookup, and prompt-specific routing oracles.
 
 ## Quality Requirements
 
@@ -354,6 +422,20 @@ small, typed, traceable experts and route between them deterministically."
 - Arithmetic primitives should use property testing, including `proptest`, to
   fuzz edge cases across broad integer domains.
 - Documentation must distinguish runtime guarantees from offline tooling.
+- Every promoted model must report held-out bits per byte or token loss,
+  repetition and degeneration metrics, context-use probes, prompt-following
+  scores, and blinded human preference against named baselines.
+- Every quality result must identify whether generation is native, routed,
+  retrieval-assisted, memory-assisted, or teacher-scored; those categories may
+  not be combined into one headline number.
+- A same-shape floating-point architectural twin must be trained on the same
+  tokenizer, data split, token budget, and objective to quantify the cost of the
+  integer contract. It must preserve the same base-2 attention temperature,
+  activation equations, and model shape so the comparison isolates arithmetic
+  and optimization rather than changing the architecture.
+- Quality promotion requires numerically healthy runs: bounded saturation,
+  bounded zero-update rates, no rejected batches, and movement in every trained
+  attention and MLP projection.
 
 ## Success Metrics
 
@@ -406,7 +488,52 @@ embedding
   -> integer output head
 ```
 
-Milestone 4: Agentic Edge is successful when:
+Milestone 4: Scalable Integer Training is successful when:
+
+- Training supports per-parameter or measured blockwise integer momentum and
+  variance/magnitude tracking.
+- Integer update residuals preserve sub-i8 update signal without becoming float
+  or inference master weights.
+- Static global shift sweeps are no longer required for the main quality lane.
+- Gradient-only worker steps and stable-order accumulation produce replayable
+  parallel updates.
+- Optimizer state is resumable, training-only, and excluded from inference
+  artifacts.
+
+Milestone 5: Quality-Capable Language Backbone is successful when:
+
+- The frozen substrate proof passes before larger quality claims are promoted.
+- A deterministic subword corpus and held-out split are frozen with provenance,
+  deduplication, and contamination checks.
+- A 10M-30M development profile demonstrates improving held-out loss across at
+  least three increasing model or token budgets without numerical-health
+  regression.
+- The integer model closes at least 90% of the held-out loss improvement between
+  the byte n-gram baseline and its same-shape floating-point twin. This is an
+  interim quality-retention gate, not permission to call the model high quality.
+- Full-prefix and cached incremental logits are bit-exact on conformance cases.
+- Unassisted samples remain coherent and non-repetitive over at least 512
+  generated subword tokens on a frozen, diverse prompt panel.
+
+Milestone 6: Open-Ended Generation is successful when:
+
+- One 30M-100M candidate produces native, unassisted continuations for unseen
+  prompts with no retrieval, corpus prior, memory injection, or target lookup.
+- On the frozen generation panel, it clears all automatic degeneration,
+  prompt-adherence, and context-use floors, beats the best smaller NSRL model,
+  and is non-inferior to its same-shape floating-point twin under a predeclared
+  blinded-human-evaluation margin.
+- It retains at least 90% of the same-shape floating-point twin's held-out-loss
+  improvement over the required statistical baseline.
+- Results include greedy replay plus multiple fixed sampling seeds; a single
+  curated sample cannot promote the model.
+- Native CPU artifacts report model bytes, peak working memory, time to first
+  token, steady-state tokens per second, and energy where measurable.
+
+The precise prompt panel and numeric floors must be frozen in a versioned
+`open-generation-v1` contract before a candidate is trained against them.
+
+Milestone 7: Agentic Edge is successful when:
 
 - Models can be packaged as expert artifacts with manifests, tokenizer contracts,
   schemas, capabilities, hashes, and trace authority.
@@ -414,17 +541,11 @@ Milestone 4: Agentic Edge is successful when:
 - Router traces explain expert selection and context handoff.
 - At least three experts can be composed locally without cloud calls or GPU
   drivers.
+- Routed generation improves a named domain metric over the already promoted
+  base generator without regressing general held-out quality beyond the
+  contract's tolerance.
 
-Milestone 5: Adaptive Integer Training is successful when:
-
-- Training supports blockwise integer momentum and variance/magnitude tracking.
-- Per-block or per-parameter update shifts are derived from integer history,
-  including `leading_zeros`/magnitude signals.
-- Static global shift sweeps are no longer required for the main expert training
-  lane.
-- The optimizer state is training-only and excluded from inference artifacts.
-
-Milestone 6: Graph And WASM Product Surface is successful when:
+Milestone 8: Graph And WASM Product Surface is successful when:
 
 - `nsrl-graph` can generate checked forward/backward Rust for the core block
   primitives and match hand-written golden references.
@@ -450,17 +571,35 @@ Milestone 6: Graph And WASM Product Surface is successful when:
 - Training path: bespoke Rust training support; generic framework PTQ is not a
   compatibility target.
 - Scaling strategy: expert swarms and deterministic routing, not monolithic
-  frontier-scale models.
+  frontier-scale models. A competent 30M-100M dense backbone is explicitly in
+  scope and precedes expert routing.
 - Generated code policy: allowed only when emitted Rust is inspectable,
   deterministic, and trace-compatible.
 - Deployment wedge: local-first CPU and WASM inference.
 - Optimizer direction: adaptive integer optimizer state during training; no
   optimizer state in inference artifacts.
+- Tokenization: byte tokens remain the proof and fallback contract; deterministic
+  learned subwords are the language-quality default.
+- Quality claim: open-ended generation is native and unassisted unless its
+  assistance mode is explicitly named.
+- Attention quality path: causal base-2 softmax is the reference. Linear or TTT
+  attention may replace it only after same-checkpoint or controlled-retrain
+  quality parity is measured.
 
 ## Open Questions
 
 - What is the smallest expert size that feels useful for grammar, routing, math,
   domain style, and API/tool selection?
+- What is the smallest dense backbone that clears the frozen open-generation
+  gate, and which failure is limiting below it: data, tokenizer, optimization,
+  depth, context, or integer precision?
+- Does strict i8-from-initialization training retain enough quality at 30M-100M
+  parameters, or does NSRL need a versioned integer-only training contract with
+  higher-precision integer update residuals while preserving i8 inference?
+- Which fixed-point position scheme gives the best length extrapolation without
+  sacrificing native/WASM determinism?
+- What data and token budget produces a stable scaling trend before expensive
+  open-generation runs begin?
 - How should expert manifests describe capability, authority, and failure modes
   without becoming a second opaque framework?
 - Should the first router be purely symbolic, learned, or hybrid?

@@ -6,13 +6,19 @@ import path from "node:path";
 const root = process.argv[2];
 if (!root) throw new Error("usage: select-literary-router-sweeps.mjs ROOT");
 const dataDirectory = process.argv[3]
-  ?? (fs.existsSync(path.join(root, "data-projected")) ? "data-projected" : "data-hidden");
+  ?? (fs.existsSync(path.join(root, "data-full-hidden"))
+    ? "data-full-hidden"
+    : fs.existsSync(path.join(root, "data-projected"))
+      ? "data-projected"
+      : "data-hidden");
+const sweepDirectoryName = process.argv[4] ?? "sweeps";
 const views = ["hidden-a", "hidden-b", "full"];
 const report = {
   schema: "nsrl.literary_router_sweep_selection.v1",
   selection_split: "router_calibration_only",
   final_split_used_for_selection: false,
   feature_data_directory: dataDirectory,
+  sweep_directory: sweepDirectoryName,
   granularities: {},
 };
 for (const granularity of ["token", "span"]) {
@@ -24,7 +30,7 @@ for (const granularity of ["token", "span"]) {
   report.granularities[granularity] = {};
   for (const view of views) {
     const candidates = [1, 2, 4, 8].map((epochs) => {
-      const directory = path.join(root, "sweeps", `${granularity}-${view}-e${epochs}`);
+      const directory = path.join(root, sweepDirectoryName, `${granularity}-${view}-e${epochs}`);
       const predictions = parsePredictions(fs.readFileSync(
         path.join(directory, "calibration.predictions.tsv"),
         "utf8",

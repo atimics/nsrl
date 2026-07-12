@@ -14,10 +14,14 @@ streams, branchless requantization, integer RMSNorm, a gated MLP block,
 deterministic trace output, and a 1,048,576-i8-weight benchmark preset.
 
 The active engineering frontier is no longer whether integer training is
-possible. It is turning the proof stack into a viable local AI substrate:
-adaptive integer optimizers, deterministic parallel gradient accumulation,
-expert manifests and routing, generated checked backward code, and first-class
-WASM/browser deployment.
+possible. It is whether integer-native training can support a useful
+free-running language model. The next critical path is a quality-capable dense
+backbone: better tokenization, fully trained normalization and position
+handling, scalable integer optimization, a KV-cached decoder, enough clean
+training data, and an evaluation contract that separates native generation from
+retrieval or memory assistance. Expert routing, generated backward code, and
+WASM packaging remain important, but routing starts after this backbone clears
+its quality gate.
 
 ## Numeric Contract
 
@@ -78,14 +82,16 @@ becoming an opaque framework.
 
 ## Agentic Edge Architecture
 
-NSRL scales outward before it scales upward. The default deployment target is a
-swarm of small expert models connected by a deterministic router:
+NSRL scales upward to the minimum competent dense backbone, then outward. The
+default eventual deployment target is one shared base generator plus optional
+small expert residuals or models selected by a deterministic router:
 
 ```text
 request
   -> router
-  -> one or more expert manifests
-  -> expert inference
+  -> competent base generator
+  -> zero or more expert manifests/adapters
+  -> base or expert-augmented inference
   -> local trace
   -> response or tool decision
 ```
@@ -107,6 +113,92 @@ after the symbolic route trace is stable enough to act as a reference. Routing i
 part of the product surface: route decisions must be replayable, explainable, and
 cheap enough to preserve sub-100ms local interactions for small active expert
 sets.
+
+Routing is not on the open-generation critical path until the base generator
+passes the frozen native-generation contract. Router, retrieval, corpus-prior,
+and memory-assisted outputs must use separate evaluation labels and may not be
+reported as evidence that the base model learned open-ended generation.
+
+## Quality-Critical Architecture Progression
+
+The current `small-h8-d128-ff256`/`small-h2-d128-ff256` model is a numeric
+substrate probe. Its compile-time dimensions, byte vocabulary, short context,
+and two-layer trunk are useful for bit-exact debugging but are not an adequate
+open-generation target. Engineering should promote profiles through three
+explicit tiers:
+
+```text
+substrate:
+  layers=2, d_model=128, heads=8 or 2, ff=256, byte vocab, context=64
+
+quality-dev:
+  layers=8-12, d_model=256 or 384, head_dim=64 or 16,
+  gated ff=3-4x d_model, vocab=8K-16K, context=512-1024
+
+open-gen:
+  layers=12-20, d_model=384 or 512, head_dim=64,
+  gated ff=3-4x d_model, vocab=16K-32K, context>=1024,
+  approximately 30M-100M parameters depending on tied embeddings
+```
+
+These are experiment envelopes, not commitments to a parameter count. A larger
+profile is authorized only when the prior profile shows improving held-out loss,
+healthy activation occupancy, bounded saturation and zero-update rates, and a
+narrowing gap to a same-shape floating-point twin. Depth, vocabulary, context,
+and token budget must not all change in one experiment.
+
+If a healthy 100M-scale candidate fails `open-generation-v1`, stop the automatic
+scale ladder. Produce a decision record that identifies whether the limiting
+factor is integer optimization, architecture, data, or the local parameter
+budget, then either widen the declared deployment envelope or narrow the
+product claim. Expert routing is not an accepted workaround for failed base
+language quality.
+
+The quality reference block remains pre-norm causal attention plus a gated MLP,
+but requires all of the following:
+
+- trained RMSNorm gamma with backward support through normalization,
+- a fixed-point relative-position or rotary-position implementation,
+- causal base-2 softmax as the quality reference attention,
+- a 3-4x gated MLP expansion unless ablation supports a smaller ratio,
+- optional tied token embedding/output matrices after a representation ablation,
+- biases only where an ablation demonstrates a material quality gain,
+- a final trained RMSNorm before the output projection,
+- a reusable incremental KV cache, and
+- deterministic fixed-point sampling beyond greedy and top-k.
+
+Linear, streaming, and TTT attention remain research alternatives. They do not
+become the quality default because they are asymptotically attractive; they must
+first match the base-2 reference on the same frozen language evaluation.
+
+## Tokenization And Position Contract
+
+Byte tokens remain the universal fallback, serialization alphabet, and frozen
+substrate contract. They are too sequence-inefficient to be the default path for
+high-quality language training. `nsrl-corpus` must add a versioned deterministic
+subword tokenizer with:
+
+- byte fallback for every input,
+- deterministic normalization and UTF-8 handling,
+- a frozen vocabulary and merge/model hash,
+- special-token allocation that does not alias ordinary bytes,
+- encode/decode round-trip tests,
+- token-frequency and sequence-compression reports, and
+- identical native and WASM tokenization fixtures.
+
+The first target vocabulary is 8K-16K. Increase it only when reduced sequence
+length repays the larger embedding/output table. Weight tying requires an
+explicit representation design because current token embeddings are i16 while
+the output matrix is i8. Evaluate a canonical i8 shared table with deterministic
+i16 lookup expansion against untied i16/i8 tables; keep the untied form as the
+quality default until the tied form demonstrates parity.
+
+Learned absolute positions and NOPE remain proof controls. The quality path
+must implement one extrapolatable integer scheme. The preferred first candidate
+is fixed-point rotary position encoding with build-generated integer sin/cos
+tables and bit-exact native/WASM fixtures. Fixed-point ALiBi is the fallback if
+rotary range or precision is unhealthy. Runtime floating-point trigonometry is
+forbidden.
 
 ## Tensor Representation
 
@@ -542,34 +634,172 @@ by the runtime, including native base-2 attention.
 - Saturation and underflow reports per layer.
 - Optional high-precision reference comparisons for analysis only.
 
-The first proof training target is a roughly 1.1M-parameter character predictor:
+The active proof target is the frozen two-layer `NSRLMT5` substrate profile:
 
 ```text
 d_model:   128
-layers:    4
-heads:     2
-d_k:       64
-seq_len:   128
-vocab:     character or byte-level
+layers:    2
+heads:     8 promoted / 2 control
+d_k:       16 promoted / 64 control
+hidden:    256
+seq_len:   64 for integer-transformer-proof-v1
+vocab:     256 bytes
 ```
 
-This was the first scale at which attention could show useful sequence behavior
-without making numeric debugging opaque. Strict integer-only training is now
-implemented for the small research lanes. The next engineering shape is:
+This profile determines whether the numeric substrate can learn; it is not the
+quality target. Strict integer-only training is implemented for small research
+lanes. The next engineering shape is:
 
-- expert-scale training rather than monolithic frontier-scale training,
+- a 10M-30M dense quality-development profile before expert routing,
 - deterministic parallel batch-gradient accumulation,
 - adaptive integer optimizer state instead of hand-tuned static shifts,
 - generated checked backward code for new architectures,
-- and trace-thinning so training evidence does not dominate model size.
+- trace-thinning so training evidence does not dominate model size,
+- resumable sharded corpus iteration with exact sample-order replay, and
+- periodic unassisted generation on prompts that are not used for selection.
 
 The remaining research questions are:
 
 - whether the same arithmetic scales cleanly to larger transformer experts,
-- how to reduce dependence on source-grounded composition without losing
-  coherence,
+- whether strict i8 model weights plus integer optimizer residuals preserve
+  enough update resolution across 8-20 layers,
 - and whether linear attention plus integer test-time state updates can close
   enough of the softmax quality gap to justify the O(d^2) streaming interface.
+
+The high-quality path does not permit silent relaxation to float master weights.
+Integer first/second moments and integer update residuals are optimizer state,
+not inference weights, and are allowed. If strict i8-from-initialization cannot
+retain quality at the development profile, the project must record that result
+and propose a versioned integer-only training contract; it must not quietly use
+a float shadow model while preserving the old claim.
+
+Offline floating-point teachers may produce reference metrics, curriculum
+labels, or distilled probability targets. They may not provide converted model
+weights or runtime computation, and teacher-assisted runs must be labeled
+separately from pure next-token training. Distillation is an ablation after the
+base data and optimizer path is healthy, not a substitute for them.
+
+## Language Data Contract
+
+Open-ended quality is primarily a data-and-optimization problem once the block
+is structurally adequate. Every language run beyond the substrate proof must be
+bound to a corpus manifest containing:
+
+- immutable source identifiers, hashes, rights metadata, and collection dates,
+- normalization and filtering versions,
+- exact train, validation, and test partition hashes,
+- document- and span-level deduplication reports,
+- benchmark and prompt-panel contamination checks,
+- tokenizer ID, vocabulary hash, and token counts by source/domain,
+- sampling weights and deterministic sample-order seed,
+- number of unique tokens seen and effective epochs, and
+- rejected-source and quality-filter counts.
+
+The training progression is:
+
+1. Prove optimization on synthetic and small literary controls.
+2. Freeze a diverse, clean language corpus and deterministic tokenizer.
+3. Run token-budget scaling experiments at one architecture size.
+4. Run depth/width experiments at a fixed token budget.
+5. Select the smallest profile with a stable validation-loss and generation
+   trend.
+6. Train the open-generation candidate once the evaluation contract is frozen.
+7. Add instruction or dialogue tuning only after base continuation quality is
+   established.
+
+The default token budget should be expressed as tokens per non-embedding
+parameter and must cover several increasing budgets. A single epoch count is
+not comparable across tokenizer or corpus changes. Repeated data is reported as
+effective epochs and may not be hidden by a large raw token count.
+
+## Open-Generation Evaluation Contract
+
+`integer-transformer-proof-v1` remains the substrate gate. A separate versioned
+`open-generation-v1` contract must be frozen before claiming language quality.
+It has three evidence layers:
+
+```text
+modeling:
+  held-out loss/bits-per-byte, accuracy, calibration, float-twin gap
+
+generation health:
+  repetition, unique n-grams, entropy, premature EOS, UTF-8 validity,
+  context-use and distractor-resistance probes
+
+human/product quality:
+  blinded coherence, relevance, consistency, style control, and preference
+  on a diverse unseen prompt panel
+```
+
+Required baselines are byte n-gram, retrieval, the best smaller NSRL checkpoint,
+and a same-shape floating-point arithmetic twin trained with the same data,
+tokenizer, objective, and token budget. The twin must use the same base-2
+attention temperature, activation equations, position scheme, and shape; its
+floating-point arithmetic and optimizer are the independent variables. A
+larger teacher may be diagnostic but is not the parity baseline.
+
+Cross-tokenizer modeling quality uses bits per original UTF-8 byte as the
+primary loss metric. Token loss is reported but cannot compare a byte model with
+a subword model. Define retained improvement as:
+
+```text
+retained = (bpb_statistical_baseline - bpb_integer)
+           / (bpb_statistical_baseline - bpb_float_twin)
+```
+
+The contract must require the float twin to improve the baseline by a minimum
+non-trivial margin before this ratio is meaningful.
+
+The headline generation panel must:
+
+- disable retrieval, corpus priors, memory injection, target lookup, and routing
+  oracles,
+- include continuation, constrained style, explanation, dialogue, long-context
+  reference, and adversarial repetition prompts,
+- preserve a hidden final test partition,
+- evaluate greedy replay plus multiple predetermined sampling seeds,
+- score at least 512 generated subword tokens where the prompt permits,
+- retain every sample, not only selected examples, and
+- identify decoding parameters and model/tokenizer hashes in every row.
+
+Initial promotion criteria are:
+
+- pass `integer-transformer-proof-v1`,
+- close at least 90% of the held-out-loss improvement from the required
+  statistical baseline to the same-shape float twin,
+- show monotonic aggregate validation improvement across three token or model
+  budgets,
+- clear frozen degeneration and context-use floors,
+- show no numerical-health regression, and
+- beat the smaller NSRL baseline and remain within a predeclared non-inferiority
+  margin of the float twin in blinded human preference.
+
+The exact thresholds for repetition, context use, and human preference belong
+in the frozen eval contract, not in training scripts. Prompted, routed,
+retrieval-assisted, memory-assisted, and native scores remain separate fields.
+
+## Incremental Generation Path
+
+The quality profile requires an incremental decoder rather than recomputing the
+entire prefix for every token. The KV-cache contract must specify layer, head,
+position, dtype, scale, layout, context limit, and eviction policy. For a prefix
+within the supported context, cached and full-prefix logits must match bit for
+bit.
+
+The first decoder supports:
+
+- greedy decoding,
+- deterministic top-k,
+- fixed-point temperature and top-p sampling,
+- repetition diagnostics without using penalties in the headline quality run,
+- explicit EOS/minimum-length handling, and
+- bounded context with an observable truncation policy.
+
+Repetition penalties, corpus priors, lexeme memory, strict adjacency, and
+retrieval can be product features, but they cannot repair or mask the native
+generation score. Performance traces must report prefill time, time to first
+token, decode tokens per second, KV-cache bytes, peak workspace bytes, and
+sampler overhead.
 
 ## Adaptive Integer Optimizer
 
@@ -810,6 +1040,10 @@ survive optimization.
 
 System-level budgets matter as much as kernel throughput. NSRL should measure:
 
+- base-generator parameter and embedding bytes,
+- prefill latency and time to first token,
+- steady-state cached decode tokens per second,
+- KV-cache and peak workspace bytes by context length,
 - active expert parameter bytes,
 - route-to-first-output latency,
 - tokens per watt where measurable,
@@ -826,7 +1060,7 @@ Initial implementation:
 - Branchless round-half-up.
 - Static residual adds.
 - No handwritten SIMD.
-- Single-expert execution.
+- Single dense generator execution.
 - Deterministic traces before throughput shortcuts.
 
 Later implementation:
@@ -834,6 +1068,8 @@ Later implementation:
 - Blocked matrix multiplication.
 - SIMD kernels.
 - Packed weights.
+- Incremental per-layer KV-cache kernels.
+- Tied-embedding output projection optimization if its quality ablation passes.
 - Threaded eval and deterministic parallel batch-gradient accumulation.
 - Output-channel or row-block parallelism where workspaces can be partitioned.
 - WASM SIMD with scalar fallback.
@@ -913,9 +1149,63 @@ transformer strictly beats retrieval, byte n-gram, and floating-point reference
 probability error without increasing mistakes. Solomon and literary experiments
 do not close this milestone independently.
 
-### Milestone 5: Agentic Expert Packaging
+### Milestone 5: Scalable Integer Training
+
+Status: partially implemented; promotion work remains.
+
+- Per-parameter or measured blockwise integer first and second moments.
+- Integer update residuals with bounded state and resumable serialization.
+- Dynamic update control from integer history where it improves on fixed shifts.
+- Gradient-only `nsrl-train-core` APIs.
+- Private per-worker accumulators and stable chunk-order reduction.
+- Single-writer update, validation, and rollback.
+- Replay tests proving identical serial and parallel results for fixed chunking.
+- Distributed/sharded sample ordering with a reproducible global manifest if one
+  host is no longer sufficient.
+
+Completion is measured by both replay and the ability to train Milestone 6
+profiles without saturation, zero-update, memory, or throughput collapse.
+
+### Milestone 6: Quality-Development Backbone
 
 Status: planned.
+
+- Deterministic 8K-16K subword tokenizer with byte fallback.
+- Frozen, deduplicated, contamination-checked language corpus manifest.
+- Fully trained pre-norm stack including RMSNorm backward and final RMSNorm.
+- Fixed-point rotary or relative positions with native/WASM fixtures.
+- Profile-configurable depth, width, heads, MLP ratio, vocabulary, and context;
+  quality experiments must not require source edits or silent artifact changes.
+- 10M-30M dense profiles with at least three controlled scaling points.
+- Same-shape float twins and a report of retained loss improvement.
+- Frozen unassisted generation development panel.
+
+Completion requires a healthy scaling trend, at least 90% retained held-out-loss
+improvement relative to the float twin gap, and coherent non-repetitive
+continuations over the frozen development panel. Passing this milestone does
+not yet promote an open-generation product.
+
+### Milestone 7: Incremental Open-Generation Candidate
+
+Status: planned.
+
+- Versioned `open-generation-v1` contract and hidden test partition.
+- Bit-exact KV-cache/full-prefix conformance.
+- Deterministic fixed-point greedy, top-k, temperature, and top-p decoding.
+- 30M-100M candidate selected from measured development scaling.
+- Native, unassisted generation artifacts for every prompt and fixed seed.
+- Automatic degeneration, prompt-adherence, and context-use gates.
+- Blinded human evaluation against the best smaller NSRL model.
+- Float-twin non-inferiority evidence under the frozen human-evaluation rule.
+- CPU memory, prefill, first-token, cached decode, and energy traces.
+
+Completion requires all quality and numerical-health gates. Retrieval, memory,
+corpus-prior, and router-assisted samples are product diagnostics and cannot
+close this milestone.
+
+### Milestone 8: Agentic Expert Packaging
+
+Status: planned after the base generator clears Milestone 7.
 
 - Expert artifact manifest.
 - Capability tags and authority strings.
@@ -925,30 +1215,10 @@ Status: planned.
 - Native and WASM bundle budgets.
 - Deterministic router trace schema.
 - At least three locally routable experts.
+- Domain-quality evidence over the promoted base generator.
+- General-quality regression bound after routing or adapter activation.
 
-### Milestone 6: Adaptive Integer Optimizer
-
-Status: planned.
-
-- Blockwise integer momentum.
-- Blockwise variance or magnitude tracker.
-- Dynamic update shifts from integer history.
-- Stable deterministic reduction order.
-- Training-only optimizer state.
-- Trace summaries for optimizer movement, saturation, and zero-delta rates.
-
-### Milestone 7: Deterministic Parallel Training
-
-Status: planned.
-
-- Gradient-only `nsrl-train-core` step APIs.
-- Private per-worker accumulators.
-- Stable chunk-order accumulator reduction.
-- Single-writer update application.
-- Batch validation and rollback after parallel accumulation.
-- Replay tests proving identical serial and parallel traces for fixed chunking.
-
-### Milestone 8: `nsrl-graph`
+### Milestone 9: `nsrl-graph`
 
 Status: planned.
 
@@ -958,7 +1228,7 @@ Status: planned.
 - Golden parity tests against hand-written kernels.
 - Trace fields identifying graph and generator versions.
 
-### Milestone 9: WASM Local-First Surface
+### Milestone 10: WASM Local-First Surface
 
 Status: planned.
 
@@ -979,13 +1249,28 @@ Status: planned.
 - RMSNorm reciprocal square root has unacceptable error.
 - Block-floating exponent adjustment has boundary bugs.
 - Base-2 attention learns too slowly or needs different initialization.
+- Strict i8 weight updates cannot preserve useful small gradients across the
+  depth needed for open-ended generation.
+- Byte tokenization makes the apparent context and training budget misleading;
+  subword tokenization improves compression but makes embeddings dominate the
+  local bundle.
+- Fixed-point positional encoding loses phase precision or fails to extrapolate.
+- Training data is too small, repetitive, contaminated, or domain-narrow to
+  distinguish architecture failure from corpus failure.
+- The model improves held-out loss but still collapses during long free-running
+  generation.
+- Decoding heuristics conceal native model weakness and leak into headline
+  evaluation.
+- KV-cache requantization drifts from full-prefix inference.
 - Softmax reciprocal approximation collapses low-probability tokens.
 - Lookup table approximations look correct locally but fail across layers.
 - Calibration drifts away from runtime arithmetic.
 - Tests accidentally validate against behavior that uses runtime floats.
 - Premature SIMD optimization obscures numeric bugs.
-- A monolithic-model roadmap recreates the memory wall instead of exploiting the
-  local expert niche.
+- The dense quality backbone grows past the local memory/latency envelope before
+  it becomes competent.
+- Expert routing begins before the base generator is competent and produces
+  impressive assisted demos without transferable language quality.
 - Expert routing is brittle, opaque, or slower than direct inference.
 - Adaptive optimizer state improves quality but makes training memory too large.
 - Generated backward code hides math bugs behind an attractive abstraction.
@@ -1009,12 +1294,21 @@ Status: planned.
 - RMSNorm magnitude handling: integer block-floating normalization with
   leading-zero counts.
 - Primary model preparation path: bespoke Rust calibration and training support.
-- Scaling strategy: local expert swarms and deterministic routing before
-  monolithic model scale.
-- First proof model scale: about 1.1M parameters, character or byte-level
-  prediction.
-- Product expert envelope: initially 1M-10M parameters, with larger experts only
-  when active memory and latency budgets justify them.
+- Scaling strategy: pass the tiny substrate proof, scale one dense backbone to
+  the minimum measured quality envelope, then add local expert routing.
+- First proof model: two-layer `d_model=128`, `ff=256`, byte-level `NSRLMT5`
+  under `integer-transformer-proof-v1`.
+- Quality-development envelope: 10M-30M parameters with deterministic subword
+  tokenization; open-generation candidate envelope: 30M-100M parameters.
+- Tokenization: byte-level for the substrate and fallback; deterministic learned
+  subwords for language-quality profiles.
+- Position quality path: fixed-point rotary or relative positions; learned
+  absolute and NOPE policies remain controls.
+- Attention quality path: causal base-2 softmax remains the reference. Linear,
+  streaming, or TTT attention requires controlled quality parity before
+  promotion.
+- Native generation claim: retrieval, memory, corpus priors, target lookup, and
+  routing oracles are disabled unless the assistance mode is named explicitly.
 - Generated code policy: allowed only as readable Rust with golden tests and
   trace-visible graph versions.
 - Optimizer direction: adaptive integer optimizer state during training, no

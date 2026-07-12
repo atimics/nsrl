@@ -6,24 +6,34 @@ import path from "node:path";
 const root = process.argv[2]
   ?? "data/experiments/literary-h8-gradient-block-curriculum-v1";
 const dataDirectory = process.argv[3]
-  ?? (fs.existsSync(path.join(root, "data-projected")) ? "data-projected" : "data-hidden");
-const sweepDir = path.join(root, "regret-sweeps");
+  ?? (fs.existsSync(path.join(root, "data-full-hidden"))
+    ? "data-full-hidden"
+    : fs.existsSync(path.join(root, "data-projected"))
+      ? "data-projected"
+      : "data-hidden");
+const sweepDirectoryName = process.argv[4] ?? "regret-sweeps";
+const sweepDir = path.join(root, sweepDirectoryName);
 const candidates = fs.readdirSync(sweepDir, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => {
-    const match = /^(token|span)-(hidden-a|hidden-b|full)-s(\d+)-e(\d+)$/.exec(entry.name);
+    const match = /^(?:(token|span)-(hidden-a|hidden-b|full)|recursive-(token|span))-s(\d+)-e(\d+)(?:-r(\d+))?$/.exec(entry.name);
     return match ? {
       directory: entry.name,
-      granularity: match[1],
-      view: match[2],
-      regret_gradient_shift: Number.parseInt(match[3], 10),
-      epochs: Number.parseInt(match[4], 10),
+      granularity: match[1] ?? match[3],
+      view: match[2] ?? "recursive",
+      regret_gradient_shift: Number.parseInt(match[4], 10),
+      epochs: Number.parseInt(match[5], 10),
+      max_train_rows: match[6] ? Number.parseInt(match[6], 10) : null,
     } : null;
   })
   .filter(Boolean);
 if (candidates.length === 0) throw new Error("no regret sweep candidates found");
 
-const states = Object.fromEntries(["calibration", "final"].map((split) => [split,
+const availableSplits = ["calibration", "final"].filter((split) =>
+  fs.existsSync(path.join(root, "oracles", `${split}-details.tsv`))
+  && fs.existsSync(path.join(root, dataDirectory, "token", `${split}-map.tsv`))
+  && fs.existsSync(path.join(root, dataDirectory, "span", `${split}-map.tsv`)));
+const states = Object.fromEntries(availableSplits.map((split) => [split,
   Object.fromEntries(["token", "span"].map((granularity) => [granularity, {
     details: parseDetails(fs.readFileSync(
       path.join(root, "oracles", `${split}-details.tsv`),
@@ -63,14 +73,16 @@ for (const [key, values] of Object.entries(groups)) {
     || left.metrics.mistakes - right.metrics.mistakes
     || left.metrics.route_switches - right.metrics.route_switches
     || left.regret_gradient_shift - right.regret_gradient_shift
-    || left.epochs - right.epochs);
+    || left.epochs - right.epochs
+    || (left.max_train_rows ?? Number.MAX_SAFE_INTEGER)
+      - (right.max_train_rows ?? Number.MAX_SAFE_INTEGER));
   selected[key] = values[0];
   const finalPredictionPath = path.join(
     sweepDir,
     values[0].directory,
     "final.predictions.tsv",
   );
-  if (fs.existsSync(finalPredictionPath)) {
+  if (states.final && fs.existsSync(finalPredictionPath)) {
     selected[key].final_metrics = evaluate(
       states.final[values[0].granularity],
       parsePredictions(fs.readFileSync(finalPredictionPath, "utf8")),
@@ -82,6 +94,7 @@ const report = {
   schema: "nsrl.literary_expected_regret_router_sweep.v1",
   objective: "expected_regret",
   feature_data_directory: dataDirectory,
+  sweep_directory: sweepDirectoryName,
   selection_split: "router_calibration_only",
   final_split_used_for_selection: false,
   selected,
@@ -93,6 +106,7 @@ console.log(JSON.stringify({ output, selected: Object.fromEntries(
   Object.entries(selected).map(([key, value]) => [key, {
     shift: value.regret_gradient_shift,
     epochs: value.epochs,
+    max_train_rows: value.max_train_rows,
     metrics: value.metrics,
     final_metrics: value.final_metrics ?? null,
   }]),
