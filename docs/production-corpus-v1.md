@@ -68,14 +68,13 @@ texts were deliberately excluded from this checkpoint.
 
 This is a corpus and tokenizer promotion, not a model-quality promotion. MT5
 and MT6 remain fixed to the 256-byte vocabulary, but the separate `NSRLPM1`
-artifact now consumes the `NSRLTOK1` u32 streams and passes a bounded p10m
-integer smoke. Full-layer backward and the same-shape float runner are the
-remaining gates before the matched scaling run can begin.
+artifact now consumes the `NSRLTOK1` u32 streams and passes bounded p10m
+output-head, full-backward, and float-twin smokes. The controlled p10m
+train/dev pilot is the remaining gate before the matched scaling run begins.
 
 The exact scaling shapes are frozen in
 `benchmarks/production-model-v1/scaling-plan.json`: 9,317,632 parameters,
 21,641,600 parameters, and 28,229,056 parameters. Each point requires matched
 integer and float runs with identical seeds, token order, context, batches, and
-splits. The plan validator reports full-layer backward and the float-twin runner
-as the next unsatisfied gate rather than treating the output-head smoke as a
-quality training run.
+splits. The plan validator reports the controlled pilot as the next unsatisfied
+gate rather than treating any bounded smoke as a quality training run.

@@ -17,6 +17,14 @@
     "path": "benchmarks/production-model-v1/p10m-smoke.json",
     "sha256": "2b440c4cb97415d24c41ea9e38dd5077b4e41c25f64eb9ed73e620fc9ad5425d"
   },
+  "full_train_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-full-smoke.json",
+    "sha256": "87bce115abbf69d7ad1f3522fabee7bca137069e62fde17ad195d17b6734b8b3"
+  },
+  "float_twin_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-float-smoke.json",
+    "sha256": "d89ff992a43875001d1cb513fee786c8bccb09f38a2a8d4a39ade3946808d459"
+  },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
     "attention": "causal_linear_attention",
@@ -80,9 +88,11 @@
     "u32_forward_runtime_ready": true,
     "output_head_smoke_runtime_ready": true,
     "p10m_smoke_completed": true,
-    "full_layer_backward_ready": false,
-    "float_twin_runner_ready": false,
+    "full_layer_backward_ready": true,
+    "full_layer_backward_smoke_completed": true,
+    "float_twin_runner_ready": true,
+    "float_twin_smoke_completed": true,
     "training_started": false,
-    "next_gate": "full_layer_backward_and_float_twin_runner"
+    "next_gate": "controlled_p10m_train_dev_pilot"
   }
 }

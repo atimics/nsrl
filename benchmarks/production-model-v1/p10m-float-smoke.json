@@ -1,0 +1,71 @@
+{
+  "schema": "nsrl.production_float_twin_smoke_checkpoint.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "bindings": {
+    "initialization_seed": 7,
+    "integer_artifact_sha256": "2ed55698731e5881dd899d72f4ebf9e1f9393a73d930bd2e687f755b1e2b7bb4",
+    "integer_initial_model_hash": "0xd23325239f1a4f6c",
+    "token_stream_hash": "0x97e5254c31c27bda",
+    "tokenizer_hash": "0xf4fe71d93c438c1a"
+  },
+  "training": {
+    "context_tokens": 4,
+    "epochs": 2,
+    "final_loss_millionths": 8499917,
+    "final_mistakes": 0,
+    "initial_loss_millionths": 9010913,
+    "initial_mistakes": 8,
+    "learning_rate_millionths": 1000,
+    "optimizer": "sgd",
+    "windows": 8
+  },
+  "movement_trillionths": {
+    "attention_rms": 6473942,
+    "bias": 31995526851,
+    "down": 564152222,
+    "embeddings": 1550336611,
+    "final_rms": 2036306009,
+    "gate": 82798938,
+    "k": 344655521,
+    "mlp_rms": 7360,
+    "o": 45861058035,
+    "output": 6783445049957,
+    "q": 18552295,
+    "up": 82796776,
+    "v": 22931984844
+  },
+  "moved_parameter_groups": [
+    "attention_rms",
+    "bias",
+    "down",
+    "embeddings",
+    "final_rms",
+    "gate",
+    "k",
+    "mlp_rms",
+    "o",
+    "output",
+    "q",
+    "up",
+    "v"
+  ],
+  "tensor_hashes": {
+    "final": "a315d868fcfb05cf34947114b88c63bb525ccadb88766e4eb716043eddd73331",
+    "initial": "1bb86a4532c69a44a82272d3367c24df1d3da5e1f80c75a346f5da76b3f61c55"
+  },
+  "trace_sha256": "6304f8aa96664410a8c4dec69b5b8ec62af67a52c381a07335f6e7a5067066ad",
+  "gates": {
+    "all_parameter_groups_moved": true,
+    "all_parameters_finite": true,
+    "integer_initialization_mapped": true,
+    "loss_nonincreasing": true,
+    "same_shape": true,
+    "tensor_hash_changed": true
+  },
+  "known_non_claims": [
+    "bounded_float_smoke_not_scaling_run",
+    "numpy_reference_not_production_accelerator",
+    "does_not_establish_integer_float_quality_parity"
+  ]
+}

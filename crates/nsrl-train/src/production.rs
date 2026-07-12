@@ -12,6 +12,12 @@ use nsrl_corpus::subword::{BOS_TOKEN_ID, EOS_TOKEN_ID};
 
 use crate::{PRODUCTION_MODEL_V1_MAGIC, TrainError};
 
+mod training;
+pub use training::{
+    ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionOptimizerStateV1,
+    train_production_full_smoke,
+};
+
 pub const PRODUCTION_MODEL_V1_SCHEMA: &str = "nsrl.production_model.v1";
 pub const PRODUCTION_MODEL_V1_VERSION: u32 = 1;
 const PRODUCTION_RMS_EPSILON: u64 = 1;
@@ -1152,5 +1158,47 @@ mod tests {
         );
         assert!(decode_bound_token_stream(&bytes, tokenizer_hash + 1, 320).is_err());
         assert!(decode_bound_token_stream(&bytes, tokenizer_hash, 300).is_err());
+    }
+
+    #[test]
+    fn production_full_backward_moves_every_group_and_resumes_bound_state() {
+        let mut model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 19).expect("model");
+        let tokens = [
+            BOS_TOKEN_ID,
+            300,
+            301,
+            302,
+            303,
+            304,
+            305,
+            306,
+            EOS_TOKEN_ID,
+        ];
+        let config = ProductionFullTrainConfig {
+            context_tokens: 4,
+            max_windows: 4,
+            epochs: 2,
+            ..ProductionFullTrainConfig::default()
+        };
+        let (first, state) = train_production_full_smoke(&mut model, &tokens, 0x5678, config, None)
+            .expect("full train");
+        assert!(
+            first.movement_l1.iter().all(|&movement| movement > 0),
+            "movement: {:?}",
+            first.movement_l1
+        );
+        assert_ne!(first.initial_model_hash, first.final_model_hash);
+        let bytes = state.try_to_bytes().expect("optimizer bytes");
+        let decoded = ProductionOptimizerStateV1::from_bytes(&bytes).expect("optimizer decode");
+        assert_eq!(decoded, state);
+        let prior_step = state.step;
+        let (_, resumed) =
+            train_production_full_smoke(&mut model, &tokens, 0x5678, config, Some(decoded))
+                .expect("resume");
+        assert_eq!(resumed.step, prior_step + first.optimizer_steps as u64);
+        assert!(
+            train_production_full_smoke(&mut model, &tokens, 0x5679, config, Some(resumed))
+                .is_err()
+        );
     }
 }

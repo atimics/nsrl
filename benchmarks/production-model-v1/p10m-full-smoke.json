@@ -1,0 +1,79 @@
+{
+  "schema": "nsrl.production_full_train_smoke_checkpoint.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "bindings": {
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "token_stream_hash": "0x97e5254c31c27bda"
+  },
+  "training": {
+    "optimizer": "integer_stateless_sgd",
+    "backward": "full_quantized_straight_through",
+    "context_tokens": 4,
+    "windows": 8,
+    "epochs": 2,
+    "optimizer_steps": 16,
+    "initial_mistakes": 8,
+    "final_mistakes": 6
+  },
+  "movement_l1": {
+    "embeddings": 158,
+    "attention_rms": 621,
+    "mlp_rms": 163,
+    "final_rms": 957,
+    "q": 392960,
+    "k": 393216,
+    "v": 242688,
+    "o": 242530,
+    "up": 1149203,
+    "gate": 1150737,
+    "down": 568326,
+    "output": 2119576,
+    "bias": 124
+  },
+  "moved_parameter_groups": [
+    "embeddings",
+    "attention_rms",
+    "mlp_rms",
+    "final_rms",
+    "q",
+    "k",
+    "v",
+    "o",
+    "up",
+    "gate",
+    "down",
+    "output",
+    "bias"
+  ],
+  "health": {
+    "gradient_saturation_count": 0,
+    "weight_saturation_count": 1137
+  },
+  "hashes": {
+    "initial_model": "0xd23325239f1a4f6c",
+    "final_model": "0x4286a415f68ea7b5",
+    "optimizer_state": "0x9877e95fe7b17a2f"
+  },
+  "artifacts": {
+    "trained_model": {
+      "bytes": 13539906,
+      "sha256": "e0b60009369b4f281963a82154216ad8d23927aa3da8594e7547a322ae8bc0ec"
+    },
+    "optimizer": {
+      "bytes": 60,
+      "sha256": "33c56d04bd7519e90934ee942a89a62a3f530cf25a1d60936c2c16fabc3775c1"
+    },
+    "trace_sha256": "4dfa6d28879e4815050463305bb7199ed3b17f5fccee77bbde045e238b0249d5"
+  },
+  "gates": {
+    "all_parameter_groups_moved": true,
+    "model_hash_changed": true,
+    "resumable_optimizer_state": true
+  },
+  "known_non_claims": [
+    "bounded_full_backward_smoke_not_scaling_run",
+    "straight_through_quantized_derivatives",
+    "not_open_generation_quality"
+  ]
+}
