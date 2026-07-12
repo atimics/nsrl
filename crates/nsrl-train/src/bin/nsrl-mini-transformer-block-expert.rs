@@ -7,11 +7,11 @@ use std::path::PathBuf;
 
 use nsrl_train::{
     MiniTransformerAttentionKind, MiniTransformerBlockExpertMetrics,
-    MiniTransformerBlockLowRankExpert, MiniTransformerMlpEvalConfig, MiniTransformerMlpModel,
-    MiniTransformerMlpTrainConfig, MiniTransformerPositionPolicy,
-    evaluate_mini_transformer_block_expert, evaluate_mini_transformer_mlp_windows,
-    mini_transformer_next_token_row_with_block_expert, mini_transformer_output_from_hidden_q15,
-    mini_transformer_output_gradient_to_hidden_q15,
+    MiniTransformerBlockExpertObjective, MiniTransformerBlockLowRankExpert,
+    MiniTransformerMlpEvalConfig, MiniTransformerMlpModel, MiniTransformerMlpTrainConfig,
+    MiniTransformerPositionPolicy, evaluate_mini_transformer_block_expert,
+    evaluate_mini_transformer_mlp_windows, mini_transformer_next_token_row_with_block_expert,
+    mini_transformer_output_from_hidden_q15, mini_transformer_output_gradient_to_hidden_q15,
     train_mini_transformer_block_expert_with_layer_scope_and_loss_guard,
 };
 
@@ -139,6 +139,7 @@ fn train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
     let mut residual_shift = 8_u8;
     let mut train_layer_spec = String::from("all");
     let mut bidirectional_loss_guard = false;
+    let mut objective = MiniTransformerBlockExpertObjective::CrossEntropy;
     let mut attention_kind = MiniTransformerAttentionKind::Base2Softmax;
     let mut position_policy = MiniTransformerPositionPolicy::LearnedAbsolute;
     while let Some(arg) = args.next() {
@@ -168,6 +169,17 @@ fn train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
             }
             "--train-layer" => train_layer_spec = required(&mut args, "--train-layer")?,
             "--bidirectional-loss-guard" => bidirectional_loss_guard = true,
+            "--objective" => {
+                objective = match required(&mut args, "--objective")?.as_str() {
+                    "cross-entropy" => MiniTransformerBlockExpertObjective::CrossEntropy,
+                    "probability-error" => MiniTransformerBlockExpertObjective::ProbabilityError,
+                    _ => {
+                        return Err(
+                            "--objective requires cross-entropy or probability-error".into()
+                        );
+                    }
+                }
+            }
             "--attention" => {
                 attention_kind = parse_attention(&required(&mut args, "--attention")?)?
             }
@@ -225,6 +237,7 @@ fn train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
         learning_rate_shift,
         train_layer,
         bidirectional_loss_guard,
+        objective,
     )?;
     let final_metrics =
         evaluate_mini_transformer_block_expert(tokens, &model, &expert, eval_config)?;
@@ -233,7 +246,7 @@ fn train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
     fs::write(
         trace_out.ok_or("--trace is required")?,
         format!(
-            "{{\"schema\":\"nsrl.mini_transformer_block_low_rank_expert_train.v4\",\"trunk_model_hash\":\"0x{:016x}\",\"artifact_hash\":\"0x{:016x}\",\"parameter_count\":{},\"config\":{{\"layers\":{},\"rank\":{},\"projection_seed\":{},\"residual_shift\":{},\"train_layer\":{},\"bidirectional_loss_guard\":{},\"epochs\":{},\"token_offset\":{},\"stride\":{},\"max_windows\":{},\"batch_windows\":{},\"learning_rate\":{},\"learning_rate_shift\":{},\"attention\":\"{}\",\"position\":\"{}\"}},\"initial\":{},\"final\":{},\"updates\":{{\"optimizer_steps\":{},\"accepted_forward_steps\":{},\"accepted_reverse_steps\":{},\"rejected_steps\":{},\"weight_delta_l1\":{},\"weight_saturation_count\":{},\"hidden_saturation_count\":{}}}}}\n",
+            "{{\"schema\":\"nsrl.mini_transformer_block_low_rank_expert_train.v5\",\"trunk_model_hash\":\"0x{:016x}\",\"artifact_hash\":\"0x{:016x}\",\"parameter_count\":{},\"config\":{{\"layers\":{},\"rank\":{},\"projection_seed\":{},\"residual_shift\":{},\"train_layer\":{},\"bidirectional_loss_guard\":{},\"objective\":\"{}\",\"epochs\":{},\"token_offset\":{},\"stride\":{},\"max_windows\":{},\"batch_windows\":{},\"learning_rate\":{},\"learning_rate_shift\":{},\"attention\":\"{}\",\"position\":\"{}\"}},\"initial\":{},\"final\":{},\"updates\":{{\"optimizer_steps\":{},\"accepted_forward_steps\":{},\"accepted_reverse_steps\":{},\"rejected_steps\":{},\"weight_delta_l1\":{},\"weight_saturation_count\":{},\"hidden_saturation_count\":{}}}}}\n",
             expert.trunk_model_hash,
             fnv64(&artifact),
             expert.parameter_count(),
@@ -243,6 +256,7 @@ fn train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
             expert.residual_shift,
             train_layer.map_or_else(|| "\"all\"".to_string(), |layer| layer.to_string()),
             bidirectional_loss_guard,
+            objective.as_str(),
             epochs,
             token_offset,
             stride,
@@ -963,7 +977,7 @@ fn help() {
     println!(
         "nsrl-mini-transformer-block-expert\n\
          init --model PATH --out PATH --trace PATH [--rank N] [--projection-seed N] [--residual-shift N]\n\
-         train --tokens PATH --model PATH --out PATH --trace PATH [--resume-expert PATH] [--rank N] [--residual-shift N] [--train-layer all|final|N] [--bidirectional-loss-guard] [--epochs N] [--token-offset N] [--stride N] [--max-windows N] [--batch-windows N] [--learning-rate N] [--learning-rate-shift N] [--attention base2|linear] [--position learned|nope]\n\
+         train --tokens PATH --model PATH --out PATH --trace PATH [--resume-expert PATH] [--rank N] [--residual-shift N] [--train-layer all|final|N] [--bidirectional-loss-guard] [--objective cross-entropy|probability-error] [--epochs N] [--token-offset N] [--stride N] [--max-windows N] [--batch-windows N] [--learning-rate N] [--learning-rate-shift N] [--attention base2|linear] [--position learned|nope]\n\
          eval --tokens PATH --model PATH --expert PATH --trace PATH [--stride N] [--max-windows N] [--attention base2|linear] [--position learned|nope]\n\
          signature --input PATH --model PATH --out PATH --trace PATH [--stride N] [--max-samples N] [--attention base2|linear] [--position learned|nope]\n\
          score --input PATH --model PATH --expert ID=PATH --expert ID=PATH --expert ID=PATH --out PATH --details-out PATH [--stride N] [--span-len N] [--max-samples N] [--attention base2|linear] [--position learned|nope]\n\
