@@ -61,6 +61,7 @@ const MINI_TRANSFORMER_LEGACY_V4_D_MODEL: usize = 32;
 const MINI_TRANSFORMER_LEGACY_V4_HEADS: usize = 2;
 const MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM: usize = 64;
 pub const MINI_TRANSFORMER_ADAM_STATE_MAGIC: &[u8; 8] = b"NSRLAD2\n";
+pub const MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC: &[u8; 8] = b"NSRLBE2\n";
 pub const MINI_TRANSFORMER_SWARM_MODEL_ID: &str = "mini_transformer_swarm_qkvo_mlp_v1";
 pub const MINI_TRANSFORMER_SWARM_MODEL_MAGIC: &[u8; 8] = b"NSRLSW1\n";
 pub const MINI_TRANSFORMER_SWARM_WORKER_ARTIFACT_MAGIC: &[u8; 8] = b"NSRLWK1\n";
@@ -89,8 +90,8 @@ pub const BYTE_D_MODEL: usize = 257;
 // zeroed mini-transformer training via InvalidShape; see the nsrl-train-core
 // MINI_TRANSFORMER_D_MODEL doc comment.)
 pub use nsrl_train_core::{
-    IntegerAdamConfig, MINI_TRANSFORMER_D_MODEL, MINI_TRANSFORMER_HEADS,
-    MINI_TRANSFORMER_HIDDEN_DIM,
+    IntegerAdamConfig, MINI_TRANSFORMER_ARCHITECTURE_PROFILE, MINI_TRANSFORMER_D_MODEL,
+    MINI_TRANSFORMER_HEADS, MINI_TRANSFORMER_HIDDEN_DIM,
 };
 use nsrl_train_core::{
     MINI_TRANSFORMER_D_MODEL_SCALES, MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT,
@@ -201,6 +202,7 @@ impl MiniTransformerBatchMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MiniTransformerAdamTrainScope {
     All,
+    RmsNorm,
     Output,
     FinalMlp,
     FinalMlpAndOutput,
@@ -210,6 +212,7 @@ impl MiniTransformerAdamTrainScope {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::All => "all",
+            Self::RmsNorm => "rms_norm",
             Self::Output => "output",
             Self::FinalMlp => "final_mlp",
             Self::FinalMlpAndOutput => "final_mlp_and_output",
@@ -901,6 +904,49 @@ pub struct MiniTransformerMlpModel {
     pub gate_weights: Vec<i8>,
     pub down_weights: Vec<i8>,
     pub output_weights: Vec<i8>,
+}
+
+/// A frozen-trunk, trainable i16 residual inserted after every transformer
+/// block. The down projection is a deterministic sign projection, while the
+/// expansion is learned in Q15. This lets many small experts retain fractional
+/// updates without changing the trunk's compact i8 inference matrices.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiniTransformerBlockLowRankExpert {
+    pub trunk_model_hash: u64,
+    pub transformer_layers: usize,
+    pub rank: usize,
+    pub projection_seed: u64,
+    pub residual_shift: u8,
+    pub expansion_weights_q15: Vec<i16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerBlockExpertMetrics {
+    pub windows: usize,
+    pub mistakes: usize,
+    pub probability_error_q15: usize,
+    pub hidden_saturation_count: usize,
+}
+
+impl MiniTransformerBlockExpertMetrics {
+    pub fn accuracy_per_mille(self) -> usize {
+        self.windows.saturating_sub(self.mistakes) * 1000 / self.windows.max(1)
+    }
+
+    pub fn mean_probability_error_q15(self) -> usize {
+        self.probability_error_q15 / self.windows.max(1)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiniTransformerBlockExpertTrainStats {
+    pub optimizer_steps: usize,
+    pub accepted_forward_steps: usize,
+    pub accepted_reverse_steps: usize,
+    pub rejected_steps: usize,
+    pub weight_delta_l1: u64,
+    pub weight_saturation_count: usize,
+    pub hidden_saturation_count: usize,
 }
 
 /// Versioned optimizer state stored separately from inference weights.
@@ -4297,7 +4343,11 @@ fn mini_transformer_apply_integer_adam_batch(
             };
             add_gated_mlp_weight_update_stats_checked(&mut mlp, layer_mlp)?;
         }
-        if train_scope == MiniTransformerAdamTrainScope::All && model.rms_norm_enabled() {
+        if matches!(
+            train_scope,
+            MiniTransformerAdamTrainScope::All | MiniTransformerAdamTrainScope::RmsNorm
+        ) && model.rms_norm_enabled()
+        {
             let rms_local = model.rms_weight_range(layer_index)?;
             let rms_gradient = &batch.rms_weight_gradients[layer_index];
             let attention_rms = apply_integer_adam_state_slice_i16(
@@ -10424,7 +10474,8 @@ fn upgrade_legacy_v4_model(
     output_weights: Vec<i8>,
 ) -> Result<MiniTransformerMlpModel, TrainError> {
     if MINI_TRANSFORMER_D_MODEL != MINI_TRANSFORMER_LEGACY_V4_D_MODEL * 4
-        || MINI_TRANSFORMER_HEADS != MINI_TRANSFORMER_LEGACY_V4_HEADS
+        || (MINI_TRANSFORMER_HEADS != MINI_TRANSFORMER_LEGACY_V4_HEADS
+            && MINI_TRANSFORMER_HEADS != MINI_TRANSFORMER_LEGACY_V4_HEADS * 4)
         || MINI_TRANSFORMER_HIDDEN_DIM != MINI_TRANSFORMER_LEGACY_V4_HIDDEN_DIM * 4
     {
         return Err(TrainError::InvalidModel(
@@ -10464,7 +10515,17 @@ fn legacy_model_dim_index(index: usize, replica: usize) -> Result<usize, TrainEr
     }
     let head = index / old_head_dim;
     let dim = index % old_head_dim;
-    Ok(head * new_head_dim + dim * 4 + replica)
+    if MINI_TRANSFORMER_HEADS == MINI_TRANSFORMER_LEGACY_V4_HEADS {
+        Ok(head * new_head_dim + dim * 4 + replica)
+    } else if MINI_TRANSFORMER_HEADS == MINI_TRANSFORMER_LEGACY_V4_HEADS * 4
+        && new_head_dim == old_head_dim
+    {
+        Ok((head * 4 + replica) * new_head_dim + dim)
+    } else {
+        Err(TrainError::InvalidModel(
+            "unsupported legacy model head mapping",
+        ))
+    }
 }
 
 fn widen_legacy_model_rows_i16(values: &[i16], rows: usize) -> Result<Vec<i16>, TrainError> {
@@ -10553,6 +10614,200 @@ fn widen_legacy_output_matrix(values: &[i8]) -> Result<Vec<i8>, TrainError> {
         }
     }
     Ok(out)
+}
+
+impl MiniTransformerBlockLowRankExpert {
+    pub fn new_for_model(
+        model: &MiniTransformerMlpModel,
+        rank: usize,
+        projection_seed: u64,
+    ) -> Result<Self, TrainError> {
+        Self::new_for_model_with_residual_shift(model, rank, projection_seed, 0)
+    }
+
+    pub fn new_for_model_with_residual_shift(
+        model: &MiniTransformerMlpModel,
+        rank: usize,
+        projection_seed: u64,
+        residual_shift: u8,
+    ) -> Result<Self, TrainError> {
+        let transformer_layers = model.checked_transformer_layers()?;
+        if rank == 0 || rank > MINI_TRANSFORMER_D_MODEL || residual_shift > 15 {
+            return Err(TrainError::InvalidConfig);
+        }
+        let parameter_count = transformer_layers
+            .checked_mul(MINI_TRANSFORMER_D_MODEL)
+            .and_then(|value| value.checked_mul(rank))
+            .ok_or(TrainError::InvalidConfig)?;
+        Ok(Self {
+            trunk_model_hash: model.model_hash(),
+            transformer_layers,
+            rank,
+            projection_seed,
+            residual_shift,
+            expansion_weights_q15: vec![0_i16; parameter_count],
+        })
+    }
+
+    pub fn parameter_count(&self) -> usize {
+        self.expansion_weights_q15.len()
+    }
+
+    pub fn validate_for_model(&self, model: &MiniTransformerMlpModel) -> Result<(), TrainError> {
+        let expected = self
+            .transformer_layers
+            .checked_mul(MINI_TRANSFORMER_D_MODEL)
+            .and_then(|value| value.checked_mul(self.rank))
+            .ok_or(TrainError::InvalidConfig)?;
+        if self.trunk_model_hash != model.model_hash()
+            || self.transformer_layers != model.checked_transformer_layers()?
+            || self.rank == 0
+            || self.rank > MINI_TRANSFORMER_D_MODEL
+            || self.residual_shift > 15
+            || self.expansion_weights_q15.len() != expected
+        {
+            return Err(TrainError::InvalidModel("block expert/model mismatch"));
+        }
+        Ok(())
+    }
+
+    pub fn try_to_bytes(&self) -> Result<Vec<u8>, TrainError> {
+        if self.transformer_layers == 0
+            || self.rank == 0
+            || self.rank > MINI_TRANSFORMER_D_MODEL
+            || self.residual_shift > 15
+            || self.expansion_weights_q15.len()
+                != self
+                    .transformer_layers
+                    .checked_mul(MINI_TRANSFORMER_D_MODEL)
+                    .and_then(|value| value.checked_mul(self.rank))
+                    .ok_or(TrainError::InvalidConfig)?
+        {
+            return Err(TrainError::InvalidModel("invalid block expert"));
+        }
+        let mut out = Vec::with_capacity(80 + self.expansion_weights_q15.len() * 2);
+        out.extend_from_slice(MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC);
+        out.extend_from_slice(&checked_u32(BYTE_VOCAB, "byte vocab exceeds u32")?.to_le_bytes());
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_D_MODEL, "d_model exceeds u32")?.to_le_bytes(),
+        );
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_HEADS, "heads exceeds u32")?.to_le_bytes(),
+        );
+        out.extend_from_slice(
+            &checked_u32(MINI_TRANSFORMER_HIDDEN_DIM, "hidden_dim exceeds u32")?.to_le_bytes(),
+        );
+        out.extend_from_slice(&self.trunk_model_hash.to_le_bytes());
+        push_model_usize(&mut out, self.transformer_layers, "layers exceed u64")?;
+        push_model_usize(&mut out, self.rank, "rank exceeds u64")?;
+        out.extend_from_slice(&self.projection_seed.to_le_bytes());
+        out.push(self.residual_shift);
+        out.extend_from_slice(&[0_u8; 7]);
+        push_model_usize(
+            &mut out,
+            self.expansion_weights_q15.len(),
+            "block expert parameters exceed u64",
+        )?;
+        for &weight in &self.expansion_weights_q15 {
+            out.extend_from_slice(&weight.to_le_bytes());
+        }
+        let checksum = hash_u8_slice(&out);
+        out.extend_from_slice(&checksum.to_le_bytes());
+        Ok(out)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.try_to_bytes()
+            .expect("valid block expert should fit on-disk format")
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
+        const HEADER_WITH_CHECKSUM: usize = 80;
+        if bytes.len() < HEADER_WITH_CHECKSUM
+            || &bytes[..MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC.len()]
+                != MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC
+        {
+            return Err(TrainError::InvalidModel("bad block expert artifact"));
+        }
+        let checksum_offset = bytes.len() - 8;
+        let mut checksum_cursor = checksum_offset;
+        let checksum = read_u64_le(bytes, &mut checksum_cursor)?;
+        if checksum_cursor != bytes.len() || hash_u8_slice(&bytes[..checksum_offset]) != checksum {
+            return Err(TrainError::InvalidModel("block expert checksum mismatch"));
+        }
+        let mut offset = MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC.len();
+        let vocab = read_u32_le(bytes, &mut offset)? as usize;
+        let d_model = read_u32_le(bytes, &mut offset)? as usize;
+        let heads = read_u32_le(bytes, &mut offset)? as usize;
+        let hidden_dim = read_u32_le(bytes, &mut offset)? as usize;
+        let trunk_model_hash = read_u64_le(bytes, &mut offset)?;
+        let transformer_layers = read_model_usize(bytes, &mut offset)?;
+        let rank = read_model_usize(bytes, &mut offset)?;
+        let projection_seed = read_u64_le(bytes, &mut offset)?;
+        let residual_shift = *bytes.get(offset).ok_or(TrainError::InvalidModel(
+            "missing block expert residual shift",
+        ))?;
+        if bytes
+            .get(offset + 1..offset + 8)
+            .ok_or(TrainError::InvalidModel(
+                "missing block expert reserved bytes",
+            ))?
+            .iter()
+            .any(|&value| value != 0)
+        {
+            return Err(TrainError::InvalidModel("block expert reserved bytes"));
+        }
+        offset += 8;
+        let parameter_count = read_model_usize(bytes, &mut offset)?;
+        if vocab != BYTE_VOCAB
+            || d_model != MINI_TRANSFORMER_D_MODEL
+            || heads != MINI_TRANSFORMER_HEADS
+            || hidden_dim != MINI_TRANSFORMER_HIDDEN_DIM
+            || transformer_layers == 0
+            || rank == 0
+            || rank > MINI_TRANSFORMER_D_MODEL
+            || residual_shift > 15
+            || parameter_count
+                != transformer_layers
+                    .checked_mul(MINI_TRANSFORMER_D_MODEL)
+                    .and_then(|value| value.checked_mul(rank))
+                    .ok_or(TrainError::InvalidModel("block expert size overflow"))?
+            || bytes.len()
+                != HEADER_WITH_CHECKSUM
+                    .checked_add(
+                        parameter_count
+                            .checked_mul(2)
+                            .ok_or(TrainError::InvalidModel("block expert payload overflow"))?,
+                    )
+                    .ok_or(TrainError::InvalidModel("block expert artifact overflow"))?
+        {
+            return Err(TrainError::InvalidModel("block expert header mismatch"));
+        }
+        let mut expansion_weights_q15 = Vec::with_capacity(parameter_count);
+        for _ in 0..parameter_count {
+            let end = offset
+                .checked_add(2)
+                .ok_or(TrainError::InvalidModel("block expert offset overflow"))?;
+            let raw: [u8; 2] = bytes
+                .get(offset..end)
+                .ok_or(TrainError::InvalidModel("truncated block expert"))?
+                .try_into()
+                .map_err(|_| TrainError::InvalidModel("truncated block expert"))?;
+            expansion_weights_q15.push(i16::from_le_bytes(raw));
+            offset = end;
+        }
+        if offset != checksum_offset {
+            return Err(TrainError::InvalidModel("block expert payload mismatch"));
+        }
+        Ok(Self {
+            trunk_model_hash,
+            transformer_layers,
+            rank,
+            projection_seed,
+            residual_shift,
+            expansion_weights_q15,
+        })
+    }
 }
 
 impl MiniTransformerAdamOptimizerState {
@@ -16878,6 +17133,614 @@ pub fn mini_transformer_output_gradient_to_hidden_q15(
     Ok(grad_hidden_q15)
 }
 
+#[derive(Debug, Clone)]
+struct MiniTransformerBlockExpertLayerCache {
+    base: MiniTransformerBlockForwardCache,
+    latent_q15: Vec<i16>,
+    adapted_output: Vec<i16>,
+}
+
+#[derive(Debug, Clone)]
+struct MiniTransformerBlockExpertForwardCache {
+    layers: Vec<MiniTransformerBlockExpertLayerCache>,
+    logits_q8: [i32; BYTE_VOCAB],
+    probabilities_q15: [i16; BYTE_VOCAB],
+    hidden_saturation_count: usize,
+}
+
+fn block_expert_projection_sign(seed: u64, layer: usize, rank: usize, dim: usize) -> i64 {
+    let mut value = seed
+        ^ (layer as u64).wrapping_mul(0x94d0_49bb_1331_11eb)
+        ^ (rank as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ (dim as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value ^= value >> 27;
+    if value & 1 == 0 { 1 } else { -1 }
+}
+
+fn block_expert_layer_weight_range(
+    expert: &MiniTransformerBlockLowRankExpert,
+    layer: usize,
+) -> Result<Range<usize>, TrainError> {
+    if layer >= expert.transformer_layers {
+        return Err(TrainError::InvalidConfig);
+    }
+    let per_layer = MINI_TRANSFORMER_D_MODEL
+        .checked_mul(expert.rank)
+        .ok_or(TrainError::InvalidConfig)?;
+    let start = layer
+        .checked_mul(per_layer)
+        .ok_or(TrainError::InvalidConfig)?;
+    Ok(start..start + per_layer)
+}
+
+fn block_expert_adapt_rows(
+    base: &[i16],
+    expert: &MiniTransformerBlockLowRankExpert,
+    layer: usize,
+) -> Result<(Vec<i16>, Vec<i16>, usize), TrainError> {
+    if base.is_empty() || !base.len().is_multiple_of(MINI_TRANSFORMER_D_MODEL) {
+        return Err(TrainError::InvalidConfig);
+    }
+    let rows = base.len() / MINI_TRANSFORMER_D_MODEL;
+    let mut latent = vec![0_i16; rows * expert.rank];
+    let mut output = vec![0_i16; base.len()];
+    let weights = &expert.expansion_weights_q15[block_expert_layer_weight_range(expert, layer)?];
+    let projection_shift = MINI_TRANSFORMER_D_MODEL.trailing_zeros() as u8;
+    if 1_usize << u32::from(projection_shift) != MINI_TRANSFORMER_D_MODEL {
+        return Err(TrainError::InvalidModel(
+            "block expert d_model must be power of two",
+        ));
+    }
+    let mut saturation_count = 0_usize;
+    for row in 0..rows {
+        let row_start = row * MINI_TRANSFORMER_D_MODEL;
+        let latent_start = row * expert.rank;
+        for rank in 0..expert.rank {
+            let sum = (0..MINI_TRANSFORMER_D_MODEL)
+                .map(|dim| {
+                    i64::from(base[row_start + dim])
+                        * block_expert_projection_sign(expert.projection_seed, layer, rank, dim)
+                })
+                .sum::<i64>();
+            latent[latent_start + rank] = saturate_i16(round_shift_rhu_i64(sum, projection_shift));
+        }
+        for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            let residual_acc = (0..expert.rank)
+                .map(|rank| {
+                    i64::from(latent[latent_start + rank])
+                        * i64::from(weights[dim * expert.rank + rank])
+                })
+                .sum::<i64>();
+            let raw = i64::from(base[row_start + dim]).saturating_add(round_shift_rhu_i64(
+                residual_acc,
+                Q15_SHIFT.saturating_add(expert.residual_shift),
+            ));
+            let adapted = saturate_i16(raw);
+            saturation_count =
+                saturation_count.saturating_add(usize::from(i64::from(adapted) != raw));
+            output[row_start + dim] = adapted;
+        }
+    }
+    Ok((output, latent, saturation_count))
+}
+
+fn mini_transformer_forward_with_block_expert(
+    model: &MiniTransformerMlpModel,
+    expert: &MiniTransformerBlockLowRankExpert,
+    context: &[u8],
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+) -> Result<MiniTransformerBlockExpertForwardCache, TrainError> {
+    expert.validate_for_model(model)?;
+    if context.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut layer_input = mini_transformer_embedding_sequence_with_position_policy_q15(
+        &model.embeddings,
+        &model.position_embeddings,
+        context,
+        position_policy,
+    )?;
+    let attention_weight_count = mini_transformer_attention_weight_count()?;
+    let mlp_up_count = mini_transformer_mlp_up_or_gate_weight_count()?;
+    let mlp_down_count = mini_transformer_mlp_down_weight_count()?;
+    let mut layer_caches = Vec::with_capacity(expert.transformer_layers);
+    let mut hidden_saturation_count = 0_usize;
+    for layer in 0..expert.transformer_layers {
+        let attention_range = mini_transformer_layer_range(layer, attention_weight_count)?;
+        let up_range = mini_transformer_layer_range(layer, mlp_up_count)?;
+        let down_range = mini_transformer_layer_range(layer, mlp_down_count)?;
+        let rms_range = if model.rms_norm_enabled() {
+            Some(model.rms_weight_range(layer)?)
+        } else {
+            None
+        };
+        let base = mini_transformer_forward_block_for_attention_kind(
+            &layer_input,
+            rms_range
+                .as_ref()
+                .map(|range| &model.attention_rms_weights[range.clone()]),
+            rms_range
+                .as_ref()
+                .map(|range| &model.mlp_rms_weights[range.clone()]),
+            &model.q_weights[attention_range.clone()],
+            &model.k_weights[attention_range.clone()],
+            &model.v_weights[attention_range.clone()],
+            &model.o_weights[attention_range],
+            &model.up_weights[up_range.clone()],
+            &model.gate_weights[up_range],
+            &model.down_weights[down_range],
+            attention_kind,
+        )?;
+        let (adapted_output, latent_q15, saturations) =
+            block_expert_adapt_rows(&base.block_output, expert, layer)?;
+        hidden_saturation_count = hidden_saturation_count.saturating_add(saturations);
+        layer_input = adapted_output.clone();
+        layer_caches.push(MiniTransformerBlockExpertLayerCache {
+            base,
+            latent_q15,
+            adapted_output,
+        });
+    }
+    let last = layer_input
+        .len()
+        .checked_sub(MINI_TRANSFORMER_D_MODEL)
+        .ok_or(TrainError::InvalidConfig)?;
+    let row = mini_transformer_output_row_for(
+        &model.output_weights,
+        &layer_input[last..last + MINI_TRANSFORMER_D_MODEL],
+    )?;
+    Ok(MiniTransformerBlockExpertForwardCache {
+        layers: layer_caches,
+        logits_q8: row.logits_q8,
+        probabilities_q15: row.probabilities_q15,
+        hidden_saturation_count,
+    })
+}
+
+fn block_expert_backward_rows(
+    expert: &MiniTransformerBlockLowRankExpert,
+    layer: usize,
+    cache: &MiniTransformerBlockExpertLayerCache,
+    grad_adapted: &[i16],
+    gradient_accumulators: &mut [i64],
+) -> Result<Vec<i16>, TrainError> {
+    if grad_adapted.len() != cache.base.block_output.len()
+        || cache.adapted_output.len() != grad_adapted.len()
+        || cache.latent_q15.len() * MINI_TRANSFORMER_D_MODEL != grad_adapted.len() * expert.rank
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let range = block_expert_layer_weight_range(expert, layer)?;
+    if gradient_accumulators.len() != expert.expansion_weights_q15.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let weights = &expert.expansion_weights_q15[range.clone()];
+    let gradients = &mut gradient_accumulators[range];
+    let rows = grad_adapted.len() / MINI_TRANSFORMER_D_MODEL;
+    let projection_shift = MINI_TRANSFORMER_D_MODEL.trailing_zeros() as u8;
+    let mut grad_base = vec![0_i16; grad_adapted.len()];
+    for row in 0..rows {
+        let row_start = row * MINI_TRANSFORMER_D_MODEL;
+        let latent_start = row * expert.rank;
+        let mut grad_latent = vec![0_i64; expert.rank];
+        for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            let index = row_start + dim;
+            let grad = if cache.adapted_output[index] == i16::MIN
+                || cache.adapted_output[index] == i16::MAX
+            {
+                0_i64
+            } else {
+                i64::from(grad_adapted[index])
+            };
+            for rank in 0..expert.rank {
+                let weight_index = dim * expert.rank + rank;
+                gradients[weight_index] =
+                    gradients[weight_index].saturating_add(round_shift_rhu_i64(
+                        grad.saturating_mul(i64::from(cache.latent_q15[latent_start + rank])),
+                        Q15_SHIFT.saturating_add(expert.residual_shift),
+                    ));
+                grad_latent[rank] = grad_latent[rank].saturating_add(round_shift_rhu_i64(
+                    grad.saturating_mul(i64::from(weights[weight_index])),
+                    Q15_SHIFT.saturating_add(expert.residual_shift),
+                ));
+            }
+        }
+        for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            let projected = (0..expert.rank)
+                .map(|rank| {
+                    grad_latent[rank]
+                        * block_expert_projection_sign(expert.projection_seed, layer, rank, dim)
+                })
+                .sum::<i64>();
+            grad_base[row_start + dim] = saturate_i16(
+                i64::from(grad_adapted[row_start + dim])
+                    .saturating_add(round_shift_rhu_i64(projected, projection_shift)),
+            );
+        }
+    }
+    Ok(grad_base)
+}
+
+pub fn mini_transformer_next_token_row_with_block_expert(
+    model: &MiniTransformerMlpModel,
+    expert: &MiniTransformerBlockLowRankExpert,
+    context: &[u8],
+    attention_kind: MiniTransformerAttentionKind,
+    position_policy: MiniTransformerPositionPolicy,
+) -> Result<MiniTransformerNextTokenRow, TrainError> {
+    let cache = mini_transformer_forward_with_block_expert(
+        model,
+        expert,
+        context,
+        attention_kind,
+        position_policy,
+    )?;
+    Ok(MiniTransformerNextTokenRow {
+        logits_q8: cache.logits_q8,
+        probabilities_q15: cache.probabilities_q15,
+    })
+}
+
+pub fn evaluate_mini_transformer_block_expert(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    expert: &MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpEvalConfig,
+) -> Result<MiniTransformerBlockExpertMetrics, TrainError> {
+    expert.validate_for_model(model)?;
+    if config.seq_len == 0
+        || config.stride == 0
+        || model.context_seq_len != config.seq_len
+        || config.attention_kind.uses_incremental_state()
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let starts = mini_transformer_filtered_window_starts(
+        tokens.len(),
+        tokens,
+        MiniTransformerMlpTrainConfig {
+            seq_len: config.seq_len,
+            stride: config.stride,
+            max_windows: config.max_windows,
+            attention_kind: config.attention_kind,
+            position_policy: config.position_policy,
+            ..MiniTransformerMlpTrainConfig::default()
+        },
+    );
+    if starts.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut metrics = MiniTransformerBlockExpertMetrics {
+        windows: starts.len(),
+        mistakes: 0,
+        probability_error_q15: 0,
+        hidden_saturation_count: 0,
+    };
+    for start in starts {
+        let end = start + config.seq_len;
+        let cache = mini_transformer_forward_with_block_expert(
+            model,
+            expert,
+            &tokens[start..end],
+            config.attention_kind,
+            config.position_policy,
+        )?;
+        metrics.mistakes = metrics.mistakes.saturating_add(usize::from(
+            byte_argmax_i32(&cache.logits_q8) != tokens[end],
+        ));
+        metrics.probability_error_q15 =
+            metrics
+                .probability_error_q15
+                .saturating_add(byte_sample_probability_error_q15(
+                    &cache.probabilities_q15,
+                    tokens[end],
+                ));
+        metrics.hidden_saturation_count = metrics
+            .hidden_saturation_count
+            .saturating_add(cache.hidden_saturation_count);
+    }
+    Ok(metrics)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn train_mini_transformer_block_expert(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    expert: &mut MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpTrainConfig,
+    batch_windows: usize,
+    learning_rate: i64,
+    learning_rate_shift: u8,
+) -> Result<MiniTransformerBlockExpertTrainStats, TrainError> {
+    train_mini_transformer_block_expert_with_layer_scope(
+        tokens,
+        model,
+        expert,
+        config,
+        batch_windows,
+        learning_rate,
+        learning_rate_shift,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn train_mini_transformer_block_expert_with_layer_scope(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    expert: &mut MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpTrainConfig,
+    batch_windows: usize,
+    learning_rate: i64,
+    learning_rate_shift: u8,
+    train_layer: Option<usize>,
+) -> Result<MiniTransformerBlockExpertTrainStats, TrainError> {
+    train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
+        tokens,
+        model,
+        expert,
+        config,
+        batch_windows,
+        learning_rate,
+        learning_rate_shift,
+        train_layer,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
+    tokens: &[u8],
+    model: &MiniTransformerMlpModel,
+    expert: &mut MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpTrainConfig,
+    batch_windows: usize,
+    learning_rate: i64,
+    learning_rate_shift: u8,
+    train_layer: Option<usize>,
+    bidirectional_loss_guard: bool,
+) -> Result<MiniTransformerBlockExpertTrainStats, TrainError> {
+    expert.validate_for_model(model)?;
+    if config.epochs == 0
+        || config.seq_len == 0
+        || config.stride == 0
+        || config.seq_len != model.context_seq_len
+        || batch_windows == 0
+        || learning_rate <= 0
+        || learning_rate_shift > MAX_RIGHT_SHIFT
+        || config.attention_kind.uses_incremental_state()
+        || train_layer.is_some_and(|layer| layer >= expert.transformer_layers)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let starts = mini_transformer_filtered_window_starts(tokens.len(), tokens, config);
+    if starts.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut update_residuals = vec![0_i64; expert.expansion_weights_q15.len()];
+    let mut stats = MiniTransformerBlockExpertTrainStats {
+        optimizer_steps: 0,
+        accepted_forward_steps: 0,
+        accepted_reverse_steps: 0,
+        rejected_steps: 0,
+        weight_delta_l1: 0,
+        weight_saturation_count: 0,
+        hidden_saturation_count: 0,
+    };
+    let last_start = (config.seq_len - 1) * MINI_TRANSFORMER_D_MODEL;
+    let mut workspace = MiniTransformerHostTrainCoreWorkspaceBuffers::new(config.seq_len)?;
+    let mut frozen_model = model.clone();
+    for _ in 0..config.epochs {
+        for batch in starts.chunks(batch_windows) {
+            let mut gradients = vec![0_i64; expert.expansion_weights_q15.len()];
+            for &start in batch {
+                let end = start + config.seq_len;
+                let cache = mini_transformer_forward_with_block_expert(
+                    model,
+                    expert,
+                    &tokens[start..end],
+                    config.attention_kind,
+                    config.position_policy,
+                )?;
+                stats.hidden_saturation_count = stats
+                    .hidden_saturation_count
+                    .saturating_add(cache.hidden_saturation_count);
+                let mut grad_output =
+                    byte_vocab_softmax_gradient_q15(&cache.probabilities_q15, tokens[end]);
+                apply_byte_argmax_margin_gradient_q15(
+                    &mut grad_output,
+                    &cache.logits_q8,
+                    tokens[end],
+                    config.argmax_margin_weight_q15,
+                );
+                let grad_output_q15 = byte_gradient_i32_to_i16(&grad_output);
+                let grad_last =
+                    mini_transformer_output_gradient_to_hidden_q15(model, &grad_output_q15)?;
+                let mut grad_adapted = vec![0_i16; config.seq_len * MINI_TRANSFORMER_D_MODEL];
+                grad_adapted[last_start..last_start + MINI_TRANSFORMER_D_MODEL]
+                    .copy_from_slice(&grad_last);
+                let mut dummy =
+                    MiniTransformerMapReduceBatchResult::new(config, expert.transformer_layers)?;
+                for layer in (0..expert.transformer_layers).rev() {
+                    let grad_base = block_expert_backward_rows(
+                        expert,
+                        layer,
+                        &cache.layers[layer],
+                        &grad_adapted,
+                        &mut gradients,
+                    )?;
+                    let layer_config = mini_transformer_stacked_layer_runtime_config(
+                        config,
+                        layer,
+                        expert.transformer_layers,
+                    );
+                    let backward = mini_transformer_block_backward_accumulate_i64_checked(
+                        &cache.layers[layer].base,
+                        &grad_base,
+                        &mut frozen_model,
+                        layer,
+                        layer_config,
+                        &mut workspace,
+                        &mut dummy.mlp_weight_gradients[layer],
+                        &mut dummy.attention_weight_gradients[layer],
+                        &mut dummy.rms_weight_gradients[layer],
+                    )?;
+                    grad_adapted = backward.grad_input;
+                }
+            }
+            let denominator = i64::try_from(batch.len())
+                .map_err(|_| TrainError::InvalidConfig)?
+                .checked_shl(u32::from(learning_rate_shift))
+                .ok_or(TrainError::InvalidConfig)?;
+            let parameters_per_layer = MINI_TRANSFORMER_D_MODEL
+                .checked_mul(expert.rank)
+                .ok_or(TrainError::InvalidConfig)?;
+            if bidirectional_loss_guard {
+                let baseline_error = mini_transformer_block_expert_batch_error(
+                    tokens, batch, model, expert, config,
+                )?;
+                let original_weights = expert.expansion_weights_q15.clone();
+                let original_residuals = update_residuals.clone();
+                let mut forward_weights = original_weights.clone();
+                let mut reverse_weights = original_weights.clone();
+                let mut next_residuals = original_residuals.clone();
+                let mut forward_saturations = vec![false; original_weights.len()];
+                let mut reverse_saturations = vec![false; original_weights.len()];
+                for index in 0..original_weights.len() {
+                    if train_layer.is_some_and(|layer| index / parameters_per_layer != layer) {
+                        continue;
+                    }
+                    let numerator = gradients[index].saturating_add(original_residuals[index]);
+                    let averaged = round_div_signed_i64(numerator, denominator)?;
+                    next_residuals[index] =
+                        numerator.saturating_sub(averaged.saturating_mul(denominator));
+                    let update = averaged.saturating_mul(learning_rate);
+                    let previous = i64::from(original_weights[index]);
+                    let forward_raw = previous.saturating_sub(update);
+                    let reverse_raw = previous.saturating_add(update);
+                    forward_weights[index] = saturate_i16(forward_raw);
+                    reverse_weights[index] = saturate_i16(reverse_raw);
+                    forward_saturations[index] = i64::from(forward_weights[index]) != forward_raw;
+                    reverse_saturations[index] = i64::from(reverse_weights[index]) != reverse_raw;
+                }
+                expert.expansion_weights_q15 = forward_weights.clone();
+                let forward_error = mini_transformer_block_expert_batch_error(
+                    tokens, batch, model, expert, config,
+                )?;
+                expert.expansion_weights_q15 = reverse_weights.clone();
+                let reverse_error = mini_transformer_block_expert_batch_error(
+                    tokens, batch, model, expert, config,
+                )?;
+                let (selected, selected_saturations) = if forward_error < baseline_error
+                    && forward_error <= reverse_error
+                {
+                    stats.accepted_forward_steps = stats.accepted_forward_steps.saturating_add(1);
+                    (Some(forward_weights), Some(forward_saturations))
+                } else if reverse_error < baseline_error && reverse_error < forward_error {
+                    stats.accepted_reverse_steps = stats.accepted_reverse_steps.saturating_add(1);
+                    (Some(reverse_weights), Some(reverse_saturations))
+                } else {
+                    stats.rejected_steps = stats.rejected_steps.saturating_add(1);
+                    (None, None)
+                };
+                if let Some(selected) = selected {
+                    for (index, (&previous, &next)) in
+                        original_weights.iter().zip(selected.iter()).enumerate()
+                    {
+                        stats.weight_delta_l1 = stats
+                            .weight_delta_l1
+                            .saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
+                        if selected_saturations
+                            .as_ref()
+                            .is_some_and(|values| values[index])
+                        {
+                            stats.weight_saturation_count =
+                                stats.weight_saturation_count.saturating_add(1);
+                            next_residuals[index] = 0;
+                        }
+                    }
+                    expert.expansion_weights_q15 = selected;
+                    update_residuals = next_residuals;
+                } else {
+                    expert.expansion_weights_q15 = original_weights;
+                    update_residuals = original_residuals;
+                }
+            } else {
+                for index in 0..expert.expansion_weights_q15.len() {
+                    if train_layer.is_some_and(|layer| index / parameters_per_layer != layer) {
+                        continue;
+                    }
+                    let numerator = gradients[index].saturating_add(update_residuals[index]);
+                    let averaged = round_div_signed_i64(numerator, denominator)?;
+                    update_residuals[index] =
+                        numerator.saturating_sub(averaged.saturating_mul(denominator));
+                    let update = averaged.saturating_mul(learning_rate);
+                    let previous = expert.expansion_weights_q15[index];
+                    let raw = i64::from(previous).saturating_sub(update);
+                    let next = saturate_i16(raw);
+                    if i64::from(next) != raw {
+                        stats.weight_saturation_count =
+                            stats.weight_saturation_count.saturating_add(1);
+                        update_residuals[index] = 0;
+                    }
+                    stats.weight_delta_l1 = stats
+                        .weight_delta_l1
+                        .saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
+                    expert.expansion_weights_q15[index] = next;
+                }
+                stats.accepted_forward_steps = stats.accepted_forward_steps.saturating_add(1);
+            }
+            stats.optimizer_steps = stats.optimizer_steps.saturating_add(1);
+        }
+    }
+    Ok(stats)
+}
+
+fn mini_transformer_block_expert_batch_error(
+    tokens: &[u8],
+    starts: &[usize],
+    model: &MiniTransformerMlpModel,
+    expert: &MiniTransformerBlockLowRankExpert,
+    config: MiniTransformerMlpTrainConfig,
+) -> Result<usize, TrainError> {
+    let mut error = 0_usize;
+    for &start in starts {
+        let end = start
+            .checked_add(config.seq_len)
+            .ok_or(TrainError::InvalidConfig)?;
+        if end >= tokens.len() {
+            return Err(TrainError::InvalidConfig);
+        }
+        let cache = mini_transformer_forward_with_block_expert(
+            model,
+            expert,
+            &tokens[start..end],
+            config.attention_kind,
+            config.position_policy,
+        )?;
+        error = error.saturating_add(byte_sample_probability_error_q15(
+            &cache.probabilities_q15,
+            tokens[end],
+        ));
+    }
+    Ok(error)
+}
+
+fn round_div_signed_i64(value: i64, denominator: i64) -> Result<i64, TrainError> {
+    if denominator <= 0 {
+        return Err(TrainError::InvalidConfig);
+    }
+    let half = denominator / 2;
+    Ok(if value >= 0 {
+        value.saturating_add(half) / denominator
+    } else {
+        value.saturating_sub(half) / denominator
+    })
+}
+
 fn mini_transformer_router_hidden_features_q15(
     block_output: &[i16],
     seq_len: usize,
@@ -18858,6 +19721,54 @@ mod tests {
         run.optimizer_state
             .validate_for_model(&run.model)
             .expect("RMS optimizer binding");
+    }
+
+    #[test]
+    fn mini_transformer_rmsnorm_scope_updates_only_internal_gamma() {
+        let tokens = b"The imagination is not a state; it is existence itself.";
+        let config = tiny_integer_adam_training_config();
+        let optimizer = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
+        };
+        let mut model = MiniTransformerMlpModel::new_initial_with_seq_len(config.seq_len);
+        model.enable_rms_norm().expect("enable RMSNorm");
+        let initial = model.clone();
+
+        let run = run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
+            tokens,
+            config,
+            optimizer,
+            model,
+            None,
+            MiniTransformerAdamTrainScope::RmsNorm,
+        )
+        .expect("RMSNorm-only Adam run");
+
+        assert_eq!(
+            run.trace.train_scope,
+            MiniTransformerAdamTrainScope::RmsNorm
+        );
+        assert!(run.trace.rms_norm_delta_l1 > 0);
+        assert_eq!(run.trace.output_head_delta_l1, 0);
+        assert_eq!(run.trace.mlp_delta_l1, 0);
+        assert_eq!(run.trace.embedding_delta_l1, 0);
+        assert_eq!(run.trace.attention_delta_l1, 0);
+        assert_ne!(
+            run.model.attention_rms_weights,
+            initial.attention_rms_weights
+        );
+        assert_ne!(run.model.mlp_rms_weights, initial.mlp_rms_weights);
+        assert_eq!(run.model.embeddings, initial.embeddings);
+        assert_eq!(run.model.position_embeddings, initial.position_embeddings);
+        assert_eq!(run.model.q_weights, initial.q_weights);
+        assert_eq!(run.model.k_weights, initial.k_weights);
+        assert_eq!(run.model.v_weights, initial.v_weights);
+        assert_eq!(run.model.o_weights, initial.o_weights);
+        assert_eq!(run.model.up_weights, initial.up_weights);
+        assert_eq!(run.model.gate_weights, initial.gate_weights);
+        assert_eq!(run.model.down_weights, initial.down_weights);
+        assert_eq!(run.model.output_weights, initial.output_weights);
     }
 
     #[test]
@@ -22329,5 +23240,72 @@ mod tests {
         assert_eq!(model.model_hash(), before_hash);
         assert_eq!(left.invalid_forward_count, 0);
         assert!(left.to_json_line().contains(MINI_TRANSFORMER_EVAL_SCHEMA));
+    }
+
+    #[test]
+    fn mini_transformer_block_expert_zero_identity_and_artifact_are_locked() {
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        let expert =
+            MiniTransformerBlockLowRankExpert::new_for_model(&model, 4, 17).expect("block expert");
+        let base = mini_transformer_next_token_row_with_attention_kind_position_policy(
+            &model,
+            b"Blak",
+            MiniTransformerAttentionKind::Base2Softmax,
+            MiniTransformerPositionPolicy::LearnedAbsolute,
+        )
+        .expect("base row");
+        let adapted = mini_transformer_next_token_row_with_block_expert(
+            &model,
+            &expert,
+            b"Blak",
+            MiniTransformerAttentionKind::Base2Softmax,
+            MiniTransformerPositionPolicy::LearnedAbsolute,
+        )
+        .expect("adapted row");
+        assert_eq!(adapted, base);
+
+        let bytes = expert.to_bytes();
+        assert_eq!(
+            MiniTransformerBlockLowRankExpert::from_bytes(&bytes).expect("decode"),
+            expert
+        );
+        let mut corrupt = bytes;
+        corrupt[64] ^= 1;
+        assert!(MiniTransformerBlockLowRankExpert::from_bytes(&corrupt).is_err());
+    }
+
+    #[test]
+    fn mini_transformer_block_expert_training_updates_only_expert() {
+        let tokens = b"Crowley Shakespeare Blake sing through the integer swarm.";
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        let model_hash = model.model_hash();
+        let mut expert =
+            MiniTransformerBlockLowRankExpert::new_for_model(&model, 4, 23).expect("block expert");
+        let stats = train_mini_transformer_block_expert(
+            tokens,
+            &model,
+            &mut expert,
+            MiniTransformerMlpTrainConfig {
+                epochs: 1,
+                seq_len: 4,
+                stride: 1,
+                max_windows: Some(4),
+                batch_windows: 2,
+                ..MiniTransformerMlpTrainConfig::default()
+            },
+            2,
+            1024,
+            0,
+        )
+        .expect("train block expert");
+        assert_eq!(model.model_hash(), model_hash);
+        assert_eq!(stats.optimizer_steps, 2);
+        assert!(stats.weight_delta_l1 > 0);
+        assert!(
+            expert
+                .expansion_weights_q15
+                .iter()
+                .any(|&weight| weight != 0)
+        );
     }
 }

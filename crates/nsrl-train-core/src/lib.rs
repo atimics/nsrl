@@ -28,16 +28,23 @@ pub const BYTE_VOCAB: usize = 256;
 // `mini_transformer_*_train_step` rejects mismatched models with
 // `InvalidShape`, which silently zeroes out training, so the two definitions
 // must move together. d_model must stay divisible by heads, with a per-head
-// dim that is a power of four (128 / 2 = 64 for the promoted Solomon small
-// profile). FixedScale arrays below are uniform, so they resize automatically
-// with these constants.
+// dim that is a power of four (128 / 2 = 64 for the default small profile;
+// 128 / 8 = 16 for the optional many-head small profile). FixedScale arrays
+// below are uniform, so they resize automatically with these constants.
 //
 // A past scale-up was applied here only and broke that contract; scaling up
 // for real means widening this shared source of truth and re-baking
 // byte-stable trace fixtures as needed.
 pub const MINI_TRANSFORMER_D_MODEL: usize = 128;
+#[cfg(not(feature = "mini-heads-8"))]
 pub const MINI_TRANSFORMER_HEADS: usize = 2;
+#[cfg(feature = "mini-heads-8")]
+pub const MINI_TRANSFORMER_HEADS: usize = 8;
 pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 256;
+#[cfg(not(feature = "mini-heads-8"))]
+pub const MINI_TRANSFORMER_ARCHITECTURE_PROFILE: &str = "small-h2-d128-ff256";
+#[cfg(feature = "mini-heads-8")]
+pub const MINI_TRANSFORMER_ARCHITECTURE_PROFILE: &str = "small-h8-d128-ff256";
 pub const MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT: u8 = 1;
 
 pub const MINI_TRANSFORMER_D_MODEL_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] = [FixedScale {

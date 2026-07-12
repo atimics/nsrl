@@ -15,3 +15,4 @@ nsrl-train-core = { path = "../nsrl-train-core", optional = true }
 [features]
 default = ["core-runtime"]
 core-runtime = ["dep:nsrl-core", "dep:nsrl-train-core"]
+mini-heads-8 = ["core-runtime", "nsrl-train-core/mini-heads-8"]

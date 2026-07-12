@@ -301,6 +301,233 @@ The consolidated evidence is
 The next capacity gate is a zero-initialized low-rank residual that mixes
 hidden channels instead of scaling them independently.
 
+### Fixed-projection low-rank result
+
+The low-rank probe uses a deterministic signed projection from 128 contextual
+channels into a small latent, followed by a learned zero-initialized expansion
+back into the hidden state. A nine-run rank/rate swarm found that ranks 4 and 8
+could quantize to zero updates for some projections. Rank 32 at learning rate
+16,384 learned without saturation and was promoted to three author runs. Each
+expert has 4,096 Q15 parameters while retaining one shared trunk forward.
+
+| Shared-trunk route | Accuracy | Mean probability error | Mistakes |
+|---|---:|---:|---:|
+| Best fixed low-rank expert | 155‰ | 58,656 | 35,562 |
+| Prompt low-rank oracle | 156‰ | 58,644 | 35,528 |
+| 16-token low-rank oracle | 157‰ | 58,572 | 35,481 |
+| Per-token low-rank oracle | 157‰ | 58,421 | 35,471 |
+
+The 235-Q15 token ceiling and 91 avoided mistakes prove more conditional
+diversity than diagonal scaling. However, even its target-aware token oracle is
+46 Q15 worse than the best fixed diagonal expert at 58,375. A learned router
+over these branches therefore cannot win the current overall comparison and is
+not promoted. The next adapter should preserve the diagonal gains and add the
+low-rank residual on top, then repeat the same frozen oracle gate.
+
+The consolidated evidence is
+`data/experiments/literary-shared-trunk-low-rank-moe-v1/shared-trunk-low-rank-report.json`.
+
+### Hybrid expert and learned-router result
+
+The promoted composition keeps each author's learned diagonal gains and adds a
+rank-16 low-rank residual. It starts byte-for-byte from the stronger diagonal
+function, trains only 2,048 new weights, and uses 2,176 parameters per expert
+including the frozen gains. Rank 32 produced the same integer update as rank 16
+in the probe, so the smaller form was selected.
+
+| Hybrid route | Accuracy | Mean probability error | Mistakes |
+|---|---:|---:|---:|
+| Best fixed hybrid expert | 158‰ | **57,818** | 35,444 |
+| 16-token hybrid oracle | 158‰ | 57,803 | 35,440 |
+| Per-token hybrid oracle | 158‰ | **57,670** | 35,437 |
+| Learned target-blind token router | 158‰ | 57,818 | 35,444 |
+
+The fixed hybrid improves the prior fixed diagonal result by 557 Q15. That is
+the strongest shared-trunk expert result in this experiment. The oracle uses
+all three branches, but its remaining ceiling is only 148 Q15 and seven
+mistakes.
+
+Three target-blind router replicas were trained from two contextual-hidden
+views and one full view. Calibration selected consensus weights `3/2/2` with
+zero hysteresis, but final routing still sends 42,096 of 42,120 tokens to
+Blake. It changes no mistakes and adds 1,496 total Q15 error versus fixed
+Blake. Four hard-label diagnostics also collapsed, this time to Crowley, with
+substantially larger regret. The hybrid experts are promoted; this router is
+not. More router tuning is not justified until experts expose a larger
+conditional utility gap.
+
+Consolidated evidence is
+`data/experiments/literary-shared-trunk-hybrid-moe-v1/shared-trunk-hybrid-report.json`,
+with the router-only audit in `learned-token-router-report.json` beside it.
+
+### Eight-head optimizer swarm
+
+The promoted `small-h8-d128-ff256` profile was tested as three whole-model
+leaves trained on the same balanced mixed corpus with Adam step shifts 3, 4,
+and 5. Two diversity controls failed: author-isolated leaves underfit even at
+2,048 windows, and later disjoint mixed-corpus offsets were dominated by the
+first 512-window leaf. Optimizer-scale diversity is the promoted swarm source;
+corpus isolation is not.
+
+Sequence length 64 leaves 36,200 comparable frozen targets:
+
+| H8 route | Accuracy | Mean probability error | Mistakes | Switches |
+|---|---:|---:|---:|---:|
+| Best fixed shift 5 | 148‰ | 56,364 | 30,820 | 0 |
+| Learned 16-token span | 149‰ | 56,337 | 30,805 | 76 |
+| Learned per-token | **151‰** | **56,190** | **30,718** | 1,633 |
+| Per-token oracle | 209‰ | 52,261 | 28,620 | 23,142 |
+
+Both target-blind routers are calibration-selected and improve frozen final
+utility. Token routing gains 174 Q15, three per-mille accuracy points, and 102
+mistakes; span routing retains a smaller 27-Q15 gain while cutting route
+switches by more than twentyfold. The oracle uses all three leaves, but the
+learned routers mostly choose shift 5, so better features or joint routing
+losses still have substantial room.
+
+This is the strongest evidence for the requested architecture: many small
+runs can expose useful alternatives, and a neural router can select them below
+the corpus level. The next efficiency step is to distill H8 optimizer-scale
+differences into shared-trunk residual experts so routing no longer requires
+three full transformer forwards.
+
+Consolidated evidence is
+`data/experiments/literary-h8-swarm-v1/report.json`.
+
+### Shared-trunk H8 residual curriculum
+
+Directly continuing the trained H8 trunk exposed the remaining i8 optimizer
+cliff. Adam shift 5 changed whole i8 units and regressed both stage and holdout
+loss; shifts 6–8 made zero updates at batch 16. Smaller batches accumulated
+updates but still moved in the wrong direction. The loss guard rejected every
+parameter-changing continuation, preserving the checkpoint but making no
+progress.
+
+The successful replacement freezes the H8 trunk and trains a resumable
+rank-16 i16 residual in 512-window stages. Each stage sweeps learning rates
+64/256/1024, selects on the same frozen holdout, and becomes the starting point
+for the next stage. Stage 8 is rejected because every candidate increases
+exact holdout error, so the chain stops at stage 7.
+
+| Curriculum checkpoint | Holdout accuracy | Holdout mean error | Mistakes |
+|---|---:|---:|---:|
+| Frozen H8 trunk | 189‰ | 53,753 | 2,763 |
+| Stage 2 residual | 190‰ | 53,582 | 2,757 |
+| Stage 4 residual | 191‰ | 53,539 | 2,755 |
+| Stage 7 residual | **191‰** | **53,497** | **2,755** |
+
+On the 36,200 frozen literary targets, stage 7 improves the original fixed H8
+leaf from 56,364 to 55,991 mean error, from 148‰ to 153‰ accuracy, and avoids
+164 mistakes. A stage-1/2/7 token oracle reaches 55,895, only 96 Q15 beyond
+fixed stage 7, so another learned router is not promoted. Shared execution
+still reduces H8 trunk forwards from 108,600 to 36,200.
+
+Adapter-aware greedy generation and deterministic top-8 sampling are now
+implemented. Greedy output collapses to spaces; sampled output remains mostly
+spaces with sparse letters and fails the explicit non-space, alphabetic,
+vocabulary, and repetition gate. Next-token improvement is therefore promoted
+while prose generation is explicitly not promoted.
+
+An `rms-norm` Adam scope also trains only the 512 i16 gamma values inside the
+two H8 blocks. It passes the mechanical isolation test and slightly improves
+mixed holdout error when composed with the residual chain (53,497 to 53,496 at
+stage 6), but its frozen literary total is slightly worse than the non-RMS
+stage-7 winner. The scope is kept as a valid fine-grained internal mechanism;
+the composed checkpoint is not promoted over stage 7.
+
+Consolidated evidence is
+`data/experiments/literary-h8-curriculum-v1/report.json`.
+
+### Per-block i16 experts
+
+The next precision mechanism inserts one low-rank residual after every frozen
+transformer block instead of adapting only the final hidden row. Its fixed
+sign down projection and learned i16 Q15 expansion operate on every token row;
+backpropagation crosses later frozen attention/MLP blocks, so lower-layer
+experts receive exact integer gradients. Artifacts bind the trunk hash, layer
+count, rank, projection seed, and residual shift. A zero artifact is byte-exact
+with the base trunk.
+
+An unscaled probe exposed millions of hidden clamps, so residual scaling was
+made explicit rather than hidden in a training recipe. Stable residual shifts
+4 and 8 eliminated weight clipping across the useful rank-8 sweep. On the
+3,407-window untouched holdout, however, the best point scored 183,137,562
+total error versus the trunk's 183,137,284, with the same 2,763 mistakes. Two
+rank-32 probes also failed to beat the trunk. Deterministic top-8 samples had
+only 42–72 non-space bytes per thousand, 5–6 distinct bytes, and space runs up
+to 95, so prose remains rejected.
+
+This separates two issues: trainable sub-i8 precision now exists inside the
+network, but one mixed residual is not a useful expert decomposition. The next
+experiment should train many provenance-labelled author/span block experts,
+then learn target-blind token/span routers over their conditional utility.
+Consolidated evidence is
+`data/experiments/literary-h8-block-expert-v1/report.json`.
+
+### Author block experts and recursive neural routing
+
+The first provenance-labelled block swarm uses 24 source chunks per author for
+leaf training, four disjoint chunks per author for router training, four for
+calibration, and the original three holdout chunks per author for final test.
+The extractor validates source hashes and reproduces the canonical ASCII-lower
+corpus and holdout tokens exactly. Author labels select training provenance but
+are absent from inference features.
+
+Each author leaf is a 2,048-parameter rank-8 per-block Q15 residual over the
+same frozen H8 trunk. The final zero-expert comparison is:
+
+| Route | Delta vs trunk Q15 | Mistake delta |
+|---|---:|---:|
+| Fixed Crowley | +3,118 | 0 |
+| Fixed Shakespeare | +824 | 0 |
+| Fixed Blake | +1,782 | 0 |
+| Prompt oracle | -237 | 0 |
+| Span-16 oracle | -4,339 | 0 |
+| Token oracle | -8,023 | 0 |
+
+Three child neural routers consume 32 shared-trunk features plus nine rolling
+prior-token utility features. Their outputs then feed a second integer neural
+router together with the shared hidden features, giving the requested
+router-of-routers topology. Calibration selects epochs and consensus settings;
+final data is never used for selection.
+
+Neither level is promoted. Child token routing is 1,004 Q15 worse than the
+trunk; the recursive token root is 1,258 worse. The recursive span root is the
+closest at +863 Q15 but sends 96.6% of final tokens to Shakespeare. This is a
+measured collapse caused by an expert gap of only a few Q15 per token, not
+evidence that recursive routing is inherently ineffective. The next swarm
+should divide experts below author level—contiguous spans or token-context
+clusters—and require a larger calibration oracle ceiling before training
+routers. Consolidated evidence is
+`data/experiments/literary-h8-author-block-swarm-v1/report.json`.
+
+### Cross-author surface-context clusters
+
+The next triad removes author identity entirely. It partitions 524 disjoint
+512-token leaf spans by deterministic target-blind k-means over 32 surface
+features. All three resulting clusters remain cross-author and contain enough
+data for matched 512-window expert runs. Rate selection again uses only each
+leaf's own training objective.
+
+The frozen-final comparison is:
+
+| Context route | Delta vs trunk Q15 | Mistake delta |
+|---|---:|---:|
+| Best fixed cluster | +1,244 | 0 |
+| Span-16 oracle | -1,789 | 0 |
+| Token oracle | -4,462 | 0 |
+| Target-blind centroid token | +2,172 | 0 |
+| Target-blind centroid span | +2,244 | 0 |
+
+Calibration token-oracle gain is 9,581 Q15, below the already-rejected author
+swarm's 13,117. The explicit router gate therefore prevents another neural
+router sweep. This saves compute while preserving the negative evidence:
+surface similarity does not align with the frozen model's residual errors.
+The next expert labels should come from model-native residual or gradient
+signatures, with inference still performed by a separately learned
+target-blind hidden-state router. Consolidated evidence is
+`data/experiments/literary-h8-context-block-swarm-v1/report.json`.
+
 ## Promotion gates
 
 - Recursive top-two must beat the best single leaf on frozen final data.

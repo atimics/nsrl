@@ -135,17 +135,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 integer_adam_train_scope = match args
                     .next()
                     .ok_or(
-                        "--adam-train-scope requires all, output, final-mlp, or final-mlp-and-output",
+                        "--adam-train-scope requires all, rms-norm, output, final-mlp, or final-mlp-and-output",
                     )?
                     .as_str()
                 {
                     "all" => MiniTransformerAdamTrainScope::All,
+                    "rms-norm" => MiniTransformerAdamTrainScope::RmsNorm,
                     "output" => MiniTransformerAdamTrainScope::Output,
                     "final-mlp" => MiniTransformerAdamTrainScope::FinalMlp,
                     "final-mlp-and-output" => MiniTransformerAdamTrainScope::FinalMlpAndOutput,
                     _ => {
                         return Err(
-                            "--adam-train-scope requires all, output, final-mlp, or final-mlp-and-output"
+                            "--adam-train-scope requires all, rms-norm, output, final-mlp, or final-mlp-and-output"
                                 .into(),
                         );
                     }
@@ -1094,6 +1095,7 @@ fn print_help() {
     println!(
         "Usage: nsrl-train [--mode mini-transformer-mlp|mini-transformer-adam|mini-transformer-swarm|mini-transformer-swarm-worker|mini-transformer-swarm-assemble|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--model-out PATH] [--optimizer-state PATH] [--optimizer-state-out PATH] [--adam-learning-rate N] [--adam-step-shift N] [--adam-beta1-shift N] [--adam-beta2-shift N] [--adam-epsilon N] [--adam-train-scope all|output|final-mlp|final-mlp-and-output] [--rms-norm] [--expert PATH] [--swarm-model-out PATH] [--swarm-worker-out PATH] [--swarm-worker-artifact PATH] [--manifest-out PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N|--swarm-worker-count N] [--swarm-worker-index N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--mini-transformer-batch-mode serial|map-reduce] [--mini-transformer-map-reduce-workers N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only]"
     );
+    println!("Adam scopes also include rms-norm for internal i16 gamma-only training.");
     println!();
     println!("Runs deterministic mini-transformer training or generation traces.");
 }

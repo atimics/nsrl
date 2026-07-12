@@ -187,37 +187,128 @@ are not trained on isolated token shards. Shared attention carries context
 between routes, and the router chooses the top one or two feed-forward experts
 for each hidden state.
 
-## Optional architecture probe: configurable multi-head profiles
+## Configurable multi-head small profiles
 
-The present code compiles one global `128 x 2 x 256` profile. Scaling a
-constant in only one crate previously caused silent shape rejection, so model
-dimensions must become a shared, serialized architecture contract.
+The transformer dimensions now remain in the shared host/no-std contract while
+the head layout has two build profiles:
 
-Wider profiles are optional leaf comparisons rather than the main scaling
-strategy. Start with two supported profiles:
+- `small-h2-d128-ff256`: 2 heads of dimension 64, the byte-stable default.
+- `small-h8-d128-ff256`: 8 heads of dimension 16 via `mini-heads-8`.
 
-- `small`: `d_model=128`, 2 heads, hidden 256.
-- `medium`: `d_model=256`, 4 heads, hidden 512; head dimension remains 64,
-  preserving the current power-of-four scaling assumptions.
+Both head dimensions are powers of four, which is required by NSRL's exact
+integer QK scaling. A four-head width-128 model would have dimension-32 heads
+and is therefore invalid; four 64-dimensional heads still require a future
+width-256 profile. The small eight-head profile tests attention specialization
+without turning the project into one large model.
 
-Required work:
+The model header already serializes dimensions and head count. Cross-profile
+loads are rejected explicitly, and separate Cargo target directories keep the
+binaries isolated. Host/no-std single-step parity passes for H8, and a new
+head-delta audit proves nonzero Q, K, V, and O updates for every head.
 
-- Move dimension validation and workspace sizing behind an architecture
-  profile shared by host and no-std paths.
-- Record dimensions in the artifact header and reject incompatible profiles
-  explicitly.
-- Generalize per-head state, QK scaling, initialization, trace fixtures, and
-  parameter-count reporting.
-- Preserve the small profile for parity and regression testing.
-- Benchmark memory and updates/second before attempting 64K windows.
+On the same 512-window sequence-64 Adam sweep:
 
-Acceptance gates:
+| Profile | Best Adam shift | Holdout accuracy | Holdout mean error | Mistakes |
+|---|---:|---:|---:|---:|
+| H2 default | 5 | 68‰ | 61,343 | 3,175 |
+| H8 small | 5 | **189‰** | **53,753** | **2,763** |
 
-- Byte-stable small-profile replay remains green.
-- Medium-profile forward/backward host/no-std parity is green.
-- Every head receives a nonzero gradient/update on a constructed fixture.
-- The medium profile beats the best small-profile frozen-holdout metric before
-  it is used for larger training runs.
+H8 improves mean error by 7,590 Q15 and avoids 412 mistakes, with zero invalid
+forwards. A second H8 shift-5 run reproduced the model, Adam state, trace, and
+per-head deltas byte-for-byte. The small H8 profile is promoted; the next step
+is several H8 leaves, not immediate width growth.
+
+The consolidated evidence is
+`data/experiments/literary-multi-head-profile-v1/report.json`.
+
+The follow-up H8 swarm uses three 512-window leaves with Adam shifts 3/4/5.
+Author-isolated and disjoint-offset leaves fail their diversity gates, while
+optimizer-scale leaves produce a 4,103-Q15 token-oracle ceiling. A
+calibration-selected target-blind token router captures 174 Q15 on frozen
+final data, raises accuracy from 148‰ to 151‰, and avoids 102 mistakes. A
+16-token router captures 27 Q15 and avoids 15 mistakes with only 76 switches.
+Both learned routers are promoted. Evidence is in
+`data/experiments/literary-h8-swarm-v1/report.json`.
+
+The efficiency follow-up distills training into resumable rank-16 i16
+residuals over one frozen H8 trunk. Teacher imitation of the other whole models
+does not preserve enough diversity, but target-trained curriculum residuals do
+continue learning safely where direct i8 Adam cannot. Seven 512-window stages
+lower mixed holdout error from 53,753 to 53,497 and raise accuracy from 189‰ to
+191‰. Stage 8 is rejected on exact holdout error. On frozen literary targets,
+fixed stage 7 reaches 55,991 error and 153‰ accuracy; its token oracle ceiling
+is only 96 Q15, so no new router is trained.
+
+Adapter-aware generation is deterministic, but greedy and top-8 samples fail
+the prose-quality gate by collapsing toward spaces and a few letters. The next
+phase must improve trainable precision inside transformer blocks and expand
+balanced data; next-token metrics are not treated as language quality.
+Evidence is in `data/experiments/literary-h8-curriculum-v1/report.json`.
+
+RMSNorm-only Adam is now an explicit training scope. It updates just the 512
+i16 gamma values inside H8, freezes all i8 matrices and embeddings, and passes
+its isolation test. It adds a tiny holdout gain to the residual curriculum but
+does not beat the non-RMS winner on frozen literary targets, so it is a proven
+mechanism rather than the selected final checkpoint.
+
+Fine-grained trainable precision is now also available after every H8 block.
+Each small expert uses a deterministic sign projection and a learned i16 Q15
+expansion, is hash-bound to one frozen trunk, backpropagates through later
+frozen blocks, and stores an explicit residual shift so fixed-point saturation
+is part of the artifact contract. Rank-8 experts add 2,048 parameters; rank-32
+capacity probes add 8,192.
+
+The first stable rank/rate sweep learned its 512-window slice, but no point
+improved the exact 3,407-window holdout. The closest rank-8 point missed the
+trunk by 278 total Q15 error with the same 2,763 mistakes. Rank 32 did not fix
+the generalization gap, and its deterministic top-8 samples still failed all
+three prose gates. The mechanism is retained for author/span expert swarms,
+but no checkpoint is promoted. Evidence is in
+`data/experiments/literary-h8-block-expert-v1/report.json`.
+
+The next experiment made that decomposition explicit. Source markers from the
+balanced corpus were parsed into disjoint per-author leaf, router-training,
+calibration, and untouched-final chunks. The shard builder reproduces the
+repository's ASCII-lower token file byte-for-byte before emitting any split.
+Three rank-8 block experts were selected only by their own leaf loss, then
+scored with target-blind shared-trunk features.
+
+On 3,313 final targets, every fixed author expert was worse than the zero
+expert trunk: Crowley by 3,118 total Q15, Shakespeare by 824, and Blake by
+1,782. Conditional utility nevertheless exists: target-aware prompt, span-16,
+and token oracles improve the trunk by 237, 4,339, and 8,023 Q15 respectively.
+The gap is too small for the learned routers. A three-router child swarm and a
+second neural root router were trained for both token and span decisions; the
+best recursive result was still 863 Q15 worse than the trunk and routed 96.6%
+of tokens to Shakespeare. Generation again failed the prose gate.
+
+This rejects author identity as the expert boundary, not the recursive-router
+architecture. The next leaves should specialize on contiguous spans or
+token-context clusters, and router training should be skipped unless the
+calibration oracle gap is materially larger. Evidence is in
+`data/experiments/literary-h8-author-block-swarm-v1/report.json`.
+
+A below-author follow-up clusters 524 non-overlapping 512-token spans from all
+three authors using 24 byte-bigram buckets and eight structural ratios. The
+deterministic target-blind k-means converges in 13 iterations to clusters of
+247, 136, and 141 spans; every cluster contains Crowley, Shakespeare, and
+Blake and supports more than 1,500 sequence-64 training windows. Three matched
+rank-8 block experts are then trained on those clusters.
+
+This surface-context decomposition is also rejected. Every fixed expert loses
+to the zero-expert trunk; the best is 1,244 total Q15 worse. Its final token
+oracle improves the trunk by only 4,462 Q15, and its calibration oracle gain
+of 9,581 is smaller than the rejected author swarm's 13,117. The router gate
+therefore correctly skips another neural hierarchy. A directly deployable
+nearest-centroid router briefly gains 216 Q15 on calibration at span
+granularity but regresses by 2,244 against the trunk on final data. Prose again
+fails.
+
+The next clustering signal should be model-native: frozen-trunk residual or
+gradient signatures can define expert training groups, while a separate
+target-blind hidden-state router learns to predict those utility-defined
+groups. Evidence is in
+`data/experiments/literary-h8-context-block-swarm-v1/report.json`.
 
 ## Next experiment ladder
 
@@ -232,17 +323,34 @@ After each phase, use the same corpus and frozen holdout:
    target-blind hidden-state router are complete; the learned token consensus
    improves the frozen representative baseline from 62,023 to 61,644 mean
    error and from 136 to 140 per-mille accuracy.
-5. Optional medium four-head leaf: 8K/seq64 only after the token router
-   baseline.
-6. Expand source data again before a 64K aggregate experiment; do not
+5. Small eight-head profile: implemented, replayed, and promoted on the bounded
+   sequence-64 comparison.
+6. H8 optimizer swarm: three leaves plus learned token/span router implemented
+   and promoted.
+7. Shared-trunk H8 residual curriculum: seven stages implemented and promoted;
+   prose-generation gate measured and failed.
+8. Fine-grained i16 residuals inside every H8 block: implemented and
+   mechanically validated; first rank-8/rank-32 checkpoints rejected by exact
+   holdout and prose gates.
+9. Train provenance-labelled author/span block experts and a target-blind
+   hierarchical router: author-level version completed and rejected; it
+   exposes an 8,023-Q15 token ceiling but learned routes do not beat the trunk.
+10. Subdivide leaves by contiguous span/token-context clusters and require a
+   larger calibration oracle gap before fitting another router hierarchy:
+   surface-context clustering completed and rejected by this gate.
+11. Cluster training spans by frozen-trunk residual/gradient signatures, then
+   learn a separate target-blind hidden-state predictor for those groups.
+12. Expand source data again before a 64K aggregate experiment; do not
    manufacture scale through repeated overlapping windows alone.
 
-Two single-trunk expert runtimes are complete. Three 256-parameter author bias
-adapters and three 128-parameter diagonal hidden adapters each share one frozen
-RMSNorm transformer, reducing trunk forwards by 3x. Their token-oracle ceilings
-are only 57 and 119 Q15 respectively; the hidden experts also avoid six
-mistakes, but neither ceiling is large enough to promote another learned
-router. The next shared-trunk run uses a zero-initialized low-rank residual to
-mix contextual hidden channels before the optional wider multi-head profile.
+Four single-trunk expert runtimes are complete. Bias, diagonal hidden,
+rank-32 low-rank, and diagonal-plus-rank-16 hybrid adapters each share one
+frozen RMSNorm transformer, reducing trunk forwards by 3x. The hybrid fixed
+expert is the winner at 57,818 mean error, improving the former diagonal fixed
+result by 557 Q15. Its token oracle reaches 57,670, but a three-replica
+target-blind router collapses to 99.9% Blake utilization and captures none of
+that ceiling. The experts are promoted while that router is not. The small H8
+profile and its optimizer-scale token/span routers are promoted, demonstrating
+that the new attention layout creates a much larger conditional gap.
 
 Use `scripts/summarize-literary-runs.mjs` to produce the comparison artifact.
