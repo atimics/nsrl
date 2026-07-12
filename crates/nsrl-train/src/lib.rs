@@ -23313,4 +23313,102 @@ mod tests {
                 .any(|&weight| weight != 0)
         );
     }
+
+    #[test]
+    fn mini_transformer_block_expert_raw_probability_gradient_and_guard_are_locked() {
+        let tokens = b"Crowley Shakespeare Blake sing through the integer swarm.";
+        let model = MiniTransformerMlpModel::new_initial_with_seq_len_and_layers(4, 2)
+            .expect("two-layer model");
+        let config = MiniTransformerMlpTrainConfig {
+            epochs: 1,
+            seq_len: 4,
+            stride: 1,
+            max_windows: Some(4),
+            batch_windows: 4,
+            ..MiniTransformerMlpTrainConfig::default()
+        };
+
+        let mut unguarded =
+            MiniTransformerBlockLowRankExpert::new_for_model(&model, 4, 29).expect("expert");
+        let unguarded_stats = train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
+            tokens,
+            &model,
+            &mut unguarded,
+            config,
+            4,
+            1024,
+            0,
+            Some(1),
+            false,
+            MiniTransformerBlockExpertObjective::ProbabilityError,
+        )
+        .expect("metric-aligned update");
+        assert_eq!(unguarded_stats.optimizer_steps, 1);
+        assert!(unguarded_stats.weight_delta_l1 > 0);
+        let parameters_per_layer = MINI_TRANSFORMER_D_MODEL * unguarded.rank;
+        assert!(
+            unguarded.expansion_weights_q15[..parameters_per_layer]
+                .iter()
+                .all(|&weight| weight == 0)
+        );
+        assert!(
+            unguarded.expansion_weights_q15[parameters_per_layer..]
+                .iter()
+                .any(|&weight| weight != 0)
+        );
+
+        let mut guarded =
+            MiniTransformerBlockLowRankExpert::new_for_model(&model, 4, 29).expect("expert");
+        let baseline = evaluate_mini_transformer_block_expert(
+            tokens,
+            &model,
+            &guarded,
+            MiniTransformerMlpEvalConfig {
+                seq_len: 4,
+                stride: 1,
+                max_windows: Some(4),
+                attention_kind: config.attention_kind,
+                position_policy: config.position_policy,
+            },
+        )
+        .expect("baseline");
+        let guarded_stats = train_mini_transformer_block_expert_with_layer_scope_and_loss_guard(
+            tokens,
+            &model,
+            &mut guarded,
+            config,
+            4,
+            1024,
+            0,
+            Some(1),
+            true,
+            MiniTransformerBlockExpertObjective::ProbabilityError,
+        )
+        .expect("guarded update");
+        let final_metrics = evaluate_mini_transformer_block_expert(
+            tokens,
+            &model,
+            &guarded,
+            MiniTransformerMlpEvalConfig {
+                seq_len: 4,
+                stride: 1,
+                max_windows: Some(4),
+                attention_kind: config.attention_kind,
+                position_policy: config.position_policy,
+            },
+        )
+        .expect("final metrics");
+        assert!(final_metrics.probability_error_q15 <= baseline.probability_error_q15);
+        assert_eq!(
+            guarded_stats.accepted_forward_steps
+                + guarded_stats.accepted_reverse_steps
+                + guarded_stats.rejected_steps,
+            guarded_stats.optimizer_steps
+        );
+        assert!(
+            guarded.expansion_weights_q15[..parameters_per_layer]
+                .iter()
+                .all(|&weight| weight == 0)
+        );
+    }
 }

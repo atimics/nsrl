@@ -528,6 +528,49 @@ signatures, with inference still performed by a separately learned
 target-blind hidden-state router. Consolidated evidence is
 `data/experiments/literary-h8-context-block-swarm-v1/report.json`.
 
+### Frozen-gradient clusters
+
+The model-native follow-up emits a 32-channel signature for each of the same
+524 disjoint 512-token spans: 16 signed final-hidden gradient buckets and 16
+gradient-magnitude buckets. Deterministic standardized k-means converges to
+cross-author groups of 237, 133, and 154 spans, with mean trunk errors of
+53,984, 56,466, and 51,709 Q15. The labels therefore describe how the frozen
+model fails, not which author supplied the text.
+
+During this run, exact loss guards revealed that small probability-error
+gradients were disappearing before an optimizer step. The block expert had
+rounded each sample's Q30 outer product to Q15 too early. It now accumulates
+raw products across the whole batch, applies the learning rate, and divides
+once with error-feedback residuals. A locked regression test verifies a
+nonzero metric-aligned update, per-layer isolation, and non-regression under
+the bidirectional loss guard.
+
+The frozen-final comparison is:
+
+| Gradient route | Delta vs trunk Q15 | Mistake delta |
+|---|---:|---:|
+| Fixed cluster 0 | -1,408 | 0 |
+| Fixed cluster 1 | -1,110 | 0 |
+| Fixed cluster 2 | -179 | 0 |
+| Prompt oracle | -1,969 | 0 |
+| Span oracle | -5,448 | 0 |
+| Token oracle | -8,462 | 0 |
+
+This promotes gradient-defined per-block leaves: every leaf beats the zero
+expert trunk, and the token oracle retains 7,054 Q15 of conditional gain beyond
+the best fixed leaf. The target-blind router result is more limited. Three
+child routers and a second neural root were selected by calibration loss for
+both token and span labels. Child token consensus collapses to fixed cluster 0;
+the best recursive route gains 1,247 Q15 over the trunk but remains 161 Q15
+worse than the fixed winner. Learned recursive routing is not promoted.
+
+Top-8 samples still contain only about 58--62 non-space bytes per thousand and
+six distinct bytes, so prose remains rejected. The next run should resume many
+short metric-aligned leaf stages, keep only independently measured gains, and
+retrain routers only after that process widens the conditional utility gap.
+Consolidated evidence is
+`data/experiments/literary-h8-gradient-block-swarm-v1/report.json`.
+
 ## Promotion gates
 
 - Recursive top-two must beat the best single leaf on frozen final data.

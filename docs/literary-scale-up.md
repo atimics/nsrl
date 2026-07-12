@@ -310,6 +310,31 @@ target-blind hidden-state router learns to predict those utility-defined
 groups. Evidence is in
 `data/experiments/literary-h8-context-block-swarm-v1/report.json`.
 
+That model-native experiment is now complete. Each of the same 524 disjoint
+512-token spans is represented by 16 signed and 16 magnitude buckets from the
+frozen trunk's final-hidden gradient. Deterministic standardized k-means forms
+cross-author clusters of 237, 133, and 154 spans. These groups separate the
+trunk's error regimes without using author identity as a shortcut.
+
+The experiment also exposed a fixed-point precision bug in block-expert
+training: each sample's Q30 outer product was rounded before the learning rate
+was applied, erasing small metric-aligned gradients. Accumulating raw products
+across the batch and dividing once makes those updates observable. With the
+probability-error objective, all three frozen experts now beat the shared trunk
+on the same 3,313 final targets by 1,408, 1,110, and 179 total Q15 respectively.
+This is the first promoted internal per-block expert decomposition.
+
+Conditional utility is larger than the fixed gain: the prompt, span, and token
+oracles beat the trunk by 1,969, 5,448, and 8,462 Q15. The token oracle therefore
+has 7,054 Q15 of room beyond the best fixed leaf. Three target-blind child
+routers and a second neural router were calibration-selected for both token and
+span routing. They improve on the trunk but do not beat the fixed cluster-0
+expert; the best recursive result gains 1,247 Q15 over the trunk versus 1,408
+for that fixed expert. Routing is therefore not promoted yet. Top-8 generation
+still collapses toward spaces and a few letters, so prose is also rejected.
+Evidence is in
+`data/experiments/literary-h8-gradient-block-swarm-v1/report.json`.
+
 ## Next experiment ladder
 
 After each phase, use the same corpus and frozen holdout:
@@ -339,8 +364,12 @@ After each phase, use the same corpus and frozen holdout:
    larger calibration oracle gap before fitting another router hierarchy:
    surface-context clustering completed and rejected by this gate.
 11. Cluster training spans by frozen-trunk residual/gradient signatures, then
-   learn a separate target-blind hidden-state predictor for those groups.
-12. Expand source data again before a 64K aggregate experiment; do not
+   learn a separate target-blind hidden-state predictor for those groups:
+   completed. All fixed gradient experts beat the trunk; the learned recursive
+   routes improve the trunk but do not beat the best fixed leaf.
+12. Resume metric-aligned gradient experts through short, independently gated
+   stages to widen conditional utility before fitting another router swarm.
+13. Expand source data again before a 64K aggregate experiment; do not
    manufacture scale through repeated overlapping windows alone.
 
 Four single-trunk expert runtimes are complete. Bias, diagonal hidden,
