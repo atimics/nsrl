@@ -1,0 +1,72 @@
+{
+  "schema": "nsrl.integer_transformer_proof_freeze.v1",
+  "contract": "integer-transformer-proof-v1",
+  "status": "promoted",
+  "candidate_directory": "data/experiments/integer-transformer-proof-v1/candidate-default",
+  "regeneration_command": "scripts/run-integer-transformer-proof-candidate.sh data/experiments/integer-transformer-proof-v1/candidate-default",
+  "dataset_hash": "0x8fe7b86378f81951",
+  "model_hash": "0x6ffd37de48a3121b",
+  "quantization_profile": "calibrated-v2-suffix-memory",
+  "architecture_profile": "small-h8-d128-ff256",
+  "metrics": {
+    "targets": 5896,
+    "mistakes": 2482,
+    "accuracy_per_mille": 579,
+    "probability_error_q15": 260536589,
+    "unique_predicted_tokens": 41,
+    "most_predicted_token_share_per_mille": 179
+  },
+  "baselines": [
+    {
+      "system": "retrieval",
+      "targets": 5896,
+      "mistakes": 2510,
+      "probability_error_q15": 378245576,
+      "replay_hash": "0xf45158b7b86243e1"
+    },
+    {
+      "system": "byte-ngram",
+      "targets": 5896,
+      "mistakes": 2551,
+      "probability_error_q15": 378196474,
+      "replay_hash": "0xb55826f089ad6456"
+    },
+    {
+      "system": "float-reference",
+      "targets": 5896,
+      "mistakes": 3226,
+      "probability_error_q15": 363650570,
+      "replay_hash": "0xe35b63b736b49f09"
+    }
+  ],
+  "files": {
+    "candidate.nsrlmt": {
+      "bytes": 443564,
+      "sha256": "37acae6a4f763182730c76f762c351eda5bb37d6d197358c252733b1f08dca10"
+    },
+    "candidate.eval.json": {
+      "bytes": 639,
+      "sha256": "fcfd5233474e5be997388821390ad393661aed95df60b0618491368d510a7565"
+    },
+    "candidate-health.json": {
+      "bytes": 3939,
+      "sha256": "91f91cfbd91a04f1b61d07e2a71b2a7e18bfb40b4def72c5d5c95b003206ef59"
+    },
+    "manifest.json": {
+      "bytes": 389,
+      "sha256": "bab6d84f5f6c7c2476ce62911f4e70298afa31883f639bf47364d18e90a98555"
+    },
+    "proof-check.json": {
+      "bytes": 686,
+      "sha256": "f3fddde409aa3d623ee55a5253aad42be2e90b7f2990a7c039437a1c571079d4"
+    },
+    "proof-results.tsv": {
+      "bytes": 722,
+      "sha256": "e03a0fcde3768b7cf9bbc2df4fe2d19ea8eae1fae97eef2f98f694508ba8d0b8"
+    },
+    "train.trace.jsonl": {
+      "bytes": 1454,
+      "sha256": "cb64164f92cac4a0a63478406d716b68cfe02cbf4e7be5cfc75db1555e2f6d4f"
+    }
+  }
+}

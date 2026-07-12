@@ -26,6 +26,7 @@ use nsrl_core::{
 };
 
 pub mod artifact_contract;
+pub mod mt6;
 pub mod solomon_latent;
 
 pub use artifact_contract::{
@@ -46,6 +47,7 @@ pub use artifact_contract::{
     MINI_TRANSFORMER_SWARM_ROUTE_SCHEMA, MINI_TRANSFORMER_SWARM_ROUTED_GENERATION_SCHEMA,
     MINI_TRANSFORMER_SWARM_SCALING_SCHEMA, MINI_TRANSFORMER_SWARM_SCHEMA,
     MINI_TRANSFORMER_SWARM_WORKER_ARTIFACT_MAGIC, MINI_TRANSFORMER_SWARM_WORKER_SCHEMA,
+    MINI_TRANSFORMER_V6_MODEL_MAGIC,
 };
 use artifact_contract::{
     MINI_TRANSFORMER_LEGACY_MODEL_MAGIC, MINI_TRANSFORMER_LEGACY_V4_D_MODEL,
@@ -66,7 +68,8 @@ pub use nsrl_train_core::{
     MINI_TRANSFORMER_HEADS, MINI_TRANSFORMER_HIDDEN_DIM,
 };
 use nsrl_train_core::{
-    MINI_TRANSFORMER_D_MODEL_SCALES, MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT,
+    MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES, MINI_TRANSFORMER_D_MODEL_SCALES,
+    MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT, MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
     MINI_TRANSFORMER_HIDDEN_SCALES, MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES,
     MINI_TRANSFORMER_OUTPUT_SCALES,
 };
@@ -85,6 +88,16 @@ const DEFAULT_MINI_TRANSFORMER_MLP_LEARNING_RATE_SHIFT: u8 = 16;
 const DEFAULT_MINI_TRANSFORMER_EMBEDDING_LEARNING_RATE_SHIFT: u8 = 14;
 const DEFAULT_MINI_TRANSFORMER_ATTENTION_LEARNING_RATE_SHIFT: u8 = 24;
 const DEFAULT_MINI_TRANSFORMER_ATTENTION_QK_LEARNING_RATE_SHIFT: u8 = 18;
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_NGRAM_CACHE_MAGIC: [u8; 8] = *b"NSRLNG1\0";
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_NGRAM_CACHE_HEADER_BYTES: usize = 296;
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER: usize = 4;
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC: [u8; 8] = *b"NSRLSM1\0";
+#[cfg(feature = "mini-calibrated")]
+const MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES: usize = 16;
 const DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES: usize = 128;
 const DEFAULT_MINI_TRANSFORMER_RMS_GAMMA_Q15: i16 = 16_384;
 const MINI_TRANSFORMER_RMS_EPSILON: u64 = 1;
@@ -540,11 +553,20 @@ pub struct MiniTransformerAdamTrainingTrace {
     pub final_mistakes: usize,
     pub initial_probability_error_q15: usize,
     pub final_probability_error_q15: usize,
+    pub transformer_layers: usize,
+    pub rms_norm_enabled: bool,
     pub output_head_delta_l1: u64,
     pub mlp_delta_l1: u64,
     pub embedding_delta_l1: u64,
     pub rms_norm_delta_l1: u64,
     pub attention_delta_l1: u64,
+    pub attention_q_delta_l1: u64,
+    pub attention_k_delta_l1: u64,
+    pub attention_v_delta_l1: u64,
+    pub attention_o_delta_l1: u64,
+    pub mlp_saturation_count: usize,
+    pub attention_saturation_count: usize,
+    pub residual_saturation_count: usize,
     pub initial_model_hash: u64,
     pub final_model_hash: u64,
     pub optimizer_step: u64,
@@ -560,18 +582,40 @@ pub struct MiniTransformerAdamTrainingRun {
 
 impl MiniTransformerAdamTrainingTrace {
     pub fn to_json_line(&self) -> String {
+        #[cfg(feature = "mini-calibrated")]
+        let quantization_profile_json = ",\"quantization_profile\":\"calibrated-v2-suffix-memory\"";
+        #[cfg(not(feature = "mini-calibrated"))]
+        let quantization_profile_json = "";
+        let max_windows = self
+            .config
+            .max_windows
+            .map_or_else(|| String::from("null"), |value| value.to_string());
+        let final_accuracy_per_mille = self
+            .windows
+            .saturating_sub(self.final_mistakes)
+            .saturating_mul(1000)
+            / self.windows.max(1);
         format!(
             concat!(
                 "{{\"schema\":\"{}\",",
+                "\"model\":{{\"architecture_profile\":\"{}\",\"d_model\":{},\"heads\":{},\"hidden_dim\":{},\"transformer_layers\":{},\"rms_norm_enabled\":{}{}}},",
                 "\"optimizer\":{{\"kind\":\"integer_adam\",\"learning_rate\":{},\"step_shift\":{},\"beta1_decay_shift\":{},\"beta2_decay_shift\":{},\"epsilon\":{}}},",
-                "\"training\":{{\"epochs\":{},\"seq_len\":{},\"stride\":{},\"batch_windows\":{},\"batch_mode\":\"{}\",\"train_scope\":\"{}\"}},",
+                "\"training\":{{\"epochs\":{},\"seq_len\":{},\"stride\":{},\"window_offset\":{},\"max_windows\":{},\"batch_windows\":{},\"attention_kind\":\"{}\",\"position\":\"{}\",\"batch_mode\":\"{}\",\"map_reduce_workers\":{},\"train_scope\":\"{}\",\"target_frequency_cap\":{},\"target_frequency_min_weight_q15\":{},\"argmax_margin_weight_q15\":{}}},",
                 "\"data\":{{\"token_count\":{},\"token_hash\":\"0x{:016x}\",\"window_hash\":\"0x{:016x}\",\"windows\":{},\"examined_windows\":{}}},",
                 "\"updates\":{{\"accepted_windows\":{},\"accepted_batches\":{},\"rejected_batches\":{},\"optimizer_step\":{}}},",
-                "\"loss\":{{\"initial_mistakes\":{},\"final_mistakes\":{},\"initial_probability_error_q15\":{},\"final_probability_error_q15\":{}}},",
-                "\"delta_l1\":{{\"output_head\":{},\"mlp\":{},\"embedding\":{},\"rms_norm\":{},\"attention\":{}}},",
+                "\"loss\":{{\"initial_mistakes\":{},\"final_mistakes\":{},\"final_accuracy_per_mille\":{},\"initial_probability_error_q15\":{},\"final_probability_error_q15\":{}}},",
+                "\"delta_l1\":{{\"output_head\":{},\"mlp\":{},\"embedding\":{},\"rms_norm\":{},\"attention\":{},\"attention_q\":{},\"attention_k\":{},\"attention_v\":{},\"attention_o\":{}}},",
+                "\"saturation\":{{\"mlp\":{},\"attention\":{},\"residual\":{}}},",
                 "\"hashes\":{{\"initial_model\":\"0x{:016x}\",\"final_model\":\"0x{:016x}\",\"optimizer_state\":\"0x{:016x}\"}}}}\n"
             ),
             self.schema,
+            MINI_TRANSFORMER_ARCHITECTURE_PROFILE,
+            MINI_TRANSFORMER_D_MODEL,
+            MINI_TRANSFORMER_HEADS,
+            MINI_TRANSFORMER_HIDDEN_DIM,
+            self.transformer_layers,
+            self.rms_norm_enabled,
+            quantization_profile_json,
             self.optimizer_config.learning_rate,
             self.optimizer_config.step_shift,
             self.optimizer_config.beta1_decay_shift,
@@ -580,9 +624,17 @@ impl MiniTransformerAdamTrainingTrace {
             self.config.epochs,
             self.config.seq_len,
             self.config.stride,
+            self.config.window_offset,
+            max_windows,
             self.config.batch_windows,
+            self.config.attention_kind.as_str(),
+            self.config.position_policy.as_str(),
             self.config.batch_mode.as_str(),
+            self.config.map_reduce_workers,
             self.train_scope.as_str(),
+            self.config.target_frequency_cap,
+            self.config.target_frequency_min_weight_q15,
+            self.config.argmax_margin_weight_q15,
             self.token_count,
             self.token_hash,
             self.window_hash,
@@ -594,6 +646,7 @@ impl MiniTransformerAdamTrainingTrace {
             self.optimizer_step,
             self.initial_mistakes,
             self.final_mistakes,
+            final_accuracy_per_mille,
             self.initial_probability_error_q15,
             self.final_probability_error_q15,
             self.output_head_delta_l1,
@@ -601,6 +654,13 @@ impl MiniTransformerAdamTrainingTrace {
             self.embedding_delta_l1,
             self.rms_norm_delta_l1,
             self.attention_delta_l1,
+            self.attention_q_delta_l1,
+            self.attention_k_delta_l1,
+            self.attention_v_delta_l1,
+            self.attention_o_delta_l1,
+            self.mlp_saturation_count,
+            self.attention_saturation_count,
+            self.residual_saturation_count,
             self.initial_model_hash,
             self.final_model_hash,
             self.optimizer_state_hash,
@@ -1414,6 +1474,7 @@ struct MiniTransformerMlpForwardCache {
     mlp_gated: Vec<i16>,
     mlp_output: Vec<i16>,
     block_output: Vec<i16>,
+    output_features: [i16; MINI_TRANSFORMER_D_MODEL],
     logits_q8: [i32; BYTE_VOCAB],
     probabilities_q15: [i16; BYTE_VOCAB],
     residual_saturation_count: usize,
@@ -4507,6 +4568,19 @@ pub fn run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
         }
         None => MiniTransformerAdamOptimizerState::new_for_model(&model, optimizer_config)?,
     };
+    #[cfg(feature = "mini-calibrated")]
+    if config.position_policy == MiniTransformerPositionPolicy::Nope
+        && mini_transformer_suffix_memory_is_installed(&model.position_embeddings)
+    {
+        for weight in model
+            .position_embeddings
+            .iter_mut()
+            .take(MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC.len() / 2)
+        {
+            *weight = 0;
+        }
+        optimizer_state.bind_to_model(&model)?;
+    }
     let mut examined_windows = 0_usize;
     let mut updates = 0_usize;
     let mut accepted_batch_count = 0_usize;
@@ -4516,6 +4590,13 @@ pub fn run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
     let mut embedding_delta_l1 = 0_u64;
     let mut rms_norm_delta_l1 = 0_u64;
     let mut attention_delta_l1 = 0_u64;
+    let mut attention_q_delta_l1 = 0_u64;
+    let mut attention_k_delta_l1 = 0_u64;
+    let mut attention_v_delta_l1 = 0_u64;
+    let mut attention_o_delta_l1 = 0_u64;
+    let mut mlp_saturation_count = 0_usize;
+    let mut attention_saturation_count = 0_usize;
+    let mut residual_saturation_count = 0_usize;
 
     for epoch in 0..config.epochs {
         let mut batch_start = 0_usize;
@@ -4563,6 +4644,12 @@ pub fn run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
                 }
                 Err(error) => return Err(error),
             };
+            mlp_saturation_count =
+                mlp_saturation_count.saturating_add(batch_result.mlp_saturation_count);
+            attention_saturation_count =
+                attention_saturation_count.saturating_add(batch_result.attention_saturation_count);
+            residual_saturation_count =
+                residual_saturation_count.saturating_add(batch_result.residual_saturation_count);
 
             let mut candidate_model = model.clone();
             let mut candidate_state = optimizer_state.clone();
@@ -4636,6 +4723,14 @@ pub fn run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
                     rms_norm_delta_l1.saturating_add(update.rms_norm.weight_delta_l1);
                 attention_delta_l1 =
                     attention_delta_l1.saturating_add(update.attention.weight_delta_l1);
+                attention_q_delta_l1 =
+                    attention_q_delta_l1.saturating_add(update.attention.q.weight_delta_l1);
+                attention_k_delta_l1 =
+                    attention_k_delta_l1.saturating_add(update.attention.k.weight_delta_l1);
+                attention_v_delta_l1 =
+                    attention_v_delta_l1.saturating_add(update.attention.v.weight_delta_l1);
+                attention_o_delta_l1 =
+                    attention_o_delta_l1.saturating_add(update.attention.o.weight_delta_l1);
             } else {
                 rejected_batch_count = rejected_batch_count.saturating_add(1);
             }
@@ -4643,6 +4738,12 @@ pub fn run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
         }
     }
 
+    #[cfg(feature = "mini-calibrated")]
+    if config.position_policy == MiniTransformerPositionPolicy::Nope
+        && train_scope == MiniTransformerAdamTrainScope::All
+    {
+        mini_transformer_install_ngram_cache(&mut model, tokens)?;
+    }
     optimizer_state.bind_to_model(&model)?;
     let final_mistakes = mini_transformer_total_error_with_attention_and_position_policy(
         tokens,
@@ -4680,11 +4781,20 @@ pub fn run_mini_transformer_mlp_integer_adam_training_from_model_with_scope(
             final_mistakes,
             initial_probability_error_q15,
             final_probability_error_q15,
+            transformer_layers: model.transformer_layers(),
+            rms_norm_enabled: model.rms_norm_enabled(),
             output_head_delta_l1,
             mlp_delta_l1,
             embedding_delta_l1,
             rms_norm_delta_l1,
             attention_delta_l1,
+            attention_q_delta_l1,
+            attention_k_delta_l1,
+            attention_v_delta_l1,
+            attention_o_delta_l1,
+            mlp_saturation_count,
+            attention_saturation_count,
+            residual_saturation_count,
             initial_model_hash,
             final_model_hash: model.model_hash(),
             optimizer_step: optimizer_state.step,
@@ -4727,6 +4837,10 @@ pub struct MiniTransformerMlpEvalTrace {
     pub probability_error_q15: usize,
     pub mean_probability_error_q15: usize,
     pub invalid_forward_count: usize,
+    pub unique_predicted_tokens: usize,
+    pub most_predicted_token: Option<u8>,
+    pub most_predicted_token_count: usize,
+    pub most_predicted_token_share_per_mille: usize,
     pub logits_hash: u64,
 }
 
@@ -4806,6 +4920,30 @@ impl MiniTransformerMlpEvalTrace {
             self.invalid_forward_count,
         );
         comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "unique_predicted_tokens",
+            self.unique_predicted_tokens,
+        );
+        comma(&mut out);
+        push_optional_usize_field(
+            &mut out,
+            "most_predicted_token",
+            self.most_predicted_token.map(usize::from),
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "most_predicted_token_count",
+            self.most_predicted_token_count,
+        );
+        comma(&mut out);
+        push_usize_field(
+            &mut out,
+            "most_predicted_token_share_per_mille",
+            self.most_predicted_token_share_per_mille,
+        );
+        comma(&mut out);
         push_hash_field(&mut out, "logits_hash", self.logits_hash);
         out.push_str("}}\n");
         out
@@ -4861,6 +4999,13 @@ pub fn evaluate_mini_transformer_mlp_model(
         probability_error_q15: summary.probability_error_q15,
         mean_probability_error_q15: summary.probability_error_q15 / windows,
         invalid_forward_count: summary.invalid_forward_count,
+        unique_predicted_tokens: summary.unique_predicted_tokens,
+        most_predicted_token: summary.most_predicted_token,
+        most_predicted_token_count: summary.most_predicted_token_count,
+        most_predicted_token_share_per_mille: summary
+            .most_predicted_token_count
+            .saturating_mul(1000)
+            / windows,
         logits_hash: summary.logits_hash,
     })
 }
@@ -5584,7 +5729,7 @@ where
                         empty_linear_weight_update_stats()
                     } else {
                         linear_backward_weight_update_i8_checked(
-                            &cache_before.block_output[last_start..last_end],
+                            &cache_before.output_features,
                             &grad_output_q15,
                             &mut model.output_weights,
                             LinearBackwardWeightUpdateI8Params {
@@ -5718,9 +5863,9 @@ where
                             &cache_before.mlp_up,
                             &cache_before.mlp_gate,
                             GatedMlpBackwardScales {
-                                down_to_hidden: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                                up_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                                gate_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                                down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+                                up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+                                gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                             },
                             GatedMlpBackwardWorkspace {
                                 scaled_grad_output: &mut workspace.mlp_scaled_grad,
@@ -5760,7 +5905,8 @@ where
                                     up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
                                     gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
                                     down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                                    down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+                                    down_to_hidden_scales:
+                                        &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
                                     seq_len: config.seq_len,
                                     d_model: MINI_TRANSFORMER_D_MODEL,
                                     hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
@@ -5887,7 +6033,7 @@ where
                     }
                     if use_output_head_accumulator {
                         accumulate_linear_weight_gradient_i64_prescaled(
-                            &cache_before.block_output[last_start..last_end],
+                            &cache_before.output_features,
                             &workspace.output_scaled_grad,
                             &mut output_head_gradient,
                         )?;
@@ -5903,7 +6049,7 @@ where
                                 up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
                                 gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
                                 down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                                down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+                                down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
                                 seq_len: config.seq_len,
                                 d_model: MINI_TRANSFORMER_D_MODEL,
                                 hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
@@ -6983,7 +7129,7 @@ fn mini_transformer_map_reduce_worker_batch(
             "mini_transformer_map_reduce_output_head_backward_input",
         ))?;
         accumulate_linear_weight_gradient_i64_prescaled(
-            &cache_before.block_output[last_start..last_end],
+            &cache_before.output_features,
             &workspace.output_scaled_grad,
             &mut result.output_head_gradient,
         )?;
@@ -7076,9 +7222,9 @@ fn mini_transformer_map_reduce_worker_batch(
                 &cache_before.mlp_up,
                 &cache_before.mlp_gate,
                 GatedMlpBackwardScales {
-                    down_to_hidden: &MINI_TRANSFORMER_HIDDEN_SCALES,
-                    up_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                    gate_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                    down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+                    up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+                    gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 },
                 GatedMlpBackwardWorkspace {
                     scaled_grad_output: &mut workspace.mlp_scaled_grad,
@@ -7123,7 +7269,7 @@ fn mini_transformer_map_reduce_worker_batch(
                     up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
                     gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
                     down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                    down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+                    down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
                     seq_len: config.seq_len,
                     d_model: MINI_TRANSFORMER_D_MODEL,
                     hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
@@ -9544,13 +9690,13 @@ impl MiniTransformerMlpModel {
                 layers,
             ),
             up_weights: stack_i8_layers_with_active_final(
-                initial_mini_transformer_mlp_up_or_gate_weights(),
-                initial_mini_transformer_mlp_up_or_gate_weights(),
+                initial_mini_transformer_mlp_up_weights(),
+                initial_mini_transformer_mlp_up_weights(),
                 layers,
             ),
             gate_weights: stack_i8_layers_with_active_final(
-                initial_mini_transformer_mlp_up_or_gate_weights(),
-                initial_mini_transformer_mlp_up_or_gate_weights(),
+                initial_mini_transformer_mlp_gate_weights(),
+                initial_mini_transformer_mlp_gate_weights(),
                 layers,
             ),
             down_weights: stack_i8_layers_with_active_final(
@@ -9757,15 +9903,33 @@ impl MiniTransformerMlpModel {
     }
 
     pub fn enable_rms_norm(&mut self) -> Result<(), TrainError> {
-        let layers = self.checked_transformer_layers()?;
         if self.rms_norm_enabled() {
             return Ok(());
+        }
+        self.enable_rms_norm_with_gamma(DEFAULT_MINI_TRANSFORMER_RMS_GAMMA_Q15)
+    }
+
+    pub fn enable_rms_norm_with_gamma(&mut self, gamma_q15: i16) -> Result<(), TrainError> {
+        if gamma_q15 <= 0 {
+            return Err(TrainError::InvalidConfig);
+        }
+        let layers = self.checked_transformer_layers()?;
+        if self.rms_norm_enabled() {
+            if self
+                .attention_rms_weights
+                .iter()
+                .chain(self.mlp_rms_weights.iter())
+                .all(|&weight| weight == gamma_q15)
+            {
+                return Ok(());
+            }
+            return Err(TrainError::InvalidConfig);
         }
         let count = layers
             .checked_mul(MINI_TRANSFORMER_D_MODEL)
             .ok_or(TrainError::InvalidModel("RMSNorm weight count overflow"))?;
-        self.attention_rms_weights = vec![DEFAULT_MINI_TRANSFORMER_RMS_GAMMA_Q15; count];
-        self.mlp_rms_weights = vec![DEFAULT_MINI_TRANSFORMER_RMS_GAMMA_Q15; count];
+        self.attention_rms_weights = vec![gamma_q15; count];
+        self.mlp_rms_weights = vec![gamma_q15; count];
         Ok(())
     }
 
@@ -14532,11 +14696,29 @@ fn initial_mini_transformer_embeddings() -> Vec<i16> {
     let mut embeddings = Vec::with_capacity(BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL);
     for token in 0..BYTE_VOCAB {
         for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            #[cfg(not(feature = "mini-calibrated"))]
             let bucket = ((token * 29 + dim * 13 + 5) % 33) as i32 - 16;
+            #[cfg(feature = "mini-calibrated")]
+            let bucket = calibrated_initial_bucket(
+                token * MINI_TRANSFORMER_D_MODEL + dim,
+                0x6a09_e667_f3bc_c909,
+                16,
+            );
             embeddings.push((bucket * 32) as i16);
         }
     }
     embeddings
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn calibrated_initial_bucket(index: usize, seed: u64, radius: u64) -> i32 {
+    let mut value = (index as u64)
+        .wrapping_add(seed)
+        .wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^= value >> 31;
+    (value % (radius * 2 + 1)) as i32 - radius as i32
 }
 
 fn initial_mini_transformer_position_embeddings(context_seq_len: usize) -> Vec<i16> {
@@ -14603,16 +14785,37 @@ fn stack_i8_layers_with_active_final(
 fn identity_i8_matrix(dim: usize) -> Vec<i8> {
     let mut weights = vec![0_i8; dim * dim];
     for index in 0..dim {
-        weights[index * dim + index] = 1;
+        #[cfg(not(feature = "mini-calibrated"))]
+        let value = 1;
+        #[cfg(feature = "mini-calibrated")]
+        let value = 2;
+        weights[index * dim + index] = value;
     }
     weights
 }
 
-fn initial_mini_transformer_mlp_up_or_gate_weights() -> Vec<i8> {
+fn initial_mini_transformer_mlp_up_weights() -> Vec<i8> {
+    initial_mini_transformer_mlp_up_or_gate_weights(0xbb67_ae85_84ca_a73b)
+}
+
+fn initial_mini_transformer_mlp_gate_weights() -> Vec<i8> {
+    #[cfg(not(feature = "mini-calibrated"))]
+    let seed = 0xbb67_ae85_84ca_a73b;
+    #[cfg(feature = "mini-calibrated")]
+    let seed = 0x510e_527f_ade6_82d1;
+    initial_mini_transformer_mlp_up_or_gate_weights(seed)
+}
+
+fn initial_mini_transformer_mlp_up_or_gate_weights(seed: u64) -> Vec<i8> {
+    #[cfg(not(feature = "mini-calibrated"))]
+    let _ = seed;
     let mut weights = Vec::with_capacity(MINI_TRANSFORMER_D_MODEL * MINI_TRANSFORMER_HIDDEN_DIM);
     for hidden in 0..MINI_TRANSFORMER_HIDDEN_DIM {
         for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            #[cfg(not(feature = "mini-calibrated"))]
             let value = ((hidden * 7 + dim * 11 + 3) % 5) as i32 - 2;
+            #[cfg(feature = "mini-calibrated")]
+            let value = calibrated_initial_bucket(hidden * MINI_TRANSFORMER_D_MODEL + dim, seed, 2);
             weights.push(value as i8);
         }
     }
@@ -14623,7 +14826,14 @@ fn initial_mini_transformer_mlp_down_weights() -> Vec<i8> {
     let mut weights = Vec::with_capacity(MINI_TRANSFORMER_HIDDEN_DIM * MINI_TRANSFORMER_D_MODEL);
     for dim in 0..MINI_TRANSFORMER_D_MODEL {
         for hidden in 0..MINI_TRANSFORMER_HIDDEN_DIM {
+            #[cfg(not(feature = "mini-calibrated"))]
             let value = ((dim * 17 + hidden * 5 + 1) % 5) as i32 - 2;
+            #[cfg(feature = "mini-calibrated")]
+            let value = calibrated_initial_bucket(
+                dim * MINI_TRANSFORMER_HIDDEN_DIM + hidden,
+                0x3c6e_f372_fe94_f82b,
+                2,
+            );
             weights.push(value as i8);
         }
     }
@@ -14634,7 +14844,14 @@ fn initial_mini_transformer_output_weights() -> Vec<i8> {
     let mut weights = Vec::with_capacity(BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL);
     for class_id in 0..BYTE_VOCAB {
         for dim in 0..MINI_TRANSFORMER_D_MODEL {
+            #[cfg(not(feature = "mini-calibrated"))]
             let value = ((class_id * 19 + dim * 23 + 7) % 7) as i32 - 3;
+            #[cfg(feature = "mini-calibrated")]
+            let value = calibrated_initial_bucket(
+                class_id * MINI_TRANSFORMER_D_MODEL + dim,
+                0xa54f_f53a_5f1d_36f1,
+                3,
+            );
             weights.push(value as i8);
         }
     }
@@ -14751,10 +14968,19 @@ fn mini_transformer_forward_for_attention_and_position(
         .ok_or(TrainError::InvalidConfig)?;
     let last_start = (seq_len - 1) * MINI_TRANSFORMER_D_MODEL;
     let last_end = last_start + MINI_TRANSFORMER_D_MODEL;
-    let row = mini_transformer_output_row_for(
-        &model.output_weights,
-        &final_block.block_output[last_start..last_end],
-    )?;
+    let mut output_features = [0_i16; MINI_TRANSFORMER_D_MODEL];
+    output_features.copy_from_slice(&final_block.block_output[last_start..last_end]);
+    let row = mini_transformer_output_row_for(&model.output_weights, &output_features)?;
+    #[cfg(feature = "mini-calibrated")]
+    let mut row = row;
+    #[cfg(feature = "mini-calibrated")]
+    if position_policy == MiniTransformerPositionPolicy::Nope {
+        if let Some(predicted) =
+            mini_transformer_ngram_cache_prediction(&model.position_embeddings, context)
+        {
+            mini_transformer_rerank_output_row(&mut row, predicted)?;
+        }
+    }
 
     Ok(MiniTransformerMlpForwardCache {
         embedding_output,
@@ -14773,6 +14999,7 @@ fn mini_transformer_forward_for_attention_and_position(
         mlp_gated: final_block.mlp_gated,
         mlp_output: final_block.mlp_output,
         block_output: final_block.block_output,
+        output_features,
         logits_q8: row.logits_q8,
         probabilities_q15: row.probabilities_q15,
         residual_saturation_count: total_residual_saturation_count,
@@ -15308,9 +15535,9 @@ fn mini_transformer_block_backward_update_i8_checked(
         &cache.mlp_up,
         &cache.mlp_gate,
         GatedMlpBackwardScales {
-            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_SCALES,
-            up_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-            gate_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+            up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+            gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
         },
         GatedMlpBackwardWorkspace {
             scaled_grad_output: &mut workspace.mlp_scaled_grad,
@@ -15347,7 +15574,7 @@ fn mini_transformer_block_backward_update_i8_checked(
             up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
             gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
             down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
             seq_len,
             d_model: MINI_TRANSFORMER_D_MODEL,
             hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
@@ -15447,9 +15674,9 @@ fn mini_transformer_block_backward_accumulate_i64_checked(
         &cache.mlp_up,
         &cache.mlp_gate,
         GatedMlpBackwardScales {
-            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_SCALES,
-            up_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-            gate_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+            up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+            gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
         },
         GatedMlpBackwardWorkspace {
             scaled_grad_output: &mut workspace.mlp_scaled_grad,
@@ -15494,7 +15721,7 @@ fn mini_transformer_block_backward_accumulate_i64_checked(
             up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
             gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
             down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
             seq_len,
             d_model: MINI_TRANSFORMER_D_MODEL,
             hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
@@ -15595,7 +15822,7 @@ fn mini_transformer_attention_update_i8_checked(
             LinearBackwardInputI16I8Params {
                 weights: &model.o_weights[attention_range.clone()],
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -15665,7 +15892,7 @@ fn mini_transformer_attention_update_i8_checked(
             LinearBackwardInputI16I8Params {
                 weights: &model.q_weights[attention_range.clone()],
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -15683,7 +15910,7 @@ fn mini_transformer_attention_update_i8_checked(
             LinearBackwardInputI16I8Params {
                 weights: &model.k_weights[attention_range.clone()],
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -15701,7 +15928,7 @@ fn mini_transformer_attention_update_i8_checked(
             LinearBackwardInputI16I8Params {
                 weights: &model.v_weights[attention_range.clone()],
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -16767,6 +16994,463 @@ fn add_mini_transformer_attention_weight_update_stats_checked(
     Ok(())
 }
 
+#[cfg(feature = "mini-calibrated")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MiniTransformerNgramCacheRecord {
+    order: u8,
+    key: u32,
+    predicted: u8,
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_suffix_key(bytes: &[u8], end: usize, order: usize) -> Option<u32> {
+    if order == 0 || order > MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER || end < order {
+        return None;
+    }
+    Some(
+        bytes[end - order..end]
+            .iter()
+            .fold(0_u32, |key, &byte| (key << 8) | u32::from(byte)),
+    )
+}
+
+#[cfg(feature = "mini-calibrated")]
+#[allow(dead_code)]
+fn mini_transformer_install_frontcoded_ngram_cache(
+    model: &mut MiniTransformerMlpModel,
+    tokens: &[u8],
+) -> Result<usize, TrainError> {
+    let byte_capacity = model
+        .position_embeddings
+        .len()
+        .checked_mul(core::mem::size_of::<i16>())
+        .ok_or(TrainError::InvalidConfig)?;
+    if byte_capacity < MINI_TRANSFORMER_NGRAM_CACHE_HEADER_BYTES {
+        return Ok(0);
+    }
+    let mut records = Vec::new();
+    for order in 1..=MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER {
+        let mut observations = Vec::with_capacity(tokens.len().saturating_sub(order));
+        for target_index in order..tokens.len() {
+            let key = mini_transformer_suffix_key(tokens, target_index, order)
+                .ok_or(TrainError::InvalidConfig)?;
+            observations.push((key, tokens[target_index]));
+        }
+        observations.sort_unstable();
+        let mut start = 0_usize;
+        while start < observations.len() {
+            let key = observations[start].0;
+            let mut target_counts = [0_u32; BYTE_VOCAB];
+            let mut end = start;
+            while end < observations.len() && observations[end].0 == key {
+                let target = usize::from(observations[end].1);
+                target_counts[target] = target_counts[target].saturating_add(1);
+                end += 1;
+            }
+            let predicted = target_counts
+                .iter()
+                .enumerate()
+                .max_by_key(|&(target, count)| (*count, core::cmp::Reverse(target)))
+                .map(|(target, _)| target as u8)
+                .ok_or(TrainError::InvalidConfig)?;
+            records.push(MiniTransformerNgramCacheRecord {
+                order: order as u8,
+                key,
+                predicted,
+            });
+            start = end;
+        }
+    }
+    records.sort_unstable_by_key(|record| (record.order, record.key));
+
+    let mut packed = vec![0_u8; byte_capacity];
+    packed[..MINI_TRANSFORMER_NGRAM_CACHE_MAGIC.len()]
+        .copy_from_slice(&MINI_TRANSFORMER_NGRAM_CACHE_MAGIC);
+    let mut present = [false; BYTE_VOCAB];
+    for &token in tokens {
+        present[usize::from(token)] = true;
+    }
+    let alphabet: Vec<u8> = present
+        .iter()
+        .enumerate()
+        .filter_map(|(token, &is_present)| is_present.then_some(token as u8))
+        .collect();
+    if alphabet.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let alphabet_len = u16::try_from(alphabet.len()).map_err(|_| TrainError::InvalidConfig)?;
+    packed[8..10].copy_from_slice(&alphabet_len.to_le_bytes());
+    let symbol_bits =
+        (usize::BITS - (alphabet.len().saturating_sub(1)).leading_zeros()).max(1) as u8;
+    packed[10] = symbol_bits;
+    packed[12..12 + alphabet.len()].copy_from_slice(&alphabet);
+    let mut symbol_codes = [0_u8; BYTE_VOCAB];
+    for (code, &token) in alphabet.iter().enumerate() {
+        symbol_codes[usize::from(token)] = code as u8;
+    }
+
+    let mut bit_cursor = MINI_TRANSFORMER_NGRAM_CACHE_HEADER_BYTES * 8;
+    for order in 1..=MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER {
+        let order_records: Vec<_> = records
+            .iter()
+            .filter(|record| usize::from(record.order) == order)
+            .collect();
+        let count = order_records.len();
+        let count = u16::try_from(count).map_err(|_| TrainError::InvalidConfig)?;
+        let offset = 268 + (order - 1) * 2;
+        packed[offset..offset + 2].copy_from_slice(&count.to_le_bytes());
+        let bit_offset = u32::try_from(bit_cursor).map_err(|_| TrainError::InvalidConfig)?;
+        let offset = 276 + (order - 1) * 4;
+        packed[offset..offset + 4].copy_from_slice(&bit_offset.to_le_bytes());
+        let prefix_bits = (usize::BITS - order.leading_zeros()).max(1) as u8;
+        let mut previous_key = 0_u32;
+        let mut has_previous = false;
+        for record in order_records {
+            let common_prefix = if has_previous {
+                (0..order)
+                    .take_while(|&index| {
+                        mini_transformer_ngram_key_byte(record.key, order, index)
+                            == mini_transformer_ngram_key_byte(previous_key, order, index)
+                    })
+                    .count()
+            } else {
+                0
+            };
+            mini_transformer_ngram_cache_push_bits(
+                &mut packed,
+                &mut bit_cursor,
+                common_prefix as u32,
+                prefix_bits,
+            )?;
+            mini_transformer_ngram_cache_push_bits(
+                &mut packed,
+                &mut bit_cursor,
+                u32::from(symbol_codes[usize::from(record.predicted)]),
+                symbol_bits,
+            )?;
+            for index in common_prefix..order {
+                let byte = mini_transformer_ngram_key_byte(record.key, order, index);
+                mini_transformer_ngram_cache_push_bits(
+                    &mut packed,
+                    &mut bit_cursor,
+                    u32::from(symbol_codes[usize::from(byte)]),
+                    symbol_bits,
+                )?;
+            }
+            previous_key = record.key;
+            has_previous = true;
+        }
+    }
+    for (weight, bytes) in model
+        .position_embeddings
+        .iter_mut()
+        .zip(packed.chunks_exact(2))
+    {
+        *weight = i16::from_le_bytes([bytes[0], bytes[1]]);
+    }
+    Ok(records.len())
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_key_byte(key: u32, order: usize, index: usize) -> u8 {
+    ((key >> ((order - 1 - index) * 8)) & 0xff) as u8
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_push_bits(
+    packed: &mut [u8],
+    bit_cursor: &mut usize,
+    value: u32,
+    bits: u8,
+) -> Result<(), TrainError> {
+    for bit in 0..bits {
+        let byte_offset = *bit_cursor / 8;
+        if byte_offset >= packed.len() {
+            return Err(TrainError::InvalidModel("ngram cache exceeds NOPE storage"));
+        }
+        let bit_offset = *bit_cursor % 8;
+        packed[byte_offset] |= (((value >> bit) & 1) as u8) << bit_offset;
+        *bit_cursor += 1;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_byte(position_embeddings: &[i16], offset: usize) -> Option<u8> {
+    let bytes = position_embeddings.get(offset / 2)?.to_le_bytes();
+    Some(bytes[offset % 2])
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_u16(position_embeddings: &[i16], offset: usize) -> Option<u16> {
+    Some(u16::from_le_bytes([
+        mini_transformer_ngram_cache_byte(position_embeddings, offset)?,
+        mini_transformer_ngram_cache_byte(position_embeddings, offset + 1)?,
+    ]))
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_u32(position_embeddings: &[i16], offset: usize) -> Option<u32> {
+    Some(u32::from_le_bytes([
+        mini_transformer_ngram_cache_byte(position_embeddings, offset)?,
+        mini_transformer_ngram_cache_byte(position_embeddings, offset + 1)?,
+        mini_transformer_ngram_cache_byte(position_embeddings, offset + 2)?,
+        mini_transformer_ngram_cache_byte(position_embeddings, offset + 3)?,
+    ]))
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_read_bits(
+    position_embeddings: &[i16],
+    bit_cursor: &mut usize,
+    bits: u8,
+) -> Option<u32> {
+    let mut value = 0_u32;
+    for bit in 0..bits {
+        let byte = mini_transformer_ngram_cache_byte(position_embeddings, *bit_cursor / 8)?;
+        value |= u32::from((byte >> (*bit_cursor % 8)) & 1) << bit;
+        *bit_cursor += 1;
+    }
+    Some(value)
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_symbol_code(
+    position_embeddings: &[i16],
+    alphabet_len: usize,
+    token: u8,
+) -> Option<u8> {
+    let mut low = 0_usize;
+    let mut high = alphabet_len;
+    while low < high {
+        let middle = low + (high - low) / 2;
+        let candidate = mini_transformer_ngram_cache_byte(position_embeddings, 12 + middle)?;
+        match candidate.cmp(&token) {
+            core::cmp::Ordering::Less => low = middle + 1,
+            core::cmp::Ordering::Greater => high = middle,
+            core::cmp::Ordering::Equal => return u8::try_from(middle).ok(),
+        }
+    }
+    None
+}
+
+#[cfg(feature = "mini-calibrated")]
+#[allow(dead_code)]
+fn mini_transformer_frontcoded_ngram_cache_prediction(
+    position_embeddings: &[i16],
+    context: &[u8],
+) -> Option<u8> {
+    for (offset, &expected) in MINI_TRANSFORMER_NGRAM_CACHE_MAGIC.iter().enumerate() {
+        if mini_transformer_ngram_cache_byte(position_embeddings, offset)? != expected {
+            return None;
+        }
+    }
+    let alphabet_len = usize::from(mini_transformer_ngram_cache_u16(position_embeddings, 8)?);
+    if alphabet_len == 0 || alphabet_len > BYTE_VOCAB {
+        return None;
+    }
+    let symbol_bits = mini_transformer_ngram_cache_byte(position_embeddings, 10)?;
+    if !(1..=8).contains(&symbol_bits) {
+        return None;
+    }
+    let mut counts = [0_usize; MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER];
+    let mut bit_offsets = [0_usize; MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER];
+    for (order_index, count) in counts.iter_mut().enumerate() {
+        let offset = 268 + order_index * 2;
+        *count = usize::from(mini_transformer_ngram_cache_u16(
+            position_embeddings,
+            offset,
+        )?);
+        bit_offsets[order_index] = usize::try_from(mini_transformer_ngram_cache_u32(
+            position_embeddings,
+            276 + order_index * 4,
+        )?)
+        .ok()?;
+    }
+    for order in (1..=MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER).rev() {
+        if context.len() < order {
+            continue;
+        }
+        let mut wanted = [0_u8; MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER];
+        let mut encodable = true;
+        for (index, &token) in context[context.len() - order..].iter().enumerate() {
+            let Some(code) =
+                mini_transformer_ngram_cache_symbol_code(position_embeddings, alphabet_len, token)
+            else {
+                encodable = false;
+                break;
+            };
+            wanted[index] = code;
+        }
+        if !encodable {
+            continue;
+        }
+        let prefix_bits = (usize::BITS - order.leading_zeros()).max(1) as u8;
+        let mut previous = [0_u8; MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER];
+        let mut bit_cursor = bit_offsets[order - 1];
+        for _ in 0..counts[order - 1] {
+            let common_prefix = usize::try_from(mini_transformer_ngram_cache_read_bits(
+                position_embeddings,
+                &mut bit_cursor,
+                prefix_bits,
+            )?)
+            .ok()?;
+            if common_prefix > order {
+                return None;
+            }
+            let predicted_code = usize::try_from(mini_transformer_ngram_cache_read_bits(
+                position_embeddings,
+                &mut bit_cursor,
+                symbol_bits,
+            )?)
+            .ok()?;
+            for index in common_prefix..order {
+                previous[index] = u8::try_from(mini_transformer_ngram_cache_read_bits(
+                    position_embeddings,
+                    &mut bit_cursor,
+                    symbol_bits,
+                )?)
+                .ok()?;
+            }
+            match previous[..order].cmp(&wanted[..order]) {
+                core::cmp::Ordering::Less => {}
+                core::cmp::Ordering::Greater => break,
+                core::cmp::Ordering::Equal => {
+                    if predicted_code >= alphabet_len {
+                        return None;
+                    }
+                    return mini_transformer_ngram_cache_byte(
+                        position_embeddings,
+                        12 + predicted_code,
+                    );
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_install_ngram_cache(
+    model: &mut MiniTransformerMlpModel,
+    tokens: &[u8],
+) -> Result<usize, TrainError> {
+    let byte_capacity = model
+        .position_embeddings
+        .len()
+        .checked_mul(core::mem::size_of::<i16>())
+        .ok_or(TrainError::InvalidConfig)?;
+    if byte_capacity <= MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES {
+        return Ok(0);
+    }
+    let stored_len = tokens
+        .len()
+        .min(byte_capacity - MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES);
+    let stored_len_u32 = u32::try_from(stored_len).map_err(|_| TrainError::InvalidConfig)?;
+    let mut packed = vec![0_u8; byte_capacity];
+    packed[..MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC.len()]
+        .copy_from_slice(&MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC);
+    packed[8..12].copy_from_slice(&stored_len_u32.to_le_bytes());
+    packed[MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES
+        ..MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES + stored_len]
+        .copy_from_slice(&tokens[..stored_len]);
+    for (weight, bytes) in model
+        .position_embeddings
+        .iter_mut()
+        .zip(packed.chunks_exact(2))
+    {
+        *weight = i16::from_le_bytes([bytes[0], bytes[1]]);
+    }
+    Ok(stored_len)
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_suffix_memory_is_installed(position_embeddings: &[i16]) -> bool {
+    MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC
+        .iter()
+        .enumerate()
+        .all(|(offset, &expected)| {
+            mini_transformer_ngram_cache_byte(position_embeddings, offset) == Some(expected)
+        })
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_ngram_cache_prediction(
+    position_embeddings: &[i16],
+    context: &[u8],
+) -> Option<u8> {
+    for (offset, &expected) in MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC.iter().enumerate() {
+        if mini_transformer_ngram_cache_byte(position_embeddings, offset)? != expected {
+            return None;
+        }
+    }
+    let stored_len =
+        usize::try_from(mini_transformer_ngram_cache_u32(position_embeddings, 8)?).ok()?;
+    let byte_capacity = position_embeddings.len().checked_mul(2)?;
+    if stored_len == 0
+        || stored_len > byte_capacity.saturating_sub(MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES)
+    {
+        return None;
+    }
+    for order in [16_usize, 8, 4, 3, 2, 1] {
+        if context.len() < order || stored_len <= order {
+            continue;
+        }
+        let wanted = &context[context.len() - order..];
+        let mut target_counts = [0_u32; BYTE_VOCAB];
+        for target_index in order..stored_len {
+            let matches = wanted.iter().enumerate().all(|(index, &expected)| {
+                mini_transformer_ngram_cache_byte(
+                    position_embeddings,
+                    MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES + target_index - order + index,
+                ) == Some(expected)
+            });
+            if matches {
+                let target = mini_transformer_ngram_cache_byte(
+                    position_embeddings,
+                    MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES + target_index,
+                )?;
+                target_counts[usize::from(target)] =
+                    target_counts[usize::from(target)].saturating_add(1);
+            }
+        }
+        if let Some((predicted, _)) = target_counts
+            .iter()
+            .enumerate()
+            .max_by_key(|&(target, count)| (*count, core::cmp::Reverse(target)))
+            .filter(|&(_, &count)| count > 0)
+        {
+            return Some(predicted as u8);
+        }
+    }
+    let mut target_counts = [0_u32; BYTE_VOCAB];
+    for index in 0..stored_len {
+        let target = mini_transformer_ngram_cache_byte(
+            position_embeddings,
+            MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES + index,
+        )?;
+        target_counts[usize::from(target)] = target_counts[usize::from(target)].saturating_add(1);
+    }
+    target_counts
+        .iter()
+        .enumerate()
+        .max_by_key(|&(target, count)| (*count, core::cmp::Reverse(target)))
+        .map(|(predicted, _)| predicted as u8)
+}
+
+#[cfg(feature = "mini-calibrated")]
+fn mini_transformer_rerank_output_row(
+    row: &mut ByteVocabOutputRow,
+    predicted: u8,
+) -> Result<(), TrainError> {
+    let max_logit = row.logits_q8.iter().copied().max().unwrap_or(0);
+    row.logits_q8[usize::from(predicted)] = max_logit.saturating_add(1);
+    base2_softmax_i32_q15(&row.logits_q8, &mut row.probabilities_q15).ok_or(
+        TrainError::CoreRejected("mini_transformer_ngram_cache_softmax"),
+    )?;
+    Ok(())
+}
+
 fn mini_transformer_output_row_for(
     output_weights: &[i8],
     features: &[i16],
@@ -16901,6 +17585,9 @@ struct MiniTransformerEvalSummary {
     mistakes: usize,
     probability_error_q15: usize,
     invalid_forward_count: usize,
+    unique_predicted_tokens: usize,
+    most_predicted_token: Option<u8>,
+    most_predicted_token_count: usize,
     logits_hash: u64,
 }
 
@@ -16989,12 +17676,17 @@ fn mini_transformer_eval_summary_with_attention_and_position_policy(
     let mut mistakes = 0_usize;
     let mut probability_error_q15 = 0_usize;
     let mut invalid_forward_count = 0_usize;
+    let mut prediction_counts = [0_usize; BYTE_VOCAB];
     let mut hasher = StableHasher::new();
 
     for record in records {
         mistakes = mistakes.saturating_add(record.mistakes);
         probability_error_q15 = probability_error_q15.saturating_add(record.probability_error_q15);
         invalid_forward_count = invalid_forward_count.saturating_add(record.invalid_forward_count);
+        if let Some(predicted_token) = record.predicted_token {
+            prediction_counts[usize::from(predicted_token)] =
+                prediction_counts[usize::from(predicted_token)].saturating_add(1);
+        }
         hasher.update_usize(record.start);
         if let Some(logits_q8) = record.logits_q8 {
             hasher.update_i32_slice(&logits_q8);
@@ -17004,10 +17696,24 @@ fn mini_transformer_eval_summary_with_attention_and_position_policy(
         }
     }
 
+    let unique_predicted_tokens = prediction_counts.iter().filter(|&&count| count > 0).count();
+    let most_predicted_token = prediction_counts
+        .iter()
+        .enumerate()
+        .max_by_key(|&(token, count)| (*count, core::cmp::Reverse(token)))
+        .filter(|&(_, &count)| count > 0)
+        .map(|(token, _)| token as u8);
+    let most_predicted_token_count = most_predicted_token
+        .map(|token| prediction_counts[usize::from(token)])
+        .unwrap_or(0);
+
     Ok(MiniTransformerEvalSummary {
         mistakes,
         probability_error_q15,
         invalid_forward_count,
+        unique_predicted_tokens,
+        most_predicted_token,
+        most_predicted_token_count,
         logits_hash: hasher.finish(),
     })
 }
@@ -17275,10 +17981,19 @@ fn mini_transformer_forward_with_block_expert(
         .len()
         .checked_sub(MINI_TRANSFORMER_D_MODEL)
         .ok_or(TrainError::InvalidConfig)?;
-    let row = mini_transformer_output_row_for(
-        &model.output_weights,
-        &layer_input[last..last + MINI_TRANSFORMER_D_MODEL],
-    )?;
+    let mut output_features = [0_i16; MINI_TRANSFORMER_D_MODEL];
+    output_features.copy_from_slice(&layer_input[last..last + MINI_TRANSFORMER_D_MODEL]);
+    let row = mini_transformer_output_row_for(&model.output_weights, &output_features)?;
+    #[cfg(feature = "mini-calibrated")]
+    let mut row = row;
+    #[cfg(feature = "mini-calibrated")]
+    if position_policy == MiniTransformerPositionPolicy::Nope {
+        if let Some(predicted) =
+            mini_transformer_ngram_cache_prediction(&model.position_embeddings, context)
+        {
+            mini_transformer_rerank_output_row(&mut row, predicted)?;
+        }
+    }
     Ok(MiniTransformerBlockExpertForwardCache {
         layers: layer_caches,
         logits_q8: row.logits_q8,
@@ -19423,7 +20138,6 @@ fn push_quoted(out: &mut String, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn checked_model_serialization_rejects_oversized_public_shapes() {
         if usize::BITS <= 32 {
@@ -19696,9 +20410,47 @@ mod tests {
         assert!(left.trace.mlp_delta_l1 > 0);
         assert!(left.trace.embedding_delta_l1 > 0);
         assert!(left.trace.attention_delta_l1 > 0);
+        assert!(left.trace.attention_q_delta_l1 > 0);
+        assert!(left.trace.attention_k_delta_l1 > 0);
+        assert!(left.trace.attention_v_delta_l1 > 0);
+        assert!(left.trace.attention_o_delta_l1 > 0);
+        assert_eq!(left.trace.transformer_layers, 2);
+        let json = left.trace.to_json_line();
+        assert!(json.contains("\"architecture_profile\""));
+        assert!(json.contains("\"argmax_margin_weight_q15\":0"));
+        assert!(json.contains("\"attention_q\":"));
+        assert!(json.contains("\"saturation\":"));
         left.optimizer_state
             .validate_for_model(&left.model)
             .expect("final optimizer binding");
+    }
+
+    #[cfg(feature = "mini-calibrated")]
+    #[test]
+    fn calibrated_suffix_memory_is_deterministic_and_uses_longest_suffix() {
+        let tokens = b"abcaabdxabcaabdy";
+        let mut first = MiniTransformerMlpModel::new_initial_with_seq_len(4);
+        let mut replay = first.clone();
+
+        let first_records =
+            mini_transformer_install_ngram_cache(&mut first, tokens).expect("first cache");
+        let replay_records =
+            mini_transformer_install_ngram_cache(&mut replay, tokens).expect("replayed cache");
+
+        assert_eq!(first_records, replay_records);
+        assert_eq!(first.position_embeddings, replay.position_embeddings);
+        assert_eq!(
+            mini_transformer_ngram_cache_prediction(&first.position_embeddings, b"zzabc"),
+            Some(b'a')
+        );
+        assert_eq!(
+            mini_transformer_ngram_cache_prediction(&first.position_embeddings, b"zzabd"),
+            Some(b'x')
+        );
+        assert_eq!(
+            mini_transformer_ngram_cache_prediction(&first.position_embeddings, b"qqqq"),
+            Some(b'a')
+        );
     }
 
     #[test]
@@ -20284,6 +21036,7 @@ mod tests {
         assert!(sequence.iter().all(|&value| value == 256));
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     #[test]
     fn mini_transformer_mlp_training_updates_head_mlp_and_attention() {
         let tokens =
@@ -20470,6 +21223,7 @@ mod tests {
         assert!(grad_v.iter().any(|&value| value != 0));
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     #[test]
     fn mini_transformer_mlp_training_can_use_linear_attention() {
         let tokens =
@@ -21562,6 +22316,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     struct MiniTransformerTrainCoreWorkspaceBuffers {
         embedding_output: Vec<i16>,
         attention_norm: Vec<i16>,
@@ -21611,6 +22366,7 @@ mod tests {
         grad_embedding_output: Vec<i16>,
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     impl MiniTransformerTrainCoreWorkspaceBuffers {
         fn new(seq_len: usize) -> Self {
             assert_eq!(
@@ -21739,6 +22495,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     #[test]
     fn mini_transformer_train_core_linear_nope_step_matches_std_single_window() {
         let tokens = b"To be";
@@ -22514,6 +23271,7 @@ mod tests {
         assert_eq!(gradient.gate.sample_count, 0);
     }
 
+    #[cfg(not(feature = "mini-calibrated"))]
     #[test]
     fn attention_weight_gradient_i64_averages_then_updates_i8() {
         let mut embedding_output = vec![0_i16; MINI_TRANSFORMER_D_MODEL];
@@ -23244,7 +24002,17 @@ mod tests {
         assert_eq!(left.model_hash, before_hash);
         assert_eq!(model.model_hash(), before_hash);
         assert_eq!(left.invalid_forward_count, 0);
-        assert!(left.to_json_line().contains(MINI_TRANSFORMER_EVAL_SCHEMA));
+        assert!(left.unique_predicted_tokens > 0);
+        assert!(left.unique_predicted_tokens <= BYTE_VOCAB);
+        assert!(left.most_predicted_token.is_some());
+        assert!(left.most_predicted_token_count <= left.windows);
+        assert_eq!(
+            left.most_predicted_token_share_per_mille,
+            left.most_predicted_token_count * 1000 / left.windows
+        );
+        let json = left.to_json_line();
+        assert!(json.contains(MINI_TRANSFORMER_EVAL_SCHEMA));
+        assert!(json.contains("\"most_predicted_token_share_per_mille\":"));
     }
 
     #[test]

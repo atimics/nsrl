@@ -100,8 +100,73 @@ scripts/run-integer-transformer-proof-candidate.sh \
   data/experiments/integer-transformer-proof-v1/candidate-default
 ```
 
+The runner defaults to the promoted `small-h8-d128-ff256` profile, two
+transformer layers, integer Adam, learned RMSNorm gamma, linear attention,
+NOPE positions, a small Q15 argmax-margin term, and 512 deterministically
+spread training windows. The spread avoids treating stride-one windows that
+share 63 of 64 bytes as independent evidence. Set
+`NSRL_PROOF_MAX_WINDOWS=all` for the explicit full-overlap ablation. The
+runner writes the inference checkpoint, resumable `NSRLAD2` optimizer state,
+Adam trace, candidate evaluation, proof matrix, and
+`candidate-health.json` into the output directory. The health gate requires
+all Q/K/V/O projections to move, training probability error to improve, no
+rejected batches, bounded saturation, valid evaluation forwards, and a
+non-collapsed prediction distribution. By default the evaluation must contain
+at least eight distinct predicted bytes and no single byte may occupy more
+than 900 per mille of predictions. The default saturation budgets per examined
+window are 512 MLP events, 512 attention events, and 32,768 residual events;
+the report records both raw and normalized counts plus the most-predicted byte
+and its share. A numerically unhealthy or class-collapsed model cannot pass the
+runner even if its final metric matrix passes.
+
+Bound a diagnostic run without changing the frozen evaluation:
+
+```bash
+NSRL_PROOF_MAX_WINDOWS=512 \
+NSRL_PROOF_ADAM_STEP_SHIFT=5 \
+NSRL_PROOF_ARGMAX_MARGIN_WEIGHT_Q15=1024 \
+  scripts/run-integer-transformer-proof-candidate.sh \
+  data/experiments/integer-transformer-proof-v1/candidate-h8-512
+```
+
+Use `NSRL_PROOF_PROFILE=h2` for the byte-stable two-head control. Saturation
+and rejected-batch ceilings are explicit experiment controls:
+`NSRL_PROOF_MAX_MLP_SATURATIONS`,
+`NSRL_PROOF_MAX_ATTENTION_SATURATIONS`,
+`NSRL_PROOF_MAX_RESIDUAL_SATURATIONS`, and
+`NSRL_PROOF_MAX_REJECTED_BATCHES`. Evaluation-collapse controls are
+`NSRL_PROOF_MIN_UNIQUE_PREDICTIONS` and
+`NSRL_PROOF_MAX_PREDICTION_SHARE_PER_MILLE`. The saturation ceilings accept
+`auto` for the per-window budgets above; rejected batches default to zero.
+Changing a ceiling leaves the measured count and selected policy in
+`candidate-health.json`.
+
+`NSRL_PROOF_CALIBRATED_PROFILE=1` builds the compatibility-safe experimental
+MT5 quantization profile. It uses non-aliased initialization, matched
+projection requantization, and separate higher-precision backward-input
+scales plus a bounded fitted suffix memory stored in the otherwise dormant
+learned-position tensor under NOPE; the training trace is tagged
+`calibrated-v2-suffix-memory` and the health checker
+binds that tag.
+This is the default proof profile. Set `NSRL_PROOF_CALIBRATED_PROFILE=0` only
+for legacy-profile comparison runs.
+
 The runner exits one when the candidate is valid but fails the benchmark; a
 failed proof is measured evidence, not an infrastructure failure.
+
+## Promoted checkpoint
+
+The passing checkpoint and evidence matrix are frozen in
+`data/experiments/integer-transformer-proof-v1/candidate-default/`. The
+repository retains the inference checkpoint and proof/health evidence, but not
+the 9.2 MB training-only optimizer state. SHA-256 digests, the model hash,
+metrics, baselines, and the exact regeneration command are bound by
+`benchmarks/integer-transformer-proof-v1/promoted-candidate.json` and verified
+with:
+
+```bash
+node scripts/freeze-integer-transformer-proof-candidate.mjs --check
+```
 
 ## Experiment boundaries
 

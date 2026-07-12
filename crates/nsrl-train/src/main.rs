@@ -43,6 +43,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut integer_adam_config = IntegerAdamConfig::default();
     let mut integer_adam_train_scope = MiniTransformerAdamTrainScope::All;
     let mut enable_rms_norm = false;
+    let mut rms_norm_initial_gamma_q15 = None;
     let mut byte_generation_config = ByteGenerationConfig::greedy(32);
     let mut mode = String::from("mini-transformer-mlp");
     let mut trace_format = TraceFormat::Json;
@@ -128,7 +129,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or("--adam-epsilon requires an integer")?
                     .parse()?;
             }
+            "--argmax-margin-weight-q15" => {
+                mini_transformer_config.argmax_margin_weight_q15 = args
+                    .next()
+                    .ok_or("--argmax-margin-weight-q15 requires an integer")?
+                    .parse()?;
+            }
+            "--target-frequency-cap" => {
+                mini_transformer_config.target_frequency_cap = args
+                    .next()
+                    .ok_or("--target-frequency-cap requires an integer")?
+                    .parse()?;
+            }
+            "--target-frequency-min-weight-q15" => {
+                mini_transformer_config.target_frequency_min_weight_q15 = args
+                    .next()
+                    .ok_or("--target-frequency-min-weight-q15 requires an integer")?
+                    .parse()?;
+            }
             "--rms-norm" => {
+                enable_rms_norm = true;
+            }
+            "--rms-norm-initial-gamma-q15" => {
+                rms_norm_initial_gamma_q15 = Some(
+                    args.next()
+                        .ok_or("--rms-norm-initial-gamma-q15 requires an integer")?
+                        .parse()?,
+                );
                 enable_rms_norm = true;
             }
             "--adam-train-scope" => {
@@ -578,7 +605,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 MiniTransformerMlpModel::new_initial_with_seq_len(mini_transformer_config.seq_len)
             };
             if enable_rms_norm {
-                model.enable_rms_norm()?;
+                if let Some(gamma_q15) = rms_norm_initial_gamma_q15 {
+                    model.enable_rms_norm_with_gamma(gamma_q15)?;
+                } else {
+                    model.enable_rms_norm()?;
+                }
             }
             let optimizer_state = if let Some(path) = optimizer_state_path {
                 Some(MiniTransformerAdamOptimizerState::from_bytes(&fs::read(
@@ -1093,7 +1124,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn print_help() {
     println!(
-        "Usage: nsrl-train [--mode mini-transformer-mlp|mini-transformer-adam|mini-transformer-swarm|mini-transformer-swarm-worker|mini-transformer-swarm-assemble|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--model-out PATH] [--optimizer-state PATH] [--optimizer-state-out PATH] [--adam-learning-rate N] [--adam-step-shift N] [--adam-beta1-shift N] [--adam-beta2-shift N] [--adam-epsilon N] [--adam-train-scope all|output|final-mlp|final-mlp-and-output] [--rms-norm] [--expert PATH] [--swarm-model-out PATH] [--swarm-worker-out PATH] [--swarm-worker-artifact PATH] [--manifest-out PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N|--swarm-worker-count N] [--swarm-worker-index N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--mini-transformer-batch-mode serial|map-reduce] [--mini-transformer-map-reduce-workers N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only]"
+        "Usage: nsrl-train [--mode mini-transformer-mlp|mini-transformer-adam|mini-transformer-swarm|mini-transformer-swarm-worker|mini-transformer-swarm-assemble|mini-transformer-swarm-manifest|mini-transformer-swarm-route|mini-transformer-swarm-routed-generate|mini-transformer-swarm-scaling|mini-transformer-swarm-generate|mini-transformer-generate] [--tokens PATH] [--model PATH|--resume-from PATH] [--model-out PATH] [--optimizer-state PATH] [--optimizer-state-out PATH] [--adam-learning-rate N] [--adam-step-shift N] [--adam-beta1-shift N] [--adam-beta2-shift N] [--adam-epsilon N] [--argmax-margin-weight-q15 N] [--target-frequency-cap N] [--target-frequency-min-weight-q15 N] [--adam-train-scope all|rms-norm|output|final-mlp|final-mlp-and-output] [--rms-norm] [--rms-norm-initial-gamma-q15 N] [--expert PATH] [--swarm-model-out PATH] [--swarm-worker-out PATH] [--swarm-worker-artifact PATH] [--manifest-out PATH] [--prompt TEXT] [--max-new-tokens N] [--decode greedy|sample] [--sample-seed N] [--top-k N] [--tokenizer identity|ascii-lower] [--mini-transformer-attention base2-softmax|linear|linear-streaming|linear-streaming-ttt] [--mini-transformer-position learned-absolute|nope] [--mini-transformer-ttt-lr-shift N] [--printable-only] [--ascii-lower-only] [--repeat-window N] [--repeat-penalty-shift N] [--max-repeat-run N] [--no-repeat-ngram N] [--corpus-prior] [--corpus-prior-logit-shift N] [--strict-adjacency] [--epochs N] [--learning-rate N] [--lr-shift N] [--mlp-lr-shift N] [--embed-lr-shift N] [--attention-lr-shift N] [--attention-q-lr-shift N] [--attention-qk-lr-shift N] [--adaptive-rule-shifts] [--adaptive-rule-interval-batches N] [--adaptive-attention-shifts] [--adaptive-holographic-shifts] [--swarm-workers N|--swarm-worker-count N] [--swarm-worker-index N] [--swarm-composition average|confidence-weighted|confidence-router] [--route-capability TAG] [--route-max-artifact-bytes N] [--route-max-parameter-bytes N] [--route-active-experts N] [--route-prompt-affinity] [--route-prompt-affinity-windows N] [--attention-vo-error-feedback] [--attention-vo-oracle] [--reject-loss-regression] [--seq-len N] [--stride N] [--window-offset N] [--batch-windows N] [--mini-transformer-batch-mode serial|map-reduce] [--mini-transformer-map-reduce-workers N] [--max-windows N] [--trace PATH] [--trace-format json|binary] [--mini-transformer-trace-detail full|summary|none] [--progress-out PATH] [--progress-interval-batches N] [--text-out PATH] [--generated-only]"
     );
     println!("Adam scopes also include rms-norm for internal i16 gamma-only training.");
     println!();

@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::io::{self, BufRead, Read, Write};
 
+pub mod subword;
+
 pub const SCHEMA: &str = "nsrl.corpus_trace.v1";
 pub const SIMPLEWIKI_EXTRACT_SCHEMA: &str = "nsrl.simplewiki_extract_trace.v1";
 pub const TOKEN_SCHEMA: &str = "nsrl.token_trace.v1";

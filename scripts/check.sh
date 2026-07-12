@@ -6,6 +6,9 @@ cd "$repo_root"
 
 ./scripts/check-no-floats.sh
 node scripts/check-integer-transformer-proof-self-test.mjs
+node scripts/check-integer-transformer-candidate-health-self-test.mjs
+node scripts/freeze-integer-transformer-proof-candidate.mjs --check
+scripts/check-open-generation-v1.sh
 cargo fmt --all --check
 cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets

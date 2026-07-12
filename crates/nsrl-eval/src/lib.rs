@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod contract;
+pub mod open_generation;
 
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};

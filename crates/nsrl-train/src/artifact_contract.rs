@@ -32,6 +32,7 @@ pub const ASCII_LOWER_TOKENIZER_ID: &str = "byte_ascii_lower_text_u8_v1";
 
 pub const MINI_TRANSFORMER_MODEL_ID: &str = "mini_transformer_byte_qkvo_mlp_v1";
 pub const MINI_TRANSFORMER_MODEL_MAGIC: &[u8; 8] = b"NSRLMT5\n";
+pub const MINI_TRANSFORMER_V6_MODEL_MAGIC: &[u8; 8] = b"NSRLMT6\n";
 pub(crate) const MINI_TRANSFORMER_LEGACY_MODEL_MAGIC: &[u8; 8] = b"NSRLMT4\n";
 pub(crate) const MINI_TRANSFORMER_LEGACY_V4_D_MODEL: usize = 32;
 pub(crate) const MINI_TRANSFORMER_LEGACY_V4_HEADS: usize = 2;
@@ -68,6 +69,7 @@ mod tests {
     fn persisted_artifact_magics_are_distinct() {
         let magics = [
             MINI_TRANSFORMER_MODEL_MAGIC,
+            MINI_TRANSFORMER_V6_MODEL_MAGIC,
             MINI_TRANSFORMER_LEGACY_MODEL_MAGIC,
             MINI_TRANSFORMER_ADAM_STATE_MAGIC,
             MINI_TRANSFORMER_BLOCK_EXPERT_MAGIC,

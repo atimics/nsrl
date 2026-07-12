@@ -7,6 +7,9 @@ use std::path::PathBuf;
 use nsrl_eval::contract::{
     check_proof_baselines, check_proof_results, load_proof_manifest, proof_contract_json_line,
 };
+use nsrl_eval::open_generation::{
+    load_open_generation_manifest, open_generation_contract_json_line,
+};
 
 fn main() {
     if let Err(error) = run() {
@@ -23,6 +26,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("contract takes no arguments".into());
             }
             print!("{}", proof_contract_json_line());
+        }
+        Some("open-generation-contract") => {
+            if args.next().is_some() {
+                return Err("open-generation-contract takes no arguments".into());
+            }
+            print!("{}", open_generation_contract_json_line());
+        }
+        Some("open-generation-manifest") => {
+            let manifest = single_path_option(&mut args, "--manifest")?;
+            print!(
+                "{}",
+                load_open_generation_manifest(&manifest)?.to_json_line()
+            );
         }
         Some("manifest") => {
             let manifest = single_path_option(&mut args, "--manifest")?;
@@ -104,6 +120,6 @@ fn required(
 
 fn print_help() {
     println!(
-        "Usage:\n  nsrl-eval contract\n  nsrl-eval manifest --manifest PATH\n  nsrl-eval check-baselines --manifest PATH --results PATH\n  nsrl-eval check --manifest PATH --results PATH\n\nThe check command exits 0 only when the integer candidate beats retrieval, byte-ngram, and float-reference baselines under the frozen proof contract."
+        "Usage:\n  nsrl-eval contract\n  nsrl-eval manifest --manifest PATH\n  nsrl-eval check-baselines --manifest PATH --results PATH\n  nsrl-eval check --manifest PATH --results PATH\n  nsrl-eval open-generation-contract\n  nsrl-eval open-generation-manifest --manifest PATH\n\nThe check command exits 0 only when the integer candidate beats retrieval, byte-ngram, and float-reference baselines under the frozen proof contract."
     );
 }

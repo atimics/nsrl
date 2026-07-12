@@ -47,16 +47,40 @@ pub const MINI_TRANSFORMER_ARCHITECTURE_PROFILE: &str = "small-h2-d128-ff256";
 pub const MINI_TRANSFORMER_ARCHITECTURE_PROFILE: &str = "small-h8-d128-ff256";
 pub const MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT: u8 = 1;
 
+#[cfg(not(feature = "mini-calibrated"))]
 pub const MINI_TRANSFORMER_D_MODEL_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] = [FixedScale {
     multiplier: 1,
     right_shift: 0,
 };
     MINI_TRANSFORMER_D_MODEL];
+#[cfg(feature = "mini-calibrated")]
+pub const MINI_TRANSFORMER_D_MODEL_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] = [FixedScale {
+    multiplier: 1,
+    right_shift: 1,
+};
+    MINI_TRANSFORMER_D_MODEL];
+#[cfg(not(feature = "mini-calibrated"))]
 pub const MINI_TRANSFORMER_HIDDEN_SCALES: [FixedScale; MINI_TRANSFORMER_HIDDEN_DIM] = [FixedScale {
     multiplier: 1,
     right_shift: 0,
 };
     MINI_TRANSFORMER_HIDDEN_DIM];
+#[cfg(feature = "mini-calibrated")]
+pub const MINI_TRANSFORMER_HIDDEN_SCALES: [FixedScale; MINI_TRANSFORMER_HIDDEN_DIM] = [FixedScale {
+    multiplier: 1,
+    right_shift: 2,
+};
+    MINI_TRANSFORMER_HIDDEN_DIM];
+pub const MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] =
+    [FixedScale {
+        multiplier: 1,
+        right_shift: 0,
+    }; MINI_TRANSFORMER_D_MODEL];
+pub const MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES: [FixedScale; MINI_TRANSFORMER_HIDDEN_DIM] =
+    [FixedScale {
+        multiplier: 1,
+        right_shift: 0,
+    }; MINI_TRANSFORMER_HIDDEN_DIM];
 pub const MINI_TRANSFORMER_OUTPUT_SCALES: [FixedScale; BYTE_VOCAB] = [FixedScale {
     multiplier: 1,
     right_shift: 8,
@@ -721,9 +745,9 @@ pub fn mini_transformer_linear_nope_train_step(
         workspace.mlp_up,
         workspace.mlp_gate,
         GatedMlpBackwardScales {
-            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_SCALES,
-            up_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
-            gate_to_input: &MINI_TRANSFORMER_D_MODEL_SCALES,
+            down_to_hidden: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
+            up_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
+            gate_to_input: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
         },
         GatedMlpBackwardWorkspace {
             scaled_grad_output: workspace.mlp_scaled_grad,
@@ -756,7 +780,7 @@ pub fn mini_transformer_linear_nope_train_step(
             up_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
             gate_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
             down_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_SCALES,
+            down_to_hidden_scales: &MINI_TRANSFORMER_HIDDEN_GRAD_INPUT_SCALES,
             seq_len: config.seq_len,
             d_model: MINI_TRANSFORMER_D_MODEL,
             hidden_dim: MINI_TRANSFORMER_HIDDEN_DIM,
@@ -1177,7 +1201,7 @@ fn mini_transformer_linear_attention_update_i8_checked(
             LinearBackwardInputI16I8Params {
                 weights: model.o_weights,
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -1205,7 +1229,7 @@ fn mini_transformer_linear_attention_update_i8_checked(
             LinearBackwardInputI16I8Params {
                 weights: model.q_weights,
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -1220,7 +1244,7 @@ fn mini_transformer_linear_attention_update_i8_checked(
             LinearBackwardInputI16I8Params {
                 weights: model.k_weights,
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
@@ -1235,7 +1259,7 @@ fn mini_transformer_linear_attention_update_i8_checked(
             LinearBackwardInputI16I8Params {
                 weights: model.v_weights,
                 forward_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
-                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_SCALES,
+                grad_input_scales: &MINI_TRANSFORMER_D_MODEL_GRAD_INPUT_SCALES,
                 input_dim: MINI_TRANSFORMER_D_MODEL,
                 output_dim: MINI_TRANSFORMER_D_MODEL,
             },
