@@ -10,7 +10,6 @@ const MODEL_MAGIC_CV3: &[u8; 8] = b"NSRLCV3\n";
 const MODEL_MAGIC_MCH: &[u8; 8] = b"NSRLMCH\n";
 const MODEL_MAGIC_TCH: &[u8; 8] = b"NSRLTCH\n";
 const LATENT_MODEL_MAGIC: &[u8; 8] = b"NSRLLAT1";
-const LATENT_CLASS_EXTENSION_MAGIC: &[u8; 8] = b"NSRLCLS1";
 const KERNEL: usize = 9;
 const HIDDEN_CHANNELS: usize = 8;
 const POSITION_FEATURE_CHANNELS: usize = 6;
@@ -66,8 +65,6 @@ struct Config {
     seed: String,
     init_mode: InitMode,
     worker_count: usize,
-    latent_target_mode: LatentTargetMode,
-    latent_class_blend_q8: usize,
 }
 
 impl Default for Config {
@@ -93,8 +90,6 @@ impl Default for Config {
             seed: "solomon-sampler-v1".to_string(),
             init_mode: InitMode::Noise,
             worker_count: default_worker_count(),
-            latent_target_mode: LatentTargetMode::ClassLayoutCode,
-            latent_class_blend_q8: 192,
         }
     }
 }
@@ -122,35 +117,6 @@ impl InitMode {
     fn as_str(self) -> &'static str {
         match self {
             Self::Noise => "noise",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LatentTargetMode {
-    ClassLayoutCode,
-    DecodedLatent,
-    BlendedClassTextCode,
-}
-
-impl LatentTargetMode {
-    fn parse(value: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        match value {
-            "class" | "class-layout-code" => Ok(Self::ClassLayoutCode),
-            "decoded" | "decoded-latent" => Ok(Self::DecodedLatent),
-            "blend" | "blended" | "blended-class-text-code" => Ok(Self::BlendedClassTextCode),
-            _ => Err(format!(
-                "unknown latent target mode: {value}; expected class-layout-code, decoded-latent, or blended-class-text-code"
-            )
-            .into()),
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::ClassLayoutCode => "class-layout-code",
-            Self::DecodedLatent => "decoded-latent",
-            Self::BlendedClassTextCode => "blended-class-text-code",
         }
     }
 }
@@ -298,6 +264,7 @@ struct LatentCondition {
     prompt: String,
     latent_dim: usize,
     text_feature_count: usize,
+    target_plan_path: PathBuf,
     target_source: String,
     target_number: usize,
     target_name: String,
@@ -317,16 +284,6 @@ struct LatentTextModel {
     text_biases: Vec<i16>,
     decoder_weights: Vec<i8>,
     decoder_biases: [i16; SIGNATURE_BINS],
-    class_head: Option<LatentClassHead>,
-}
-
-#[derive(Debug)]
-struct LatentClassHead {
-    numbers: Vec<usize>,
-    names: Vec<String>,
-    codes: Vec<Vec<i16>>,
-    weights: Vec<i8>,
-    biases: Vec<i16>,
 }
 
 #[derive(Debug)]
@@ -401,8 +358,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if config.text_weight < 0 {
         return Err("--text-weight must be non-negative".into());
     }
-    if config.latent_class_blend_q8 > 256 {
-        return Err("--latent-class-blend-q8 must be in 0..256".into());
+    if config.latent_model_path.is_some() && config.attention_plan_path.is_some() {
+        return Err("--latent-model and --attention-plan are mutually exclusive".into());
     }
     if config.latent_model_path.is_some() && config.attention_plan_path.is_some() {
         return Err("--latent-model and --attention-plan are mutually exclusive".into());
@@ -572,17 +529,6 @@ where
             }
             "--workers" => {
                 config.worker_count = args.next().ok_or("--workers requires N")?.parse()?;
-            }
-            "--latent-target-mode" => {
-                config.latent_target_mode = LatentTargetMode::parse(
-                    &args.next().ok_or("--latent-target-mode requires MODE")?,
-                )?;
-            }
-            "--latent-class-blend-q8" => {
-                config.latent_class_blend_q8 = args
-                    .next()
-                    .ok_or("--latent-class-blend-q8 requires N")?
-                    .parse()?;
             }
             _ => return Err(format!("unknown option: {arg}").into()),
         }
@@ -754,17 +700,14 @@ fn read_latent_condition(config: &Config) -> Result<LatentCondition, Box<dyn std
         .ok_or("--latent-model is required")?;
     let prompt = config.prompt.as_ref().ok_or("--prompt is required")?;
     let model = read_latent_model(model_path)?;
-    let prediction = model.prediction_for_prompt(
-        prompt,
-        config.latent_target_mode,
-        config.latent_class_blend_q8,
-    )?;
+    let prediction = model.prediction_for_prompt(prompt)?;
     Ok(LatentCondition {
         model_path: model_path.clone(),
         target_plan_path: PathBuf::new(),
         prompt: prompt.clone(),
         latent_dim: model.latent_dim,
         text_feature_count: model.text_feature_count,
+        target_plan_path: PathBuf::new(),
         target_source: prediction.source,
         target_number: prediction.number,
         target_name: prediction.name,
@@ -877,60 +820,14 @@ fn read_latent_model(path: &Path) -> Result<LatentTextModel, Box<dyn std::error:
     for bias in &mut decoder_biases {
         *bias = cursor.read_i16()?;
     }
-    let class_head = if cursor.offset == cursor.bytes.len() {
-        None
-    } else {
-        let extension_magic = cursor
-            .read_bytes(LATENT_CLASS_EXTENSION_MAGIC.len())?
-            .to_vec();
-        if extension_magic.as_slice() != LATENT_CLASS_EXTENSION_MAGIC {
-            return Err(format!("{} has unsupported latent extension", path.display()).into());
-        }
-        let class_count = usize::try_from(cursor.read_u32()?)?;
-        if class_count == 0 {
-            return Err(format!("{} has empty class extension", path.display()).into());
-        }
-        let mut numbers = Vec::with_capacity(class_count);
-        let mut names = Vec::with_capacity(class_count);
-        let mut codes = Vec::with_capacity(class_count);
-        for _ in 0..class_count {
-            numbers.push(usize::try_from(cursor.read_u32()?)?);
-            let name_len = usize::try_from(cursor.read_u32()?)?;
-            let name = String::from_utf8(cursor.read_bytes(name_len)?.to_vec())?;
-            names.push(name);
-            let mut code = Vec::with_capacity(latent_dim);
-            for _ in 0..latent_dim {
-                code.push(cursor.read_i16()?);
-            }
-            codes.push(code);
-        }
-        let class_weight_count = class_count
-            .checked_mul(text_feature_count)
-            .ok_or("latent class weight count overflow")?;
-        let mut weights = Vec::with_capacity(class_weight_count);
-        for _ in 0..class_weight_count {
-            weights.push(cursor.read_i8()?);
-        }
-        let mut biases = Vec::with_capacity(class_count);
-        for _ in 0..class_count {
-            biases.push(cursor.read_i16()?);
-        }
-        if cursor.offset != cursor.bytes.len() {
-            return Err(format!(
-                "{} has {} trailing bytes",
-                path.display(),
-                cursor.bytes.len() - cursor.offset
-            )
-            .into());
-        }
-        Some(LatentClassHead {
-            numbers,
-            names,
-            codes,
-            weights,
-            biases,
-        })
-    };
+    if cursor.offset != cursor.bytes.len() {
+        return Err(format!(
+            "{} has {} trailing bytes",
+            path.display(),
+            cursor.bytes.len() - cursor.offset
+        )
+        .into());
+    }
     Ok(LatentTextModel {
         latent_dim,
         text_feature_count,
@@ -940,7 +837,6 @@ fn read_latent_model(path: &Path) -> Result<LatentTextModel, Box<dyn std::error:
         text_biases,
         decoder_weights,
         decoder_biases,
-        class_head,
     })
 }
 
@@ -948,39 +844,9 @@ impl LatentTextModel {
     fn prediction_for_prompt(
         &self,
         prompt: &str,
-        target_mode: LatentTargetMode,
-        class_blend_q8: usize,
     ) -> Result<LatentPromptPrediction, Box<dyn std::error::Error>> {
         let features = latent_text_features(prompt, self.text_feature_count);
         let text_latent = self.encode_text(&features)?;
-        if let Some(class_head) = &self.class_head {
-            let (class_index, score) = class_head.predict(&features, self.text_feature_count);
-            let class_latent = &class_head.codes[class_index];
-            let (source, signature) = match target_mode {
-                LatentTargetMode::ClassLayoutCode => (
-                    "class-layout-code",
-                    sharpen_signature(&self.decode_signature(class_latent)),
-                ),
-                LatentTargetMode::DecodedLatent => (
-                    "decoded-latent",
-                    sharpen_signature(&self.decode_signature(&text_latent)),
-                ),
-                LatentTargetMode::BlendedClassTextCode => {
-                    let blended = blend_latents_q8(class_latent, &text_latent, class_blend_q8)?;
-                    (
-                        "blended-class-text-code",
-                        sharpen_signature(&self.decode_signature(&blended)),
-                    )
-                }
-            };
-            return Ok(LatentPromptPrediction {
-                source: source.to_string(),
-                number: class_head.numbers[class_index],
-                name: class_head.names[class_index].clone(),
-                score,
-                signature,
-            });
-        }
         Ok(LatentPromptPrediction {
             source: "decoded-latent".to_string(),
             number: 0,
@@ -1001,7 +867,7 @@ impl LatentTextModel {
             .enumerate()
             .filter(|(_, value)| *value != 0)
             .collect();
-        for dim in 0..self.latent_dim {
+        for (dim, slot) in out.iter_mut().enumerate() {
             let mut acc = 0_i64;
             for &(feature, value) in &active_features {
                 let weight = self.text_weights[dim * self.text_feature_count + feature];
@@ -1009,7 +875,7 @@ impl LatentTextModel {
             }
             let value = signed_round_shift(acc, self.text_encoder_shift)
                 .saturating_add(i64::from(self.text_biases[dim]));
-            out[dim] = value.clamp(-511, 511) as i16;
+            *slot = value.clamp(-511, 511) as i16;
         }
         Ok(out)
     }
@@ -1027,54 +893,6 @@ impl LatentTextModel {
         }
         out
     }
-}
-
-impl LatentClassHead {
-    fn predict(&self, features: &[i16], feature_count: usize) -> (usize, i64) {
-        let active_features: Vec<(usize, i16)> = features
-            .iter()
-            .copied()
-            .enumerate()
-            .take(feature_count)
-            .filter(|(_, value)| *value != 0)
-            .collect();
-        let mut best_index = 0_usize;
-        let mut best_score = i64::MIN;
-        for class_index in 0..self.numbers.len() {
-            let mut score = i64::from(self.biases[class_index]);
-            for &(feature, value) in &active_features {
-                let weight = self.weights[class_index * feature_count + feature];
-                score = score.saturating_add(i64::from(weight) * i64::from(value));
-            }
-            if score > best_score
-                || (score == best_score && self.numbers[class_index] < self.numbers[best_index])
-            {
-                best_score = score;
-                best_index = class_index;
-            }
-        }
-        (best_index, best_score)
-    }
-}
-
-fn blend_latents_q8(
-    class_latent: &[i16],
-    text_latent: &[i16],
-    class_weight_q8: usize,
-) -> Result<Vec<i16>, Box<dyn std::error::Error>> {
-    if class_latent.len() != text_latent.len() {
-        return Err("latent blend dimension mismatch".into());
-    }
-    let class_weight_q8 = i64::try_from(class_weight_q8.min(256))?;
-    let text_weight_q8 = 256_i64.saturating_sub(class_weight_q8);
-    let mut out = Vec::with_capacity(class_latent.len());
-    for (&class_value, &text_value) in class_latent.iter().zip(text_latent.iter()) {
-        let acc = i64::from(class_value)
-            .saturating_mul(class_weight_q8)
-            .saturating_add(i64::from(text_value).saturating_mul(text_weight_q8));
-        out.push(signed_round_shift(acc, 8).clamp(-511, 511) as i16);
-    }
-    Ok(out)
 }
 
 fn sharpen_signature(input: &[u16; SIGNATURE_BINS]) -> [u16; SIGNATURE_BINS] {
@@ -1147,9 +965,7 @@ fn normalize_token(token: &str) -> String {
         "science" | "sciences" => return "science".to_string(),
         _ => {}
     }
-    if token.len() > 5 && token.ends_with("eth") {
-        token[..token.len() - 3].to_string()
-    } else if token.len() > 5 && token.ends_with("ing") {
+    if token.len() > 5 && (token.ends_with("eth") || token.ends_with("ing")) {
         token[..token.len() - 3].to_string()
     } else if token.len() > 4 && token.ends_with("es") {
         token[..token.len() - 2].to_string()
@@ -1807,12 +1623,13 @@ fn neighbor_ink_count(image: &[u8], image_size: usize, x: usize, y: usize) -> u8
             }
             let nx = x.checked_add(dx).and_then(|value| value.checked_sub(1));
             let ny = y.checked_add(dy).and_then(|value| value.checked_sub(1));
-            if let (Some(nx), Some(ny)) = (nx, ny) {
-                if nx < image_size && ny < image_size {
-                    let value = image[pixel_index(image_size, nx, ny)];
-                    if value > INK_THRESHOLD {
-                        count = count.saturating_add(1);
-                    }
+            if let (Some(nx), Some(ny)) = (nx, ny)
+                && nx < image_size
+                && ny < image_size
+            {
+                let value = image[pixel_index(image_size, nx, ny)];
+                if value > INK_THRESHOLD {
+                    count = count.saturating_add(1);
                 }
             }
         }
@@ -2220,6 +2037,10 @@ fn apply_multichannel_layer_condition(
     Ok(out)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "arguments mirror the serialized native/WASM conditioning contract"
+)]
 fn conditioned_features(
     input: &[u8],
     image_size: usize,
@@ -2269,20 +2090,20 @@ fn conditioned_features(
             return;
         }
         let input_center = i16::from(input[pixel]);
-        if let Some(text_cache) = feature_cache.and_then(|cache| cache.text_features.as_ref()) {
-            if let (Some(static_features), Some(&center)) = (
+        if let Some(text_cache) = feature_cache.and_then(|cache| cache.text_features.as_ref())
+            && let (Some(static_features), Some(&center)) = (
                 text_cache.static_features.get(pixel),
                 text_cache.centers.get(pixel),
-            ) {
-                out[offset..offset + TEXT_FEATURE_CHANNELS].copy_from_slice(static_features);
-                out[offset] = center.saturating_sub(input_center).clamp(-511, 511);
-                out[offset + 15] = center
-                    .saturating_sub(input_center)
-                    .saturating_add(center.saturating_sub(text_cache.global_mean))
-                    .saturating_mul(2)
-                    .clamp(-511, 511);
-                return;
-            }
+            )
+        {
+            out[offset..offset + TEXT_FEATURE_CHANNELS].copy_from_slice(static_features);
+            out[offset] = center.saturating_sub(input_center).clamp(-511, 511);
+            out[offset + 15] = center
+                .saturating_sub(input_center)
+                .saturating_add(center.saturating_sub(text_cache.global_mean))
+                .saturating_mul(2)
+                .clamp(-511, 511);
+            return;
         }
         let Some(target_stats) = target_stats else {
             return;
@@ -2498,11 +2319,11 @@ fn signature_stats(signature: &[u16; SIGNATURE_BINS]) -> SignatureStats {
     let global_mean = signature_global_mean(signature);
     let mut row_means = [0_i16; SIGNATURE_GRID];
     let mut col_means = [0_i16; SIGNATURE_GRID];
-    for row in 0..SIGNATURE_GRID {
-        row_means[row] = signature_row_mean(signature, row);
+    for (row, mean) in row_means.iter_mut().enumerate() {
+        *mean = signature_row_mean(signature, row);
     }
-    for col in 0..SIGNATURE_GRID {
-        col_means[col] = signature_col_mean(signature, col);
+    for (col, mean) in col_means.iter_mut().enumerate() {
+        *mean = signature_col_mean(signature, col);
     }
     SignatureStats {
         global_mean,
@@ -2735,19 +2556,11 @@ fn abs_i64(value: i64) -> i64 {
 }
 
 fn abs_diff_u8(left: u8, right: u8) -> u8 {
-    if left >= right {
-        left - right
-    } else {
-        right - left
-    }
+    left.abs_diff(right)
 }
 
 fn abs_diff_u16(left: u16, right: u16) -> u16 {
-    if left >= right {
-        left - right
-    } else {
-        right - left
-    }
+    left.abs_diff(right)
 }
 
 fn pixel_index(image_size: usize, x: usize, y: usize) -> usize {
@@ -2932,18 +2745,6 @@ fn write_trace(
     json_field(&mut out, "latent_model", &latent_model, true);
     json_field(&mut out, "latent_target_plan", &latent_target_plan, true);
     json_field(&mut out, "latent_prompt", &latent_prompt, true);
-    json_field(
-        &mut out,
-        "latent_target_mode",
-        config.latent_target_mode.as_str(),
-        true,
-    );
-    number_field(
-        &mut out,
-        "latent_class_blend_q8",
-        config.latent_class_blend_q8,
-        true,
-    );
     let latent_target_source = latent_condition
         .map(|condition| condition.target_source.clone())
         .unwrap_or_default();

@@ -43,6 +43,8 @@ const CORRUPTION_KINDS: [&str; 10] = [
     "box-blur",
     "noise-seed",
 ];
+type AuxTargets = (Option<Vec<u8>>, Option<Vec<u8>>);
+type LayerGradientSums = (Vec<Vec<i64>>, Vec<i64>, u64);
 
 #[derive(Debug, Clone)]
 struct Config {
@@ -491,12 +493,12 @@ fn read_text_index(path: &Path) -> Result<TextIndex, Box<dyn std::error::Error>>
 fn aux_targets_for_pairs(
     config: &Config,
     target: &[u8],
-) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), Box<dyn std::error::Error>> {
+) -> Result<AuxTargets, Box<dyn std::error::Error>> {
     if config.aux_clean_target_weight == 0 {
         return Ok((None, None));
     }
     let image_bytes = checked_image_bytes(config.image_size)?;
-    if target.len() % image_bytes != 0 {
+    if !target.len().is_multiple_of(image_bytes) {
         return Err("target byte count is not a multiple of image bytes".into());
     }
     let mut aux = Vec::with_capacity(target.len());
@@ -677,9 +679,7 @@ fn train_layer(
         // grads are summed deterministically (sums stay far below i64::MAX, so
         // saturating_add never saturates -> addition is associative -> the
         // parallel result is bit-identical to the serial path).
-        let accumulate = |start: usize,
-                          end: usize|
-         -> Result<(Vec<Vec<i64>>, Vec<i64>, u64), String> {
+        let accumulate = |start: usize, end: usize| -> Result<LayerGradientSums, String> {
             let mut weight_grads = vec![vec![0_i64; feature_dim]; condition_count];
             let mut bias_grads = vec![0_i64; condition_count];
             let mut raw_error = 0_u64;
@@ -725,9 +725,9 @@ fn train_layer(
                             aux_mask.map(|mask| mask[index]),
                         );
                         raw_error = raw_error.saturating_add(abs_i16(error));
-                        for channel in 0..features.len() {
+                        for (channel, &feature) in features.iter().enumerate() {
                             weight_grads[condition][channel] = weight_grads[condition][channel]
-                                .saturating_add(i64::from(error) * i64::from(features[channel]));
+                                .saturating_add(i64::from(error) * i64::from(feature));
                         }
                         bias_grads[condition] =
                             bias_grads[condition].saturating_add(i64::from(error));
@@ -746,7 +746,7 @@ fn train_layer(
             let accumulate_ref = &accumulate;
             let chunk = pair_count.div_ceil(worker_count);
             std::thread::scope(
-                |scope| -> Result<(Vec<Vec<i64>>, Vec<i64>, u64), Box<dyn std::error::Error>> {
+                |scope| -> Result<LayerGradientSums, Box<dyn std::error::Error>> {
                     let mut handles = Vec::new();
                     let mut start = 0;
                     while start < pair_count {
@@ -1246,11 +1246,11 @@ fn signature_stats(signature: &[u16; TEXT_SIGNATURE_BINS]) -> SignatureStats {
     let global_mean = signature_global_mean(signature);
     let mut row_means = [0_i16; TEXT_SIGNATURE_GRID];
     let mut col_means = [0_i16; TEXT_SIGNATURE_GRID];
-    for row in 0..TEXT_SIGNATURE_GRID {
-        row_means[row] = signature_row_mean(signature, row);
+    for (row, mean) in row_means.iter_mut().enumerate() {
+        *mean = signature_row_mean(signature, row);
     }
-    for col in 0..TEXT_SIGNATURE_GRID {
-        col_means[col] = signature_col_mean(signature, col);
+    for (col, mean) in col_means.iter_mut().enumerate() {
+        *mean = signature_col_mean(signature, col);
     }
     SignatureStats {
         global_mean,
@@ -1413,12 +1413,13 @@ fn neighbor_ink_count(image: &[u8], image_size: usize, x: usize, y: usize) -> u8
             }
             let nx = x.checked_add(dx).and_then(|value| value.checked_sub(1));
             let ny = y.checked_add(dy).and_then(|value| value.checked_sub(1));
-            if let (Some(nx), Some(ny)) = (nx, ny) {
-                if nx < image_size && ny < image_size {
-                    let value = image[pixel_index(image_size, nx, ny)];
-                    if value > INK_THRESHOLD {
-                        count = count.saturating_add(1);
-                    }
+            if let (Some(nx), Some(ny)) = (nx, ny)
+                && nx < image_size
+                && ny < image_size
+            {
+                let value = image[pixel_index(image_size, nx, ny)];
+                if value > INK_THRESHOLD {
+                    count = count.saturating_add(1);
                 }
             }
         }

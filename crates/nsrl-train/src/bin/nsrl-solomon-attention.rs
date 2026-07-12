@@ -1,12 +1,12 @@
 #![deny(unsafe_code)]
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 
 use nsrl_train::{
-    ByteTokenizerId, MINI_TRANSFORMER_D_MODEL, MINI_TRANSFORMER_HEADS,
+    ByteTokenizerId, MINI_TRANSFORMER_D_MODEL, MINI_TRANSFORMER_HEADS, MINI_TRANSFORMER_HIDDEN_DIM,
     MiniTransformerAttentionKind, MiniTransformerBatchMode, MiniTransformerMlpModel,
     MiniTransformerMlpTrainConfig, MiniTransformerNextTokenRow, MiniTransformerPositionPolicy,
     MiniTransformerTargetSegment, MiniTransformerTraceDetail,
@@ -18,7 +18,7 @@ const TRAIN_SCHEMA: &str = "nsrl.solomon_attention_train_trace.v1";
 const SAMPLE_SCHEMA: &str = "nsrl.solomon_attention_sample_trace.v1";
 const EVAL_SCHEMA: &str = "nsrl.solomon_attention_eval_trace.v1";
 const MODEL_MAGIC: &[u8; 8] = b"NSRLLMM1";
-const MODEL_VERSION: u32 = 4;
+const MODEL_VERSION: u32 = 5;
 
 const PAD: u8 = 0;
 const BOS: u8 = 1;
@@ -26,6 +26,16 @@ const PROMPT: u8 = 2;
 const TEXT: u8 = 3;
 const IMAGE: u8 = 4;
 const EOS: u8 = 5;
+const TASK_TEXT_TO_IMAGE: u8 = 6;
+const TASK_IMAGE_TO_TEXT: u8 = 7;
+const TASK_MATCH: u8 = 8;
+const TASK_EXPLAIN: u8 = 9;
+const TASK_IDENTIFY: u8 = 10;
+const IMAGE_CHANNEL_INK: u8 = 11;
+const IMAGE_CHANNEL_EDGE: u8 = 12;
+const IMAGE_CHANNEL_COMPONENT: u8 = 13;
+const IMAGE_CHANNEL_RADIAL: u8 = 14;
+const IMAGE_CHANNEL_DIRECTION: u8 = 15;
 const TEXT_BASE: u8 = 16;
 const TEXT_COUNT: u8 = 128;
 const IMAGE_BASE: u8 = TEXT_BASE + TEXT_COUNT;
@@ -174,6 +184,8 @@ struct Config {
     window_offset: usize,
     max_windows: Option<usize>,
     batch_windows: usize,
+    batch_mode: MiniTransformerBatchMode,
+    map_reduce_workers: usize,
     target_token_min: u8,
     target_token_max: u8,
     target_segment: TargetSegment,
@@ -215,6 +227,7 @@ struct Config {
     top_k: usize,
     sample_seed: u64,
     eval_max_examples: Option<usize>,
+    eval_max_targets_per_task_phase: Option<usize>,
     text_token_profile: TextTokenProfile,
     position_policy: MiniTransformerPositionPolicy,
     adaptive_attention_shifts: bool,
@@ -241,6 +254,8 @@ impl Default for Config {
             window_offset: 0,
             max_windows: Some(DEFAULT_MAX_WINDOWS),
             batch_windows: DEFAULT_BATCH_WINDOWS,
+            batch_mode: MiniTransformerBatchMode::Serial,
+            map_reduce_workers: 1,
             target_token_min: u8::MIN,
             target_token_max: u8::MAX,
             target_segment: TargetSegment::All,
@@ -282,6 +297,7 @@ impl Default for Config {
             top_k: 1,
             sample_seed: 1,
             eval_max_examples: Some(16),
+            eval_max_targets_per_task_phase: None,
             text_token_profile: TextTokenProfile::Char,
             position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
             adaptive_attention_shifts: false,
@@ -415,7 +431,7 @@ fn name_opening_start_sequence(text_token_profile: TextTokenProfile) -> Vec<u8> 
 
 fn name_opening_end_markers(text_token_profile: TextTokenProfile) -> Vec<u8> {
     match text_token_profile {
-        TextTokenProfile::Char => vec![TEXT_BASE + b':' as u8, IMAGE, EOS],
+        TextTokenProfile::Char => vec![TEXT_BASE + b':', IMAGE, EOS],
         TextTokenProfile::Chunked => vec![TEXT_CHUNK_BASE + 1, IMAGE, EOS],
     }
 }
@@ -530,12 +546,23 @@ struct TextMemoryExample {
     image_tokens: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum EvalPhase {
     Special,
     Prompt,
     Text,
     Image,
+}
+
+impl EvalPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            EvalPhase::Special => "special",
+            EvalPhase::Prompt => "prompt",
+            EvalPhase::Text => "text",
+            EvalPhase::Image => "image",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -551,6 +578,29 @@ struct EvalStats {
     target_margin_q8_min: i32,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct TrainCorpusStats {
+    examples: usize,
+    targets: usize,
+    special_targets: usize,
+    prompt_targets: usize,
+    text_targets: usize,
+    image_targets: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TrainCorpusCoverage {
+    source: &'static str,
+    source_examples_path: String,
+    source_examples_hash: Option<u64>,
+    examples: usize,
+    skipped_examples: usize,
+    prefix_pad_tokens: usize,
+    orphan_tokens: usize,
+    tasks: BTreeMap<String, TrainCorpusStats>,
+    task_phases: BTreeMap<(String, EvalPhase), TrainCorpusStats>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct EvalTokenDiagnostics {
     predicted: u8,
@@ -560,9 +610,10 @@ struct EvalTokenDiagnostics {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ExampleMarkers {
-    prompt: usize,
-    text: usize,
-    image: usize,
+    task: Option<u8>,
+    prompt: Option<usize>,
+    text: Option<usize>,
+    image: Option<usize>,
     eos: usize,
 }
 
@@ -629,7 +680,8 @@ fn usage() {
          \t[--solomon-name-copy-repair-preserve-body-output]\n\
          \t[--solomon-body-scaffold]\n\
          \t[--reject-loss-regression]\n\
-         \t[--batch-windows N] [--progress-interval-batches N]\n\
+         \t[--batch-windows N] [--batch-mode serial|map-reduce] [--map-reduce-workers N|0-auto]\n\
+         \t[--progress-interval-batches N]\n\
          \t[--adaptive-attention-shifts] [--attention-vo-oracle]\n\
          Sample options: [--out-dir PATH] [--prompt TEXT] [--text-prefix TEXT]\n\
          \t[--max-text-tokens N]\n\
@@ -644,7 +696,7 @@ fn usage() {
          \t[--suppress-name-chunks-after-opening]\n\
          \t[--top-k N] [--sample-seed N]\n\
          Eval options: [--tokens PATH] [--model PATH] [--conditioning-examples PATH]\n\
-         \t[--eval-max-examples N|none]"
+         \t[--eval-max-examples N|none] [--eval-max-targets-per-task-phase N|none]"
     );
 }
 
@@ -720,6 +772,15 @@ where
             }
             "--batch-windows" => {
                 config.batch_windows = parse_positive_usize(args.next(), "--batch-windows")?;
+            }
+            "--batch-mode" => {
+                let value = args
+                    .next()
+                    .ok_or("--batch-mode requires serial or map-reduce")?;
+                config.batch_mode = parse_batch_mode(&value)?;
+            }
+            "--map-reduce-workers" => {
+                config.map_reduce_workers = parse_usize(args.next(), "--map-reduce-workers")?;
             }
             "--target-token-range" => {
                 config.target_token_min = parse_u8(args.next(), "--target-token-range MIN")?;
@@ -905,6 +966,19 @@ where
                     Some(parse_positive_usize(Some(value), "--eval-max-examples")?)
                 };
             }
+            "--eval-max-targets-per-task-phase" => {
+                let value = args
+                    .next()
+                    .ok_or("--eval-max-targets-per-task-phase requires N or none")?;
+                config.eval_max_targets_per_task_phase = if value == "none" {
+                    None
+                } else {
+                    Some(parse_positive_usize(
+                        Some(value),
+                        "--eval-max-targets-per-task-phase",
+                    )?)
+                };
+            }
             "--text-token-profile" => {
                 config.text_token_profile = parse_text_token_profile(
                     &args
@@ -942,6 +1016,14 @@ fn parse_position_policy(
         _ => Err(
             format!("unknown position policy: {value}; expected learned-absolute or nope").into(),
         ),
+    }
+}
+
+fn parse_batch_mode(value: &str) -> Result<MiniTransformerBatchMode, Box<dyn std::error::Error>> {
+    match value {
+        "serial" => Ok(MiniTransformerBatchMode::Serial),
+        "map-reduce" | "map_reduce" => Ok(MiniTransformerBatchMode::MapReduce),
+        _ => Err(format!("unknown batch mode: {value}; expected serial or map-reduce").into()),
     }
 }
 
@@ -1026,6 +1108,7 @@ fn parse_u8(value: Option<String>, flag: &str) -> Result<u8, Box<dyn std::error:
 fn train_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = read_u8_tokens(&config.tokens_path)?;
     validate_corpus(&tokens)?;
+    let train_corpus = train_corpus_coverage(config.conditioning_examples.as_ref(), &tokens)?;
     let train_config = train_config(&config);
     let initial = load_initial_transformer(&config, train_config.seq_len)?;
     let text_memory = load_text_memory(
@@ -1082,17 +1165,34 @@ fn train_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(parent)?;
     }
     fs::write(&config.model_out, model.try_to_bytes()?)?;
+    let available_parallelism = attention_available_parallelism();
+    let effective_map_reduce_workers =
+        effective_attention_map_reduce_workers(&run.trace.config, available_parallelism);
     println!(
-        "{{\"schema\":\"{}\",\"model\":\"{}\",\"token_count\":{},\"token_hash\":\"0x{:016x}\",\"model_hash\":\"0x{:016x}\",\"inner_model_hash\":\"0x{:016x}\",\"attention_kind\":\"{}\",\"position_policy\":\"{}\",\"text_token_profile\":\"{}\",\"embedded_text_memory_order\":{},\"embedded_text_memory_examples\":{},\"adaptive_attention_shifts\":{},\"attention_vo_oracle\":{},\"zero_output_head_init\":{},\"solomon_name_copy_init\":{},\"solomon_name_copy_repair\":{},\"solomon_name_copy_repair_preserve_body_output\":{},\"solomon_body_scaffold\":{},\"solomon_body_opening_repair\":{},\"learning_rate\":{},\"output_lr_shift\":{},\"mlp_lr_shift\":{},\"embed_lr_shift\":{},\"attention_lr_shift\":{},\"attention_q_lr_shift\":{},\"attention_qk_lr_shift\":{},\"target_token_min\":{},\"target_token_max\":{},\"target_segment\":\"{}\",\"target_frequency_cap\":{},\"target_frequency_min_weight_q15\":{},\"argmax_margin_weight_q15\":{},\"reject_loss_regression\":{},\"seq_len\":{},\"stride\":{},\"window_offset\":{},\"windows\":{},\"examined_windows\":{},\"updates\":{},\"accepted_batches\":{},\"rejected_batches\":{},\"rollback_count\":{},\"rejected_windows\":{},\"final_accuracy_per_mille\":{},\"initial_probability_error_q15\":{},\"final_probability_error_q15\":{},\"probability_error_delta_i64\":{}}}",
+        "{{\"schema\":\"{}\",\"model\":\"{}\",\"token_count\":{},\"token_hash\":\"0x{:016x}\",\"corpus_coverage_source\":\"{}\",\"corpus_examples_path\":\"{}\",\"corpus_examples_hash\":{},\"corpus_examples\":{},\"corpus_skipped_examples\":{},\"corpus_prefix_pad_tokens\":{},\"corpus_orphan_tokens\":{},\"tasks\":{},\"task_phases\":{},\"model_hash\":\"0x{:016x}\",\"inner_model_hash\":\"0x{:016x}\",\"attention_kind\":\"{}\",\"position_policy\":\"{}\",\"text_token_profile\":\"{}\",\"d_model\":{},\"heads\":{},\"hidden_dim\":{},\"transformer_layers\":{},\"epochs\":{},\"embedded_text_memory_order\":{},\"embedded_text_memory_examples\":{},\"adaptive_attention_shifts\":{},\"attention_vo_oracle\":{},\"zero_output_head_init\":{},\"solomon_name_copy_init\":{},\"solomon_name_copy_repair\":{},\"solomon_name_copy_repair_preserve_body_output\":{},\"solomon_body_scaffold\":{},\"solomon_body_opening_repair\":{},\"learning_rate\":{},\"output_lr_shift\":{},\"mlp_lr_shift\":{},\"embed_lr_shift\":{},\"attention_lr_shift\":{},\"attention_q_lr_shift\":{},\"attention_qk_lr_shift\":{},\"target_token_min\":{},\"target_token_max\":{},\"target_segment\":\"{}\",\"target_frequency_cap\":{},\"target_frequency_min_weight_q15\":{},\"argmax_margin_weight_q15\":{},\"reject_loss_regression\":{},\"batch_mode\":\"{}\",\"map_reduce_workers\":{},\"effective_map_reduce_workers\":{},\"available_parallelism\":{},\"seq_len\":{},\"stride\":{},\"window_offset\":{},\"max_windows\":{},\"windows\":{},\"examined_windows\":{},\"updates\":{},\"accepted_batches\":{},\"rejected_batches\":{},\"rollback_count\":{},\"rejected_windows\":{},\"final_accuracy_per_mille\":{},\"initial_probability_error_q15\":{},\"final_probability_error_q15\":{},\"probability_error_delta_i64\":{}}}",
         TRAIN_SCHEMA,
         json_escape(&config.model_out.display().to_string()),
         model.token_count,
         model.token_hash,
+        json_escape(train_corpus.source),
+        json_escape(&train_corpus.source_examples_path),
+        json_optional_hash(train_corpus.source_examples_hash),
+        train_corpus.examples,
+        train_corpus.skipped_examples,
+        train_corpus.prefix_pad_tokens,
+        train_corpus.orphan_tokens,
+        train_corpus_stats_to_json(&train_corpus.tasks),
+        train_corpus_phase_stats_to_json(&train_corpus.task_phases),
         model.model_hash()?,
         model.transformer.model_hash(),
         model.attention_kind.as_str(),
         model.position_policy.as_str(),
         model.text_token_profile.as_str(),
+        MINI_TRANSFORMER_D_MODEL,
+        MINI_TRANSFORMER_HEADS,
+        MINI_TRANSFORMER_HIDDEN_DIM,
+        model.transformer.transformer_layers(),
+        run.trace.config.epochs,
         model
             .text_memory
             .as_ref()
@@ -1125,9 +1225,14 @@ fn train_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         run.trace.config.target_frequency_min_weight_q15,
         run.trace.config.argmax_margin_weight_q15,
         run.trace.config.reject_loss_regression,
+        run.trace.config.batch_mode.as_str(),
+        run.trace.config.map_reduce_workers,
+        effective_map_reduce_workers,
+        available_parallelism,
         run.trace.config.seq_len,
         run.trace.config.stride,
         run.trace.config.window_offset,
+        json_optional_usize(run.trace.config.max_windows),
         run.trace.windows,
         run.trace.examined_windows,
         run.trace.updates,
@@ -1261,7 +1366,7 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     fs::write(
         &trace_path,
         format!(
-            "{{\n  \"schema\":\"{}\",\n  \"model\":\"{}\",\n  \"model_hash\":\"0x{:016x}\",\n  \"inner_model_hash\":\"0x{:016x}\",\n  \"attention_kind\":\"{}\",\n  \"position_policy\":\"{}\",\n  \"text_token_profile\":\"{}\",\n  \"prompt\":\"{}\",\n  \"text_prefix\":\"{}\",\n  \"text_prefix_tokens\":{},\n  \"generated_text\":\"{}\",\n  \"generated_token_count\":{},\n  \"conditioning_primary_name\":\"{}\",\n  \"conditioning_prompt\":\"{}\",\n  \"conditioning_score\":{},\n  \"conditioning_text_tokens\":{},\n  \"conditioning_image_tokens\":{},\n  \"text_prior_source\":\"{}\",\n  \"text_prior_order\":{},\n  \"text_prior_min_order\":{},\n  \"text_prior_contexts\":{},\n  \"text_prior_prompt_starts\":{},\n  \"text_prior_selected_start_tokens\":{},\n  \"text_prior_boost_q8\":{},\n  \"text_prior_strict\":{},\n  \"text_chunk_boost_q8\":{},\n  \"image_prior_source\":\"{}\",\n  \"image_prior_primary_name\":\"{}\",\n  \"image_prior_prompt\":\"{}\",\n  \"image_prior_tokens\":{},\n  \"decode_logit_delta\":{},\n  \"prompt_name_opening_prior\":{},\n  \"suppress_name_chunks_after_opening\":{},\n  \"image_grid\":{},\n  \"image_bins\":{},\n  \"text_out\":\"{}\",\n  \"image_ink16_u8\":\"{}\",\n  \"image_pgm\":\"{}\"\n}}\n",
+            "{{\n  \"schema\":\"{}\",\n  \"model\":\"{}\",\n  \"model_hash\":\"0x{:016x}\",\n  \"inner_model_hash\":\"0x{:016x}\",\n  \"attention_kind\":\"{}\",\n  \"position_policy\":\"{}\",\n  \"text_token_profile\":\"{}\",\n  \"d_model\":{},\n  \"heads\":{},\n  \"hidden_dim\":{},\n  \"transformer_layers\":{},\n  \"context_seq_len\":{},\n  \"prompt\":\"{}\",\n  \"text_prefix\":\"{}\",\n  \"text_prefix_tokens\":{},\n  \"generated_text\":\"{}\",\n  \"generated_token_count\":{},\n  \"conditioning_primary_name\":\"{}\",\n  \"conditioning_prompt\":\"{}\",\n  \"conditioning_score\":{},\n  \"conditioning_text_tokens\":{},\n  \"conditioning_image_tokens\":{},\n  \"text_prior_source\":\"{}\",\n  \"text_prior_order\":{},\n  \"text_prior_min_order\":{},\n  \"text_prior_contexts\":{},\n  \"text_prior_prompt_starts\":{},\n  \"text_prior_selected_start_tokens\":{},\n  \"text_prior_boost_q8\":{},\n  \"text_prior_strict\":{},\n  \"text_chunk_boost_q8\":{},\n  \"image_prior_source\":\"{}\",\n  \"image_prior_primary_name\":\"{}\",\n  \"image_prior_prompt\":\"{}\",\n  \"image_prior_tokens\":{},\n  \"decode_logit_delta\":{},\n  \"prompt_name_opening_prior\":{},\n  \"suppress_name_chunks_after_opening\":{},\n  \"image_grid\":{},\n  \"image_bins\":{},\n  \"text_out\":\"{}\",\n  \"image_ink16_u8\":\"{}\",\n  \"image_pgm\":\"{}\"\n}}\n",
             SAMPLE_SCHEMA,
             json_escape(&config.model_path.display().to_string()),
             model.model_hash()?,
@@ -1269,6 +1374,11 @@ fn sample_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             model.attention_kind.as_str(),
             model.position_policy.as_str(),
             model.text_token_profile.as_str(),
+            MINI_TRANSFORMER_D_MODEL,
+            MINI_TRANSFORMER_HEADS,
+            MINI_TRANSFORMER_HIDDEN_DIM,
+            model.transformer.transformer_layers(),
+            model.transformer.context_seq_len,
             json_escape(&sample.prompt),
             json_escape(&config.text_prefix),
             encode_text_prefix_tokens(&config.text_prefix, model.text_token_profile).len(),
@@ -1381,6 +1491,9 @@ fn eval_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let mut prompt = EvalStats::default();
     let mut text = EvalStats::default();
     let mut image = EvalStats::default();
+    let mut task_stats = BTreeMap::<String, EvalStats>::new();
+    let mut task_phase_stats = BTreeMap::<(String, EvalPhase), EvalStats>::new();
+    let mut task_phase_targets = BTreeMap::<(String, EvalPhase), usize>::new();
     let mut padded_context = PaddedContext::new(model.transformer.context_seq_len);
 
     for line in fs::read_to_string(examples_path)?
@@ -1413,9 +1526,22 @@ fn eval_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             skipped_examples += 1;
             continue;
         };
+        let task_name = json_string_field(line, "task")
+            .or_else(|| markers.task_name().map(str::to_string))
+            .unwrap_or_else(|| "legacy".to_string());
         examples += 1;
         for target_index in 1..example_tokens.len() {
-            let phase = markers.phase_for_target(target_index);
+            let phase = markers.phase_for_target(example_tokens, target_index);
+            let task_phase_key = (task_name.clone(), phase);
+            if config.eval_max_targets_per_task_phase.is_some_and(|limit| {
+                task_phase_targets
+                    .get(&task_phase_key)
+                    .copied()
+                    .unwrap_or(0)
+                    >= limit
+            }) {
+                continue;
+            }
             let padded_context_window = padded_context.window(
                 &example_tokens[..target_index],
                 model.transformer.context_seq_len,
@@ -1444,6 +1570,14 @@ fn eval_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                         EvalPhase::Text => text.observe(target_probability_q15, diagnostics),
                         EvalPhase::Image => image.observe(target_probability_q15, diagnostics),
                     }
+                    task_stats
+                        .entry(task_name.clone())
+                        .or_default()
+                        .observe(target_probability_q15, diagnostics);
+                    task_phase_stats
+                        .entry(task_phase_key.clone())
+                        .or_default()
+                        .observe(target_probability_q15, diagnostics);
                 }
                 Err(_) => {
                     total.observe_invalid();
@@ -1453,13 +1587,22 @@ fn eval_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                         EvalPhase::Text => text.observe_invalid(),
                         EvalPhase::Image => image.observe_invalid(),
                     }
+                    task_stats
+                        .entry(task_name.clone())
+                        .or_default()
+                        .observe_invalid();
+                    task_phase_stats
+                        .entry(task_phase_key.clone())
+                        .or_default()
+                        .observe_invalid();
                 }
             }
+            *task_phase_targets.entry(task_phase_key).or_default() += 1;
         }
     }
 
     println!(
-        "{{\"schema\":\"{}\",\"model\":\"{}\",\"model_hash\":\"0x{:016x}\",\"inner_model_hash\":\"0x{:016x}\",\"tokens\":\"{}\",\"token_count\":{},\"token_hash\":\"0x{:016x}\",\"examples\":\"{}\",\"eval_max_examples\":{},\"example_count\":{},\"skipped_examples\":{},\"attention_kind\":\"{}\",\"position_policy\":\"{}\",\"text_token_profile\":\"{}\",\"context_seq_len\":{},\"total\":{},\"special\":{},\"prompt\":{},\"text\":{},\"image\":{}}}",
+        "{{\"schema\":\"{}\",\"model\":\"{}\",\"model_hash\":\"0x{:016x}\",\"inner_model_hash\":\"0x{:016x}\",\"tokens\":\"{}\",\"token_count\":{},\"token_hash\":\"0x{:016x}\",\"examples\":\"{}\",\"eval_max_examples\":{},\"eval_max_targets_per_task_phase\":{},\"example_count\":{},\"skipped_examples\":{},\"attention_kind\":\"{}\",\"position_policy\":\"{}\",\"text_token_profile\":\"{}\",\"d_model\":{},\"heads\":{},\"hidden_dim\":{},\"transformer_layers\":{},\"context_seq_len\":{},\"total\":{},\"special\":{},\"prompt\":{},\"text\":{},\"image\":{},\"output_heads\":{},\"tasks\":{},\"task_phases\":{}}}",
         EVAL_SCHEMA,
         json_escape(&config.model_path.display().to_string()),
         model.model_hash()?,
@@ -1472,17 +1615,28 @@ fn eval_command(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             .eval_max_examples
             .map(|value| value.to_string())
             .unwrap_or_else(|| "null".to_string()),
+        config
+            .eval_max_targets_per_task_phase
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "null".to_string()),
         examples,
         skipped_examples,
         model.attention_kind.as_str(),
         model.position_policy.as_str(),
         model.text_token_profile.as_str(),
+        MINI_TRANSFORMER_D_MODEL,
+        MINI_TRANSFORMER_HEADS,
+        MINI_TRANSFORMER_HIDDEN_DIM,
+        model.transformer.transformer_layers(),
         model.transformer.context_seq_len,
         total.to_json(),
         special.to_json(),
         prompt.to_json(),
         text.to_json(),
         image.to_json(),
+        eval_output_heads_to_json(special, prompt, text, image, model.text_token_profile,),
+        eval_task_stats_to_json(&task_stats),
+        eval_task_phase_stats_to_json(&task_phase_stats),
     );
     Ok(())
 }
@@ -1520,8 +1674,29 @@ fn train_config(config: &Config) -> MiniTransformerMlpTrainConfig {
         attention_vo_error_feedback: false,
         attention_vo_oracle: config.attention_vo_oracle,
         reject_loss_regression: config.reject_loss_regression,
-        batch_mode: MiniTransformerBatchMode::Serial,
-        map_reduce_workers: 1,
+        batch_mode: config.batch_mode,
+        map_reduce_workers: config.map_reduce_workers,
+    }
+}
+
+fn attention_available_parallelism() -> usize {
+    std::thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1)
+        .max(1)
+}
+
+fn effective_attention_map_reduce_workers(
+    config: &MiniTransformerMlpTrainConfig,
+    available_parallelism: usize,
+) -> usize {
+    if config.batch_mode != MiniTransformerBatchMode::MapReduce {
+        return 1;
+    }
+    if config.map_reduce_workers == 0 {
+        available_parallelism.max(1)
+    } else {
+        config.map_reduce_workers.max(1)
     }
 }
 
@@ -1806,9 +1981,16 @@ fn apply_solomon_body_scaffold(
     if text_token_profile != TextTokenProfile::Chunked {
         return Err("--solomon-body-scaffold requires --text-token-profile chunked".into());
     }
-    let body_dims = 25..MINI_TRANSFORMER_D_MODEL;
-    if body_dims.is_empty() || body_dims.start <= MINI_TRANSFORMER_D_MODEL / MINI_TRANSFORMER_HEADS
-    {
+    if MINI_TRANSFORMER_D_MODEL > 64 {
+        return Err(
+            "--solomon-body-scaffold is only supported for <=64d diagnostic profiles; use --solomon-body-opening-repair for promoted-width runs"
+                .into(),
+        );
+    }
+    let zero_dims = 25..MINI_TRANSFORMER_D_MODEL;
+    let body_dim_end = MINI_TRANSFORMER_D_MODEL.min(25 + usize::BITS as usize);
+    let body_dims = 25..body_dim_end;
+    if body_dims.is_empty() {
         return Err("Solomon body scaffold requires a free high model dimension".into());
     }
     let embedding_len = VOCAB_SIZE
@@ -1823,7 +2005,7 @@ fn apply_solomon_body_scaffold(
 
     for token in 0..VOCAB_SIZE {
         let row_start = token * MINI_TRANSFORMER_D_MODEL;
-        for dim in body_dims.clone() {
+        for dim in zero_dims.clone() {
             model.embeddings[row_start + dim] = 0;
             model.output_weights[row_start + dim] = 0;
         }
@@ -2053,6 +2235,116 @@ fn validate_corpus(tokens: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn train_corpus_coverage(
+    examples_path: Option<&PathBuf>,
+    tokens: &[u8],
+) -> Result<TrainCorpusCoverage, Box<dyn std::error::Error>> {
+    if let Some(path) = examples_path
+        && path.exists()
+    {
+        return train_corpus_coverage_from_examples(path, tokens);
+    }
+    Ok(train_corpus_coverage_from_tokens(tokens))
+}
+
+fn train_corpus_coverage_from_examples(
+    examples_path: &PathBuf,
+    tokens: &[u8],
+) -> Result<TrainCorpusCoverage, Box<dyn std::error::Error>> {
+    let mut coverage = TrainCorpusCoverage {
+        source: "examples",
+        source_examples_path: examples_path.display().to_string(),
+        source_examples_hash: None,
+        examples: 0,
+        skipped_examples: 0,
+        prefix_pad_tokens: 0,
+        orphan_tokens: 0,
+        tasks: BTreeMap::new(),
+        task_phases: BTreeMap::new(),
+    };
+    let examples_text = fs::read_to_string(examples_path)?;
+    coverage.source_examples_hash = Some(hash_bytes(examples_text.as_bytes()));
+    for line in examples_text.lines().filter(|line| !line.is_empty()) {
+        coverage.prefix_pad_tokens = coverage
+            .prefix_pad_tokens
+            .saturating_add(json_usize_field(line, "padding_before").unwrap_or(0));
+        let Some(offset) = json_usize_field(line, "token_offset") else {
+            coverage.skipped_examples += 1;
+            continue;
+        };
+        let Some(count) = json_usize_field(line, "token_count") else {
+            coverage.skipped_examples += 1;
+            continue;
+        };
+        let Some(end) = offset.checked_add(count) else {
+            coverage.skipped_examples += 1;
+            continue;
+        };
+        let Some(example_tokens) = tokens.get(offset..end) else {
+            coverage.skipped_examples += 1;
+            continue;
+        };
+        let Some(markers) = ExampleMarkers::from_tokens(example_tokens) else {
+            coverage.skipped_examples += 1;
+            continue;
+        };
+        let task_name = json_string_field(line, "task")
+            .or_else(|| markers.task_name().map(str::to_string))
+            .unwrap_or_else(|| "legacy".to_string());
+        observe_train_corpus_example(&mut coverage, task_name, example_tokens, markers);
+    }
+    Ok(coverage)
+}
+
+fn train_corpus_coverage_from_tokens(tokens: &[u8]) -> TrainCorpusCoverage {
+    let mut coverage = TrainCorpusCoverage {
+        source: "tokens",
+        source_examples_path: String::new(),
+        source_examples_hash: None,
+        examples: 0,
+        skipped_examples: 0,
+        prefix_pad_tokens: 0,
+        orphan_tokens: 0,
+        tasks: BTreeMap::new(),
+        task_phases: BTreeMap::new(),
+    };
+    let mut index = 0_usize;
+    while index < tokens.len() {
+        match tokens[index] {
+            PAD => {
+                coverage.prefix_pad_tokens += 1;
+                index += 1;
+            }
+            BOS => {
+                let Some(relative_end) = tokens[index + 1..].iter().position(|&token| token == EOS)
+                else {
+                    coverage.skipped_examples += 1;
+                    coverage.orphan_tokens =
+                        coverage.orphan_tokens.saturating_add(tokens.len() - index);
+                    break;
+                };
+                let end = index + relative_end + 2;
+                let example_tokens = &tokens[index..end];
+                if let Some(markers) = ExampleMarkers::from_tokens(example_tokens) {
+                    let task_name = markers
+                        .task_name()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| "legacy".to_string());
+                    observe_train_corpus_example(&mut coverage, task_name, example_tokens, markers);
+                } else {
+                    coverage.skipped_examples += 1;
+                }
+                index = end;
+            }
+            _ => {
+                coverage.orphan_tokens += 1;
+                index += 1;
+            }
+        }
+    }
+    coverage
 }
 
 fn load_conditioning_match(
@@ -2464,18 +2756,28 @@ fn prompt_contains_phrase(prompt_key: &str, phrase: &str) -> bool {
 
 impl ExampleMarkers {
     fn from_tokens(tokens: &[u8]) -> Option<Self> {
-        let prompt = tokens.iter().position(|&token| token == PROMPT)?;
-        let text = tokens.iter().position(|&token| token == TEXT)?;
-        let image = tokens.iter().position(|&token| token == IMAGE)?;
+        if tokens.first().copied()? != BOS {
+            return None;
+        }
+        let task = tokens.get(1).copied().filter(|&token| is_task_token(token));
+        let prompt = tokens.iter().position(|&token| token == PROMPT);
+        let text = tokens.iter().position(|&token| token == TEXT);
+        let image = tokens.iter().position(|&token| token == IMAGE);
         let eos = tokens
             .iter()
             .enumerate()
-            .skip(image + 1)
+            .skip(1)
             .find_map(|(index, &token)| if token == EOS { Some(index) } else { None })?;
-        if prompt != 1 || text <= prompt || image <= text || eos <= image {
+        if prompt.is_none() && text.is_none() && image.is_none() {
             return None;
         }
+        for marker in [prompt, text, image].into_iter().flatten() {
+            if marker == 0 || marker >= eos {
+                return None;
+            }
+        }
         Some(Self {
+            task,
             prompt,
             text,
             image,
@@ -2483,20 +2785,94 @@ impl ExampleMarkers {
         })
     }
 
-    fn phase_for_target(self, target_index: usize) -> EvalPhase {
-        if target_index > self.prompt && target_index < self.text {
-            EvalPhase::Prompt
-        } else if target_index > self.text && target_index < self.image {
-            EvalPhase::Text
-        } else if target_index > self.image && target_index < self.eos {
-            EvalPhase::Image
-        } else {
-            EvalPhase::Special
+    fn phase_for_target(self, tokens: &[u8], target_index: usize) -> EvalPhase {
+        let Some(&target) = tokens.get(target_index) else {
+            return EvalPhase::Special;
+        };
+        if target_index == self.eos || is_control_marker(target) || is_task_token(target) {
+            return EvalPhase::Special;
         }
+        let mut section: Option<(usize, EvalPhase)> = None;
+        for (marker, phase) in [
+            (self.prompt, EvalPhase::Prompt),
+            (self.text, EvalPhase::Text),
+            (self.image, EvalPhase::Image),
+        ] {
+            if let Some(marker) = marker
+                && marker < target_index
+                && marker < self.eos
+                && section.is_none_or(|(current, _)| marker > current)
+            {
+                section = Some((marker, phase));
+            }
+        }
+        section
+            .map(|(_, phase)| phase)
+            .unwrap_or(EvalPhase::Special)
+    }
+
+    fn task_name(self) -> Option<&'static str> {
+        if self.task == Some(TASK_EXPLAIN)
+            && self
+                .prompt
+                .zip(self.image)
+                .zip(self.text)
+                .is_some_and(|((prompt, image), text)| prompt < image && image < text)
+        {
+            return Some("text-image-explain");
+        }
+        if self.task == Some(TASK_EXPLAIN)
+            && self
+                .prompt
+                .zip(self.image)
+                .zip(self.text)
+                .is_some_and(|((prompt, image), text)| image < prompt && prompt < text)
+        {
+            return Some("image-to-attributes");
+        }
+        if self.task == Some(TASK_EXPLAIN)
+            && self
+                .image
+                .zip(self.text)
+                .is_some_and(|(image, text)| image < text)
+        {
+            return Some("image-to-explain");
+        }
+        self.task.and_then(task_name)
     }
 }
 
 impl EvalStats {
+    fn merged(values: &[Self]) -> Self {
+        let mut out = Self::default();
+        for &value in values {
+            out.merge(value);
+        }
+        out
+    }
+
+    fn merge(&mut self, other: Self) {
+        let had_valid_targets = self.valid_targets() > 0;
+        let other_valid_targets = other.valid_targets() > 0;
+        self.targets = self.targets.saturating_add(other.targets);
+        self.correct = self.correct.saturating_add(other.correct);
+        self.invalid_contexts = self.invalid_contexts.saturating_add(other.invalid_contexts);
+        self.probability_error_q15 = self
+            .probability_error_q15
+            .saturating_add(other.probability_error_q15);
+        self.target_rank_sum = self.target_rank_sum.saturating_add(other.target_rank_sum);
+        self.top5_correct = self.top5_correct.saturating_add(other.top5_correct);
+        self.top10_correct = self.top10_correct.saturating_add(other.top10_correct);
+        self.target_margin_q8_sum = self
+            .target_margin_q8_sum
+            .saturating_add(other.target_margin_q8_sum);
+        if other_valid_targets
+            && (!had_valid_targets || other.target_margin_q8_min < self.target_margin_q8_min)
+        {
+            self.target_margin_q8_min = other.target_margin_q8_min;
+        }
+    }
+
     fn observe(&mut self, target_probability_q15: u64, diagnostics: EvalTokenDiagnostics) {
         let first_valid = self.targets == self.invalid_contexts;
         self.targets += 1;
@@ -2597,6 +2973,220 @@ impl EvalStats {
     }
 }
 
+impl TrainCorpusStats {
+    fn observe_example(&mut self) {
+        self.examples += 1;
+    }
+
+    fn observe_phase(&mut self, phase: EvalPhase) {
+        self.targets += 1;
+        match phase {
+            EvalPhase::Special => self.special_targets += 1,
+            EvalPhase::Prompt => self.prompt_targets += 1,
+            EvalPhase::Text => self.text_targets += 1,
+            EvalPhase::Image => self.image_targets += 1,
+        }
+    }
+
+    fn to_json(self) -> String {
+        format!(
+            "{{\"examples\":{},\"targets\":{},\"special_targets\":{},\"prompt_targets\":{},\"text_targets\":{},\"image_targets\":{}}}",
+            self.examples,
+            self.targets,
+            self.special_targets,
+            self.prompt_targets,
+            self.text_targets,
+            self.image_targets,
+        )
+    }
+}
+
+fn observe_train_corpus_example(
+    coverage: &mut TrainCorpusCoverage,
+    task_name: String,
+    tokens: &[u8],
+    markers: ExampleMarkers,
+) {
+    coverage.examples += 1;
+    coverage
+        .tasks
+        .entry(task_name.clone())
+        .or_default()
+        .observe_example();
+    let mut seen_phases = Vec::<EvalPhase>::new();
+    for target_index in 1..tokens.len() {
+        let phase = markers.phase_for_target(tokens, target_index);
+        if !seen_phases.contains(&phase) {
+            seen_phases.push(phase);
+        }
+        coverage
+            .tasks
+            .entry(task_name.clone())
+            .or_default()
+            .observe_phase(phase);
+        coverage
+            .task_phases
+            .entry((task_name.clone(), phase))
+            .or_default()
+            .observe_phase(phase);
+    }
+    for phase in seen_phases {
+        coverage
+            .task_phases
+            .entry((task_name.clone(), phase))
+            .or_default()
+            .observe_example();
+    }
+}
+
+fn train_corpus_stats_to_json(stats: &BTreeMap<String, TrainCorpusStats>) -> String {
+    let mut out = String::from("{");
+    for (index, (task, stats)) in stats.iter().enumerate() {
+        if index != 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(&json_escape(task));
+        out.push_str("\":");
+        out.push_str(&stats.to_json());
+    }
+    out.push('}');
+    out
+}
+
+fn train_corpus_phase_stats_to_json(
+    stats: &BTreeMap<(String, EvalPhase), TrainCorpusStats>,
+) -> String {
+    let mut out = String::from("{");
+    let mut current_task = String::new();
+    let mut task_count = 0_usize;
+    let mut phase_count = 0_usize;
+    for ((task, phase), stats) in stats.iter() {
+        if task != &current_task {
+            if task_count != 0 {
+                out.push('}');
+                out.push(',');
+            }
+            out.push('"');
+            out.push_str(&json_escape(task));
+            out.push_str("\":{");
+            current_task.clear();
+            current_task.push_str(task);
+            task_count += 1;
+            phase_count = 0;
+        }
+        if phase_count != 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(phase.as_str());
+        out.push_str("\":");
+        out.push_str(&(*stats).to_json());
+        phase_count += 1;
+    }
+    if task_count != 0 {
+        out.push('}');
+    }
+    out.push('}');
+    out
+}
+
+fn eval_task_stats_to_json(stats: &BTreeMap<String, EvalStats>) -> String {
+    let mut out = String::from("{");
+    for (index, (task, stats)) in stats.iter().enumerate() {
+        if index != 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(&json_escape(task));
+        out.push_str("\":");
+        out.push_str(&stats.to_json());
+    }
+    out.push('}');
+    out
+}
+
+fn eval_task_phase_stats_to_json(stats: &BTreeMap<(String, EvalPhase), EvalStats>) -> String {
+    let mut out = String::from("{");
+    let mut current_task = String::new();
+    let mut task_count = 0_usize;
+    let mut phase_count = 0_usize;
+    for ((task, phase), stats) in stats.iter() {
+        if task != &current_task {
+            if task_count != 0 {
+                out.push('}');
+            }
+            if task_count != 0 {
+                out.push(',');
+            }
+            out.push('"');
+            out.push_str(&json_escape(task));
+            out.push_str("\":{");
+            current_task.clear();
+            current_task.push_str(task);
+            task_count += 1;
+            phase_count = 0;
+        }
+        if phase_count != 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(phase.as_str());
+        out.push_str("\":");
+        out.push_str(&(*stats).to_json());
+        phase_count += 1;
+    }
+    if task_count != 0 {
+        out.push('}');
+    }
+    out.push('}');
+    out
+}
+
+fn eval_output_heads_to_json(
+    special: EvalStats,
+    prompt: EvalStats,
+    text: EvalStats,
+    image: EvalStats,
+    text_token_profile: TextTokenProfile,
+) -> String {
+    let text_head = EvalStats::merged(&[prompt, text]);
+    format!(
+        "{{\"special_head\":{{\"source\":\"nsrllmm-output-token-head\",\"token_classes\":[\"control\",\"task\"],\"token_ranges\":[{{\"name\":\"control\",\"token_min\":{},\"token_max\":{}}},{{\"name\":\"task\",\"token_min\":{},\"token_max\":{}}}],\"allowed_token_count\":{},\"stats\":{}}},\"text_head\":{{\"source\":\"nsrllmm-output-token-head\",\"token_classes\":[\"prompt\",\"text\"],\"token_ranges\":{},\"allowed_token_count\":{},\"stats\":{}}},\"image_head\":{{\"source\":\"nsrllmm-output-token-head\",\"token_classes\":[\"image_channel\",\"image_bin\"],\"token_ranges\":[{{\"name\":\"image_channel\",\"token_min\":{},\"token_max\":{}}},{{\"name\":\"image_bin\",\"token_min\":{},\"token_max\":{}}}],\"allowed_token_count\":{},\"stats\":{}}}}}",
+        PROMPT,
+        EOS,
+        TASK_TEXT_TO_IMAGE,
+        TASK_IDENTIFY,
+        eval_allowed_tokens(EvalPhase::Special, text_token_profile).len(),
+        special.to_json(),
+        text_head_token_ranges_json(text_token_profile),
+        allowed_text_tokens(false, text_token_profile).len(),
+        text_head.to_json(),
+        IMAGE_CHANNEL_INK,
+        IMAGE_CHANNEL_DIRECTION,
+        IMAGE_BASE,
+        IMAGE_BASE.saturating_add(IMAGE_BINS.saturating_sub(1)),
+        eval_allowed_tokens(EvalPhase::Image, text_token_profile).len(),
+        image.to_json(),
+    )
+}
+
+fn text_head_token_ranges_json(text_token_profile: TextTokenProfile) -> String {
+    let mut ranges = vec![format!(
+        "{{\"name\":\"text_char_printable\",\"token_min\":{},\"token_max\":{}}}",
+        usize::from(TEXT_BASE) + 32,
+        usize::from(TEXT_BASE) + 126,
+    )];
+    if text_token_profile == TextTokenProfile::Chunked {
+        ranges.push(format!(
+            "{{\"name\":\"text_chunk\",\"token_min\":{},\"token_max\":{}}}",
+            TEXT_CHUNK_BASE,
+            TEXT_CHUNK_BASE.saturating_add(u8::try_from(TEXT_CHUNKS.len() - 1).unwrap_or(0)),
+        ));
+    }
+    format!("[{}]", ranges.join(","))
+}
+
 fn eval_token_diagnostics(
     row: &MiniTransformerNextTokenRow,
     phase: EvalPhase,
@@ -2642,11 +3232,29 @@ fn eval_token_diagnostics(
 
 fn eval_allowed_tokens(phase: EvalPhase, text_token_profile: TextTokenProfile) -> Vec<u8> {
     match phase {
-        EvalPhase::Special => vec![PROMPT, TEXT, IMAGE, EOS],
+        EvalPhase::Special => vec![
+            PROMPT,
+            TEXT,
+            IMAGE,
+            EOS,
+            TASK_TEXT_TO_IMAGE,
+            TASK_IMAGE_TO_TEXT,
+            TASK_MATCH,
+            TASK_EXPLAIN,
+            TASK_IDENTIFY,
+        ],
         EvalPhase::Prompt | EvalPhase::Text => allowed_text_tokens(false, text_token_profile),
-        EvalPhase::Image => (0..IMAGE_BINS)
-            .map(|bin| IMAGE_BASE.saturating_add(bin))
-            .collect(),
+        EvalPhase::Image => {
+            let mut tokens = vec![
+                IMAGE_CHANNEL_INK,
+                IMAGE_CHANNEL_EDGE,
+                IMAGE_CHANNEL_COMPONENT,
+                IMAGE_CHANNEL_RADIAL,
+                IMAGE_CHANNEL_DIRECTION,
+            ];
+            tokens.extend((0..IMAGE_BINS).map(|bin| IMAGE_BASE.saturating_add(bin)));
+            tokens
+        }
     }
 }
 
@@ -3302,12 +3910,13 @@ impl SolomonAttentionModel {
         if !cursor.is_empty() {
             return Err("trailing bytes in NSRLLMM1 body".into());
         }
+        if MiniTransformerMlpModel::serialized_model_hash(transformer_bytes)? != expected_inner_hash
+        {
+            return Err("NSRLLMM1 inner model hash mismatch".into());
+        }
         let transformer = MiniTransformerMlpModel::from_bytes(transformer_bytes)?;
         if transformer.context_seq_len != context_seq_len {
             return Err("NSRLLMM1 context length mismatch".into());
-        }
-        if transformer.model_hash() != expected_inner_hash {
-            return Err("NSRLLMM1 inner model hash mismatch".into());
         }
         Ok(Self {
             token_count,
@@ -3387,6 +3996,28 @@ fn is_text_chunk_token(token: u8) -> bool {
 fn is_name_text_chunk_token(token: u8) -> bool {
     is_text_chunk_token(token)
         && usize::from(token.saturating_sub(TEXT_CHUNK_BASE)) >= TEXT_CHUNK_NAME_START
+}
+
+fn is_control_marker(token: u8) -> bool {
+    matches!(token, BOS | PROMPT | TEXT | IMAGE | EOS)
+}
+
+fn is_task_token(token: u8) -> bool {
+    matches!(
+        token,
+        TASK_TEXT_TO_IMAGE | TASK_IMAGE_TO_TEXT | TASK_MATCH | TASK_EXPLAIN | TASK_IDENTIFY
+    )
+}
+
+fn task_name(token: u8) -> Option<&'static str> {
+    match token {
+        TASK_TEXT_TO_IMAGE => Some("text-to-image"),
+        TASK_IMAGE_TO_TEXT => Some("image-to-text"),
+        TASK_MATCH => Some("match"),
+        TASK_EXPLAIN => Some("explain"),
+        TASK_IDENTIFY => Some("identify"),
+        _ => None,
+    }
 }
 
 fn is_text_token(token: u8) -> bool {
@@ -3621,6 +4252,18 @@ fn json_usize_field(line: &str, field: &str) -> Option<usize> {
         return None;
     }
     line[digit_start..index].parse().ok()
+}
+
+fn json_optional_usize(value: Option<usize>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "null".to_string())
+}
+
+fn json_optional_hash(value: Option<u64>) -> String {
+    value
+        .map(|value| format!("\"0x{value:016x}\""))
+        .unwrap_or_else(|| "null".to_string())
 }
 
 fn image_ink_bytes(image_bins: &[u8; SIGNATURE_BINS]) -> Vec<u8> {
@@ -3975,6 +4618,32 @@ mod tests {
     }
 
     #[test]
+    fn parses_eval_target_phase_cap() {
+        let config = parse_args(
+            [
+                "eval",
+                "--tokens",
+                "tokens.u8",
+                "--model",
+                "model.nsrllmm",
+                "--conditioning-examples",
+                "examples.jsonl",
+                "--eval-max-examples",
+                "none",
+                "--eval-max-targets-per-task-phase",
+                "3",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .unwrap();
+
+        assert_eq!(config.command, Command::Eval);
+        assert_eq!(config.eval_max_examples, None);
+        assert_eq!(config.eval_max_targets_per_task_phase, Some(3));
+    }
+
+    #[test]
     fn parses_body_first_after_he_target_and_preserve_repair() {
         let config = parse_args(
             [
@@ -4157,6 +4826,13 @@ mod tests {
     fn solomon_body_scaffold_samples_clean_body_after_opening() {
         let mut transformer = MiniTransformerMlpModel::new_initial_with_seq_len(32);
         apply_solomon_name_copy_init(&mut transformer, TextTokenProfile::Chunked).unwrap();
+        if MINI_TRANSFORMER_D_MODEL > 64 {
+            let error = apply_solomon_body_scaffold(&mut transformer, TextTokenProfile::Chunked)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("diagnostic profiles"));
+            return;
+        }
         apply_solomon_body_scaffold(&mut transformer, TextTokenProfile::Chunked).unwrap();
         let model = SolomonAttentionModel {
             token_count: 0,
@@ -4371,7 +5047,7 @@ mod tests {
         );
         assert_eq!(
             name_opening_end_markers(TextTokenProfile::Char),
-            vec![TEXT_BASE + b':' as u8, IMAGE, EOS]
+            vec![TEXT_BASE + b':', IMAGE, EOS]
         );
         assert_eq!(
             name_opening_end_markers(TextTokenProfile::Chunked),
@@ -4569,6 +5245,84 @@ mod tests {
     }
 
     #[test]
+    fn train_corpus_coverage_uses_example_task_labels() {
+        let image = vec![IMAGE_BASE; SIGNATURE_BINS];
+        let tokens = [
+            vec![PAD, PAD],
+            [
+                vec![BOS, TASK_TEXT_TO_IMAGE, PROMPT],
+                encode_text_tokens("source description", TextTokenProfile::Char),
+                vec![IMAGE],
+                image,
+                vec![EOS],
+            ]
+            .concat(),
+        ]
+        .concat();
+        let example_tokens = &tokens[2..];
+        let path = std::env::temp_dir().join(format!(
+            "nsrl-solomon-train-coverage-{}-{}.jsonl",
+            std::process::id(),
+            hash_bytes(&tokens)
+        ));
+        fs::write(
+            &path,
+            format!(
+                "{{\"task\":\"description-to-image\",\"token_offset\":2,\"token_count\":{},\"padding_before\":2}}\n",
+                example_tokens.len()
+            ),
+        )
+        .unwrap();
+
+        let coverage = train_corpus_coverage(Some(&path), &tokens).unwrap();
+        fs::remove_file(&path).unwrap();
+
+        assert_eq!(coverage.source, "examples");
+        assert_eq!(coverage.examples, 1);
+        assert_eq!(coverage.skipped_examples, 0);
+        assert_eq!(coverage.prefix_pad_tokens, 2);
+        assert!(coverage.tasks.contains_key("description-to-image"));
+        assert!(!coverage.tasks.contains_key("text-to-image"));
+        assert_eq!(
+            coverage.tasks["description-to-image"].image_targets,
+            SIGNATURE_BINS
+        );
+        assert!(
+            coverage
+                .task_phases
+                .contains_key(&("description-to-image".to_string(), EvalPhase::Image))
+        );
+    }
+
+    #[test]
+    fn eval_output_heads_report_measured_token_surfaces() {
+        let diagnostics = EvalTokenDiagnostics {
+            predicted: TEXT_BASE + b'a',
+            target_rank: 1,
+            target_margin_q8: 7,
+        };
+        let mut special = EvalStats::default();
+        let mut prompt = EvalStats::default();
+        let mut text = EvalStats::default();
+        let mut image = EvalStats::default();
+        special.observe(32_767, diagnostics);
+        prompt.observe(32_767, diagnostics);
+        text.observe(32_767, diagnostics);
+        image.observe(32_767, diagnostics);
+
+        let json =
+            eval_output_heads_to_json(special, prompt, text, image, TextTokenProfile::Chunked);
+
+        assert!(json.contains("\"special_head\""));
+        assert!(json.contains("\"text_head\""));
+        assert!(json.contains("\"image_head\""));
+        assert!(json.contains("\"name\":\"text_chunk\",\"token_min\":160,\"token_max\":255"));
+        assert!(json.contains("\"allowed_token_count\":191"));
+        assert!(json.contains("\"text_head\":{\"source\":\"nsrllmm-output-token-head\""));
+        assert!(json.contains("\"stats\":{\"targets\":2"));
+    }
+
+    #[test]
     fn chunked_text_tokens_round_trip_common_solomon_phrase() {
         let tokens = encode_text_tokens(
             "Solomon selects Bael: He maketh thee Invisible.",
@@ -4701,6 +5455,110 @@ mod tests {
     fn corpus_validation_accepts_full_byte_vocab() {
         assert!(validate_corpus(&[BOS, PROMPT, TEXT, IMAGE, EOS]).is_ok());
         assert!(validate_corpus(&[u8::MAX]).is_ok());
+    }
+
+    #[test]
+    fn task_marked_examples_support_image_to_text_phase_order() {
+        let tokens = [
+            BOS,
+            TASK_IMAGE_TO_TEXT,
+            IMAGE,
+            IMAGE_CHANNEL_INK,
+            IMAGE_BASE,
+            IMAGE_CHANNEL_EDGE,
+            IMAGE_BASE + 1,
+            IMAGE_CHANNEL_COMPONENT,
+            IMAGE_BASE + 2,
+            IMAGE_CHANNEL_RADIAL,
+            IMAGE_BASE + 3,
+            IMAGE_CHANNEL_DIRECTION,
+            IMAGE_BASE + 4,
+            TEXT,
+            TEXT_BASE + b'B',
+            EOS,
+        ];
+        let markers = ExampleMarkers::from_tokens(&tokens).expect("task example markers");
+
+        assert_eq!(markers.task_name(), Some("image-to-text"));
+        assert_eq!(markers.phase_for_target(&tokens, 1), EvalPhase::Special);
+        assert_eq!(markers.phase_for_target(&tokens, 3), EvalPhase::Image);
+        assert_eq!(markers.phase_for_target(&tokens, 14), EvalPhase::Text);
+        assert!(
+            eval_allowed_tokens(EvalPhase::Image, TextTokenProfile::Char)
+                .contains(&IMAGE_CHANNEL_DIRECTION)
+        );
+    }
+
+    #[test]
+    fn image_first_explain_examples_report_image_to_explain_task() {
+        let tokens = [
+            BOS,
+            TASK_EXPLAIN,
+            IMAGE,
+            IMAGE_CHANNEL_INK,
+            IMAGE_BASE,
+            TEXT,
+            TEXT_BASE + b'H',
+            TEXT_BASE + b'e',
+            EOS,
+        ];
+        let markers = ExampleMarkers::from_tokens(&tokens).expect("image explain markers");
+
+        assert_eq!(markers.task_name(), Some("image-to-explain"));
+        assert_eq!(markers.phase_for_target(&tokens, 3), EvalPhase::Image);
+        assert_eq!(markers.phase_for_target(&tokens, 6), EvalPhase::Text);
+    }
+
+    #[test]
+    fn prompt_image_explain_examples_report_text_image_explain_task() {
+        let tokens = [
+            BOS,
+            TASK_EXPLAIN,
+            PROMPT,
+            TEXT_BASE + b'B',
+            IMAGE,
+            IMAGE_CHANNEL_INK,
+            IMAGE_BASE,
+            TEXT,
+            TEXT_BASE + b'H',
+            TEXT_BASE + b'e',
+            EOS,
+        ];
+        let markers = ExampleMarkers::from_tokens(&tokens).expect("text image explain markers");
+
+        assert_eq!(markers.task_name(), Some("text-image-explain"));
+        assert_eq!(markers.phase_for_target(&tokens, 3), EvalPhase::Prompt);
+        assert_eq!(markers.phase_for_target(&tokens, 5), EvalPhase::Image);
+        assert_eq!(markers.phase_for_target(&tokens, 8), EvalPhase::Text);
+    }
+
+    #[test]
+    fn image_prompt_explain_examples_report_image_to_attributes_task() {
+        let tokens = [
+            BOS,
+            TASK_EXPLAIN,
+            IMAGE,
+            IMAGE_CHANNEL_INK,
+            IMAGE_BASE,
+            PROMPT,
+            TEXT_BASE + b'a',
+            TEXT_BASE + b't',
+            TEXT_BASE + b't',
+            TEXT_BASE + b'r',
+            TEXT_BASE + b's',
+            TEXT,
+            TEXT_BASE + b'K',
+            TEXT_BASE + b'i',
+            TEXT_BASE + b'n',
+            TEXT_BASE + b'g',
+            EOS,
+        ];
+        let markers = ExampleMarkers::from_tokens(&tokens).expect("image attributes markers");
+
+        assert_eq!(markers.task_name(), Some("image-to-attributes"));
+        assert_eq!(markers.phase_for_target(&tokens, 3), EvalPhase::Image);
+        assert_eq!(markers.phase_for_target(&tokens, 6), EvalPhase::Prompt);
+        assert_eq!(markers.phase_for_target(&tokens, 12), EvalPhase::Text);
     }
 
     #[test]

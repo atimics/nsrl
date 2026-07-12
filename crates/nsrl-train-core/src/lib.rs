@@ -11,12 +11,12 @@ use nsrl_core::{
     GatedMlpWeightUpdateParams, GatedMlpWeightUpdateWorkspace, GatedMlpWorkspace,
     LinearAttentionWorkspace, LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
     LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,
-    LinearWeightUpdateStats, MAX_RIGHT_SHIFT, MagnitudeHistogram, Q15_SHIFT,
-    SelfAttentionI16Params, base2_softmax_i32_q15, calibrate_fixed_scale, dot_i8_i16_i32_checked,
-    gated_mlp_backward_input_i16_q15_checked, gated_mlp_backward_weight_update_i8_checked,
-    gated_mlp_i16_q15_checked, linear_attention_i16_q15_checked,
-    linear_backward_input_i16_i8_i16_per_channel_checked, linear_backward_weight_update_i8_checked,
-    requantize_i32_to_i16, round_shift_rhu_i64, saturate_i8, saturate_i16,
+    LinearWeightUpdateStats, MAX_RIGHT_SHIFT, Q15_SHIFT, SelfAttentionI16Params,
+    base2_softmax_i32_q15, dot_i8_i16_i32_checked, gated_mlp_backward_input_i16_q15_checked,
+    gated_mlp_backward_weight_update_i8_checked, gated_mlp_i16_q15_checked, integer_rsqrt_q30,
+    linear_attention_i16_q15_checked, linear_backward_input_i16_i8_i16_per_channel_checked,
+    linear_backward_weight_update_i8_checked, requantize_i32_to_i16, round_shift_rhu_i64,
+    saturate_i8, saturate_i16,
 };
 
 pub const BYTE_VOCAB: usize = 256;
@@ -28,15 +28,16 @@ pub const BYTE_VOCAB: usize = 256;
 // `mini_transformer_*_train_step` rejects mismatched models with
 // `InvalidShape`, which silently zeroes out training, so the two definitions
 // must move together. d_model must stay divisible by heads, with a per-head
-// dim that is a power of four (32 / 2 = 16). FixedScale arrays below are
-// uniform, so they resize automatically with these constants.
+// dim that is a power of four (128 / 2 = 64 for the promoted Solomon small
+// profile). FixedScale arrays below are uniform, so they resize automatically
+// with these constants.
 //
-// Fork B (the d_model=64/heads=4/hidden=256 scale-up) was applied here only
-// and broke that contract; scaling up for real means widening the host model
-// in lockstep and re-baking its byte-stable trace fixtures.
-pub const MINI_TRANSFORMER_D_MODEL: usize = 32;
+// A past scale-up was applied here only and broke that contract; scaling up
+// for real means widening this shared source of truth and re-baking
+// byte-stable trace fixtures as needed.
+pub const MINI_TRANSFORMER_D_MODEL: usize = 128;
 pub const MINI_TRANSFORMER_HEADS: usize = 2;
-pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 64;
+pub const MINI_TRANSFORMER_HIDDEN_DIM: usize = 256;
 pub const MINI_TRANSFORMER_EMBEDDING_GRAD_FANIN_SHIFT: u8 = 1;
 
 pub const MINI_TRANSFORMER_D_MODEL_SCALES: [FixedScale; MINI_TRANSFORMER_D_MODEL] = [FixedScale {
@@ -59,9 +60,11 @@ pub const MINI_TRANSFORMER_OUTPUT_GRAD_INPUT_SCALES: [FixedScale; MINI_TRANSFORM
         right_shift: 0,
     }; MINI_TRANSFORMER_D_MODEL];
 
-/// Default output (logit) requantization scale — the value baked into
-/// [`MINI_TRANSFORMER_OUTPUT_SCALES`]. Dynamic calibration replaces this at
-/// checkpoint boundaries via [`MiniTransformerStepConfig::output_scale`].
+/// Output (logit) requantization scale shared by forward and backward paths.
+///
+/// The no-std step API intentionally keeps this fixed. A future calibration
+/// controller must update the forward and backward scale tables together rather
+/// than overriding only the forward projection.
 pub const MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE: FixedScale = MINI_TRANSFORMER_OUTPUT_SCALES[0];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,11 +84,6 @@ pub struct MiniTransformerStepConfig {
     pub attention_learning_rate_shift: u8,
     pub attention_q_learning_rate_shift: u8,
     pub attention_qk_learning_rate_shift: u8,
-    /// Uniform requantization scale for the output (logit) projection. Read by both
-    /// the forward requantize and the backward gradient prescale so the two stay
-    /// consistent. Set to [`MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE`] for the baked-in
-    /// behavior, or to a value from [`OutputLogitCalibration::recommend_scale`].
-    pub output_scale: FixedScale,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,6 +239,61 @@ pub struct LinearWeightGradientI64Workspace<'a> {
     pub residuals: &'a mut [i64],
 }
 
+/// Bounded, deterministic Adam-style optimizer parameters.
+///
+/// `step_shift` is applied after the Q15-normalized moment ratio, so an
+/// effective weight step uses `Q15_SHIFT + step_shift`. The beta shifts encode
+/// `beta1 = 1 - 2^-beta1_decay_shift` and
+/// `beta2 = 1 - 2^-beta2_decay_shift` without floating point.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntegerAdamConfig {
+    pub learning_rate: i32,
+    pub step_shift: u8,
+    pub beta1_decay_shift: u8,
+    pub beta2_decay_shift: u8,
+    pub epsilon: u64,
+}
+
+impl Default for IntegerAdamConfig {
+    fn default() -> Self {
+        Self {
+            learning_rate: 1,
+            step_shift: 4,
+            beta1_decay_shift: 3,
+            beta2_decay_shift: 7,
+            epsilon: 1,
+        }
+    }
+}
+
+impl IntegerAdamConfig {
+    pub fn is_valid(self) -> bool {
+        self.learning_rate > 0
+            && self.beta1_decay_shift > 0
+            && self.beta2_decay_shift > 0
+            && self.beta1_decay_shift <= MAX_RIGHT_SHIFT
+            && self.beta2_decay_shift <= MAX_RIGHT_SHIFT
+            && self.step_shift <= MAX_RIGHT_SHIFT.saturating_sub(Q15_SHIFT)
+            && self.epsilon > 0
+    }
+}
+
+/// Mutable optimizer state kept separately from inference weights.
+pub struct IntegerAdamStateWorkspace<'a> {
+    pub step: u64,
+    pub first_moments: &'a mut [i64],
+    pub second_moments: &'a mut [u64],
+    pub update_residuals: &'a mut [i64],
+}
+
+impl IntegerAdamStateWorkspace<'_> {
+    pub fn is_valid_for(&self, len: usize) -> bool {
+        self.first_moments.len() == len
+            && self.second_moments.len() == len
+            && self.update_residuals.len() == len
+    }
+}
+
 impl LinearWeightGradientI64Workspace<'_> {
     pub fn is_valid(&self) -> bool {
         self.input_dim != 0
@@ -380,6 +433,220 @@ pub fn apply_linear_weight_gradient_i64_to_i8(
     Ok(stats)
 }
 
+/// Applies averaged i64 gradients to i8 weights with integer Adam-style
+/// momentum, variance normalization, and sub-weight error feedback.
+pub fn apply_integer_adam_accumulators_i64_to_i8(
+    accumulators: &[i64],
+    sample_count: usize,
+    weights: &mut [i8],
+    config: IntegerAdamConfig,
+    state: &mut IntegerAdamStateWorkspace<'_>,
+) -> Result<LinearWeightUpdateStats, TrainCoreError> {
+    if accumulators.len() != weights.len() || !state.is_valid_for(weights.len()) {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    validate_integer_adam_config(config)?;
+    if sample_count == 0 {
+        return Ok(empty_linear_weight_update_stats());
+    }
+
+    let mut stats = empty_linear_weight_update_stats();
+    for index in 0..weights.len() {
+        let gradient = round_div_i64(accumulators[index], sample_count)?;
+        let (delta, saturated_gradient) = integer_adam_delta(
+            gradient,
+            config,
+            &mut state.first_moments[index],
+            &mut state.second_moments[index],
+            &mut state.update_residuals[index],
+        )?;
+        if saturated_gradient {
+            stats.gradient_saturation_count = stats
+                .gradient_saturation_count
+                .checked_add(1)
+                .ok_or(TrainCoreError::CoreRejected)?;
+        }
+        if delta == 0 {
+            stats.zero_delta_count = stats
+                .zero_delta_count
+                .checked_add(1)
+                .ok_or(TrainCoreError::CoreRejected)?;
+        }
+        let previous = weights[index];
+        let unclamped = i64::from(previous)
+            .checked_add(delta)
+            .ok_or(TrainCoreError::CoreRejected)?;
+        let clamped = saturate_i8(unclamped);
+        if i64::from(clamped) != unclamped {
+            stats.gradient_saturation_count = stats
+                .gradient_saturation_count
+                .checked_add(1)
+                .ok_or(TrainCoreError::CoreRejected)?;
+            state.update_residuals[index] = 0;
+        }
+        stats.weight_delta_l1 = stats
+            .weight_delta_l1
+            .checked_add((i64::from(clamped) - i64::from(previous)).unsigned_abs())
+            .ok_or(TrainCoreError::CoreRejected)?;
+        weights[index] = clamped;
+    }
+    state.step = state
+        .step
+        .checked_add(1)
+        .ok_or(TrainCoreError::CoreRejected)?;
+    Ok(stats)
+}
+
+/// i16 counterpart used by token and position embeddings and future RMSNorm
+/// scale vectors.
+pub fn apply_integer_adam_accumulators_i64_to_i16(
+    accumulators: &[i64],
+    sample_count: usize,
+    weights: &mut [i16],
+    config: IntegerAdamConfig,
+    state: &mut IntegerAdamStateWorkspace<'_>,
+) -> Result<LinearWeightUpdateStats, TrainCoreError> {
+    if accumulators.len() != weights.len() || !state.is_valid_for(weights.len()) {
+        return Err(TrainCoreError::InvalidShape);
+    }
+    validate_integer_adam_config(config)?;
+    if sample_count == 0 {
+        return Ok(empty_linear_weight_update_stats());
+    }
+
+    let mut stats = empty_linear_weight_update_stats();
+    for index in 0..weights.len() {
+        let gradient = round_div_i64(accumulators[index], sample_count)?;
+        let (delta, saturated_gradient) = integer_adam_delta(
+            gradient,
+            config,
+            &mut state.first_moments[index],
+            &mut state.second_moments[index],
+            &mut state.update_residuals[index],
+        )?;
+        if saturated_gradient {
+            stats.gradient_saturation_count = stats
+                .gradient_saturation_count
+                .checked_add(1)
+                .ok_or(TrainCoreError::CoreRejected)?;
+        }
+        if delta == 0 {
+            stats.zero_delta_count = stats
+                .zero_delta_count
+                .checked_add(1)
+                .ok_or(TrainCoreError::CoreRejected)?;
+        }
+        let previous = weights[index];
+        let unclamped = i64::from(previous)
+            .checked_add(delta)
+            .ok_or(TrainCoreError::CoreRejected)?;
+        let clamped = saturate_i16(unclamped);
+        if i64::from(clamped) != unclamped {
+            stats.gradient_saturation_count = stats
+                .gradient_saturation_count
+                .checked_add(1)
+                .ok_or(TrainCoreError::CoreRejected)?;
+            state.update_residuals[index] = 0;
+        }
+        stats.weight_delta_l1 = stats
+            .weight_delta_l1
+            .checked_add((i64::from(clamped) - i64::from(previous)).unsigned_abs())
+            .ok_or(TrainCoreError::CoreRejected)?;
+        weights[index] = clamped;
+    }
+    state.step = state
+        .step
+        .checked_add(1)
+        .ok_or(TrainCoreError::CoreRejected)?;
+    Ok(stats)
+}
+
+fn validate_integer_adam_config(config: IntegerAdamConfig) -> Result<(), TrainCoreError> {
+    if !config.is_valid() {
+        return Err(TrainCoreError::InvalidConfig);
+    }
+    Ok(())
+}
+
+fn integer_adam_delta(
+    gradient: i64,
+    config: IntegerAdamConfig,
+    first_moment: &mut i64,
+    second_moment: &mut u64,
+    update_residual: &mut i64,
+) -> Result<(i64, bool), TrainCoreError> {
+    // Squaring an arbitrary i64 can overflow u64. This explicit cap keeps the
+    // moment domain stable and makes saturation observable in update stats.
+    const MAX_MOMENT_GRADIENT: i64 = i32::MAX as i64;
+    let bounded_gradient = gradient.clamp(-MAX_MOMENT_GRADIENT, MAX_MOMENT_GRADIENT);
+    let saturated_gradient = bounded_gradient != gradient;
+
+    let beta1_denominator = 1_i128
+        .checked_shl(u32::from(config.beta1_decay_shift))
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let next_first_numerator = i128::from(*first_moment)
+        .checked_mul(beta1_denominator - 1)
+        .and_then(|value| value.checked_add(i128::from(bounded_gradient)))
+        .ok_or(TrainCoreError::CoreRejected)?;
+    *first_moment = round_shift_rhu_i128_to_i64(next_first_numerator, config.beta1_decay_shift)?;
+
+    let gradient_square = i128::from(bounded_gradient)
+        .checked_mul(i128::from(bounded_gradient))
+        .ok_or(TrainCoreError::CoreRejected)?;
+    let beta2_denominator = 1_i128
+        .checked_shl(u32::from(config.beta2_decay_shift))
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let next_second_numerator = i128::from(*second_moment)
+        .checked_mul(beta2_denominator - 1)
+        .and_then(|value| value.checked_add(gradient_square))
+        .ok_or(TrainCoreError::CoreRejected)?;
+    *second_moment = u64::try_from(round_shift_rhu_i128(
+        next_second_numerator,
+        config.beta2_decay_shift,
+    )?)
+    .map_err(|_| TrainCoreError::CoreRejected)?;
+
+    let variance_with_epsilon = second_moment
+        .checked_add(config.epsilon)
+        .ok_or(TrainCoreError::CoreRejected)?;
+    let inverse_root_q30 =
+        integer_rsqrt_q30(variance_with_epsilon).ok_or(TrainCoreError::CoreRejected)?;
+    let normalized_q30 = i128::from(*first_moment)
+        .checked_mul(i128::from(inverse_root_q30))
+        .ok_or(TrainCoreError::CoreRejected)?;
+    let normalized_q15 = round_shift_rhu_i128_to_i64(normalized_q30, Q15_SHIFT)?
+        .clamp(-i64::from(i16::MAX), i64::from(i16::MAX));
+    let update_numerator = normalized_q15
+        .checked_mul(i64::from(config.learning_rate))
+        .and_then(|value| value.checked_add(*update_residual))
+        .ok_or(TrainCoreError::CoreRejected)?;
+    let effective_shift = Q15_SHIFT
+        .checked_add(config.step_shift)
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    let scaled_update = round_shift_rhu_i64(update_numerator, effective_shift);
+    *update_residual =
+        rounded_shift_residual_i64(update_numerator, scaled_update, effective_shift)?;
+    Ok((-scaled_update, saturated_gradient))
+}
+
+fn round_shift_rhu_i128(value: i128, right_shift: u8) -> Result<i128, TrainCoreError> {
+    if right_shift == 0 {
+        return Ok(value);
+    }
+    let offset = 1_i128
+        .checked_shl(u32::from(right_shift - 1))
+        .ok_or(TrainCoreError::InvalidConfig)?;
+    value
+        .checked_add(offset)
+        .map(|rounded| rounded >> right_shift)
+        .ok_or(TrainCoreError::CoreRejected)
+}
+
+fn round_shift_rhu_i128_to_i64(value: i128, right_shift: u8) -> Result<i64, TrainCoreError> {
+    i64::try_from(round_shift_rhu_i128(value, right_shift)?)
+        .map_err(|_| TrainCoreError::CoreRejected)
+}
+
 pub fn mini_transformer_linear_nope_train_step(
     model: &mut MiniTransformerModelSlicesMut<'_>,
     context: &[u8],
@@ -391,13 +658,8 @@ pub fn mini_transformer_linear_nope_train_step(
     validate_model_shapes(model, config.seq_len)?;
     validate_workspace_shapes(workspace, config.seq_len)?;
 
-    let forward_before_residual_saturation_count = mini_transformer_forward_linear_nope(
-        model,
-        context,
-        config.seq_len,
-        config.output_scale,
-        workspace,
-    )?;
+    let forward_before_residual_saturation_count =
+        mini_transformer_forward_linear_nope(model, context, config.seq_len, workspace)?;
     let predicted_before = byte_argmax_i32(workspace.logits_q8)?;
 
     byte_vocab_softmax_gradient_q15(
@@ -525,13 +787,8 @@ pub fn mini_transformer_linear_nope_train_step(
         config.embedding_learning_rate_shift,
     )?;
 
-    let forward_after_residual_saturation_count = mini_transformer_forward_linear_nope(
-        model,
-        context,
-        config.seq_len,
-        config.output_scale,
-        workspace,
-    )?;
+    let forward_after_residual_saturation_count =
+        mini_transformer_forward_linear_nope(model, context, config.seq_len, workspace)?;
     let predicted_after = byte_argmax_i32(workspace.logits_q8)?;
     let residual_saturation_count = gradient_residual_saturation
         .saturating_add(embedding_gradient_saturation)
@@ -563,8 +820,6 @@ fn validate_config(config: MiniTransformerStepConfig) -> Result<(), TrainCoreErr
         || config.attention_learning_rate_shift > MAX_RIGHT_SHIFT
         || config.attention_q_learning_rate_shift > MAX_RIGHT_SHIFT
         || config.attention_qk_learning_rate_shift > MAX_RIGHT_SHIFT
-        || config.output_scale.multiplier < 0
-        || config.output_scale.right_shift > MAX_RIGHT_SHIFT
     {
         return Err(TrainCoreError::InvalidConfig);
     }
@@ -678,7 +933,6 @@ fn mini_transformer_forward_linear_nope(
     model: &MiniTransformerModelSlicesMut<'_>,
     context: &[u8],
     seq_len: usize,
-    output_scale: FixedScale,
     workspace: &mut MiniTransformerStepWorkspace<'_>,
 ) -> Result<usize, TrainCoreError> {
     if context.len() != seq_len {
@@ -746,7 +1000,6 @@ fn mini_transformer_forward_linear_nope(
     mini_transformer_output_row_for(
         model.output_weights,
         &workspace.block_output[last_start..last_end],
-        output_scale,
         workspace.logits_q8,
         workspace.probabilities_q15,
     )?;
@@ -849,7 +1102,6 @@ fn mini_transformer_mlp_params<'a>(
 fn mini_transformer_output_row_for(
     output_weights: &[i8],
     features: &[i16],
-    output_scale: FixedScale,
     logits_q8: &mut [i32],
     probabilities_q15: &mut [i16],
 ) -> Result<(), TrainCoreError> {
@@ -867,125 +1119,14 @@ fn mini_transformer_output_row_for(
             features,
         )
         .ok_or(TrainCoreError::CoreRejected)?;
-        *logit = i32::from(requantize_i32_to_i16(acc, output_scale));
+        *logit = i32::from(requantize_i32_to_i16(
+            acc,
+            MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE,
+        ));
     }
     base2_softmax_i32_q15(logits_q8, probabilities_q15)
         .map(|_| ())
         .ok_or(TrainCoreError::CoreRejected)
-}
-
-// ---------------------------------------------------------------------------
-// Dynamic fixed-point calibration for the output (logit) projection.
-//
-// The output scale is the only non-identity requantization scale in the model
-// (`MINI_TRANSFORMER_OUTPUT_SCALES`, currently {1, >>8}) and the one whose ideal
-// value tracks the data distribution. These helpers observe the *real* forward
-// logit accumulators, measure how many saturate i16 under the scale in force, and
-// recommend a replacement scale — the decision a DFP controller applies at a
-// checkpoint boundary.
-//
-// Note: the output scale also prescales gradients in the backward pass
-// (`forward_scales` at the output weight update), so it is intentionally NOT
-// mutated mid-batch here; recalibration belongs between training runs / at
-// checkpoints, where forward and backward stay consistent.
-// ---------------------------------------------------------------------------
-
-/// Default coverage for output-scale calibration: keep 999 in 1000 accumulators
-/// in range, allowing the rarest 1 in 1000 to clip rather than crushing the
-/// whole scale.
-pub const OUTPUT_CALIBRATION_COVERAGE_NUM: u64 = 999;
-pub const OUTPUT_CALIBRATION_COVERAGE_DEN: u64 = 1000;
-
-/// Observed statistics for the output (logit) projection accumulators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutputLogitCalibration {
-    /// Magnitude distribution of raw i32 logit accumulators (pre-requantization).
-    pub histogram: MagnitudeHistogram,
-    /// Accumulators that saturated i16 under the scale in force during observation.
-    pub clipped: u64,
-    /// Total accumulators observed.
-    pub total: u64,
-}
-
-impl Default for OutputLogitCalibration {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl OutputLogitCalibration {
-    pub const fn new() -> Self {
-        Self {
-            histogram: MagnitudeHistogram::new(),
-            clipped: 0,
-            total: 0,
-        }
-    }
-
-    /// Clip rate as `(clipped, total)`. Division is left to the caller so this
-    /// stays integer-only; a DFP controller compares this against a threshold.
-    pub fn clip_fraction(&self) -> (u64, u64) {
-        (self.clipped, self.total)
-    }
-
-    /// Recommends an output `FixedScale` mapping the covered accumulator range into
-    /// the i16 output range. `None` if nothing has been observed.
-    pub fn recommend_scale(&self) -> Option<FixedScale> {
-        calibrate_fixed_scale(
-            &self.histogram,
-            i16::MAX as u64,
-            OUTPUT_CALIBRATION_COVERAGE_NUM,
-            OUTPUT_CALIBRATION_COVERAGE_DEN,
-        )
-    }
-}
-
-/// Recomputes the raw i32 logit accumulators for a batch of feature rows exactly
-/// as [`mini_transformer_output_row_for`] does, recording their magnitude
-/// distribution and how many would saturate i16 under `current_scale`.
-///
-/// `features` must be a whole number of [`MINI_TRANSFORMER_D_MODEL`]-length rows
-/// (the pre-output hidden states captured during an eval/checkpoint forward pass).
-pub fn mini_transformer_observe_output_logits(
-    output_weights: &[i8],
-    features: &[i16],
-    current_scale: FixedScale,
-    calibration: &mut OutputLogitCalibration,
-) -> Result<(), TrainCoreError> {
-    if output_weights.len() != BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL
-        || features.is_empty()
-        || features.len() % MINI_TRANSFORMER_D_MODEL != 0
-        || current_scale.multiplier < 0
-        || current_scale.right_shift > MAX_RIGHT_SHIFT
-    {
-        return Err(TrainCoreError::InvalidShape);
-    }
-
-    let rows = features.len() / MINI_TRANSFORMER_D_MODEL;
-    for row in 0..rows {
-        let feature_row =
-            &features[row * MINI_TRANSFORMER_D_MODEL..(row + 1) * MINI_TRANSFORMER_D_MODEL];
-        for class_id in 0..BYTE_VOCAB {
-            let row_start = class_id * MINI_TRANSFORMER_D_MODEL;
-            let acc = dot_i8_i16_i32_checked(
-                &output_weights[row_start..row_start + MINI_TRANSFORMER_D_MODEL],
-                feature_row,
-            )
-            .ok_or(TrainCoreError::CoreRejected)?;
-
-            calibration.histogram.observe_i64(i64::from(acc));
-
-            // Exact saturation check under the scale currently in force.
-            let wide = i64::from(acc) * i64::from(current_scale.multiplier);
-            let scaled = round_shift_rhu_i64(wide, current_scale.right_shift);
-            if scaled > i64::from(i16::MAX) || scaled < i64::from(i16::MIN) {
-                calibration.clipped = calibration.clipped.saturating_add(1);
-            }
-            calibration.total = calibration.total.saturating_add(1);
-        }
-    }
-
-    Ok(())
 }
 
 fn byte_vocab_softmax_gradient_q15(
@@ -1683,7 +1824,6 @@ mod tests {
             MiniTransformerStepConfig {
                 seq_len: 4,
                 learning_rate: 1,
-                output_scale: MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE,
                 output_learning_rate_shift: 18,
                 mlp_learning_rate_shift: 17,
                 embedding_learning_rate_shift: 13,
@@ -1695,6 +1835,15 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, TrainCoreError::InvalidShape);
+    }
+
+    #[test]
+    fn output_scale_table_matches_the_forward_scale() {
+        assert!(
+            MINI_TRANSFORMER_OUTPUT_SCALES
+                .iter()
+                .all(|&scale| scale == MINI_TRANSFORMER_DEFAULT_OUTPUT_SCALE)
+        );
     }
 
     #[test]
@@ -1767,110 +1916,222 @@ mod tests {
     }
 
     #[test]
-    fn observe_output_logits_counts_every_accumulator() {
-        let output_weights = vec![1_i8; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
-        let features = vec![10_i16; MINI_TRANSFORMER_D_MODEL]; // one row
-        let scale = FixedScale {
-            multiplier: 1,
-            right_shift: 8,
+    fn integer_adam_zero_gradient_keeps_weights_and_advances_state() {
+        let accumulators = [0_i64; 2];
+        let mut weights = [7_i8, -9_i8];
+        let mut first = [0_i64; 2];
+        let mut second = [0_u64; 2];
+        let mut residuals = [0_i64; 2];
+        let mut state = IntegerAdamStateWorkspace {
+            step: 0,
+            first_moments: &mut first,
+            second_moments: &mut second,
+            update_residuals: &mut residuals,
         };
 
-        let mut calibration = OutputLogitCalibration::new();
-        mini_transformer_observe_output_logits(&output_weights, &features, scale, &mut calibration)
-            .expect("observe");
+        let stats = apply_integer_adam_accumulators_i64_to_i8(
+            &accumulators,
+            1,
+            &mut weights,
+            IntegerAdamConfig::default(),
+            &mut state,
+        )
+        .expect("zero gradient");
 
-        // One accumulator per class.
-        assert_eq!(calibration.total, BYTE_VOCAB as u64);
-        assert_eq!(calibration.histogram.total(), BYTE_VOCAB as u64);
-        // acc = d_model × weight(1) × feature(10); (acc + 128) >> 8 stays well
-        // within i16, so nothing clips.
-        let expected_acc = (MINI_TRANSFORMER_D_MODEL as u64) * 10;
-        assert_eq!(calibration.clipped, 0);
-        assert_eq!(calibration.histogram.max_abs(), expected_acc);
+        assert_eq!(weights, [7, -9]);
+        assert_eq!(state.step, 1);
+        assert_eq!(state.first_moments, [0, 0]);
+        assert_eq!(state.second_moments, [0, 0]);
+        assert_eq!(stats.zero_delta_count, 2);
+        assert_eq!(stats.weight_delta_l1, 0);
     }
 
     #[test]
-    fn observe_output_logits_rejects_bad_shapes() {
-        let output_weights = vec![0_i8; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
-        let scale = FixedScale {
-            multiplier: 1,
-            right_shift: 0,
+    fn integer_adam_constant_gradient_moves_in_descent_direction() {
+        let accumulators = [1024_i64, -1024_i64];
+        let mut weights = [10_i8, -10_i8];
+        let mut first = [0_i64; 2];
+        let mut second = [0_u64; 2];
+        let mut residuals = [0_i64; 2];
+        let mut state = IntegerAdamStateWorkspace {
+            step: 0,
+            first_moments: &mut first,
+            second_moments: &mut second,
+            update_residuals: &mut residuals,
         };
-        let mut calibration = OutputLogitCalibration::new();
+        let config = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
+        };
 
-        // Wrong output-weight length.
-        assert_eq!(
-            mini_transformer_observe_output_logits(
-                &[0_i8; 10],
-                &vec![0_i16; MINI_TRANSFORMER_D_MODEL],
-                scale,
-                &mut calibration,
-            ),
-            Err(TrainCoreError::InvalidShape)
-        );
-        // Features not a whole number of rows.
-        assert_eq!(
-            mini_transformer_observe_output_logits(
-                &output_weights,
-                &vec![0_i16; MINI_TRANSFORMER_D_MODEL + 1],
-                scale,
-                &mut calibration,
-            ),
-            Err(TrainCoreError::InvalidShape)
-        );
-        // Empty features.
-        assert_eq!(
-            mini_transformer_observe_output_logits(&output_weights, &[], scale, &mut calibration),
-            Err(TrainCoreError::InvalidShape)
-        );
-    }
-
-    #[test]
-    fn output_calibration_recommends_scale_that_reduces_clipping() {
-        // Output weights that don't cancel out, so accumulators are large.
-        let mut output_weights = vec![0_i8; BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL];
-        for (index, weight) in output_weights.iter_mut().enumerate() {
-            *weight = (index % 7) as i8; // 0..=6, mean 3 — no sign cancellation
+        for _ in 0..4 {
+            apply_integer_adam_accumulators_i64_to_i8(
+                &accumulators,
+                1,
+                &mut weights,
+                config,
+                &mut state,
+            )
+            .expect("constant gradient");
         }
-        // Four feature rows of growing magnitude to spread the histogram.
-        let mut features = vec![0_i16; 4 * MINI_TRANSFORMER_D_MODEL];
-        for row in 0..4 {
-            let magnitude = 4_000_i16 * (row as i16 + 1);
-            for slot in features
-                [row * MINI_TRANSFORMER_D_MODEL..(row + 1) * MINI_TRANSFORMER_D_MODEL]
-                .iter_mut()
-            {
-                *slot = magnitude;
+
+        assert!(weights[0] < 10);
+        assert!(weights[1] > -10);
+        assert_eq!(state.step, 4);
+        assert!(state.first_moments[0] > 0 && state.first_moments[1] < 0);
+        assert!(state.second_moments.iter().all(|&value| value > 0));
+    }
+
+    #[test]
+    fn integer_adam_carries_sub_i8_updates() {
+        let accumulators = [4096_i64];
+        let mut weights = [10_i8];
+        let mut first = [0_i64];
+        let mut second = [0_u64];
+        let mut residuals = [0_i64];
+        let mut state = IntegerAdamStateWorkspace {
+            step: 0,
+            first_moments: &mut first,
+            second_moments: &mut second,
+            update_residuals: &mut residuals,
+        };
+        let config = IntegerAdamConfig {
+            step_shift: 4,
+            ..IntegerAdamConfig::default()
+        };
+
+        let first_stats = apply_integer_adam_accumulators_i64_to_i8(
+            &accumulators,
+            1,
+            &mut weights,
+            config,
+            &mut state,
+        )
+        .expect("first subthreshold update");
+        assert_eq!(weights, [10]);
+        assert_eq!(first_stats.zero_delta_count, 1);
+        assert_ne!(state.update_residuals, [0]);
+
+        for _ in 0..20 {
+            apply_integer_adam_accumulators_i64_to_i8(
+                &accumulators,
+                1,
+                &mut weights,
+                config,
+                &mut state,
+            )
+            .expect("carried update");
+        }
+        assert!(weights[0] < 10);
+    }
+
+    #[test]
+    fn integer_adam_reports_gradient_and_weight_saturation() {
+        let accumulators = [i64::MAX];
+        let mut weights = [i8::MIN];
+        let mut first = [0_i64];
+        let mut second = [0_u64];
+        let mut residuals = [0_i64];
+        let mut state = IntegerAdamStateWorkspace {
+            step: 0,
+            first_moments: &mut first,
+            second_moments: &mut second,
+            update_residuals: &mut residuals,
+        };
+        let config = IntegerAdamConfig {
+            step_shift: 0,
+            ..IntegerAdamConfig::default()
+        };
+
+        let stats = apply_integer_adam_accumulators_i64_to_i8(
+            &accumulators,
+            1,
+            &mut weights,
+            config,
+            &mut state,
+        )
+        .expect("saturated update");
+
+        assert_eq!(weights, [i8::MIN]);
+        assert!(stats.gradient_saturation_count >= 2);
+        assert_eq!(state.update_residuals, [0]);
+    }
+
+    #[test]
+    fn integer_adam_i16_path_is_deterministic() {
+        fn run() -> (std::vec::Vec<i16>, std::vec::Vec<i64>, std::vec::Vec<u64>) {
+            let accumulators = [500_i64, -750_i64, 125_i64];
+            let mut weights = vec![100_i16, -100_i16, 0_i16];
+            let mut first = vec![0_i64; 3];
+            let mut second = vec![0_u64; 3];
+            let mut residuals = vec![0_i64; 3];
+            let mut state = IntegerAdamStateWorkspace {
+                step: 0,
+                first_moments: &mut first,
+                second_moments: &mut second,
+                update_residuals: &mut residuals,
+            };
+            for _ in 0..12 {
+                apply_integer_adam_accumulators_i64_to_i16(
+                    &accumulators,
+                    2,
+                    &mut weights,
+                    IntegerAdamConfig::default(),
+                    &mut state,
+                )
+                .expect("i16 update");
             }
+            (weights, first, second)
         }
 
-        // Identity scale leaves the multi-million accumulators far outside i16.
-        let identity = FixedScale {
-            multiplier: 1,
-            right_shift: 0,
+        assert_eq!(run(), run());
+    }
+
+    #[test]
+    fn integer_adam_rejects_invalid_config_and_state_shape() {
+        let accumulators = [1_i64];
+        let mut weights = [0_i8];
+        let mut first = [];
+        let mut second = [];
+        let mut residuals = [];
+        let mut state = IntegerAdamStateWorkspace {
+            step: 0,
+            first_moments: &mut first,
+            second_moments: &mut second,
+            update_residuals: &mut residuals,
         };
-        let mut before = OutputLogitCalibration::new();
-        mini_transformer_observe_output_logits(&output_weights, &features, identity, &mut before)
-            .expect("observe before");
-        assert!(
-            before.clipped > 0,
-            "identity scale should clip large accumulators: {:?}",
-            before.clip_fraction()
+        assert_eq!(
+            apply_integer_adam_accumulators_i64_to_i8(
+                &accumulators,
+                1,
+                &mut weights,
+                IntegerAdamConfig::default(),
+                &mut state,
+            ),
+            Err(TrainCoreError::InvalidShape)
         );
 
-        // Recommend a scale from the observed distribution and re-measure.
-        let recommended = before.recommend_scale().expect("recommended scale");
-        let mut after = OutputLogitCalibration::new();
-        mini_transformer_observe_output_logits(&output_weights, &features, recommended, &mut after)
-            .expect("observe after");
-
-        assert!(
-            after.clipped < before.clipped,
-            "recalibration must reduce clipping: before={} after={}",
-            before.clipped,
-            after.clipped,
+        let mut first = [0_i64];
+        let mut second = [0_u64];
+        let mut residuals = [0_i64];
+        let mut state = IntegerAdamStateWorkspace {
+            step: 0,
+            first_moments: &mut first,
+            second_moments: &mut second,
+            update_residuals: &mut residuals,
+        };
+        assert_eq!(
+            apply_integer_adam_accumulators_i64_to_i8(
+                &accumulators,
+                1,
+                &mut weights,
+                IntegerAdamConfig {
+                    epsilon: 0,
+                    ..IntegerAdamConfig::default()
+                },
+                &mut state,
+            ),
+            Err(TrainCoreError::InvalidConfig)
         );
-        // At 999-in-1000 coverage over 1024 accumulators, at most ~1 may still clip.
-        assert!(after.clipped <= 2, "after clipped = {}", after.clipped);
     }
 }
