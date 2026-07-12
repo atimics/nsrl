@@ -564,8 +564,7 @@ implemented for the small research lanes. The next engineering shape is:
 
 The remaining research questions are:
 
-- whether the same arithmetic scales cleanly to larger lexeme and transformer
-  experts,
+- whether the same arithmetic scales cleanly to larger transformer experts,
 - how to reduce dependence on source-grounded composition without losing
   coherence,
 - and whether linear attention plus integer test-time state updates can close
@@ -895,7 +894,7 @@ Status: complete for the forward runtime.
 ### Milestone 4: Tiny Model, Trace, Benchmark, And Native Training
 
 Status: forward execution, deterministic trace output, `bench-1m`, corpus
-tooling, lexeme lanes, and integer-native training are implemented as research
+tooling, and integer-native training are implemented as research
 infrastructure.
 
 - End-to-end integer model execution.
@@ -904,7 +903,7 @@ infrastructure.
 - Small demo task.
 - `bench-1m` 1,048,576-i8-weight forward benchmark.
 - `nsrl-train` calibration path.
-- Byte, lexeme, MLP, attention, embedding, and mini-transformer training traces.
+- Byte, MLP, attention, embedding, and mini-transformer training traces.
 - i64 batch accumulators and rollback safety.
 
 ### Milestone 5: Agentic Expert Packaging
