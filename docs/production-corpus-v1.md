@@ -66,15 +66,16 @@ states that its public-domain determinations are U.S.-specific, so deployment
 outside that scope still requires a jurisdiction and trademark review. Crowley
 texts were deliberately excluded from this checkpoint.
 
-This is a corpus and tokenizer promotion, not a model-quality promotion. The
-current MT5/MT6 trainer is fixed to the 256-byte vocabulary. The next code gate
-is a variable-vocabulary model artifact and training path capable of consuming
-the `NSRLTOK1` u32 streams; only after that gate can the matched 10M integer and
-float-twin run begin.
+This is a corpus and tokenizer promotion, not a model-quality promotion. MT5
+and MT6 remain fixed to the 256-byte vocabulary, but the separate `NSRLPM1`
+artifact now consumes the `NSRLTOK1` u32 streams and passes a bounded p10m
+integer smoke. Full-layer backward and the same-shape float runner are the
+remaining gates before the matched scaling run can begin.
 
 The exact scaling shapes are frozen in
 `benchmarks/production-model-v1/scaling-plan.json`: 9,317,632 parameters,
 21,641,600 parameters, and 28,229,056 parameters. Each point requires matched
 integer and float runs with identical seeds, token order, context, batches, and
-splits. The plan validator deliberately reports the variable-vocabulary u32
-runtime as the next unsatisfied gate rather than pretending training has begun.
+splits. The plan validator reports full-layer backward and the float-twin runner
+as the next unsatisfied gate rather than treating the output-head smoke as a
+quality training run.

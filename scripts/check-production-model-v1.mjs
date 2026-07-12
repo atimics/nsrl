@@ -42,9 +42,39 @@ for (const [index, point] of plan.points.entries()) {
 if (JSON.stringify(plan.run_order) !== JSON.stringify(plan.points.map((point) => point.id))) {
   throw new Error("run order must follow increasing scale points");
 }
+const smokeBytes = await readFile(plan.smoke_checkpoint.path);
+if (createHash("sha256").update(smokeBytes).digest("hex") !== plan.smoke_checkpoint.sha256) {
+  throw new Error("p10m smoke checkpoint hash mismatch");
+}
+const smoke = JSON.parse(smokeBytes);
+if (smoke.schema !== "nsrl.production_model_smoke_checkpoint.v1"
+  || smoke.parameter_count !== plan.points[0].parameter_count
+  || smoke.bindings.tokenizer_hash !== plan.tokenizer.artifact_hash_fnv64
+  || smoke.bindings.token_stream_hash !== plan.corpus_checkpoint.train_token_hash_fnv64
+  || smoke.training.final_mistakes !== 0
+  || smoke.health.weight_saturation_count !== 0
+  || smoke.health.residual_saturation_count !== 0
+  || smoke.gates.variable_vocab_artifact !== true
+  || smoke.gates.tokenizer_bound_u32_stream !== true
+  || smoke.gates.full_layer_backward !== false
+  || smoke.gates.float_twin !== false) {
+  throw new Error("p10m smoke checkpoint gate failed");
+}
+const status = plan.implementation_status;
+if (!status.variable_vocab_artifact_ready
+  || !status.u32_forward_runtime_ready
+  || !status.output_head_smoke_runtime_ready
+  || !status.p10m_smoke_completed
+  || status.full_layer_backward_ready
+  || status.float_twin_runner_ready
+  || status.training_started
+  || status.next_gate !== "full_layer_backward_and_float_twin_runner") {
+  throw new Error("production implementation status is inconsistent");
+}
 console.log(JSON.stringify({
   schema: "nsrl.production_model_scaling_plan_check.v1",
   ok: true,
   points: plan.points.map(({ id, parameter_count }) => ({ id, parameter_count })),
+  p10m_smoke: { final_mistakes: smoke.training.final_mistakes, zero_saturation: smoke.gates.zero_saturation },
   next_gate: plan.implementation_status.next_gate,
 }));

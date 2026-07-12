@@ -13,8 +13,13 @@
     "vocab_size": 8192,
     "artifact_hash_fnv64": "0xf4fe71d93c438c1a"
   },
+  "smoke_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-smoke.json",
+    "sha256": "2b440c4cb97415d24c41ea9e38dd5077b4e41c25f64eb9ed73e620fc9ad5425d"
+  },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
+    "attention": "causal_linear_attention",
     "embedding_tying": "untied",
     "attention_projections_per_layer": 4,
     "mlp_projections_per_layer": 3,
@@ -71,10 +76,13 @@
   },
   "implementation_status": {
     "corpus_and_tokenizer_ready": true,
-    "variable_vocab_artifact_ready": false,
-    "u32_training_runtime_ready": false,
+    "variable_vocab_artifact_ready": true,
+    "u32_forward_runtime_ready": true,
+    "output_head_smoke_runtime_ready": true,
+    "p10m_smoke_completed": true,
+    "full_layer_backward_ready": false,
     "float_twin_runner_ready": false,
     "training_started": false,
-    "next_gate": "variable_vocab_artifact_and_u32_training_runtime"
+    "next_gate": "full_layer_backward_and_float_twin_runner"
   }
 }
