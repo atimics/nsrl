@@ -1,0 +1,19 @@
+{
+  "schema": "nsrl.solomon_latent_planner_eval.v1",
+  "sourceSamples": "/Users/ratimics/develop/nsrl/data/processed/nsrl-mme-v0-local-smoke-20260709T0752Z-inputs/generative-eval-clean/local-clean-72-eval500-v2/samples.tsv",
+  "textIndex": "/Users/ratimics/develop/nsrl/data/processed/key-solomon-goetia-text-index-pg72679-16x16/solomon-spirit-text-signatures.tsv",
+  "outDir": "/tmp/nsrl-latent-planner-eval",
+  "runName": "clean72",
+  "limit": 72,
+  "sourceModel": "",
+  "latentModels": [
+    {
+      "label": "ld128tf1024",
+      "path": "/Users/ratimics/develop/nsrl/data/processed/key-solomon-goetia-latent-16x16-v2-sharp/n1425-ld128-tf1024-e60/model.nsrllat"
+    }
+  ],
+  "runDir": "/tmp/nsrl-latent-planner-eval/clean72",
+  "sourceSamplesHash": "0x71724acec159c539",
+  "textIndexHash": "0xf60dbaa9d0241245",
+  "selectedPromptHash": "0xdf68fb043e8b00e4"
+}
