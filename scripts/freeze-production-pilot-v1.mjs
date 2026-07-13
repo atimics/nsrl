@@ -63,6 +63,10 @@ async function buildCheckpoint() {
     gradient_saturation_count: durable.reduce((total, trace) => total + trace.health.gradient_saturation_count, 0),
     weight_saturation_count: durable.reduce((total, trace) => total + trace.health.weight_saturation_count, 0),
   };
+  const fullGradientPathByChunk = durable.map((trace) => (
+    Object.keys(trace.diagnostics.gradient_nonzero_count).length === 13
+      && Object.values(trace.diagnostics.gradient_nonzero_count).every((count) => count > 0)
+  ));
   const movedGroups = [...new Set(durable.flatMap((trace) => trace.moved_parameter_groups))].sort();
   const floatMovedGroups = [...new Set(floatChunks.flatMap((trace) => trace.moved_parameter_groups))].sort();
   const floatEvaluation = {
@@ -88,6 +92,7 @@ async function buildCheckpoint() {
     all_integer_parameter_groups_moved: movedGroups.length === 13,
     all_float_parameter_groups_moved: floatMovedGroups.length === 13,
     integer_saturation_zero: health.gradient_saturation_count === 0 && health.weight_saturation_count === 0,
+    integer_full_gradient_path_sustained: fullGradientPathByChunk.every(Boolean),
     midpoint_restart_byte_identical: sha256(model) === sha256(midpointModel) && sha256(optimizer) === sha256(midpointOptimizer),
     schedules_complete: durable[3].cursor.schedule_complete === true && midpoint[1].cursor.schedule_complete === true,
   };
@@ -108,7 +113,13 @@ async function buildCheckpoint() {
         final_mistakes: durable[3].training.final_mistakes,
       },
       cursor: durable[3].cursor,
-      chunks: durable.map((trace) => ({ training: trace.training, cursor: trace.cursor })),
+      chunks: durable.map((trace, index) => ({
+        training: trace.training,
+        cursor: trace.cursor,
+        gradient_path_complete: fullGradientPathByChunk[index],
+        diagnostics: trace.diagnostics,
+        health: trace.health,
+      })),
       diagnostics,
       health,
       moved_parameter_groups: movedGroups,
@@ -157,6 +168,9 @@ function validate(value) {
     || value.integer?.dev_final?.windows !== 256
     || value.float?.evaluation?.windows !== 256
     || value.restart?.midpoint_optimizer_steps !== 128
+    || value.integer?.chunks?.length !== 4
+    || value.integer.chunks.some((chunk) => typeof chunk.gradient_path_complete !== "boolean")
+    || typeof value.gates?.integer_full_gradient_path_sustained !== "boolean"
     || typeof value.promotion_eligible !== "boolean") {
     throw new Error("production pilot checkpoint is structurally invalid");
   }

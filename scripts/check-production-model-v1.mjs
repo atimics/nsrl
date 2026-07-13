@@ -60,22 +60,25 @@ if (smoke.schema !== "nsrl.production_model_smoke_checkpoint.v1"
   || smoke.gates.float_twin !== false) {
   throw new Error("p10m smoke checkpoint gate failed");
 }
-const [fullBytes, floatBytes, optimizationBytes, pilotContractBytes] = await Promise.all([
+const [fullBytes, floatBytes, optimizationBytes, pilotContractBytes, pilotBytes] = await Promise.all([
   readFile(plan.full_train_checkpoint.path),
   readFile(plan.float_twin_checkpoint.path),
   readFile(plan.prepilot_optimization_checkpoint.path),
   readFile(plan.pilot_contract.path),
+  readFile(plan.pilot_checkpoint.path),
 ]);
 if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_checkpoint.sha256
   || createHash("sha256").update(floatBytes).digest("hex") !== plan.float_twin_checkpoint.sha256
   || createHash("sha256").update(optimizationBytes).digest("hex") !== plan.prepilot_optimization_checkpoint.sha256
-  || createHash("sha256").update(pilotContractBytes).digest("hex") !== plan.pilot_contract.sha256) {
+  || createHash("sha256").update(pilotContractBytes).digest("hex") !== plan.pilot_contract.sha256
+  || createHash("sha256").update(pilotBytes).digest("hex") !== plan.pilot_checkpoint.sha256) {
   throw new Error("production training checkpoint hash mismatch");
 }
 const full = JSON.parse(fullBytes);
 const float = JSON.parse(floatBytes);
 const optimization = JSON.parse(optimizationBytes);
 const pilotContract = JSON.parse(pilotContractBytes);
+const pilot = JSON.parse(pilotBytes);
 if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || float.schema !== "nsrl.production_float_twin_smoke_checkpoint.v1"
   || full.parameter_count !== plan.points[0].parameter_count
@@ -99,6 +102,24 @@ if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || pilotContract.schedule.train_windows !== 1024
   || pilotContract.schedule.dev_windows !== 256
   || pilotContract.schedule.context_tokens !== 64
+  || pilot.schema !== "nsrl.production_pilot_checkpoint.v1"
+  || pilot.contract.profile !== "p10m"
+  || pilot.contract.parameter_count !== plan.points[0].parameter_count
+  || pilot.contract.bindings.tokenizer_hash !== plan.tokenizer.artifact_hash_fnv64
+  || pilot.contract.bindings.train_token_stream_hash !== plan.corpus_checkpoint.train_token_hash_fnv64
+  || pilot.contract.bindings.dev_token_stream_hash !== plan.corpus_checkpoint.dev_token_hash_fnv64
+  || pilot.integer.training.windows !== pilotContract.schedule.train_windows
+  || pilot.integer.dev_final.windows !== pilotContract.schedule.dev_windows
+  || pilot.float.evaluation.windows !== pilotContract.schedule.dev_windows
+  || pilot.restart.durable_model_sha256 !== pilot.restart.midpoint_model_sha256
+  || pilot.restart.durable_optimizer_sha256 !== pilot.restart.midpoint_optimizer_sha256
+  || pilot.gates.midpoint_restart_byte_identical !== true
+  || pilot.gates.integer_full_gradient_path_sustained !== false
+  || pilot.gates.integer_saturation_zero !== false
+  || pilot.gates.integer_dev_loss_nonincreasing !== false
+  || pilot.gates.float_dev_loss_nonincreasing !== true
+  || pilot.gates.integer_float_dev_regression_within_limit !== false
+  || pilot.promotion_eligible !== false
   || plan.pilot_contract.runner !== "aws_graviton_parallel_lanes"
   || JSON.stringify(optimization.results.map((row) => row.context_tokens)) !== JSON.stringify([4, 16, 64, 256])
   || full.moved_parameter_groups.length !== 13
@@ -118,8 +139,10 @@ if (!status.variable_vocab_artifact_ready
   || !status.float_twin_smoke_completed
   || !status.prepilot_optimization_completed
   || !status.controlled_p10m_pilot_launched
+  || !status.controlled_p10m_pilot_completed
+  || status.controlled_p10m_pilot_promotion_eligible !== false
   || !status.training_started
-  || status.next_gate !== "p10m_pilot_completion_and_promotion_review") {
+  || status.next_gate !== "p10m_integer_shift_stabilization_preflight") {
   throw new Error("production implementation status is inconsistent");
 }
 console.log(JSON.stringify({
@@ -129,5 +152,10 @@ console.log(JSON.stringify({
   p10m_smoke: { final_mistakes: smoke.training.final_mistakes, zero_saturation: smoke.gates.zero_saturation },
   full_backward: { moved_parameter_groups: full.moved_parameter_groups.length, final_mistakes: full.training.final_mistakes },
   float_twin: { moved_parameter_groups: float.moved_parameter_groups.length, final_mistakes: float.training.final_mistakes },
+  pilot: {
+    promotion_eligible: pilot.promotion_eligible,
+    integer_final_mean_millibits: pilot.integer.dev_final.mean_millibits,
+    float_final_mean_millibits: pilot.float.evaluation.final_mean_millibits,
+  },
   next_gate: plan.implementation_status.next_gate,
 }));

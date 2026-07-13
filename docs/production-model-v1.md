@@ -77,10 +77,23 @@ in residual state instead of forcing one-unit steps. The float twin remains a
 NumPy reference rather than an accelerator runner. Neither bounded smoke is a
 language-quality result.
 
-The controlled p10m train/dev pilot is now launched on a c8g.2xlarge Graviton
-runner. Its frozen schedule uses 1,024 train windows and 256 held-out dev
-windows at context 64, with durable chunking, a byte-identical midpoint replay,
-and concurrent integer/float lanes. Artifacts sync to S3 every 30 seconds and
-the instance terminates on completion. The next gate is checkpoint fetch and
-promotion review; assisted retrieval, suffix memory, and routing oracles remain
-forbidden in headline generation rows.
+The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
+Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
+context 64, with durable chunking, a midpoint replay, and concurrent
+integer/float lanes. The replay finished with byte-identical model and optimizer
+artifacts, proving that interruption recovery is exact.
+
+The training result is not promotion-eligible. Float held-out loss improved
+slightly from 13.000 to 12.988 bits/token, while integer held-out loss regressed
+from 13.000 to 31.731 bits/token. Integer training accumulated 25,810 gradient
+saturations and 83,163 weight saturations; K accounted for 76,102 parameter
+saturations, and one durable chunk retained gradients only for final RMS,
+output, and bias before the full path revived. The frozen checkpoint is
+`benchmarks/production-model-v1/p10m-pilot.json`.
+
+The next gate is a bounded integer shift-stabilization preflight, not a larger
+training window. It must add projection-specific control for K and the other
+saturating matrices, preserve a complete gradient path in every chunk, reach
+zero saturation, and avoid held-out regression before another paid pilot.
+Assisted retrieval, suffix memory, and routing oracles remain forbidden in
+headline generation rows.

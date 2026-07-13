@@ -35,6 +35,11 @@
     "runner": "aws_graviton_parallel_lanes",
     "instance_type": "c8g.2xlarge"
   },
+  "pilot_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-pilot.json",
+    "sha256": "324df33e3a69d3ee267f313cb6706ec6dd423094a670b96e631e26601ccd2293",
+    "source_run": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/runs/production-p10m-pilot-20260713T043933Z"
+  },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
     "attention": "causal_linear_attention",
@@ -104,7 +109,9 @@
     "float_twin_smoke_completed": true,
     "prepilot_optimization_completed": true,
     "controlled_p10m_pilot_launched": true,
+    "controlled_p10m_pilot_completed": true,
+    "controlled_p10m_pilot_promotion_eligible": false,
     "training_started": true,
-    "next_gate": "p10m_pilot_completion_and_promotion_review"
+    "next_gate": "p10m_integer_shift_stabilization_preflight"
   }
 }
