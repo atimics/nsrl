@@ -38,9 +38,17 @@ pub struct ProductionFullTrainConfig {
     pub max_windows: usize,
     pub epochs: usize,
     pub matrix_learning_rate_shift: u8,
+    pub q_learning_rate_shift: Option<u8>,
+    pub k_learning_rate_shift: Option<u8>,
+    pub v_learning_rate_shift: Option<u8>,
+    pub o_learning_rate_shift: Option<u8>,
+    pub up_learning_rate_shift: Option<u8>,
+    pub gate_learning_rate_shift: Option<u8>,
+    pub down_learning_rate_shift: Option<u8>,
     pub vector_learning_rate_shift: u8,
     pub embedding_learning_rate_shift: u8,
     pub output_learning_rate_shift: u8,
+    pub output_backward_shift: Option<u8>,
     pub batch_windows: usize,
     pub max_optimizer_steps: usize,
     pub evaluation_windows: usize,
@@ -53,9 +61,17 @@ impl Default for ProductionFullTrainConfig {
             max_windows: 8,
             epochs: 2,
             matrix_learning_rate_shift: 16,
+            q_learning_rate_shift: None,
+            k_learning_rate_shift: None,
+            v_learning_rate_shift: None,
+            o_learning_rate_shift: None,
+            up_learning_rate_shift: None,
+            gate_learning_rate_shift: None,
+            down_learning_rate_shift: None,
             vector_learning_rate_shift: 10,
             embedding_learning_rate_shift: 4,
             output_learning_rate_shift: 24,
+            output_backward_shift: None,
             batch_windows: 4,
             max_optimizer_steps: usize::MAX,
             evaluation_windows: usize::MAX,
@@ -236,6 +252,8 @@ pub struct ProductionFullTrainTrace {
     pub next_epoch: u64,
     pub next_window: u64,
     pub schedule_complete: bool,
+    pub learning_rate_shifts: [u8; 13],
+    pub output_backward_shift: u8,
     pub gradient_saturation_count: usize,
     pub weight_saturation_count: usize,
     pub movement_l1: [u64; 13],
@@ -273,12 +291,18 @@ impl ProductionFullTrainTrace {
                 .collect::<Vec<_>>()
                 .join(",")
         };
+        let learning_rate_shifts = GROUP_NAMES
+            .iter()
+            .zip(self.learning_rate_shifts)
+            .map(|(name, value)| format!("\"{name}\":{value}"))
+            .collect::<Vec<_>>()
+            .join(",");
         format!(
             concat!(
                 "{{\"schema\":\"nsrl.production_full_train_smoke.v1\",",
                 "\"profile\":\"{}\",\"parameter_count\":{},",
                 "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",\"token_stream_hash\":\"0x{:016x}\"}},",
-                "\"training\":{{\"optimizer\":\"integer_residual_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"evaluation_windows\":{},\"epochs\":{},\"batch_windows\":{},\"optimizer_steps\":{},\"total_optimizer_step\":{},\"initial_mistakes\":{},\"final_mistakes\":{}}},",
+                "\"training\":{{\"optimizer\":\"integer_residual_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"evaluation_windows\":{},\"epochs\":{},\"batch_windows\":{},\"optimizer_steps\":{},\"total_optimizer_step\":{},\"initial_mistakes\":{},\"final_mistakes\":{},\"learning_rate_shifts\":{{{}}},\"output_backward_shift\":{}}},",
                 "\"cursor\":{{\"start_epoch\":{},\"start_window\":{},\"next_epoch\":{},\"next_window\":{},\"schedule_complete\":{}}},",
                 "\"movement_l1\":{{{}}},\"moved_parameter_groups\":[{}],",
                 "\"diagnostics\":{{\"gradient_nonzero_count\":{{{}}},\"residual_carry_count\":{{{}}},\"update_nonzero_count\":{{{}}},\"saturation_by_group\":{{{}}},\"backward_ste_rescue_count\":{},\"backward_quantization_count\":{},\"backward_ste_rescue_per_million\":{}}},",
@@ -300,6 +324,8 @@ impl ProductionFullTrainTrace {
             self.total_optimizer_step,
             self.initial_mistakes,
             self.final_mistakes,
+            learning_rate_shifts,
+            self.output_backward_shift,
             self.start_epoch,
             self.start_window,
             self.next_epoch,
@@ -420,14 +446,10 @@ pub fn train_production_full_smoke(
         || config.batch_windows == 0
         || config.max_optimizer_steps == 0
         || config.evaluation_windows == 0
-        || [
-            matrix_group_shift(config.matrix_learning_rate_shift, 10),
-            config.vector_learning_rate_shift,
-            config.embedding_learning_rate_shift,
-            config.output_learning_rate_shift,
-        ]
-        .iter()
-        .any(|&shift| shift > 62)
+        || config.output_backward_shift.is_some_and(|shift| shift > 30)
+        || effective_learning_rate_shifts(config)
+            .iter()
+            .any(|&shift| shift > 62)
     {
         return Err(TrainError::InvalidConfig);
     }
@@ -503,6 +525,10 @@ pub fn train_production_full_smoke(
         next_epoch: state.next_epoch,
         next_window: state.next_window,
         schedule_complete: state.next_epoch == config.epochs as u64,
+        learning_rate_shifts: effective_learning_rate_shifts(config),
+        output_backward_shift: config
+            .output_backward_shift
+            .unwrap_or(model.scales.output_shift),
         gradient_saturation_count: stats.gradient_saturation,
         weight_saturation_count: stats.weight_saturation,
         movement_l1: stats.movement,
@@ -717,7 +743,13 @@ fn backward_update(
                 i64::from(grad) * i64::from(model.output_weights[token * c.d_model + dim]),
             );
         }
-        *grad_feature = saturate_i16(round_shift_rhu_i64(acc, model.scales.output_shift));
+        *grad_feature = saturate_i16(quantized_nonzero(
+            acc,
+            config
+                .output_backward_shift
+                .unwrap_or(model.scales.output_shift),
+            stats,
+        ));
     }
     for (token, &grad) in grad_logits.iter().enumerate() {
         update_i32(
@@ -852,7 +884,7 @@ fn backward_update(
             &mut model.down_weights[down_range],
             c.hidden_dim,
             c.d_model,
-            matrix_group_shift(config.matrix_learning_rate_shift, 10),
+            matrix_learning_rate_shift(config, 10),
             &mut residuals[down_residual_range],
             apply_updates,
             10,
@@ -864,7 +896,7 @@ fn backward_update(
             &mut model.up_weights[up_range.clone()],
             c.d_model,
             c.hidden_dim,
-            matrix_group_shift(config.matrix_learning_rate_shift, 8),
+            matrix_learning_rate_shift(config, 8),
             &mut residuals[up_residual_range],
             apply_updates,
             8,
@@ -876,7 +908,7 @@ fn backward_update(
             &mut model.gate_weights[up_range],
             c.d_model,
             c.hidden_dim,
-            matrix_group_shift(config.matrix_learning_rate_shift, 9),
+            matrix_learning_rate_shift(config, 9),
             &mut residuals[gate_residual_range],
             apply_updates,
             9,
@@ -965,7 +997,7 @@ fn backward_update(
             &mut model.o_weights[attention_range.clone()],
             c.d_model,
             c.d_model,
-            matrix_group_shift(config.matrix_learning_rate_shift, 7),
+            matrix_learning_rate_shift(config, 7),
             &mut residuals[o_residual_range],
             apply_updates,
             7,
@@ -977,7 +1009,7 @@ fn backward_update(
             &mut model.q_weights[attention_range.clone()],
             c.d_model,
             c.d_model,
-            matrix_group_shift(config.matrix_learning_rate_shift, 4),
+            matrix_learning_rate_shift(config, 4),
             &mut residuals[q_residual_range],
             apply_updates,
             4,
@@ -989,7 +1021,7 @@ fn backward_update(
             &mut model.k_weights[attention_range.clone()],
             c.d_model,
             c.d_model,
-            matrix_group_shift(config.matrix_learning_rate_shift, 5),
+            matrix_learning_rate_shift(config, 5),
             &mut residuals[k_residual_range],
             apply_updates,
             5,
@@ -1001,7 +1033,7 @@ fn backward_update(
             &mut model.v_weights[attention_range],
             c.d_model,
             c.d_model,
-            matrix_group_shift(config.matrix_learning_rate_shift, 6),
+            matrix_learning_rate_shift(config, 6),
             &mut residuals[v_residual_range],
             apply_updates,
             6,
@@ -1497,16 +1529,35 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     for value in [c.context_tokens, c.max_windows, c.epochs, c.batch_windows] {
         bytes.extend_from_slice(&(value as u64).to_le_bytes())
     }
-    bytes.extend_from_slice(&[
-        c.matrix_learning_rate_shift,
-        c.vector_learning_rate_shift,
-        c.embedding_learning_rate_shift,
-        c.output_learning_rate_shift,
-    ]);
+    if projection_shift_overrides(c).iter().all(Option::is_none)
+        && c.output_backward_shift.is_none()
+    {
+        bytes.extend_from_slice(&[
+            c.matrix_learning_rate_shift,
+            c.vector_learning_rate_shift,
+            c.embedding_learning_rate_shift,
+            c.output_learning_rate_shift,
+        ]);
+    } else {
+        bytes.extend_from_slice(&effective_learning_rate_shifts(c));
+        bytes.push(c.output_backward_shift.unwrap_or(u8::MAX));
+    }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
         hash.wrapping_mul(FNV_PRIME)
     })
+}
+
+fn projection_shift_overrides(config: ProductionFullTrainConfig) -> [Option<u8>; 7] {
+    [
+        config.q_learning_rate_shift,
+        config.k_learning_rate_shift,
+        config.v_learning_rate_shift,
+        config.o_learning_rate_shift,
+        config.up_learning_rate_shift,
+        config.gate_learning_rate_shift,
+        config.down_learning_rate_shift,
+    ]
 }
 
 fn quantized_nonzero(value: i64, shift: u8, stats: &mut UpdateStats) -> i64 {
@@ -1530,10 +1581,104 @@ fn matrix_group_shift(base: u8, group: usize) -> u8 {
     }
 }
 
+fn matrix_learning_rate_shift(config: ProductionFullTrainConfig, group: usize) -> u8 {
+    let explicit = match group {
+        4 => config.q_learning_rate_shift,
+        5 => config.k_learning_rate_shift,
+        6 => config.v_learning_rate_shift,
+        7 => config.o_learning_rate_shift,
+        8 => config.up_learning_rate_shift,
+        9 => config.gate_learning_rate_shift,
+        10 => config.down_learning_rate_shift,
+        _ => None,
+    };
+    explicit.unwrap_or_else(|| matrix_group_shift(config.matrix_learning_rate_shift, group))
+}
+
+fn effective_learning_rate_shifts(config: ProductionFullTrainConfig) -> [u8; 13] {
+    [
+        config.embedding_learning_rate_shift,
+        vector_group_shift(config.vector_learning_rate_shift, 1),
+        vector_group_shift(config.vector_learning_rate_shift, 2),
+        vector_group_shift(config.vector_learning_rate_shift, 3),
+        matrix_learning_rate_shift(config, 4),
+        matrix_learning_rate_shift(config, 5),
+        matrix_learning_rate_shift(config, 6),
+        matrix_learning_rate_shift(config, 7),
+        matrix_learning_rate_shift(config, 8),
+        matrix_learning_rate_shift(config, 9),
+        matrix_learning_rate_shift(config, 10),
+        config.output_learning_rate_shift,
+        config.vector_learning_rate_shift,
+    ]
+}
+
 fn vector_group_shift(base: u8, group: usize) -> u8 {
     match group {
         1 | 3 => base.saturating_sub(4),
         2 => base.saturating_sub(10),
         _ => base,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        FNV_OFFSET, FNV_PRIME, ProductionFullTrainConfig, UpdateStats,
+        effective_learning_rate_shifts, quantized_nonzero, schedule_hash,
+    };
+
+    #[test]
+    fn default_effective_learning_rate_shifts_preserve_legacy_schedule() {
+        let config = ProductionFullTrainConfig::default();
+        assert_eq!(
+            effective_learning_rate_shifts(config),
+            [4, 6, 0, 6, 16, 20, 24, 16, 16, 16, 8, 24, 10]
+        );
+        let mut legacy_bytes = Vec::new();
+        for value in [
+            config.context_tokens,
+            config.max_windows,
+            config.epochs,
+            config.batch_windows,
+        ] {
+            legacy_bytes.extend_from_slice(&(value as u64).to_le_bytes());
+        }
+        legacy_bytes.extend_from_slice(&[16, 10, 4, 24]);
+        let legacy_hash = legacy_bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
+            hash ^= u64::from(byte);
+            hash.wrapping_mul(FNV_PRIME)
+        });
+        assert_eq!(schedule_hash(config), legacy_hash);
+    }
+
+    #[test]
+    fn projection_overrides_are_independent_and_bind_the_optimizer_schedule() {
+        let base = ProductionFullTrainConfig::default();
+        let tuned = ProductionFullTrainConfig {
+            q_learning_rate_shift: Some(21),
+            k_learning_rate_shift: Some(30),
+            down_learning_rate_shift: Some(24),
+            ..base
+        };
+        assert_eq!(
+            effective_learning_rate_shifts(tuned),
+            [4, 6, 0, 6, 21, 30, 24, 16, 16, 16, 24, 24, 10]
+        );
+        assert_ne!(schedule_hash(base), schedule_hash(tuned));
+        let backward_tuned = ProductionFullTrainConfig {
+            output_backward_shift: Some(8),
+            ..base
+        };
+        assert_ne!(schedule_hash(base), schedule_hash(backward_tuned));
+    }
+
+    #[test]
+    fn output_backward_dead_zone_rescue_preserves_nonzero_signal() {
+        let mut stats = UpdateStats::default();
+        assert_eq!(quantized_nonzero(1, 12, &mut stats), 1);
+        assert_eq!(quantized_nonzero(-1, 12, &mut stats), -1);
+        assert_eq!(stats.backward_quantization, 2);
+        assert_eq!(stats.backward_ste_rescue, 2);
     }
 }

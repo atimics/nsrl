@@ -40,10 +40,12 @@ Reproduce it with:
 scripts/run-production-model-v1-smoke.sh
 scripts/run-production-full-train-v1-smoke.sh
 scripts/run-production-float-twin-v1-smoke.sh
+scripts/run-production-integer-stabilization-v1.sh
 python3 scripts/benchmark-production-training-v1.py
 node scripts/freeze-production-model-v1.mjs --check
 node scripts/freeze-production-full-train-v1.mjs --check
 node scripts/freeze-production-float-twin-v1.mjs --check
+node scripts/freeze-production-integer-stabilization-v1.mjs --check
 node scripts/check-production-model-v1.mjs
 node scripts/check-production-optimization-v1.mjs
 ```
@@ -91,9 +93,26 @@ saturations, and one durable chunk retained gradients only for final RMS,
 output, and bias before the full path revived. The frozen checkpoint is
 `benchmarks/production-model-v1/p10m-pilot.json`.
 
-The next gate is a bounded integer shift-stabilization preflight, not a larger
-training window. It must add projection-specific control for K and the other
-saturating matrices, preserve a complete gradient path in every chunk, reach
-zero saturation, and avoid held-out regression before another paid pilot.
-Assisted retrieval, suffix memory, and routing oracles remain forbidden in
-headline generation rows.
+The bounded integer shift-stabilization preflight is now complete and eligible
+for a controlled replay. The trainer supports independent Q, K, V, O, up,
+gate, and down update shifts, records the effective 13-group schedule, and
+binds that schedule plus the output backward shift into resumable optimizer
+state. A deterministic one-unit output initialization and a finer forward
+output scale activate the trunk without immediately disturbing held-out
+predictions; the explicit straight-through backward scale remains separately
+frozen.
+
+The 256-window validation improves the fixed training probe from 64 to 45
+mistakes and held-out loss from 13.065 to 13.062 bits/token. Every parameter
+group receives nonzero gradients, the output projection moves, and both
+gradient and weight saturation remain zero. The update shifts follow a locked
+scaling rule: multiplying the window budget by a power of two adds the same
+number of shift bits, preserving the effective cumulative update budget. The
+frozen result is `benchmarks/production-model-v1/p10m-stabilization.json`.
+
+This is a warm-up/stability result, not model promotion: only the output
+projection crosses an integer update boundary at this budget. The next gate is
+a controlled p10m stabilized pilot replay with durable early-stop checks for
+held-out regression, saturation, or gradient-path loss. Assisted retrieval,
+suffix memory, and routing oracles remain forbidden in headline generation
+rows.

@@ -23,6 +23,8 @@ struct Config {
     optimizer_state: Option<PathBuf>,
     optimizer_state_out: Option<PathBuf>,
     seed: u64,
+    output_init_amplitude: i16,
+    output_forward_shift: Option<u8>,
     context_tokens: usize,
     max_windows: usize,
     epochs: usize,
@@ -30,9 +32,17 @@ struct Config {
     bias_step_q8: i32,
     margin_q8: i32,
     matrix_learning_rate_shift: u8,
+    q_learning_rate_shift: Option<u8>,
+    k_learning_rate_shift: Option<u8>,
+    v_learning_rate_shift: Option<u8>,
+    o_learning_rate_shift: Option<u8>,
+    up_learning_rate_shift: Option<u8>,
+    gate_learning_rate_shift: Option<u8>,
+    down_learning_rate_shift: Option<u8>,
     vector_learning_rate_shift: u8,
     embedding_learning_rate_shift: u8,
     output_learning_rate_shift: u8,
+    output_backward_shift: Option<u8>,
     batch_windows: usize,
     max_optimizer_steps: usize,
     evaluation_windows: usize,
@@ -53,6 +63,8 @@ impl Default for Config {
             optimizer_state: None,
             optimizer_state_out: None,
             seed: 7,
+            output_init_amplitude: 0,
+            output_forward_shift: None,
             context_tokens: smoke.context_tokens,
             max_windows: smoke.max_windows,
             epochs: smoke.epochs,
@@ -60,9 +72,17 @@ impl Default for Config {
             bias_step_q8: smoke.bias_step_q8,
             margin_q8: smoke.margin_q8,
             matrix_learning_rate_shift: full.matrix_learning_rate_shift,
+            q_learning_rate_shift: full.q_learning_rate_shift,
+            k_learning_rate_shift: full.k_learning_rate_shift,
+            v_learning_rate_shift: full.v_learning_rate_shift,
+            o_learning_rate_shift: full.o_learning_rate_shift,
+            up_learning_rate_shift: full.up_learning_rate_shift,
+            gate_learning_rate_shift: full.gate_learning_rate_shift,
+            down_learning_rate_shift: full.down_learning_rate_shift,
             vector_learning_rate_shift: full.vector_learning_rate_shift,
             embedding_learning_rate_shift: full.embedding_learning_rate_shift,
             output_learning_rate_shift: full.output_learning_rate_shift,
+            output_backward_shift: full.output_backward_shift,
             batch_windows: full.batch_windows,
             max_optimizer_steps: full.max_optimizer_steps,
             evaluation_windows: full.evaluation_windows,
@@ -155,9 +175,17 @@ fn full_train_smoke(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             max_windows: config.max_windows,
             epochs: config.epochs,
             matrix_learning_rate_shift: config.matrix_learning_rate_shift,
+            q_learning_rate_shift: config.q_learning_rate_shift,
+            k_learning_rate_shift: config.k_learning_rate_shift,
+            v_learning_rate_shift: config.v_learning_rate_shift,
+            o_learning_rate_shift: config.o_learning_rate_shift,
+            up_learning_rate_shift: config.up_learning_rate_shift,
+            gate_learning_rate_shift: config.gate_learning_rate_shift,
+            down_learning_rate_shift: config.down_learning_rate_shift,
             vector_learning_rate_shift: config.vector_learning_rate_shift,
             embedding_learning_rate_shift: config.embedding_learning_rate_shift,
             output_learning_rate_shift: config.output_learning_rate_shift,
+            output_backward_shift: config.output_backward_shift,
             batch_windows: config.batch_windows,
             max_optimizer_steps: config.max_optimizer_steps,
             evaluation_windows: config.evaluation_windows,
@@ -180,8 +208,13 @@ fn init(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     if tokenizer.vocab_size() != model_config.vocab_size {
         return Err("tokenizer vocabulary does not match production profile".into());
     }
-    let model =
+    let mut model =
         ProductionModelV1::new_initial(model_config, tokenizer.tokenizer_hash(), config.seed)?;
+    model.initialize_output_weights(config.output_init_amplitude)?;
+    if let Some(output_forward_shift) = config.output_forward_shift {
+        model.scales.output_shift = output_forward_shift;
+        model.validate()?;
+    }
     let bytes = model.try_to_bytes()?;
     fs::write(model_out, &bytes)?;
     fs::write(
@@ -191,7 +224,7 @@ fn init(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                 "{{\"schema\":\"nsrl.production_model_init.v1\",",
                 "\"profile\":\"{}\",\"parameter_count\":{},",
                 "\"tokenizer_hash\":\"0x{:016x}\",\"initialization_seed\":{},",
-                "\"model_hash\":\"0x{:016x}\",\"artifact_bytes\":{},",
+                "\"model_hash\":\"0x{:016x}\",\"artifact_bytes\":{},\"output_init_amplitude\":{},\"output_forward_shift\":{},",
                 "\"full_layer_backward_ready\":true,\"output_head_smoke_ready\":true}}\n"
             ),
             model.config.profile_id().unwrap_or("custom"),
@@ -200,6 +233,8 @@ fn init(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             model.initialization_seed,
             model.model_hash(),
             bytes.len(),
+            config.output_init_amplitude,
+            model.scales.output_shift,
         ),
     )?;
     Ok(())
@@ -215,7 +250,7 @@ fn inspect(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             "\"profile\":\"{}\",\"vocab_size\":{},\"d_model\":{},\"heads\":{},",
             "\"layers\":{},\"hidden_dim\":{},\"context_tokens\":{},",
             "\"parameter_count\":{},\"tokenizer_hash\":\"0x{:016x}\",",
-            "\"initialization_seed\":{},\"model_hash\":\"0x{:016x}\",\"artifact_bytes\":{}}}"
+            "\"initialization_seed\":{},\"model_hash\":\"0x{:016x}\",\"artifact_bytes\":{},\"output_forward_shift\":{}}}"
         ),
         model.config.profile_id().unwrap_or("custom"),
         model.config.vocab_size,
@@ -229,6 +264,7 @@ fn inspect(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         model.initialization_seed,
         model.model_hash(),
         bytes.len(),
+        model.scales.output_shift,
     );
     Ok(())
 }
@@ -297,6 +333,14 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                     Some(PathBuf::from(next(&mut args, "--optimizer-state-out")?))
             }
             "--seed" => config.seed = next(&mut args, "--seed")?.parse()?,
+            "--output-init-amplitude" => {
+                config.output_init_amplitude =
+                    next(&mut args, "--output-init-amplitude")?.parse()?
+            }
+            "--output-forward-shift" => {
+                config.output_forward_shift =
+                    Some(next(&mut args, "--output-forward-shift")?.parse()?)
+            }
             "--context-tokens" => {
                 config.context_tokens = next(&mut args, "--context-tokens")?.parse()?
             }
@@ -311,6 +355,34 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 config.matrix_learning_rate_shift =
                     next(&mut args, "--matrix-learning-rate-shift")?.parse()?
             }
+            "--q-learning-rate-shift" => {
+                config.q_learning_rate_shift =
+                    Some(next(&mut args, "--q-learning-rate-shift")?.parse()?)
+            }
+            "--k-learning-rate-shift" => {
+                config.k_learning_rate_shift =
+                    Some(next(&mut args, "--k-learning-rate-shift")?.parse()?)
+            }
+            "--v-learning-rate-shift" => {
+                config.v_learning_rate_shift =
+                    Some(next(&mut args, "--v-learning-rate-shift")?.parse()?)
+            }
+            "--o-learning-rate-shift" => {
+                config.o_learning_rate_shift =
+                    Some(next(&mut args, "--o-learning-rate-shift")?.parse()?)
+            }
+            "--up-learning-rate-shift" => {
+                config.up_learning_rate_shift =
+                    Some(next(&mut args, "--up-learning-rate-shift")?.parse()?)
+            }
+            "--gate-learning-rate-shift" => {
+                config.gate_learning_rate_shift =
+                    Some(next(&mut args, "--gate-learning-rate-shift")?.parse()?)
+            }
+            "--down-learning-rate-shift" => {
+                config.down_learning_rate_shift =
+                    Some(next(&mut args, "--down-learning-rate-shift")?.parse()?)
+            }
             "--vector-learning-rate-shift" => {
                 config.vector_learning_rate_shift =
                     next(&mut args, "--vector-learning-rate-shift")?.parse()?
@@ -322,6 +394,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--output-learning-rate-shift" => {
                 config.output_learning_rate_shift =
                     next(&mut args, "--output-learning-rate-shift")?.parse()?
+            }
+            "--output-backward-shift" => {
+                config.output_backward_shift =
+                    Some(next(&mut args, "--output-backward-shift")?.parse()?)
             }
             "--batch-windows" => {
                 config.batch_windows = next(&mut args, "--batch-windows")?.parse()?
@@ -353,6 +429,6 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N]"
+        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N] [--output-backward-shift N]"
     );
 }

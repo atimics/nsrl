@@ -332,6 +332,18 @@ impl ProductionModelV1 {
         Ok(model)
     }
 
+    pub fn initialize_output_weights(&mut self, amplitude: i16) -> Result<(), TrainError> {
+        if amplitude < 0 {
+            return Err(TrainError::InvalidConfig);
+        }
+        self.output_weights = initial_i16_tensor(
+            checked_product(self.config.vocab_size, self.config.d_model)?,
+            self.initialization_seed ^ 0x3c6e_f372_fe94_f82b,
+            amplitude,
+        );
+        self.validate()
+    }
+
     pub fn validate(&self) -> Result<(), TrainError> {
         self.config.validate()?;
         if self.tokenizer_hash == 0 || scale_shifts(self.scales).iter().any(|&shift| shift > 30) {
@@ -1228,6 +1240,18 @@ mod tests {
     }
 
     #[test]
+    fn deterministic_output_initialization_activates_the_head() {
+        let mut left = ProductionModelV1::new_initial(tiny_config(), 0x1234, 7).expect("model");
+        let mut right = left.clone();
+        left.initialize_output_weights(1).expect("initialize");
+        right.initialize_output_weights(1).expect("initialize");
+        assert_eq!(left.output_weights, right.output_weights);
+        assert!(left.output_weights.iter().any(|&value| value != 0));
+        assert!(left.output_weights.iter().all(|&value| value.abs() <= 1));
+        assert!(left.initialize_output_weights(-1).is_err());
+    }
+
+    #[test]
     fn production_forward_and_smoke_training_accept_u32_tokens() {
         let mut model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
         let forward = forward_production_model(&model, &[300, 301, 302, 303]).expect("forward");
@@ -1289,7 +1313,10 @@ mod tests {
 
     #[test]
     fn production_full_backward_moves_every_group_and_resumes_bound_state() {
-        let initial = ProductionModelV1::new_initial(tiny_config(), 0x1234, 19).expect("model");
+        let mut initial = ProductionModelV1::new_initial(tiny_config(), 0x1234, 19).expect("model");
+        initial.initialize_output_weights(1).expect("output init");
+        initial.scales.output_shift = 14;
+        initial.validate().expect("scaled model");
         let tokens = [
             BOS_TOKEN_ID,
             300,
@@ -1305,6 +1332,10 @@ mod tests {
             context_tokens: 4,
             max_windows: 4,
             epochs: 2,
+            q_learning_rate_shift: Some(17),
+            k_learning_rate_shift: Some(21),
+            down_learning_rate_shift: Some(16),
+            output_backward_shift: Some(8),
             ..ProductionFullTrainConfig::default()
         };
         let mut uninterrupted_model = initial.clone();
@@ -1319,6 +1350,10 @@ mod tests {
                 > 0
         );
         assert!(uninterrupted_trace.schedule_complete);
+        assert_eq!(uninterrupted_trace.output_backward_shift, 8);
+        assert_eq!(uninterrupted_trace.learning_rate_shifts[4], 17);
+        assert_eq!(uninterrupted_trace.learning_rate_shifts[5], 21);
+        assert_eq!(uninterrupted_trace.learning_rate_shifts[10], 16);
         assert_ne!(
             uninterrupted_trace.initial_model_hash,
             uninterrupted_trace.final_model_hash

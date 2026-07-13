@@ -13,6 +13,7 @@ scripts/check-production-corpus-v1.sh
 node scripts/freeze-production-model-v1.mjs --check
 node scripts/freeze-production-full-train-v1.mjs --check
 node scripts/freeze-production-float-twin-v1.mjs --check
+node scripts/freeze-production-integer-stabilization-v1.mjs --check
 node scripts/check-production-model-v1.mjs
 node scripts/check-production-optimization-v1.mjs
 cargo fmt --all --check
