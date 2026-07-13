@@ -62,6 +62,7 @@ if (smoke.schema !== "nsrl.production_model_smoke_checkpoint.v1"
 }
 const [
   fullBytes, floatBytes, optimizationBytes, pilotContractBytes, pilotBytes, stabilizationBytes,
+  stabilizedAttemptBytes, stabilizedContractBytes, stabilizedBytes,
 ] = await Promise.all([
   readFile(plan.full_train_checkpoint.path),
   readFile(plan.float_twin_checkpoint.path),
@@ -69,6 +70,9 @@ const [
   readFile(plan.pilot_contract.path),
   readFile(plan.pilot_checkpoint.path),
   readFile(plan.integer_stabilization_checkpoint.path),
+  readFile(plan.stabilized_pilot_attempt.path),
+  readFile(plan.stabilized_pilot_contract.path),
+  readFile(plan.stabilized_pilot_checkpoint.path),
 ]);
 if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_checkpoint.sha256
   || createHash("sha256").update(floatBytes).digest("hex") !== plan.float_twin_checkpoint.sha256
@@ -76,7 +80,13 @@ if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_che
   || createHash("sha256").update(pilotContractBytes).digest("hex") !== plan.pilot_contract.sha256
   || createHash("sha256").update(pilotBytes).digest("hex") !== plan.pilot_checkpoint.sha256
   || createHash("sha256").update(stabilizationBytes).digest("hex")
-    !== plan.integer_stabilization_checkpoint.sha256) {
+    !== plan.integer_stabilization_checkpoint.sha256
+  || createHash("sha256").update(stabilizedAttemptBytes).digest("hex")
+    !== plan.stabilized_pilot_attempt.sha256
+  || createHash("sha256").update(stabilizedContractBytes).digest("hex")
+    !== plan.stabilized_pilot_contract.sha256
+  || createHash("sha256").update(stabilizedBytes).digest("hex")
+    !== plan.stabilized_pilot_checkpoint.sha256) {
   throw new Error("production training checkpoint hash mismatch");
 }
 const full = JSON.parse(fullBytes);
@@ -85,6 +95,9 @@ const optimization = JSON.parse(optimizationBytes);
 const pilotContract = JSON.parse(pilotContractBytes);
 const pilot = JSON.parse(pilotBytes);
 const stabilization = JSON.parse(stabilizationBytes);
+const stabilizedAttempt = JSON.parse(stabilizedAttemptBytes);
+const stabilizedContract = JSON.parse(stabilizedContractBytes);
+const stabilized = JSON.parse(stabilizedBytes);
 if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || float.schema !== "nsrl.production_float_twin_smoke_checkpoint.v1"
   || full.parameter_count !== plan.points[0].parameter_count
@@ -144,6 +157,35 @@ if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || !Object.values(stabilization.gates).every(Boolean)
   || stabilization.preflight_eligible !== true
   || stabilization.next_gate !== "p10m_stabilized_pilot_replay"
+  || stabilizedAttempt.schema !== "nsrl.production_stabilized_pilot_attempt.v1"
+  || stabilizedAttempt.outcome !== "early_stopped"
+  || stabilizedAttempt.failed_gate !== "complete_gradient_path"
+  || stabilizedAttempt.integer_chunk_0.heldout_delta !== 0
+  || stabilizedAttempt.integer_chunk_0.gradient_saturation_count !== 0
+  || stabilizedAttempt.integer_chunk_0.weight_saturation_count !== 0
+  || stabilizedContract.schema !== "nsrl.production_stabilized_pilot_contract.v2"
+  || stabilizedContract.source_preflight.sha256 !== plan.integer_stabilization_checkpoint.sha256
+  || stabilizedContract.source_attempt.sha256 !== plan.stabilized_pilot_attempt.sha256
+  || stabilizedContract.schedule.train_windows !== 1024
+  || stabilizedContract.schedule.integer_learning_rate_shifts.output !== 34
+  || stabilizedContract.schedule.source_to_pilot_non_output_shift_delta !== 2
+  || stabilizedContract.schedule.source_to_pilot_output_shift_delta !== 0
+  || stabilized.schema !== "nsrl.production_stabilized_pilot_checkpoint.v1"
+  || stabilized.contract_sha256 !== plan.stabilized_pilot_contract.sha256
+  || stabilized.integer.training.windows !== stabilizedContract.schedule.train_windows
+  || stabilized.integer.dev_final.total_millibits > stabilized.integer.dev_initial.total_millibits
+  || stabilized.integer.health.gradient_saturation_count !== 0
+  || stabilized.integer.health.weight_saturation_count !== 0
+  || stabilized.integer.moved_parameter_groups.length !== 1
+  || stabilized.integer.moved_parameter_groups[0] !== "output"
+  || stabilized.float.evaluation.final_mean_millibits
+    > stabilized.float.evaluation.initial_mean_millibits
+  || stabilized.comparison.integer_regression_vs_float_per_mille > 150
+  || stabilized.restart.durable_model_sha256 !== stabilized.restart.midpoint_model_sha256
+  || stabilized.restart.durable_optimizer_sha256 !== stabilized.restart.midpoint_optimizer_sha256
+  || !Object.values(stabilized.gates).every(Boolean)
+  || stabilized.replay_eligible !== true
+  || stabilized.next_gate !== "p10m_trunk_unlock_preflight"
   || plan.pilot_contract.runner !== "aws_graviton_parallel_lanes"
   || JSON.stringify(optimization.results.map((row) => row.context_tokens)) !== JSON.stringify([4, 16, 64, 256])
   || full.moved_parameter_groups.length !== 13
@@ -167,8 +209,11 @@ if (!status.variable_vocab_artifact_ready
   || status.controlled_p10m_pilot_promotion_eligible !== false
   || !status.integer_shift_stabilization_preflight_completed
   || !status.integer_shift_stabilization_preflight_eligible
+  || !status.stabilized_pilot_first_attempt_early_stopped
+  || !status.stabilized_pilot_replay_completed
+  || !status.stabilized_pilot_replay_eligible
   || !status.training_started
-  || status.next_gate !== "p10m_stabilized_pilot_replay") {
+  || status.next_gate !== "p10m_trunk_unlock_preflight") {
   throw new Error("production implementation status is inconsistent");
 }
 console.log(JSON.stringify({
@@ -187,6 +232,13 @@ console.log(JSON.stringify({
     preflight_eligible: stabilization.preflight_eligible,
     dev_total_millibits_delta: stabilization.evaluation.total_millibits_delta,
     moved_parameter_groups: stabilization.training.moved_parameter_groups.length,
+  },
+  stabilized_pilot: {
+    replay_eligible: stabilized.replay_eligible,
+    integer_final_mean_millibits: stabilized.integer.dev_final.mean_millibits,
+    float_final_mean_millibits: stabilized.float.evaluation.final_mean_millibits,
+    integer_float_regression_per_mille: stabilized.comparison.integer_regression_vs_float_per_mille,
+    moved_parameter_groups: stabilized.integer.moved_parameter_groups.length,
   },
   next_gate: plan.implementation_status.next_gate,
 }));

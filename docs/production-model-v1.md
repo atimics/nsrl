@@ -46,6 +46,7 @@ node scripts/freeze-production-model-v1.mjs --check
 node scripts/freeze-production-full-train-v1.mjs --check
 node scripts/freeze-production-float-twin-v1.mjs --check
 node scripts/freeze-production-integer-stabilization-v1.mjs --check
+node scripts/freeze-production-stabilized-pilot-v1.mjs --check
 node scripts/check-production-model-v1.mjs
 node scripts/check-production-optimization-v1.mjs
 ```
@@ -105,14 +106,29 @@ frozen.
 The 256-window validation improves the fixed training probe from 64 to 45
 mistakes and held-out loss from 13.065 to 13.062 bits/token. Every parameter
 group receives nonzero gradients, the output projection moves, and both
-gradient and weight saturation remain zero. The update shifts follow a locked
-scaling rule: multiplying the window budget by a power of two adds the same
-number of shift bits, preserving the effective cumulative update budget. The
-frozen result is `benchmarks/production-model-v1/p10m-stabilization.json`.
+gradient and weight saturation remain zero. The frozen result is
+`benchmarks/production-model-v1/p10m-stabilization.json`.
 
-This is a warm-up/stability result, not model promotion: only the output
-projection crosses an integer update boundary at this budget. The next gate is
-a controlled p10m stabilized pilot replay with durable early-stop checks for
-held-out regression, saturation, or gradient-path loss. Assisted retrieval,
-suffix memory, and routing oracles remain forbidden in headline generation
-rows.
+The first scale-preserving replay attempt added two update-shift bits to every
+group. Its durable gate stopped after 256 windows because output shift 36 did
+not cross an update boundary, leaving only final RMS, output, and bias with
+nonzero gradients. Held-out loss stayed flat and saturation stayed zero, so the
+early stop reduced this to a five-minute schedule-discovery run. The frozen
+attempt is `benchmarks/production-model-v1/p10m-stabilized-pilot-attempt-1.json`.
+
+The corrected v2 contract retains the proven output-unlock shift of 34 and
+applies the two-bit scaling adjustment only to the still-locked non-output
+groups. Its 1,024-window Graviton replay passed all four durable checks. Every
+chunk retained all 13 gradient paths with zero gradient or weight saturation;
+integer held-out loss improved from 13.065 to 13.060 bits/token, while the
+matched float reference improved from 12.994 to 12.976. Integer finished 6 per
+mille behind float, inside the 150-per-mille bound, and the 512-window midpoint
+restart reproduced the final model and optimizer byte-for-byte. The frozen
+checkpoint is `benchmarks/production-model-v1/p10m-stabilized-pilot.json`.
+
+This remains a warm-up/stability result rather than model promotion: only the
+output projection crosses an integer update boundary. The next gate is a
+bounded trunk-unlock preflight that must make non-output parameter groups move
+without losing the now-proven held-out, saturation, and restart properties.
+Assisted retrieval, suffix memory, and routing oracles remain forbidden in
+headline generation rows.

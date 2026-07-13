@@ -44,6 +44,22 @@
     "path": "benchmarks/production-model-v1/p10m-stabilization.json",
     "sha256": "d1d377248a0238a176897270e6fd87acb57d403edef4af0012eb0d2981e128a8"
   },
+  "stabilized_pilot_attempt": {
+    "path": "benchmarks/production-model-v1/p10m-stabilized-pilot-attempt-1.json",
+    "sha256": "373f120cac7857b9c1db5087c631b756ed3c34d7a64e1483b403387d949e41f8",
+    "source_run": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/runs/production-p10m-stabilized-pilot-20260713T134929Z"
+  },
+  "stabilized_pilot_contract": {
+    "path": "benchmarks/production-model-v1/p10m-stabilized-pilot-contract-v2.json",
+    "sha256": "2328b251465821639f55e861ebe1307d571fcc742b42799374e100146b3ade32",
+    "runner": "aws_graviton_parallel_lanes_with_durable_early_stop",
+    "instance_type": "c8g.2xlarge"
+  },
+  "stabilized_pilot_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-stabilized-pilot.json",
+    "sha256": "428d6c4bc1a39b9a8df6620a494cb396cfce2a344d171d2dba0e00eaa861e3ab",
+    "source_run": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/runs/production-p10m-stabilized-pilot-v2-20260713T140032Z"
+  },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
     "attention": "causal_linear_attention",
@@ -117,7 +133,10 @@
     "controlled_p10m_pilot_promotion_eligible": false,
     "integer_shift_stabilization_preflight_completed": true,
     "integer_shift_stabilization_preflight_eligible": true,
+    "stabilized_pilot_first_attempt_early_stopped": true,
+    "stabilized_pilot_replay_completed": true,
+    "stabilized_pilot_replay_eligible": true,
     "training_started": true,
-    "next_gate": "p10m_stabilized_pilot_replay"
+    "next_gate": "p10m_trunk_unlock_preflight"
   }
 }
