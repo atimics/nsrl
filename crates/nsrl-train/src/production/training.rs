@@ -1,3 +1,5 @@
+use core::ops::Range;
+
 use nsrl_core::{
     GatedMlpI16Params, GatedMlpWorkspace, LinearAttentionWorkspace, RmsNormBackwardWorkspace,
     SelfAttentionI16Params, base2_softmax_i32_q15, gated_activation_backward_i16_q15,
@@ -12,8 +14,8 @@ use super::{
     fnv1a, linear_params, scales,
 };
 
-const OPTIMIZER_MAGIC: &[u8; 8] = b"NSRLPO1\n";
-const OPTIMIZER_VERSION: u32 = 1;
+const OPTIMIZER_MAGIC: &[u8; 8] = b"NSRLPO2\n";
+const OPTIMIZER_VERSION: u32 = 2;
 const GROUP_NAMES: [&str; 13] = [
     "embeddings",
     "attention_rms",
@@ -39,6 +41,8 @@ pub struct ProductionFullTrainConfig {
     pub vector_learning_rate_shift: u8,
     pub embedding_learning_rate_shift: u8,
     pub output_learning_rate_shift: u8,
+    pub batch_windows: usize,
+    pub max_optimizer_steps: usize,
 }
 
 impl Default for ProductionFullTrainConfig {
@@ -47,24 +51,29 @@ impl Default for ProductionFullTrainConfig {
             context_tokens: 4,
             max_windows: 8,
             epochs: 2,
-            matrix_learning_rate_shift: 28,
-            vector_learning_rate_shift: 13,
-            embedding_learning_rate_shift: 10,
-            output_learning_rate_shift: 28,
+            matrix_learning_rate_shift: 16,
+            vector_learning_rate_shift: 10,
+            embedding_learning_rate_shift: 4,
+            output_learning_rate_shift: 24,
+            batch_windows: 4,
+            max_optimizer_steps: usize::MAX,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProductionOptimizerStateV1 {
+pub struct ProductionOptimizerStateV2 {
     pub tokenizer_hash: u64,
     pub token_stream_hash: u64,
     pub bound_model_hash: u64,
     pub step: u64,
     pub schedule_hash: u64,
+    pub next_epoch: u64,
+    pub next_window: u64,
+    pub residuals: Vec<i64>,
 }
 
-impl ProductionOptimizerStateV1 {
+impl ProductionOptimizerStateV2 {
     pub fn new(
         model: &ProductionModelV1,
         token_stream_hash: u64,
@@ -76,6 +85,9 @@ impl ProductionOptimizerStateV1 {
             bound_model_hash: model.model_hash(),
             step: 0,
             schedule_hash: schedule_hash(config),
+            next_epoch: 0,
+            next_window: 0,
+            residuals: vec![0; model.parameter_count()],
         }
     }
 
@@ -89,6 +101,7 @@ impl ProductionOptimizerStateV1 {
             || self.token_stream_hash != token_stream_hash
             || self.bound_model_hash != model.model_hash()
             || self.schedule_hash != schedule_hash(config)
+            || self.residuals.len() != model.parameter_count()
         {
             return Err(TrainError::InvalidModel(
                 "production optimizer binding mismatch",
@@ -98,11 +111,35 @@ impl ProductionOptimizerStateV1 {
     }
 
     pub fn state_hash(&self) -> u64 {
-        fnv1a(&self.bytes_without_checksum())
+        let mut hash = FNV_OFFSET;
+        let mut write = |bytes: &[u8]| {
+            for &byte in bytes {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+        };
+        write(OPTIMIZER_MAGIC);
+        write(&OPTIMIZER_VERSION.to_le_bytes());
+        write(&self.tokenizer_hash.to_le_bytes());
+        write(&self.token_stream_hash.to_le_bytes());
+        write(&self.bound_model_hash.to_le_bytes());
+        write(&self.step.to_le_bytes());
+        write(&self.schedule_hash.to_le_bytes());
+        write(&self.next_epoch.to_le_bytes());
+        write(&self.next_window.to_le_bytes());
+        write(&(self.residuals.len() as u64).to_le_bytes());
+        for residual in &self.residuals {
+            write(&residual.to_le_bytes());
+        }
+        hash
     }
 
     pub fn try_to_bytes(&self) -> Result<Vec<u8>, TrainError> {
-        if self.tokenizer_hash == 0 || self.token_stream_hash == 0 || self.bound_model_hash == 0 {
+        if self.tokenizer_hash == 0
+            || self.token_stream_hash == 0
+            || self.bound_model_hash == 0
+            || self.residuals.is_empty()
+        {
             return Err(TrainError::InvalidModel(
                 "invalid production optimizer state",
             ));
@@ -113,17 +150,18 @@ impl ProductionOptimizerStateV1 {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, TrainError> {
-        if bytes.len() != 60 || &bytes[..8] != OPTIMIZER_MAGIC {
+        if bytes.len() < 84 || &bytes[..8] != OPTIMIZER_MAGIC {
             return Err(TrainError::InvalidModel(
                 "bad production optimizer artifact",
             ));
         }
+        let checksum_offset = bytes.len() - 8;
         let expected = u64::from_le_bytes(
-            bytes[52..60]
+            bytes[checksum_offset..]
                 .try_into()
                 .map_err(|_| TrainError::InvalidModel("bad production optimizer checksum"))?,
         );
-        if fnv1a(&bytes[..52]) != expected {
+        if fnv1a(&bytes[..checksum_offset]) != expected {
             return Err(TrainError::InvalidModel(
                 "bad production optimizer checksum",
             ));
@@ -134,17 +172,31 @@ impl ProductionOptimizerStateV1 {
                 "unsupported production optimizer version",
             ));
         }
+        let residual_count = usize::try_from(u64::from_le_bytes(bytes[68..76].try_into().unwrap()))
+            .map_err(|_| TrainError::InvalidModel("production optimizer residual overflow"))?;
+        if bytes.len() != 84_usize.saturating_add(residual_count.saturating_mul(8)) {
+            return Err(TrainError::InvalidModel(
+                "production optimizer residual length mismatch",
+            ));
+        }
+        let residuals = bytes[76..checksum_offset]
+            .chunks_exact(8)
+            .map(|chunk| i64::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
         Ok(Self {
             tokenizer_hash: u64::from_le_bytes(bytes[12..20].try_into().unwrap()),
             token_stream_hash: u64::from_le_bytes(bytes[20..28].try_into().unwrap()),
             bound_model_hash: u64::from_le_bytes(bytes[28..36].try_into().unwrap()),
             step: u64::from_le_bytes(bytes[36..44].try_into().unwrap()),
             schedule_hash: u64::from_le_bytes(bytes[44..52].try_into().unwrap()),
+            next_epoch: u64::from_le_bytes(bytes[52..60].try_into().unwrap()),
+            next_window: u64::from_le_bytes(bytes[60..68].try_into().unwrap()),
+            residuals,
         })
     }
 
     fn bytes_without_checksum(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(60);
+        let mut bytes = Vec::with_capacity(84 + self.residuals.len() * 8);
         bytes.extend_from_slice(OPTIMIZER_MAGIC);
         bytes.extend_from_slice(&OPTIMIZER_VERSION.to_le_bytes());
         bytes.extend_from_slice(&self.tokenizer_hash.to_le_bytes());
@@ -152,6 +204,12 @@ impl ProductionOptimizerStateV1 {
         bytes.extend_from_slice(&self.bound_model_hash.to_le_bytes());
         bytes.extend_from_slice(&self.step.to_le_bytes());
         bytes.extend_from_slice(&self.schedule_hash.to_le_bytes());
+        bytes.extend_from_slice(&self.next_epoch.to_le_bytes());
+        bytes.extend_from_slice(&self.next_window.to_le_bytes());
+        bytes.extend_from_slice(&(self.residuals.len() as u64).to_le_bytes());
+        for residual in &self.residuals {
+            bytes.extend_from_slice(&residual.to_le_bytes());
+        }
         bytes
     }
 }
@@ -168,9 +226,21 @@ pub struct ProductionFullTrainTrace {
     pub initial_mistakes: usize,
     pub final_mistakes: usize,
     pub optimizer_steps: usize,
+    pub total_optimizer_step: u64,
+    pub batch_windows: usize,
+    pub start_epoch: u64,
+    pub start_window: u64,
+    pub next_epoch: u64,
+    pub next_window: u64,
+    pub schedule_complete: bool,
     pub gradient_saturation_count: usize,
     pub weight_saturation_count: usize,
     pub movement_l1: [u64; 13],
+    pub gradient_nonzero_count: [u64; 13],
+    pub residual_carry_count: [u64; 13],
+    pub update_nonzero_count: [u64; 13],
+    pub saturation_by_group: [u64; 13],
+    pub backward_ste_rescue_count: u64,
     pub initial_model_hash: u64,
     pub final_model_hash: u64,
     pub optimizer_state_hash: u64,
@@ -191,17 +261,27 @@ impl ProductionFullTrainTrace {
             .map(|(name, _)| format!("\"{name}\""))
             .collect::<Vec<_>>()
             .join(",");
+        let render_groups = |values: [u64; 13]| {
+            GROUP_NAMES
+                .iter()
+                .zip(values)
+                .map(|(name, value)| format!("\"{name}\":{value}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
         format!(
             concat!(
                 "{{\"schema\":\"nsrl.production_full_train_smoke.v1\",",
                 "\"profile\":\"{}\",\"parameter_count\":{},",
                 "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",\"token_stream_hash\":\"0x{:016x}\"}},",
-                "\"training\":{{\"optimizer\":\"integer_stateless_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"epochs\":{},\"optimizer_steps\":{},\"initial_mistakes\":{},\"final_mistakes\":{}}},",
+                "\"training\":{{\"optimizer\":\"integer_residual_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"epochs\":{},\"batch_windows\":{},\"optimizer_steps\":{},\"total_optimizer_step\":{},\"initial_mistakes\":{},\"final_mistakes\":{}}},",
+                "\"cursor\":{{\"start_epoch\":{},\"start_window\":{},\"next_epoch\":{},\"next_window\":{},\"schedule_complete\":{}}},",
                 "\"movement_l1\":{{{}}},\"moved_parameter_groups\":[{}],",
+                "\"diagnostics\":{{\"gradient_nonzero_count\":{{{}}},\"residual_carry_count\":{{{}}},\"update_nonzero_count\":{{{}}},\"saturation_by_group\":{{{}}},\"backward_ste_rescue_count\":{}}},",
                 "\"health\":{{\"gradient_saturation_count\":{},\"weight_saturation_count\":{}}},",
                 "\"hashes\":{{\"initial_model\":\"0x{:016x}\",\"final_model\":\"0x{:016x}\",\"optimizer_state\":\"0x{:016x}\"}},",
-                "\"gates\":{{\"all_parameter_groups_moved\":{},\"model_hash_changed\":{},\"resumable_optimizer_state\":true}},",
-                "\"known_non_claims\":[\"bounded_full_backward_smoke_not_scaling_run\",\"straight_through_quantized_derivatives\",\"not_open_generation_quality\"]}}\n"
+                "\"gates\":{{\"all_parameter_groups_moved\":{},\"model_hash_changed\":{},\"resumable_optimizer_state\":true,\"batched_residual_updates\":true}},",
+                "\"known_non_claims\":[\"bounded_full_backward_smoke_not_scaling_run\",\"straight_through_backward_derivatives\",\"not_open_generation_quality\"]}}\n"
             ),
             self.profile,
             self.parameter_count,
@@ -210,11 +290,23 @@ impl ProductionFullTrainTrace {
             self.context_tokens,
             self.windows,
             self.epochs,
+            self.batch_windows,
             self.optimizer_steps,
+            self.total_optimizer_step,
             self.initial_mistakes,
             self.final_mistakes,
+            self.start_epoch,
+            self.start_window,
+            self.next_epoch,
+            self.next_window,
+            self.schedule_complete,
             movement,
             moved,
+            render_groups(self.gradient_nonzero_count),
+            render_groups(self.residual_carry_count),
+            render_groups(self.update_nonzero_count),
+            render_groups(self.saturation_by_group),
+            self.backward_ste_rescue_count,
             self.gradient_saturation_count,
             self.weight_saturation_count,
             self.initial_model_hash,
@@ -251,8 +343,57 @@ struct ForwardCache {
 #[derive(Default)]
 struct UpdateStats {
     movement: [u64; 13],
+    gradient_nonzero: [u64; 13],
+    residual_carry: [u64; 13],
+    update_nonzero: [u64; 13],
+    saturation_by_group: [u64; 13],
+    backward_ste_rescue: u64,
     gradient_saturation: usize,
     weight_saturation: usize,
+}
+
+struct ParameterRanges {
+    embeddings: Range<usize>,
+    attention_rms: Range<usize>,
+    mlp_rms: Range<usize>,
+    final_rms: Range<usize>,
+    q: Range<usize>,
+    k: Range<usize>,
+    v: Range<usize>,
+    o: Range<usize>,
+    up: Range<usize>,
+    gate: Range<usize>,
+    down: Range<usize>,
+    output: Range<usize>,
+    bias: Range<usize>,
+}
+
+impl ParameterRanges {
+    fn new(model: &ProductionModelV1) -> Self {
+        let mut cursor = 0;
+        let mut take = |len: usize| {
+            let range = cursor..cursor + len;
+            cursor += len;
+            range
+        };
+        let ranges = Self {
+            embeddings: take(model.embeddings.len()),
+            attention_rms: take(model.attention_rms_weights.len()),
+            mlp_rms: take(model.mlp_rms_weights.len()),
+            final_rms: take(model.final_rms_weights.len()),
+            q: take(model.q_weights.len()),
+            k: take(model.k_weights.len()),
+            v: take(model.v_weights.len()),
+            o: take(model.o_weights.len()),
+            up: take(model.up_weights.len()),
+            gate: take(model.gate_weights.len()),
+            down: take(model.down_weights.len()),
+            output: take(model.output_weights.len()),
+            bias: take(model.output_bias_q8.len()),
+        };
+        debug_assert_eq!(cursor, model.parameter_count());
+        ranges
+    }
 }
 
 pub fn train_production_full_smoke(
@@ -260,15 +401,17 @@ pub fn train_production_full_smoke(
     tokens: &[u32],
     token_stream_hash: u64,
     config: ProductionFullTrainConfig,
-    state: Option<ProductionOptimizerStateV1>,
-) -> Result<(ProductionFullTrainTrace, ProductionOptimizerStateV1), TrainError> {
+    state: Option<ProductionOptimizerStateV2>,
+) -> Result<(ProductionFullTrainTrace, ProductionOptimizerStateV2), TrainError> {
     model.validate()?;
     if config.context_tokens == 0
         || config.context_tokens > model.config.context_tokens
         || config.max_windows == 0
         || config.epochs == 0
+        || config.batch_windows == 0
+        || config.max_optimizer_steps == 0
         || [
-            config.matrix_learning_rate_shift,
+            matrix_group_shift(config.matrix_learning_rate_shift, 10),
             config.vector_learning_rate_shift,
             config.embedding_learning_rate_shift,
             config.output_learning_rate_shift,
@@ -285,14 +428,47 @@ pub fn train_production_full_smoke(
     let initial_model_hash = model.model_hash();
     let initial_mistakes = evaluate_mistakes(model, &windows)?;
     let mut state =
-        state.unwrap_or_else(|| ProductionOptimizerStateV1::new(model, token_stream_hash, config));
+        state.unwrap_or_else(|| ProductionOptimizerStateV2::new(model, token_stream_hash, config));
     state.validate_binding(model, token_stream_hash, config)?;
+    if state.next_epoch > config.epochs as u64
+        || state.next_window > windows.len() as u64
+        || (state.next_epoch == config.epochs as u64 && state.next_window != 0)
+    {
+        return Err(TrainError::InvalidModel(
+            "production optimizer cursor mismatch",
+        ));
+    }
+    let start_epoch = state.next_epoch;
+    let start_window = state.next_window;
+    let ranges = ParameterRanges::new(model);
     let mut stats = UpdateStats::default();
-    for _ in 0..config.epochs {
-        for (context, target) in &windows {
+    let mut optimizer_steps = 0_usize;
+    while state.next_epoch < config.epochs as u64 && optimizer_steps < config.max_optimizer_steps {
+        let batch_start = state.next_window as usize;
+        let batch_end = batch_start
+            .saturating_add(config.batch_windows)
+            .min(windows.len());
+        for (index, (context, target)) in windows[batch_start..batch_end].iter().enumerate() {
             let cache = forward_cache(model, context)?;
-            backward_update(model, context, *target as usize, cache, config, &mut stats)?;
-            state.step = state.step.checked_add(1).ok_or(TrainError::InvalidConfig)?;
+            backward_update(
+                model,
+                context,
+                *target as usize,
+                cache,
+                config,
+                &ranges,
+                &mut state.residuals,
+                index + 1 == batch_end - batch_start,
+                &mut stats,
+            )?;
+        }
+        state.step = state.step.checked_add(1).ok_or(TrainError::InvalidConfig)?;
+        optimizer_steps = optimizer_steps.saturating_add(1);
+        if batch_end == windows.len() {
+            state.next_epoch = state.next_epoch.saturating_add(1);
+            state.next_window = 0;
+        } else {
+            state.next_window = batch_end as u64;
         }
     }
     state.bound_model_hash = model.model_hash();
@@ -307,10 +483,22 @@ pub fn train_production_full_smoke(
         epochs: config.epochs,
         initial_mistakes,
         final_mistakes,
-        optimizer_steps: config.epochs * windows.len(),
+        optimizer_steps,
+        total_optimizer_step: state.step,
+        batch_windows: config.batch_windows,
+        start_epoch,
+        start_window,
+        next_epoch: state.next_epoch,
+        next_window: state.next_window,
+        schedule_complete: state.next_epoch == config.epochs as u64,
         gradient_saturation_count: stats.gradient_saturation,
         weight_saturation_count: stats.weight_saturation,
         movement_l1: stats.movement,
+        gradient_nonzero_count: stats.gradient_nonzero,
+        residual_carry_count: stats.residual_carry,
+        update_nonzero_count: stats.update_nonzero,
+        saturation_by_group: stats.saturation_by_group,
+        backward_ste_rescue_count: stats.backward_ste_rescue,
         initial_model_hash,
         final_model_hash: model.model_hash(),
         optimizer_state_hash: state.state_hash(),
@@ -491,12 +679,16 @@ fn forward_cache(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn backward_update(
     model: &mut ProductionModelV1,
     context_tokens: &[u32],
     target: usize,
     cache: ForwardCache,
     config: ProductionFullTrainConfig,
+    ranges: &ParameterRanges,
+    residuals: &mut [i64],
+    apply_updates: bool,
     stats: &mut UpdateStats,
 ) -> Result<(), TrainError> {
     let c = model.config;
@@ -519,16 +711,20 @@ fn backward_update(
             &mut model.output_bias_q8[token],
             i64::from(grad),
             config.vector_learning_rate_shift,
-            &mut stats.movement[12],
-            &mut stats.weight_saturation,
+            &mut residuals[ranges.bias.start + token],
+            apply_updates,
+            12,
+            stats,
         );
         for (dim, &feature) in cache.features.iter().enumerate() {
             update_i16(
                 &mut model.output_weights[token * c.d_model + dim],
                 i64::from(grad) * i64::from(feature),
                 config.output_learning_rate_shift,
-                &mut stats.movement[11],
-                &mut stats.weight_saturation,
+                &mut residuals[ranges.output.start + token * c.d_model + dim],
+                apply_updates,
+                11,
+                stats,
             );
         }
     }
@@ -546,9 +742,11 @@ fn backward_update(
     update_i16_slice(
         &mut model.final_rms_weights,
         &final_gamma_grad,
-        config.vector_learning_rate_shift,
-        &mut stats.movement[3],
-        &mut stats.weight_saturation,
+        vector_group_shift(config.vector_learning_rate_shift, 3),
+        &mut residuals[ranges.final_rms.clone()],
+        apply_updates,
+        3,
+        stats,
     );
 
     let matrix = c.d_model * c.d_model;
@@ -559,6 +757,8 @@ fn backward_update(
         let mut grad_attention_residual = grad_hidden.clone();
         let grad_mlp_output = grad_hidden;
         let down_range = layer * down_matrix..(layer + 1) * down_matrix;
+        let down_residual_range =
+            ranges.down.start + down_range.start..ranges.down.start + down_range.end;
         let mut grad_gated = linear_backward_input(
             &grad_mlp_output,
             &model.down_weights[down_range.clone()],
@@ -575,26 +775,28 @@ fn backward_update(
                 item.gate[index],
                 grad_gated[index],
             );
-            grad_up[index] = if grad.up == 0 {
-                saturate_i16(
-                    (i64::from(grad_gated[index]) * i64::from(hard_silu_q15(item.gate[index])))
-                        .signum(),
-                )
+            let up_numerator =
+                i64::from(grad_gated[index]) * i64::from(hard_silu_q15(item.gate[index]));
+            grad_up[index] = if grad.up == 0 && up_numerator != 0 {
+                stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
+                saturate_i16(up_numerator.signum())
             } else {
                 grad.up
             };
-            grad_gate[index] = if grad.gate == 0 {
-                saturate_i16(
-                    (i64::from(grad_gated[index])
-                        * i64::from(item.up[index])
-                        * i64::from(hard_silu_derivative_q15(item.gate[index])))
-                    .signum(),
-                )
+            let gate_numerator = i64::from(grad_gated[index])
+                * i64::from(item.up[index])
+                * i64::from(hard_silu_derivative_q15(item.gate[index]));
+            grad_gate[index] = if grad.gate == 0 && gate_numerator != 0 {
+                stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
+                saturate_i16(gate_numerator.signum())
             } else {
                 grad.gate
             };
         }
         let up_range = layer * up_matrix..(layer + 1) * up_matrix;
+        let up_residual_range = ranges.up.start + up_range.start..ranges.up.start + up_range.end;
+        let gate_residual_range =
+            ranges.gate.start + up_range.start..ranges.gate.start + up_range.end;
         let up_input = linear_backward_input(
             &grad_up,
             &model.up_weights[up_range.clone()],
@@ -613,6 +815,10 @@ fn backward_update(
         );
         let grad_mlp_input = add_rows(&up_input, &gate_input);
         let rms_range = layer * c.d_model..(layer + 1) * c.d_model;
+        let mlp_rms_residual_range =
+            ranges.mlp_rms.start + rms_range.start..ranges.mlp_rms.start + rms_range.end;
+        let attention_rms_residual_range = ranges.attention_rms.start + rms_range.start
+            ..ranges.attention_rms.start + rms_range.end;
         let mut grad_mlp_residual = vec![0_i16; total];
         let mut mlp_gamma_grad = vec![0_i64; c.d_model];
         rms_backward_rows(
@@ -632,7 +838,9 @@ fn backward_update(
             &mut model.down_weights[down_range],
             c.hidden_dim,
             c.d_model,
-            config.matrix_learning_rate_shift,
+            matrix_group_shift(config.matrix_learning_rate_shift, 10),
+            &mut residuals[down_residual_range],
+            apply_updates,
             10,
             stats,
         );
@@ -642,7 +850,9 @@ fn backward_update(
             &mut model.up_weights[up_range.clone()],
             c.d_model,
             c.hidden_dim,
-            config.matrix_learning_rate_shift,
+            matrix_group_shift(config.matrix_learning_rate_shift, 8),
+            &mut residuals[up_residual_range],
+            apply_updates,
             8,
             stats,
         );
@@ -652,19 +862,31 @@ fn backward_update(
             &mut model.gate_weights[up_range],
             c.d_model,
             c.hidden_dim,
-            config.matrix_learning_rate_shift,
+            matrix_group_shift(config.matrix_learning_rate_shift, 9),
+            &mut residuals[gate_residual_range],
+            apply_updates,
             9,
             stats,
         );
         update_i16_slice(
             &mut model.mlp_rms_weights[rms_range.clone()],
             &mlp_gamma_grad,
-            config.vector_learning_rate_shift,
-            &mut stats.movement[2],
-            &mut stats.weight_saturation,
+            vector_group_shift(config.vector_learning_rate_shift, 2),
+            &mut residuals[mlp_rms_residual_range],
+            apply_updates,
+            2,
+            stats,
         );
 
         let attention_range = layer * matrix..(layer + 1) * matrix;
+        let q_residual_range =
+            ranges.q.start + attention_range.start..ranges.q.start + attention_range.end;
+        let k_residual_range =
+            ranges.k.start + attention_range.start..ranges.k.start + attention_range.end;
+        let v_residual_range =
+            ranges.v.start + attention_range.start..ranges.v.start + attention_range.end;
+        let o_residual_range =
+            ranges.o.start + attention_range.start..ranges.o.start + attention_range.end;
         let grad_context = linear_backward_input(
             &grad_attention_residual,
             &model.o_weights[attention_range.clone()],
@@ -673,13 +895,16 @@ fn backward_update(
             model.scales.o_shift,
             stats,
         );
+        let grad_context = scale_gradient(&grad_context, 8, stats);
         let (grad_q, grad_k, grad_v) = linear_attention_backward(
             c.d_model,
             c.heads,
             &item.q,
             &item.k,
             &item.v,
+            &item.context,
             &grad_context,
+            stats,
         )?;
         let q_input = linear_backward_input(
             &grad_q,
@@ -726,7 +951,9 @@ fn backward_update(
             &mut model.o_weights[attention_range.clone()],
             c.d_model,
             c.d_model,
-            config.matrix_learning_rate_shift,
+            matrix_group_shift(config.matrix_learning_rate_shift, 7),
+            &mut residuals[o_residual_range],
+            apply_updates,
             7,
             stats,
         );
@@ -736,7 +963,9 @@ fn backward_update(
             &mut model.q_weights[attention_range.clone()],
             c.d_model,
             c.d_model,
-            config.matrix_learning_rate_shift,
+            matrix_group_shift(config.matrix_learning_rate_shift, 4),
+            &mut residuals[q_residual_range],
+            apply_updates,
             4,
             stats,
         );
@@ -746,7 +975,9 @@ fn backward_update(
             &mut model.k_weights[attention_range.clone()],
             c.d_model,
             c.d_model,
-            config.matrix_learning_rate_shift,
+            matrix_group_shift(config.matrix_learning_rate_shift, 5),
+            &mut residuals[k_residual_range],
+            apply_updates,
             5,
             stats,
         );
@@ -756,16 +987,20 @@ fn backward_update(
             &mut model.v_weights[attention_range],
             c.d_model,
             c.d_model,
-            config.matrix_learning_rate_shift,
+            matrix_group_shift(config.matrix_learning_rate_shift, 6),
+            &mut residuals[v_residual_range],
+            apply_updates,
             6,
             stats,
         );
         update_i16_slice(
             &mut model.attention_rms_weights[rms_range],
             &attention_gamma_grad,
-            config.vector_learning_rate_shift,
-            &mut stats.movement[1],
-            &mut stats.weight_saturation,
+            vector_group_shift(config.vector_learning_rate_shift, 1),
+            &mut residuals[attention_rms_residual_range],
+            apply_updates,
+            1,
+            stats,
         );
         grad_gated.clear();
     }
@@ -777,8 +1012,10 @@ fn backward_update(
                 &mut embedding[dim],
                 i64::from(grad_hidden[row * c.d_model + dim]),
                 config.embedding_learning_rate_shift,
-                &mut stats.movement[0],
-                &mut stats.weight_saturation,
+                &mut residuals[ranges.embeddings.start + token as usize * c.d_model + dim],
+                apply_updates,
+                0,
+                stats,
             );
         }
     }
@@ -804,13 +1041,26 @@ fn linear_backward_input(
                         * i64::from(weights[output * input_dim + input]),
                 );
             }
-            let wide = quantized_nonzero(acc, shift);
+            let wide = quantized_nonzero(acc, shift, stats);
             result[row * input_dim + input] = saturate_i16(wide);
             stats.gradient_saturation +=
                 usize::from(wide < i64::from(i16::MIN) || wide > i64::from(i16::MAX));
         }
     }
     result
+}
+
+fn scale_gradient(values: &[i16], left_shift: u8, stats: &mut UpdateStats) -> Vec<i16> {
+    values
+        .iter()
+        .map(|&value| {
+            let wide = i64::from(value) << left_shift;
+            stats.gradient_saturation = stats.gradient_saturation.saturating_add(usize::from(
+                wide < i64::from(i16::MIN) || wide > i64::from(i16::MAX),
+            ));
+            saturate_i16(wide)
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -821,6 +1071,8 @@ fn update_i8_matrix_rows(
     input_dim: usize,
     output_dim: usize,
     shift: u8,
+    residuals: &mut [i64],
+    apply_updates: bool,
     group: usize,
     stats: &mut UpdateStats,
 ) {
@@ -834,16 +1086,29 @@ fn update_i8_matrix_rows(
                         * i64::from(input[row * input_dim + input_index]),
                 );
             }
-            let delta = -quantized_nonzero(gradient, shift);
             let index = output * input_dim + input_index;
+            stats.gradient_nonzero[group] =
+                stats.gradient_nonzero[group].saturating_add(u64::from(gradient != 0));
+            residuals[index] = residuals[index].saturating_add(gradient);
+            if !apply_updates {
+                continue;
+            }
+            let update = round_shift_rhu_i64(residuals[index], shift);
+            stats.residual_carry[group] = stats.residual_carry[group]
+                .saturating_add(u64::from(update == 0 && residuals[index] != 0));
             let previous = weights[index];
-            let wide = i64::from(previous).saturating_add(delta);
+            let wide = i64::from(previous).saturating_sub(update);
             let next = saturate_i8(wide);
-            stats.weight_saturation +=
-                usize::from(wide < i64::from(i8::MIN) || wide > i64::from(i8::MAX));
+            let saturated = wide < i64::from(i8::MIN) || wide > i64::from(i8::MAX);
+            stats.weight_saturation += usize::from(saturated);
+            stats.saturation_by_group[group] =
+                stats.saturation_by_group[group].saturating_add(u64::from(saturated));
+            stats.update_nonzero[group] =
+                stats.update_nonzero[group].saturating_add(u64::from(next != previous));
             stats.movement[group] = stats.movement[group]
                 .saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
             weights[index] = next;
+            consume_residual(&mut residuals[index], update, shift);
         }
     }
 }
@@ -901,13 +1166,16 @@ fn rms_backward_row(
 
 type AttentionGradients = (Vec<i16>, Vec<i16>, Vec<i16>);
 
+#[allow(clippy::too_many_arguments)]
 fn linear_attention_backward(
     d_model: usize,
     heads: usize,
     q: &[i16],
     k: &[i16],
     v: &[i16],
+    context: &[i16],
     grad_context: &[i16],
+    stats: &mut UpdateStats,
 ) -> Result<AttentionGradients, TrainError> {
     let seq_len = q.len() / d_model;
     let head_dim = d_model / heads;
@@ -918,6 +1186,7 @@ fn linear_attention_backward(
     for head in 0..heads {
         let offset = head * head_dim;
         let mut prefixes = vec![0_i64; seq_len * state_len];
+        let mut prefix_sums = vec![0_i64; seq_len * head_dim];
         let mut denominators = vec![0_i64; seq_len];
         let mut state = vec![0_i64; state_len];
         let mut sums = vec![0_i64; head_dim];
@@ -940,11 +1209,18 @@ fn linear_attention_backward(
                 ));
             }
             prefixes[token * state_len..(token + 1) * state_len].copy_from_slice(&state);
+            prefix_sums[token * head_dim..(token + 1) * head_dim].copy_from_slice(&sums);
         }
         let mut grad_state = vec![0_i64; state_len];
+        let mut grad_sums = vec![0_i64; head_dim];
         for token in (0..seq_len).rev() {
             let base = token * d_model + offset;
             let denominator = denominators[token];
+            let dot_grad_context = (0..head_dim).fold(0_i64, |acc, vd| {
+                acc.saturating_add(
+                    i64::from(grad_context[base + vd]) * i64::from(context[base + vd]),
+                )
+            });
             for kd in 0..head_dim {
                 let mut numerator = 0_i64;
                 for vd in 0..head_dim {
@@ -953,7 +1229,11 @@ fn linear_attention_backward(
                             * prefixes[token * state_len + kd * head_dim + vd],
                     );
                 }
-                gq[base + kd] = gq[base + kd].saturating_add(round_ratio(numerator, denominator)?);
+                numerator = numerator.saturating_sub(
+                    dot_grad_context.saturating_mul(prefix_sums[token * head_dim + kd]),
+                );
+                gq[base + kd] =
+                    gq[base + kd].saturating_add(round_ratio(numerator, denominator, stats)?);
             }
             for kd in 0..head_dim {
                 let phi_q = i64::from(q[base + kd]) + 32769;
@@ -962,22 +1242,33 @@ fn linear_attention_backward(
                         .saturating_mul(phi_q)
                         .saturating_mul(1_i64 << 15);
                     grad_state[kd * head_dim + vd] = grad_state[kd * head_dim + vd]
-                        .saturating_add(round_ratio(product, denominator)?);
+                        .saturating_add(round_ratio(product, denominator, stats)?);
                 }
+                grad_sums[kd] = grad_sums[kd].saturating_add(round_ratio(
+                    dot_grad_context.saturating_mul(phi_q).saturating_neg(),
+                    denominator,
+                    stats,
+                )?);
             }
             for kd in 0..head_dim {
                 let phi_k = i64::from(k[base + kd]) + 32769;
                 let mut key_grad = 0_i64;
                 for vd in 0..head_dim {
                     let sg = grad_state[kd * head_dim + vd];
-                    gv[base + vd] = gv[base + vd]
-                        .saturating_add(quantized_nonzero(sg.saturating_mul(phi_k), 15));
+                    gv[base + vd] = gv[base + vd].saturating_add(quantized_nonzero(
+                        sg.saturating_mul(phi_k),
+                        15,
+                        stats,
+                    ));
                     key_grad = key_grad.saturating_add(quantized_nonzero(
                         sg.saturating_mul(i64::from(v[base + vd])),
                         15,
+                        stats,
                     ));
                 }
-                gk[base + kd] = gk[base + kd].saturating_add(key_grad);
+                gk[base + kd] = gk[base + kd]
+                    .saturating_add(key_grad)
+                    .saturating_add(grad_sums[kd]);
             }
         }
     }
@@ -988,7 +1279,11 @@ fn linear_attention_backward(
     ))
 }
 
-fn round_ratio(numerator: i64, denominator: i64) -> Result<i64, TrainError> {
+fn round_ratio(
+    numerator: i64,
+    denominator: i64,
+    stats: &mut UpdateStats,
+) -> Result<i64, TrainError> {
     if denominator <= 0 {
         return Err(TrainError::InvalidConfig);
     }
@@ -1003,6 +1298,7 @@ fn round_ratio(numerator: i64, denominator: i64) -> Result<i64, TrainError> {
     }
     .ok_or(TrainError::CoreRejected("production_training_ratio"))?;
     Ok(if rounded == 0 && numerator != 0 {
+        stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
         numerator.signum()
     } else {
         rounded
@@ -1013,40 +1309,92 @@ fn update_i16_slice(
     values: &mut [i16],
     gradients: &[i64],
     shift: u8,
-    movement: &mut u64,
-    saturation: &mut usize,
+    residuals: &mut [i64],
+    apply_updates: bool,
+    group: usize,
+    stats: &mut UpdateStats,
 ) {
-    for (value, &gradient) in values.iter_mut().zip(gradients) {
-        update_i16(value, gradient, shift, movement, saturation);
+    for ((value, &gradient), residual) in values.iter_mut().zip(gradients).zip(residuals) {
+        update_i16(
+            value,
+            gradient,
+            shift,
+            residual,
+            apply_updates,
+            group,
+            stats,
+        );
     }
 }
 fn update_i16(
     value: &mut i16,
     gradient: i64,
     shift: u8,
-    movement: &mut u64,
-    saturation: &mut usize,
+    residual: &mut i64,
+    apply_updates: bool,
+    group: usize,
+    stats: &mut UpdateStats,
 ) {
+    stats.gradient_nonzero[group] =
+        stats.gradient_nonzero[group].saturating_add(u64::from(gradient != 0));
+    *residual = residual.saturating_add(gradient);
+    if !apply_updates {
+        return;
+    }
+    let update = round_shift_rhu_i64(*residual, shift);
+    stats.residual_carry[group] =
+        stats.residual_carry[group].saturating_add(u64::from(update == 0 && *residual != 0));
     let previous = *value;
-    let wide = i64::from(previous).saturating_sub(quantized_nonzero(gradient, shift));
+    let wide = i64::from(previous).saturating_sub(update);
     let next = saturate_i16(wide);
-    *saturation += usize::from(wide < i64::from(i16::MIN) || wide > i64::from(i16::MAX));
-    *movement = movement.saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
+    let saturated = wide < i64::from(i16::MIN) || wide > i64::from(i16::MAX);
+    stats.weight_saturation += usize::from(saturated);
+    stats.saturation_by_group[group] =
+        stats.saturation_by_group[group].saturating_add(u64::from(saturated));
+    stats.update_nonzero[group] =
+        stats.update_nonzero[group].saturating_add(u64::from(next != previous));
+    stats.movement[group] = stats.movement[group]
+        .saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
     *value = next;
+    consume_residual(residual, update, shift);
 }
 fn update_i32(
     value: &mut i32,
     gradient: i64,
     shift: u8,
-    movement: &mut u64,
-    saturation: &mut usize,
+    residual: &mut i64,
+    apply_updates: bool,
+    group: usize,
+    stats: &mut UpdateStats,
 ) {
+    stats.gradient_nonzero[group] =
+        stats.gradient_nonzero[group].saturating_add(u64::from(gradient != 0));
+    *residual = residual.saturating_add(gradient);
+    if !apply_updates {
+        return;
+    }
+    let update = round_shift_rhu_i64(*residual, shift);
+    stats.residual_carry[group] =
+        stats.residual_carry[group].saturating_add(u64::from(update == 0 && *residual != 0));
     let previous = *value;
-    let wide = i64::from(previous).saturating_sub(round_shift_rhu_i64(gradient, shift));
+    let wide = i64::from(previous).saturating_sub(update);
     let next = wide.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
-    *saturation += usize::from(wide < i64::from(i32::MIN) || wide > i64::from(i32::MAX));
-    *movement = movement.saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
+    let saturated = wide < i64::from(i32::MIN) || wide > i64::from(i32::MAX);
+    stats.weight_saturation += usize::from(saturated);
+    stats.saturation_by_group[group] =
+        stats.saturation_by_group[group].saturating_add(u64::from(saturated));
+    stats.update_nonzero[group] =
+        stats.update_nonzero[group].saturating_add(u64::from(next != previous));
+    stats.movement[group] = stats.movement[group]
+        .saturating_add((i64::from(next) - i64::from(previous)).unsigned_abs());
     *value = next;
+    consume_residual(residual, update, shift);
+}
+
+fn consume_residual(residual: &mut i64, update: i64, shift: u8) {
+    let consumed = i128::from(update) * (1_i128 << shift);
+    let remaining = i128::from(*residual) - consumed;
+    *residual = remaining.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64;
 }
 fn add_rows(left: &[i16], right: &[i16]) -> Vec<i16> {
     left.iter()
@@ -1131,7 +1479,7 @@ fn document_windows(tokens: &[u32], context: usize, max: usize) -> Vec<(Vec<u32>
 }
 fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     let mut bytes = Vec::new();
-    for value in [c.context_tokens, c.max_windows, c.epochs] {
+    for value in [c.context_tokens, c.max_windows, c.epochs, c.batch_windows] {
         bytes.extend_from_slice(&(value as u64).to_le_bytes())
     }
     bytes.extend_from_slice(&[
@@ -1146,11 +1494,30 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     })
 }
 
-fn quantized_nonzero(value: i64, shift: u8) -> i64 {
+fn quantized_nonzero(value: i64, shift: u8, stats: &mut UpdateStats) -> i64 {
     let rounded = round_shift_rhu_i64(value, shift);
     if rounded == 0 && value != 0 {
+        stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
         value.signum()
     } else {
         rounded
+    }
+}
+
+fn matrix_group_shift(base: u8, group: usize) -> u8 {
+    match group {
+        4 | 7..=9 => base,
+        5 => base.saturating_add(4).min(62),
+        6 => base.saturating_add(8).min(62),
+        10 => base.saturating_sub(8),
+        _ => base,
+    }
+}
+
+fn vector_group_shift(base: u8, group: usize) -> u8 {
+    match group {
+        1 | 3 => base.saturating_sub(4),
+        2 => base.saturating_sub(10),
+        _ => base,
     }
 }

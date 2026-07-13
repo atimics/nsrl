@@ -158,11 +158,14 @@ def linear_attention_forward(q, k, v, heads):
     pq = qh + np.float32(1.000030517578125)
     pk = kh + np.float32(1.000030517578125)
     output = np.empty_like(vh)
+    state = np.zeros((heads, head_dim, head_dim), dtype=np.float32)
+    key_sums = np.zeros((heads, head_dim), dtype=np.float32)
     for token in range(seq_len):
-        for head in range(heads):
-            weights = pk[:token + 1, head] @ pq[token, head]
-            denominator = np.sum(weights)
-            output[token, head] = (weights @ vh[:token + 1, head]) / denominator
+        state += np.einsum("hi,hj->hij", pk[token], vh[token], optimize=True)
+        key_sums += pk[token]
+        numerator = np.einsum("hi,hij->hj", pq[token], state, optimize=True)
+        denominator = np.einsum("hi,hi->h", pq[token], key_sums, optimize=True)
+        output[token] = numerator / denominator[:, None]
     return output.reshape(seq_len, d_model), (pq, pk, vh, output, heads)
 
 
@@ -173,20 +176,84 @@ def linear_attention_backward(doutput, cache):
     dpq = np.zeros_like(pq)
     dpk = np.zeros_like(pk)
     dv = np.zeros_like(vh)
+    prefix_states = np.empty((seq_len, heads, head_dim, head_dim), dtype=np.float32)
+    prefix_sums = np.empty((seq_len, heads, head_dim), dtype=np.float32)
+    state = np.zeros((heads, head_dim, head_dim), dtype=np.float32)
+    key_sums = np.zeros((heads, head_dim), dtype=np.float32)
     for token in range(seq_len):
+        state += np.einsum("hi,hj->hij", pk[token], vh[token], optimize=True)
+        key_sums += pk[token]
+        prefix_states[token] = state
+        prefix_sums[token] = key_sums
+    dstate = np.zeros_like(state)
+    dkey_sums = np.zeros_like(key_sums)
+    for token in reversed(range(seq_len)):
+        denominator = np.einsum(
+            "hi,hi->h", pq[token], prefix_sums[token], optimize=True
+        )
+        dnumerator = dout[token] / denominator[:, None]
+        ddenominator = (
+            -np.einsum("hi,hi->h", dout[token], output[token], optimize=True)
+            / denominator
+        )
+        dpq[token] += np.einsum(
+            "hj,hij->hi", dnumerator, prefix_states[token], optimize=True
+        )
+        dpq[token] += ddenominator[:, None] * prefix_sums[token]
+        dstate += np.einsum("hi,hj->hij", pq[token], dnumerator, optimize=True)
+        dkey_sums += ddenominator[:, None] * pq[token]
+        dpk[token] += np.einsum("hij,hj->hi", dstate, vh[token], optimize=True)
+        dpk[token] += dkey_sums
+        dv[token] += np.einsum("hi,hij->hj", pk[token], dstate, optimize=True)
+    shape = (seq_len, heads * head_dim)
+    return dpq.reshape(shape), dpk.reshape(shape), dv.reshape(shape)
+
+
+def validate_recurrent_attention():
+    rng = np.random.default_rng(7)
+    q = rng.normal(0, 0.05, (3, 4)).astype(np.float32)
+    k = rng.normal(0, 0.05, (3, 4)).astype(np.float32)
+    v = rng.normal(0, 0.05, (3, 4)).astype(np.float32)
+    dout = rng.normal(0, 0.05, (3, 4)).astype(np.float32)
+    recurrent, cache = linear_attention_forward(q, k, v, 2)
+    pq, pk, vh, _, heads = cache
+    reference = np.empty_like(vh)
+    for token in range(3):
+        for head in range(heads):
+            weights = pk[:token + 1, head] @ pq[token, head]
+            reference[token, head] = (
+                weights @ vh[:token + 1, head]
+            ) / np.sum(weights)
+    reference = reference.reshape(3, 4)
+    if not np.allclose(recurrent, reference, rtol=1e-5, atol=1e-6):
+        raise ValueError("recurrent attention forward parity failed")
+
+    recurrent_grads = linear_attention_backward(dout, cache)
+    explicit_grads = [np.zeros_like(pq), np.zeros_like(pk), np.zeros_like(vh)]
+    dout_heads = dout.reshape(3, heads, 2)
+    for token in range(3):
         for head in range(heads):
             keys = pk[:token + 1, head]
             values = vh[:token + 1, head]
             weights = keys @ pq[token, head]
             denominator = np.sum(weights)
-            dnum = dout[token, head] / denominator
-            dden = -np.dot(dout[token, head], output[token, head]) / denominator
-            da = values @ dnum + dden
-            dv[:token + 1, head] += weights[:, None] * dnum[None, :]
-            dpq[token, head] += da @ keys
-            dpk[:token + 1, head] += da[:, None] * pq[token, head][None, :]
-    shape = (seq_len, heads * head_dim)
-    return dpq.reshape(shape), dpk.reshape(shape), dv.reshape(shape)
+            output = reference.reshape(3, heads, 2)[token, head]
+            dnumerator = dout_heads[token, head] / denominator
+            ddenominator = -np.dot(dout_heads[token, head], output) / denominator
+            dweights = values @ dnumerator + ddenominator
+            explicit_grads[2][:token + 1, head] += weights[:, None] * dnumerator
+            explicit_grads[0][token, head] += dweights @ keys
+            explicit_grads[1][:token + 1, head] += (
+                dweights[:, None] * pq[token, head][None, :]
+            )
+    for recurrent_grad, explicit_grad in zip(recurrent_grads, explicit_grads):
+        if not np.allclose(
+            recurrent_grad,
+            explicit_grad.reshape(3, 4),
+            rtol=2e-5,
+            atol=2e-6,
+        ):
+            raise ValueError("recurrent attention backward parity failed")
 
 
 def forward(model, tokens, config):
@@ -229,8 +296,9 @@ def loss_and_gradient(logits, target):
     return loss, gradient.astype(np.float32)
 
 
-def backward(model, cache, dlogits, config):
-    gradients = {name: np.zeros_like(value) for name, value in model.items()}
+def backward(model, cache, dlogits, config, gradients):
+    for value in gradients.values():
+        value.fill(0)
     gradients["output"] = np.outer(dlogits, cache["features"])
     gradients["bias"] = dlogits
     dfeatures = dlogits @ model["output"]
@@ -276,7 +344,7 @@ def tensor_hash(model):
     return digest.hexdigest()
 
 
-def train(model, windows, config, epochs, learning_rate):
+def train(model, windows, config, epochs, learning_rate, batch_windows):
     initial_hash = tensor_hash(model)
     movement = {name: 0 for name in model}
     losses = []
@@ -288,13 +356,21 @@ def train(model, windows, config, epochs, learning_rate):
         initial_mistakes += int(np.argmax(logits) != target)
     initial_loss = sum(losses) / len(losses)
 
+    gradients = {name: np.zeros_like(value) for name, value in model.items()}
+    accumulated = {name: np.zeros_like(value) for name, value in model.items()}
     for _ in range(epochs):
-        for tokens, target in windows:
-            logits, cache = forward(model, tokens, config)
-            _, dlogits = loss_and_gradient(logits, target)
-            gradients = backward(model, cache, dlogits, config)
+        for batch_start in range(0, len(windows), batch_windows):
+            batch = windows[batch_start:batch_start + batch_windows]
+            for value in accumulated.values():
+                value.fill(0)
+            for tokens, target in batch:
+                logits, cache = forward(model, tokens, config)
+                _, dlogits = loss_and_gradient(logits, target)
+                backward(model, cache, dlogits, config, gradients)
+                for name in model:
+                    accumulated[name] += gradients[name]
             for name in model:
-                update = np.float32(learning_rate) * gradients[name]
+                update = np.float32(learning_rate / len(batch)) * accumulated[name]
                 movement[name] += float(np.sum(np.abs(update), dtype=np.float64))
                 model[name] -= update
 
@@ -333,14 +409,27 @@ def main():
     parser.add_argument("--max-windows", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--learning-rate-millionths", type=int, default=1000)
+    parser.add_argument("--batch-windows", type=int, default=4)
+    parser.add_argument("--allow-partial-gates", action="store_true")
     args = parser.parse_args()
+
+    validate_recurrent_attention()
 
     model, config = load_integer_model(args.model)
     tokens, token_stream_hash = load_tokens(args.tokens, config["tokenizer_hash"], config["vocab_size"])
     windows = document_windows(tokens, args.context_tokens, args.max_windows)
     if not windows:
         raise ValueError("no float-twin training windows")
-    result = train(model, windows, config, args.epochs, args.learning_rate_millionths / 1_000_000)
+    if args.batch_windows <= 0:
+        raise ValueError("batch windows must be positive")
+    result = train(
+        model,
+        windows,
+        config,
+        args.epochs,
+        args.learning_rate_millionths / 1_000_000,
+        args.batch_windows,
+    )
     out_path = Path(args.out)
     trace_path = Path(args.trace)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -360,10 +449,12 @@ def main():
         },
         "training": {
             "optimizer": "sgd",
+            "attention_algorithm": "causal_recurrent_linear",
             "context_tokens": args.context_tokens,
             "windows": len(windows),
             "epochs": args.epochs,
             "learning_rate_millionths": args.learning_rate_millionths,
+            "batch_windows": args.batch_windows,
             "initial_loss_millionths": result["initial_loss_millionths"],
             "final_loss_millionths": result["final_loss_millionths"],
             "initial_mistakes": result["initial_mistakes"],
@@ -391,7 +482,7 @@ def main():
     }
     trace_path.write_text(json.dumps(trace, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"trace": args.trace, "gates": trace["gates"]}, sort_keys=True))
-    if not all(trace["gates"].values()):
+    if not args.allow_partial_gates and not all(trace["gates"].values()):
         raise SystemExit(1)
 
 

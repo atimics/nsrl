@@ -20,6 +20,7 @@ python3 scripts/production-float-twin-v1.py \
   --context-tokens 4 \
   --max-windows 8 \
   --epochs 2 \
+  --batch-windows 4 \
   --learning-rate-millionths 1000
 node scripts/freeze-production-float-twin-v1.mjs --run-dir "$out_dir"
 

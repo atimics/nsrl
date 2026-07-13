@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use nsrl_corpus::subword::SubwordTokenizer;
 use nsrl_train::production::{
     ProductionFullTrainConfig, ProductionModelConfig, ProductionModelV1,
-    ProductionOptimizerStateV1, ProductionSmokeConfig, decode_bound_token_stream,
+    ProductionOptimizerStateV2, ProductionSmokeConfig, decode_bound_token_stream,
     train_production_full_smoke, train_production_output_smoke,
 };
 
@@ -33,6 +33,8 @@ struct Config {
     vector_learning_rate_shift: u8,
     embedding_learning_rate_shift: u8,
     output_learning_rate_shift: u8,
+    batch_windows: usize,
+    max_optimizer_steps: usize,
 }
 
 impl Default for Config {
@@ -60,6 +62,8 @@ impl Default for Config {
             vector_learning_rate_shift: full.vector_learning_rate_shift,
             embedding_learning_rate_shift: full.embedding_learning_rate_shift,
             output_learning_rate_shift: full.output_learning_rate_shift,
+            batch_windows: full.batch_windows,
+            max_optimizer_steps: full.max_optimizer_steps,
         }
     }
 }
@@ -109,7 +113,7 @@ fn full_train_smoke(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         .optimizer_state
         .map(fs::read)
         .transpose()?
-        .map(|bytes| ProductionOptimizerStateV1::from_bytes(&bytes))
+        .map(|bytes| ProductionOptimizerStateV2::from_bytes(&bytes))
         .transpose()?;
     let (trace, optimizer) = train_production_full_smoke(
         &mut model,
@@ -123,6 +127,8 @@ fn full_train_smoke(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             vector_learning_rate_shift: config.vector_learning_rate_shift,
             embedding_learning_rate_shift: config.embedding_learning_rate_shift,
             output_learning_rate_shift: config.output_learning_rate_shift,
+            batch_windows: config.batch_windows,
+            max_optimizer_steps: config.max_optimizer_steps,
         },
         optimizer,
     )?;
@@ -285,6 +291,12 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 config.output_learning_rate_shift =
                     next(&mut args, "--output-learning-rate-shift")?.parse()?
             }
+            "--batch-windows" => {
+                config.batch_windows = next(&mut args, "--batch-windows")?.parse()?
+            }
+            "--max-optimizer-steps" => {
+                config.max_optimizer_steps = next(&mut args, "--max-optimizer-steps")?.parse()?
+            }
             "--help" | "-h" => config.command = "help".to_string(),
             other => return Err(format!("unknown argument: {other}").into()),
         }
@@ -306,6 +318,6 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--epochs N] [--matrix-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N]"
+        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N]"
     );
 }

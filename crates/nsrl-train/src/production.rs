@@ -14,7 +14,7 @@ use crate::{PRODUCTION_MODEL_V1_MAGIC, TrainError};
 
 mod training;
 pub use training::{
-    ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionOptimizerStateV1,
+    ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionOptimizerStateV2,
     train_production_full_smoke,
 };
 
@@ -260,9 +260,9 @@ impl ProductionModelV1 {
             initialization_seed,
             scales: ProductionProjectionScales::default(),
             embeddings,
-            attention_rms_weights: vec![i16::MAX; checked_product(config.layers, config.d_model)?],
-            mlp_rms_weights: vec![i16::MAX; checked_product(config.layers, config.d_model)?],
-            final_rms_weights: vec![i16::MAX; config.d_model],
+            attention_rms_weights: vec![30_000; checked_product(config.layers, config.d_model)?],
+            mlp_rms_weights: vec![30_000; checked_product(config.layers, config.d_model)?],
+            final_rms_weights: vec![30_000; config.d_model],
             q_weights: stacked_identity(config.layers, config.d_model, 16),
             k_weights: stacked_identity(config.layers, config.d_model, 16),
             v_weights: stacked_identity(config.layers, config.d_model, 16),
@@ -1162,7 +1162,7 @@ mod tests {
 
     #[test]
     fn production_full_backward_moves_every_group_and_resumes_bound_state() {
-        let mut model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 19).expect("model");
+        let initial = ProductionModelV1::new_initial(tiny_config(), 0x1234, 19).expect("model");
         let tokens = [
             BOS_TOKEN_ID,
             300,
@@ -1180,25 +1180,52 @@ mod tests {
             epochs: 2,
             ..ProductionFullTrainConfig::default()
         };
-        let (first, state) = train_production_full_smoke(&mut model, &tokens, 0x5678, config, None)
-            .expect("full train");
+        let mut uninterrupted_model = initial.clone();
+        let (uninterrupted_trace, uninterrupted_state) =
+            train_production_full_smoke(&mut uninterrupted_model, &tokens, 0x5678, config, None)
+                .expect("full train");
         assert!(
-            first.movement_l1.iter().all(|&movement| movement > 0),
-            "movement: {:?}",
-            first.movement_l1
+            uninterrupted_trace
+                .gradient_nonzero_count
+                .iter()
+                .sum::<u64>()
+                > 0
         );
-        assert_ne!(first.initial_model_hash, first.final_model_hash);
-        let bytes = state.try_to_bytes().expect("optimizer bytes");
-        let decoded = ProductionOptimizerStateV1::from_bytes(&bytes).expect("optimizer decode");
-        assert_eq!(decoded, state);
-        let prior_step = state.step;
-        let (_, resumed) =
-            train_production_full_smoke(&mut model, &tokens, 0x5678, config, Some(decoded))
+        assert!(uninterrupted_trace.schedule_complete);
+        assert_ne!(
+            uninterrupted_trace.initial_model_hash,
+            uninterrupted_trace.final_model_hash
+        );
+
+        let mut resumed_model = initial;
+        let partial_config = ProductionFullTrainConfig {
+            max_optimizer_steps: 1,
+            ..config
+        };
+        let (partial_trace, partial_state) =
+            train_production_full_smoke(&mut resumed_model, &tokens, 0x5678, partial_config, None)
+                .expect("partial train");
+        assert!(!partial_trace.schedule_complete);
+        let bytes = partial_state.try_to_bytes().expect("optimizer bytes");
+        let decoded = ProductionOptimizerStateV2::from_bytes(&bytes).expect("optimizer decode");
+        assert_eq!(decoded, partial_state);
+        let mut corrupt = bytes;
+        corrupt[80] ^= 1;
+        assert!(ProductionOptimizerStateV2::from_bytes(&corrupt).is_err());
+        let (_, resumed_state) =
+            train_production_full_smoke(&mut resumed_model, &tokens, 0x5678, config, Some(decoded))
                 .expect("resume");
-        assert_eq!(resumed.step, prior_step + first.optimizer_steps as u64);
+        assert_eq!(resumed_model, uninterrupted_model);
+        assert_eq!(resumed_state, uninterrupted_state);
         assert!(
-            train_production_full_smoke(&mut model, &tokens, 0x5679, config, Some(resumed))
-                .is_err()
+            train_production_full_smoke(
+                &mut resumed_model,
+                &tokens,
+                0x5679,
+                config,
+                Some(resumed_state)
+            )
+            .is_err()
         );
     }
 }

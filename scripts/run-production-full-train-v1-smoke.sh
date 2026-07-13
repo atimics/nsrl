@@ -24,7 +24,35 @@ target/release/nsrl-production-model full-train-smoke \
   --trace "$out_dir/train.json" \
   --context-tokens 4 \
   --max-windows 8 \
-  --epochs 2
+  --epochs 2 \
+  --batch-windows 4
+
+target/release/nsrl-production-model full-train-smoke \
+  --tokenizer "$tokenizer" \
+  --tokens "$tokens" \
+  --model "$integer_dir/initial.nsrlpm" \
+  --model-out "$out_dir/partial.nsrlpm" \
+  --optimizer-state-out "$out_dir/partial.nsrlpo" \
+  --trace "$out_dir/partial.json" \
+  --context-tokens 4 \
+  --max-windows 8 \
+  --epochs 2 \
+  --batch-windows 4 \
+  --max-optimizer-steps 1
+target/release/nsrl-production-model full-train-smoke \
+  --tokenizer "$tokenizer" \
+  --tokens "$tokens" \
+  --model "$out_dir/partial.nsrlpm" \
+  --optimizer-state "$out_dir/partial.nsrlpo" \
+  --model-out "$out_dir/resumed.nsrlpm" \
+  --optimizer-state-out "$out_dir/resumed.nsrlpo" \
+  --trace "$out_dir/resume.json" \
+  --context-tokens 4 \
+  --max-windows 8 \
+  --epochs 2 \
+  --batch-windows 4
+cmp "$out_dir/trained.nsrlpm" "$out_dir/resumed.nsrlpm"
+cmp "$out_dir/optimizer.nsrlpo" "$out_dir/resumed.nsrlpo"
 node scripts/freeze-production-full-train-v1.mjs --run-dir "$out_dir"
 
 echo "production-model-v1 p10m full-backward smoke passed"

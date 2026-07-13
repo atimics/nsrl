@@ -14,6 +14,7 @@ node scripts/freeze-production-model-v1.mjs --check
 node scripts/freeze-production-full-train-v1.mjs --check
 node scripts/freeze-production-float-twin-v1.mjs --check
 node scripts/check-production-model-v1.mjs
+node scripts/check-production-optimization-v1.mjs
 cargo fmt --all --check
 cargo test --workspace --all-targets
 cargo clippy --workspace --all-targets

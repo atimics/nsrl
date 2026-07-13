@@ -60,16 +60,19 @@ if (smoke.schema !== "nsrl.production_model_smoke_checkpoint.v1"
   || smoke.gates.float_twin !== false) {
   throw new Error("p10m smoke checkpoint gate failed");
 }
-const [fullBytes, floatBytes] = await Promise.all([
+const [fullBytes, floatBytes, optimizationBytes] = await Promise.all([
   readFile(plan.full_train_checkpoint.path),
   readFile(plan.float_twin_checkpoint.path),
+  readFile(plan.prepilot_optimization_checkpoint.path),
 ]);
 if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_checkpoint.sha256
-  || createHash("sha256").update(floatBytes).digest("hex") !== plan.float_twin_checkpoint.sha256) {
+  || createHash("sha256").update(floatBytes).digest("hex") !== plan.float_twin_checkpoint.sha256
+  || createHash("sha256").update(optimizationBytes).digest("hex") !== plan.prepilot_optimization_checkpoint.sha256) {
   throw new Error("production training checkpoint hash mismatch");
 }
 const full = JSON.parse(fullBytes);
 const float = JSON.parse(floatBytes);
+const optimization = JSON.parse(optimizationBytes);
 if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || float.schema !== "nsrl.production_float_twin_smoke_checkpoint.v1"
   || full.parameter_count !== plan.points[0].parameter_count
@@ -81,6 +84,14 @@ if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || full.training.context_tokens !== float.training.context_tokens
   || full.training.windows !== float.training.windows
   || full.training.epochs !== float.training.epochs
+  || full.training.batch_windows !== float.training.batch_windows
+  || full.training.optimizer !== "integer_residual_sgd"
+  || float.training.attention_algorithm !== "causal_recurrent_linear"
+  || full.restart.byte_identical_model !== true
+  || full.restart.byte_identical_optimizer !== true
+  || Object.values(full.diagnostics.saturation_by_group).some((count) => count !== 0)
+  || optimization.schema !== "nsrl.production_preflight_performance.v1"
+  || JSON.stringify(optimization.results.map((row) => row.context_tokens)) !== JSON.stringify([4, 16, 64, 256])
   || full.moved_parameter_groups.length !== 13
   || float.moved_parameter_groups.length !== 13
   || !Object.values(full.gates).every(Boolean)
@@ -96,6 +107,7 @@ if (!status.variable_vocab_artifact_ready
   || !status.full_layer_backward_smoke_completed
   || !status.float_twin_runner_ready
   || !status.float_twin_smoke_completed
+  || !status.prepilot_optimization_completed
   || status.training_started
   || status.next_gate !== "controlled_p10m_train_dev_pilot") {
   throw new Error("production implementation status is inconsistent");

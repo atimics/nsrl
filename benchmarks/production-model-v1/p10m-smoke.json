@@ -34,19 +34,19 @@
     "initial": {
       "file": "initial.nsrlpm",
       "bytes": 13539906,
-      "sha256": "2ed55698731e5881dd899d72f4ebf9e1f9393a73d930bd2e687f755b1e2b7bb4",
-      "hash": "0xd23325239f1a4f6c"
+      "sha256": "08974cfb660f7a104cd11de6d18cdad20574dab50229c724c1b0ad87878d6e4d",
+      "hash": "0x9f278ab8d99e096c"
     },
     "trained": {
       "file": "trained.nsrlpm",
       "bytes": 13539906,
-      "sha256": "9a42843246aa4f70df43c94fb4032716747a9307d794301f217731c14e9ffc71",
-      "hash": "0x1ff43fd501d4af77"
+      "sha256": "8596d26bb599f462ccf07d5d6b2dee9f77cfdd6001dcbad9fd9da7ca63c4dc24",
+      "hash": "0xe3344167d5070024"
     }
   },
   "traces": {
-    "init_sha256": "c1eb795c3d4c6e2ec057ab6a641494c3e9c64ac9ee7b3bed1af8603d12a699d1",
-    "train_sha256": "e29cdf38d34a0606ff9a6395481873bf7e933f5242d9e1b83b71cd7bf64a4e55"
+    "init_sha256": "1f79a5592d1874e186f25f695b7eb812a12695114058917fe0de04b7432adb01",
+    "train_sha256": "e474a81911dc030676411d460b734c07cb964d2102d657c14f578896e0ad03b0"
   },
   "gates": {
     "variable_vocab_artifact": true,

@@ -24,13 +24,19 @@ function validate(checkpoint) {
     || checkpoint.parameter_count !== 9_317_632
     || checkpoint.bindings.tokenizer_hash !== "0xf4fe71d93c438c1a"
     || checkpoint.bindings.token_stream_hash !== "0x97e5254c31c27bda"
-    || checkpoint.training.optimizer !== "integer_stateless_sgd"
+    || checkpoint.training.optimizer !== "integer_residual_sgd"
     || checkpoint.training.backward !== "full_quantized_straight_through"
     || checkpoint.training.windows !== 8
-    || checkpoint.training.optimizer_steps !== 16
+    || checkpoint.training.batch_windows !== 4
+    || checkpoint.training.optimizer_steps !== 4
     || checkpoint.training.final_mistakes > checkpoint.training.initial_mistakes
     || checkpoint.moved_parameter_groups.length !== 13
-    || checkpoint.artifacts.optimizer.bytes !== 60
+    || checkpoint.artifacts.optimizer.bytes !== 74_541_140
+    || checkpoint.cursor.schedule_complete !== true
+    || checkpoint.restart.byte_identical_model !== true
+    || checkpoint.restart.byte_identical_optimizer !== true
+    || Object.values(checkpoint.diagnostics.gradient_nonzero_count).some((count) => count <= 0)
+    || Object.values(checkpoint.diagnostics.saturation_by_group).some((count) => count !== 0)
     || checkpoint.hashes.initial_model === checkpoint.hashes.final_model
     || checkpoint.gates.all_parameter_groups_moved !== true
     || checkpoint.gates.model_hash_changed !== true
@@ -43,10 +49,15 @@ async function buildCheckpoint() {
   const tracePath = path.join(runDir, "train.json");
   const modelPath = path.join(runDir, "trained.nsrlpm");
   const optimizerPath = path.join(runDir, "optimizer.nsrlpo");
-  const [traceBytes, modelBytes, optimizerBytes] = await Promise.all([
-    readFile(tracePath), readFile(modelPath), readFile(optimizerPath),
+  const resumeTracePath = path.join(runDir, "resume.json");
+  const resumedModelPath = path.join(runDir, "resumed.nsrlpm");
+  const resumedOptimizerPath = path.join(runDir, "resumed.nsrlpo");
+  const [traceBytes, modelBytes, optimizerBytes, resumeTraceBytes, resumedModelBytes, resumedOptimizerBytes] = await Promise.all([
+    readFile(tracePath), readFile(modelPath), readFile(optimizerPath), readFile(resumeTracePath),
+    readFile(resumedModelPath), readFile(resumedOptimizerPath),
   ]);
   const trace = JSON.parse(traceBytes);
+  const resumeTrace = JSON.parse(resumeTraceBytes);
   if (trace.schema !== "nsrl.production_full_train_smoke.v1") throw new Error("invalid full-train trace");
   return {
     schema: "nsrl.production_full_train_smoke_checkpoint.v1",
@@ -56,12 +67,23 @@ async function buildCheckpoint() {
     training: trace.training,
     movement_l1: trace.movement_l1,
     moved_parameter_groups: trace.moved_parameter_groups,
+    diagnostics: trace.diagnostics,
+    cursor: trace.cursor,
     health: trace.health,
     hashes: trace.hashes,
     artifacts: {
       trained_model: { bytes: modelBytes.length, sha256: sha256(modelBytes) },
       optimizer: { bytes: optimizerBytes.length, sha256: sha256(optimizerBytes) },
       trace_sha256: sha256(traceBytes),
+    },
+    restart: {
+      resumed_optimizer_steps: resumeTrace.training.optimizer_steps,
+      resume_start_epoch: resumeTrace.cursor.start_epoch,
+      resume_start_window: resumeTrace.cursor.start_window,
+      schedule_complete: resumeTrace.cursor.schedule_complete,
+      byte_identical_model: sha256(modelBytes) === sha256(resumedModelBytes),
+      byte_identical_optimizer: sha256(optimizerBytes) === sha256(resumedOptimizerBytes),
+      trace_sha256: sha256(resumeTraceBytes),
     },
     gates: trace.gates,
     known_non_claims: trace.known_non_claims,

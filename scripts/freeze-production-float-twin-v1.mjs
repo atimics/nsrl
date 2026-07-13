@@ -23,10 +23,12 @@ function validate(checkpoint) {
   if (checkpoint.schema !== "nsrl.production_float_twin_smoke_checkpoint.v1"
     || checkpoint.profile !== "p10m"
     || checkpoint.parameter_count !== 9_317_632
-    || checkpoint.bindings.integer_initial_model_hash !== "0xd23325239f1a4f6c"
+    || checkpoint.bindings.integer_initial_model_hash !== "0x9f278ab8d99e096c"
     || checkpoint.bindings.tokenizer_hash !== "0xf4fe71d93c438c1a"
     || checkpoint.bindings.token_stream_hash !== "0x97e5254c31c27bda"
     || checkpoint.training.windows !== 8
+    || checkpoint.training.batch_windows !== 4
+    || checkpoint.training.attention_algorithm !== "causal_recurrent_linear"
     || checkpoint.training.final_loss_millionths > checkpoint.training.initial_loss_millionths
     || checkpoint.training.final_mistakes > checkpoint.training.initial_mistakes
     || checkpoint.moved_parameter_groups.length !== 13

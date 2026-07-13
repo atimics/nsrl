@@ -7,29 +7,31 @@
     "token_stream_hash": "0x97e5254c31c27bda"
   },
   "training": {
-    "optimizer": "integer_stateless_sgd",
+    "optimizer": "integer_residual_sgd",
     "backward": "full_quantized_straight_through",
     "context_tokens": 4,
     "windows": 8,
     "epochs": 2,
-    "optimizer_steps": 16,
+    "batch_windows": 4,
+    "optimizer_steps": 4,
+    "total_optimizer_step": 4,
     "initial_mistakes": 8,
-    "final_mistakes": 6
+    "final_mistakes": 7
   },
   "movement_l1": {
-    "embeddings": 158,
-    "attention_rms": 621,
-    "mlp_rms": 163,
-    "final_rms": 957,
-    "q": 392960,
-    "k": 393216,
-    "v": 242688,
-    "o": 242530,
-    "up": 1149203,
-    "gate": 1150737,
-    "down": 568326,
-    "output": 2119576,
-    "bias": 124
+    "embeddings": 848,
+    "attention_rms": 668,
+    "mlp_rms": 3873,
+    "final_rms": 65085,
+    "q": 570467,
+    "k": 534765,
+    "v": 428633,
+    "o": 267437,
+    "up": 1796013,
+    "gate": 1797878,
+    "down": 1047560,
+    "output": 199875,
+    "bias": 640
   },
   "moved_parameter_groups": [
     "embeddings",
@@ -46,34 +48,114 @@
     "output",
     "bias"
   ],
+  "diagnostics": {
+    "gradient_nonzero_count": {
+      "embeddings": 1422,
+      "attention_rms": 10025,
+      "mlp_rms": 3378,
+      "final_rms": 1374,
+      "q": 3143168,
+      "k": 3134667,
+      "v": 2566656,
+      "o": 2183682,
+      "up": 9399060,
+      "gate": 9402643,
+      "down": 5446871,
+      "output": 8392704,
+      "bias": 32784
+    },
+    "residual_carry_count": {
+      "embeddings": 970,
+      "attention_rms": 3922,
+      "mlp_rms": 0,
+      "final_rms": 139,
+      "q": 652105,
+      "k": 715165,
+      "v": 819687,
+      "o": 941958,
+      "up": 1905741,
+      "gate": 1904484,
+      "down": 2679102,
+      "output": 8384286,
+      "bias": 32751
+    },
+    "update_nonzero_count": {
+      "embeddings": 759,
+      "attention_rms": 471,
+      "mlp_rms": 2264,
+      "final_rms": 620,
+      "q": 526868,
+      "k": 464483,
+      "v": 357942,
+      "o": 236115,
+      "up": 1630705,
+      "gate": 1631871,
+      "down": 770933,
+      "output": 4322,
+      "bias": 17
+    },
+    "saturation_by_group": {
+      "embeddings": 0,
+      "attention_rms": 0,
+      "mlp_rms": 0,
+      "final_rms": 0,
+      "q": 0,
+      "k": 0,
+      "v": 0,
+      "o": 0,
+      "up": 0,
+      "gate": 0,
+      "down": 0,
+      "output": 0,
+      "bias": 0
+    },
+    "backward_ste_rescue_count": 1407895
+  },
+  "cursor": {
+    "start_epoch": 0,
+    "start_window": 0,
+    "next_epoch": 2,
+    "next_window": 0,
+    "schedule_complete": true
+  },
   "health": {
     "gradient_saturation_count": 0,
-    "weight_saturation_count": 1137
+    "weight_saturation_count": 0
   },
   "hashes": {
-    "initial_model": "0xd23325239f1a4f6c",
-    "final_model": "0x4286a415f68ea7b5",
-    "optimizer_state": "0x9877e95fe7b17a2f"
+    "initial_model": "0x9f278ab8d99e096c",
+    "final_model": "0x73e18a7ed164bb78",
+    "optimizer_state": "0x8fe9dbfb4a201a3c"
   },
   "artifacts": {
     "trained_model": {
       "bytes": 13539906,
-      "sha256": "e0b60009369b4f281963a82154216ad8d23927aa3da8594e7547a322ae8bc0ec"
+      "sha256": "700cd26952931b38074ca3c1362060714bd0277c8f290513ffcf43191df5e205"
     },
     "optimizer": {
-      "bytes": 60,
-      "sha256": "33c56d04bd7519e90934ee942a89a62a3f530cf25a1d60936c2c16fabc3775c1"
+      "bytes": 74541140,
+      "sha256": "6fc13ac5052c4309a0c239ea8e769e780465b6deafcd254aac294d29723f6a6d"
     },
-    "trace_sha256": "4dfa6d28879e4815050463305bb7199ed3b17f5fccee77bbde045e238b0249d5"
+    "trace_sha256": "ef7cef21a71c8436469c3875419bab45ee27e1892b11ec6b71451358bbeecf15"
+  },
+  "restart": {
+    "resumed_optimizer_steps": 3,
+    "resume_start_epoch": 0,
+    "resume_start_window": 4,
+    "schedule_complete": true,
+    "byte_identical_model": true,
+    "byte_identical_optimizer": true,
+    "trace_sha256": "15546165ccf5c66f781123353fdcadaaa3be836d9545f61f5676e8b5c3c5fa35"
   },
   "gates": {
     "all_parameter_groups_moved": true,
     "model_hash_changed": true,
-    "resumable_optimizer_state": true
+    "resumable_optimizer_state": true,
+    "batched_residual_updates": true
   },
   "known_non_claims": [
     "bounded_full_backward_smoke_not_scaling_run",
-    "straight_through_quantized_derivatives",
+    "straight_through_backward_derivatives",
     "not_open_generation_quality"
   ]
 }

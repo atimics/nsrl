@@ -15,15 +15,19 @@
   },
   "smoke_checkpoint": {
     "path": "benchmarks/production-model-v1/p10m-smoke.json",
-    "sha256": "2b440c4cb97415d24c41ea9e38dd5077b4e41c25f64eb9ed73e620fc9ad5425d"
+    "sha256": "63b6ea6a7810cbbcf4edb57ac1a89d4a77b07dd670406a5f5e4db5b71f8639c5"
   },
   "full_train_checkpoint": {
     "path": "benchmarks/production-model-v1/p10m-full-smoke.json",
-    "sha256": "87bce115abbf69d7ad1f3522fabee7bca137069e62fde17ad195d17b6734b8b3"
+    "sha256": "e3247418ce7f491d9243279e80428684987a01365c34b395f3b095d74abae07e"
   },
   "float_twin_checkpoint": {
     "path": "benchmarks/production-model-v1/p10m-float-smoke.json",
-    "sha256": "d89ff992a43875001d1cb513fee786c8bccb09f38a2a8d4a39ade3946808d459"
+    "sha256": "de9076e76601c2d8986415cbdd725f309245abc70c8b042f2e88ff248451b484"
+  },
+  "prepilot_optimization_checkpoint": {
+    "path": "benchmarks/production-model-v1/prepilot-performance.json",
+    "sha256": "13d26d6e2c32fdfa37ddab4a370f5e24bed16ebef2fcb6996ece25b8f313aa52"
   },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
@@ -92,6 +96,7 @@
     "full_layer_backward_smoke_completed": true,
     "float_twin_runner_ready": true,
     "float_twin_smoke_completed": true,
+    "prepilot_optimization_completed": true,
     "training_started": false,
     "next_gate": "controlled_p10m_train_dev_pilot"
   }

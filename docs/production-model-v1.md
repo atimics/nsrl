@@ -20,8 +20,10 @@ The runtime now provides:
   evidence;
 - full quantized backpropagation through embeddings, attention projections,
   MLP projections, RMS vectors, output weights, and bias;
-- a checksummed, resumable stateless-SGD optimizer state bound to the exact
-  model, tokenizer, token stream, and training schedule; and
+- a checksummed residual-SGD optimizer with four-window batches, exact
+  epoch/window cursor state, and one carried i64 residual per parameter;
+- per-parameter-group gradient, carry, update, movement, and saturation
+  diagnostics;
 - a same-shape NumPy float reference runner mapped from the integer
   initialization and trained on the same bounded windows.
 
@@ -38,25 +40,42 @@ Reproduce it with:
 scripts/run-production-model-v1-smoke.sh
 scripts/run-production-full-train-v1-smoke.sh
 scripts/run-production-float-twin-v1-smoke.sh
+python3 scripts/benchmark-production-training-v1.py
 node scripts/freeze-production-model-v1.mjs --check
 node scripts/freeze-production-full-train-v1.mjs --check
 node scripts/freeze-production-float-twin-v1.mjs --check
 node scripts/check-production-model-v1.mjs
+node scripts/check-production-optimization-v1.mjs
 ```
 
-The bounded full-backward p10m checkpoint runs 16 optimizer steps. All 13
-parameter groups move, mistakes improve from 8 to 6, and the trace records zero
-gradient saturation and 1,137 clipped weight updates. The matched float twin
-also moves all 13 groups, remains finite, reduces mean loss from 9.011 to 8.500,
-and moves from 8 mistakes to 0. These are wiring and numerical-health checks,
-not quality comparisons.
+The optimized full-backward p10m checkpoint runs four four-window optimizer
+steps. All 13 parameter groups move, mistakes improve from 8 to 7, and both
+gradient and weight saturation are zero. A run interrupted after one optimizer
+step resumes to byte-identical model and optimizer artifacts. The optimizer
+artifact is about 71 MiB because it retains exact residuals for all 9,317,632
+parameters.
+
+The matched float twin uses recurrent causal linear attention in both forward
+and backward passes, reuses gradient buffers, and follows the same four-window
+batch schedule. It moves all 13 groups, remains finite, reduces mean loss from
+9.011 to 8.904, and moves from 8 mistakes to 0. A locked self-test compares the
+recurrent attention forward and backward results with the explicit quadratic
+reference.
+
+The local ARM64 preflight measures one complete p10m forward/backward/update at
+contexts 4, 16, 64, and 256. The frozen sample ranges from 0.63 to 4.17 seconds
+for integer and 5.28 to 5.46 seconds for float as context grows. These
+single-sample timings include process startup, serialization, and evaluation,
+so they are engineering bounds rather than capacity forecasts.
 
 ## Current boundary
 
-The full backward and float-twin implementation gates are complete. The
-integer derivative uses an explicit straight-through rule at quantization
-dead zones, and the float twin is a NumPy reference rather than an accelerator
-runner. Neither bounded smoke is a language-quality result.
+The full backward, float-twin, and pre-pilot optimization gates are complete.
+The integer backward still uses explicit straight-through rules at internal
+quantization dead zones, while parameter updates carry sub-quantum gradients
+in residual state instead of forcing one-unit steps. The float twin remains a
+NumPy reference rather than an accelerator runner. Neither bounded smoke is a
+language-quality result.
 
 The next checkpoint is a controlled p10m train/dev pilot with a larger frozen
 window schedule, held-out evaluation, restart evidence, and integer/float
