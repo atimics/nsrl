@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import math
 import struct
 from pathlib import Path
 
@@ -344,17 +345,27 @@ def tensor_hash(model):
     return digest.hexdigest()
 
 
-def train(model, windows, config, epochs, learning_rate, batch_windows):
-    initial_hash = tensor_hash(model)
-    movement = {name: 0 for name in model}
+def evaluate(model, windows, config):
     losses = []
-    initial_mistakes = 0
+    mistakes = 0
     for tokens, target in windows:
         logits, _ = forward(model, tokens, config)
         loss, _ = loss_and_gradient(logits, target)
         losses.append(loss)
-        initial_mistakes += int(np.argmax(logits) != target)
-    initial_loss = sum(losses) / len(losses)
+        mistakes += int(np.argmax(logits) != target)
+    mean_loss = sum(losses) / len(losses)
+    return {
+        "windows": len(windows),
+        "loss_millionths": round(mean_loss * 1_000_000),
+        "mean_millibits": round(mean_loss * 1_000 / math.log(2)),
+        "mistakes": mistakes,
+    }
+
+
+def train(model, windows, evaluation_windows, config, epochs, learning_rate, batch_windows):
+    initial_hash = tensor_hash(model)
+    movement = {name: 0 for name in model}
+    initial = evaluate(model, evaluation_windows, config)
 
     gradients = {name: np.zeros_like(value) for name, value in model.items()}
     accumulated = {name: np.zeros_like(value) for name, value in model.items()}
@@ -374,21 +385,17 @@ def train(model, windows, config, epochs, learning_rate, batch_windows):
                 movement[name] += float(np.sum(np.abs(update), dtype=np.float64))
                 model[name] -= update
 
-    losses = []
-    final_mistakes = 0
-    for tokens, target in windows:
-        logits, _ = forward(model, tokens, config)
-        loss, _ = loss_and_gradient(logits, target)
-        losses.append(loss)
-        final_mistakes += int(np.argmax(logits) != target)
+    final = evaluate(model, evaluation_windows, config)
     finite = all(np.all(np.isfinite(value)) for value in model.values())
     return {
         "initial_tensor_hash": initial_hash,
         "final_tensor_hash": tensor_hash(model),
-        "initial_loss_millionths": round(initial_loss * 1_000_000),
-        "final_loss_millionths": round(sum(losses) / len(losses) * 1_000_000),
-        "initial_mistakes": initial_mistakes,
-        "final_mistakes": final_mistakes,
+        "initial_loss_millionths": initial["loss_millionths"],
+        "final_loss_millionths": final["loss_millionths"],
+        "initial_mean_millibits": initial["mean_millibits"],
+        "final_mean_millibits": final["mean_millibits"],
+        "initial_mistakes": initial["mistakes"],
+        "final_mistakes": final["mistakes"],
         "movement_trillionths": {name: round(value * 1_000_000_000_000) for name, value in movement.items()},
         "moved_parameter_groups": sorted(name for name, value in movement.items() if value > 0),
         "finite": finite,
@@ -402,11 +409,16 @@ def parameter_count(model):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
+    parser.add_argument("--resume")
     parser.add_argument("--tokens", required=True)
+    parser.add_argument("--eval-tokens")
     parser.add_argument("--out", required=True)
     parser.add_argument("--trace", required=True)
     parser.add_argument("--context-tokens", type=int, default=4)
     parser.add_argument("--max-windows", type=int, default=8)
+    parser.add_argument("--start-window", type=int, default=0)
+    parser.add_argument("--train-eval-max-windows", type=int)
+    parser.add_argument("--eval-max-windows", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--learning-rate-millionths", type=int, default=1000)
     parser.add_argument("--batch-windows", type=int, default=4)
@@ -416,20 +428,55 @@ def main():
     validate_recurrent_attention()
 
     model, config = load_integer_model(args.model)
+    if args.resume:
+        with np.load(args.resume) as resumed:
+            if set(resumed.files) != set(model):
+                raise ValueError("float resume tensor set mismatch")
+            for name in model:
+                value = np.asarray(resumed[name], dtype=np.float32)
+                if value.shape != model[name].shape:
+                    raise ValueError(f"float resume shape mismatch: {name}")
+                model[name] = value.copy()
     tokens, token_stream_hash = load_tokens(args.tokens, config["tokenizer_hash"], config["vocab_size"])
-    windows = document_windows(tokens, args.context_tokens, args.max_windows)
+    if args.start_window < 0:
+        raise ValueError("start window must be nonnegative")
+    all_windows = document_windows(
+        tokens, args.context_tokens, args.start_window + args.max_windows
+    )
+    windows = all_windows[args.start_window:]
     if not windows:
         raise ValueError("no float-twin training windows")
+    train_eval_count = (
+        len(windows)
+        if args.train_eval_max_windows is None
+        else args.train_eval_max_windows
+    )
+    if train_eval_count <= 0:
+        raise ValueError("train evaluation windows must be positive")
+    training_evaluation_windows = windows[:train_eval_count]
     if args.batch_windows <= 0:
         raise ValueError("batch windows must be positive")
+    eval_windows = None
+    eval_token_stream_hash = None
+    initial_eval = None
+    if args.eval_tokens:
+        eval_tokens, eval_token_stream_hash = load_tokens(
+            args.eval_tokens, config["tokenizer_hash"], config["vocab_size"]
+        )
+        eval_windows = document_windows(eval_tokens, args.context_tokens, args.eval_max_windows)
+        if not eval_windows:
+            raise ValueError("no float-twin evaluation windows")
+        initial_eval = evaluate(model, eval_windows, config)
     result = train(
         model,
         windows,
+        training_evaluation_windows,
         config,
         args.epochs,
         args.learning_rate_millionths / 1_000_000,
         args.batch_windows,
     )
+    final_eval = evaluate(model, eval_windows, config) if eval_windows else None
     out_path = Path(args.out)
     trace_path = Path(args.trace)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -451,12 +498,16 @@ def main():
             "optimizer": "sgd",
             "attention_algorithm": "causal_recurrent_linear",
             "context_tokens": args.context_tokens,
+            "start_window": args.start_window,
             "windows": len(windows),
+            "evaluation_windows": len(training_evaluation_windows),
             "epochs": args.epochs,
             "learning_rate_millionths": args.learning_rate_millionths,
             "batch_windows": args.batch_windows,
             "initial_loss_millionths": result["initial_loss_millionths"],
             "final_loss_millionths": result["final_loss_millionths"],
+            "initial_mean_millibits": result["initial_mean_millibits"],
+            "final_mean_millibits": result["final_mean_millibits"],
             "initial_mistakes": result["initial_mistakes"],
             "final_mistakes": result["final_mistakes"],
         },
@@ -480,6 +531,21 @@ def main():
             "does_not_establish_integer_float_quality_parity",
         ],
     }
+    if initial_eval is not None:
+        trace["evaluation"] = {
+            "token_stream_hash": f"0x{eval_token_stream_hash:016x}",
+            "context_tokens": args.context_tokens,
+            "windows": initial_eval["windows"],
+            "initial_loss_millionths": initial_eval["loss_millionths"],
+            "final_loss_millionths": final_eval["loss_millionths"],
+            "initial_mean_millibits": initial_eval["mean_millibits"],
+            "final_mean_millibits": final_eval["mean_millibits"],
+            "initial_mistakes": initial_eval["mistakes"],
+            "final_mistakes": final_eval["mistakes"],
+        }
+        trace["gates"]["held_out_loss_nonincreasing"] = (
+            final_eval["loss_millionths"] <= initial_eval["loss_millionths"]
+        )
     trace_path.write_text(json.dumps(trace, indent=2, sort_keys=True) + "\n")
     print(json.dumps({"trace": args.trace, "gates": trace["gates"]}, sort_keys=True))
     if not args.allow_partial_gates and not all(trace["gates"].values()):

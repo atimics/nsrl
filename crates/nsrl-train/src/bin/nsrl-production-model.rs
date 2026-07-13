@@ -8,7 +8,7 @@ use nsrl_corpus::subword::SubwordTokenizer;
 use nsrl_train::production::{
     ProductionFullTrainConfig, ProductionModelConfig, ProductionModelV1,
     ProductionOptimizerStateV2, ProductionSmokeConfig, decode_bound_token_stream,
-    train_production_full_smoke, train_production_output_smoke,
+    evaluate_production_model, train_production_full_smoke, train_production_output_smoke,
 };
 
 #[derive(Debug)]
@@ -35,6 +35,7 @@ struct Config {
     output_learning_rate_shift: u8,
     batch_windows: usize,
     max_optimizer_steps: usize,
+    evaluation_windows: usize,
 }
 
 impl Default for Config {
@@ -64,6 +65,7 @@ impl Default for Config {
             output_learning_rate_shift: full.output_learning_rate_shift,
             batch_windows: full.batch_windows,
             max_optimizer_steps: full.max_optimizer_steps,
+            evaluation_windows: full.evaluation_windows,
         }
     }
 }
@@ -82,12 +84,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "inspect" => inspect(config),
         "smoke-train" => smoke_train(config),
         "full-train-smoke" => full_train_smoke(config),
+        "evaluate" => evaluate(config),
         "help" => {
             print_help();
             Ok(())
         }
-        _ => Err("expected init, inspect, smoke-train, or full-train-smoke".into()),
+        _ => Err("expected init, inspect, smoke-train, full-train-smoke, or evaluate".into()),
     }
+}
+
+fn evaluate(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
+    let tokens_path = required(config.tokens, "--tokens")?;
+    let model_path = required(config.model, "--model")?;
+    let trace_path = required(config.trace, "--trace")?;
+    let tokenizer = SubwordTokenizer::from_bytes(&fs::read(tokenizer_path)?)?;
+    let model = ProductionModelV1::from_bytes(&fs::read(model_path)?)?;
+    if tokenizer.tokenizer_hash() != model.tokenizer_hash
+        || tokenizer.vocab_size() != model.config.vocab_size
+    {
+        return Err("model and tokenizer binding mismatch".into());
+    }
+    let (tokens, token_stream_hash) = decode_bound_token_stream(
+        &fs::read(tokens_path)?,
+        model.tokenizer_hash,
+        model.config.vocab_size,
+    )?;
+    let trace = evaluate_production_model(
+        &model,
+        &tokens,
+        token_stream_hash,
+        config.context_tokens,
+        config.max_windows,
+    )?;
+    fs::write(trace_path, trace.to_json_line())?;
+    Ok(())
 }
 
 fn full_train_smoke(config: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -129,6 +160,7 @@ fn full_train_smoke(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             output_learning_rate_shift: config.output_learning_rate_shift,
             batch_windows: config.batch_windows,
             max_optimizer_steps: config.max_optimizer_steps,
+            evaluation_windows: config.evaluation_windows,
         },
         optimizer,
     )?;
@@ -242,7 +274,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "init" | "inspect" | "smoke-train" | "full-train-smoke"
+            "init" | "inspect" | "smoke-train" | "full-train-smoke" | "evaluate"
                 if config.command.is_empty() =>
             {
                 config.command = arg
@@ -297,6 +329,9 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--max-optimizer-steps" => {
                 config.max_optimizer_steps = next(&mut args, "--max-optimizer-steps")?.parse()?
             }
+            "--evaluation-windows" => {
+                config.evaluation_windows = next(&mut args, "--evaluation-windows")?.parse()?
+            }
             "--help" | "-h" => config.command = "help".to_string(),
             other => return Err(format!("unknown argument: {other}").into()),
         }
@@ -318,6 +353,6 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N]"
+        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N]"
     );
 }

@@ -43,6 +43,7 @@ pub struct ProductionFullTrainConfig {
     pub output_learning_rate_shift: u8,
     pub batch_windows: usize,
     pub max_optimizer_steps: usize,
+    pub evaluation_windows: usize,
 }
 
 impl Default for ProductionFullTrainConfig {
@@ -57,6 +58,7 @@ impl Default for ProductionFullTrainConfig {
             output_learning_rate_shift: 24,
             batch_windows: 4,
             max_optimizer_steps: usize::MAX,
+            evaluation_windows: usize::MAX,
         }
     }
 }
@@ -228,6 +230,7 @@ pub struct ProductionFullTrainTrace {
     pub optimizer_steps: usize,
     pub total_optimizer_step: u64,
     pub batch_windows: usize,
+    pub evaluation_windows: usize,
     pub start_epoch: u64,
     pub start_window: u64,
     pub next_epoch: u64,
@@ -241,6 +244,7 @@ pub struct ProductionFullTrainTrace {
     pub update_nonzero_count: [u64; 13],
     pub saturation_by_group: [u64; 13],
     pub backward_ste_rescue_count: u64,
+    pub backward_quantization_count: u64,
     pub initial_model_hash: u64,
     pub final_model_hash: u64,
     pub optimizer_state_hash: u64,
@@ -274,10 +278,10 @@ impl ProductionFullTrainTrace {
                 "{{\"schema\":\"nsrl.production_full_train_smoke.v1\",",
                 "\"profile\":\"{}\",\"parameter_count\":{},",
                 "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",\"token_stream_hash\":\"0x{:016x}\"}},",
-                "\"training\":{{\"optimizer\":\"integer_residual_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"epochs\":{},\"batch_windows\":{},\"optimizer_steps\":{},\"total_optimizer_step\":{},\"initial_mistakes\":{},\"final_mistakes\":{}}},",
+                "\"training\":{{\"optimizer\":\"integer_residual_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"evaluation_windows\":{},\"epochs\":{},\"batch_windows\":{},\"optimizer_steps\":{},\"total_optimizer_step\":{},\"initial_mistakes\":{},\"final_mistakes\":{}}},",
                 "\"cursor\":{{\"start_epoch\":{},\"start_window\":{},\"next_epoch\":{},\"next_window\":{},\"schedule_complete\":{}}},",
                 "\"movement_l1\":{{{}}},\"moved_parameter_groups\":[{}],",
-                "\"diagnostics\":{{\"gradient_nonzero_count\":{{{}}},\"residual_carry_count\":{{{}}},\"update_nonzero_count\":{{{}}},\"saturation_by_group\":{{{}}},\"backward_ste_rescue_count\":{}}},",
+                "\"diagnostics\":{{\"gradient_nonzero_count\":{{{}}},\"residual_carry_count\":{{{}}},\"update_nonzero_count\":{{{}}},\"saturation_by_group\":{{{}}},\"backward_ste_rescue_count\":{},\"backward_quantization_count\":{},\"backward_ste_rescue_per_million\":{}}},",
                 "\"health\":{{\"gradient_saturation_count\":{},\"weight_saturation_count\":{}}},",
                 "\"hashes\":{{\"initial_model\":\"0x{:016x}\",\"final_model\":\"0x{:016x}\",\"optimizer_state\":\"0x{:016x}\"}},",
                 "\"gates\":{{\"all_parameter_groups_moved\":{},\"model_hash_changed\":{},\"resumable_optimizer_state\":true,\"batched_residual_updates\":true}},",
@@ -289,6 +293,7 @@ impl ProductionFullTrainTrace {
             self.token_stream_hash,
             self.context_tokens,
             self.windows,
+            self.evaluation_windows,
             self.epochs,
             self.batch_windows,
             self.optimizer_steps,
@@ -307,6 +312,9 @@ impl ProductionFullTrainTrace {
             render_groups(self.update_nonzero_count),
             render_groups(self.saturation_by_group),
             self.backward_ste_rescue_count,
+            self.backward_quantization_count,
+            self.backward_ste_rescue_count.saturating_mul(1_000_000)
+                / self.backward_quantization_count.max(1),
             self.gradient_saturation_count,
             self.weight_saturation_count,
             self.initial_model_hash,
@@ -348,6 +356,7 @@ struct UpdateStats {
     update_nonzero: [u64; 13],
     saturation_by_group: [u64; 13],
     backward_ste_rescue: u64,
+    backward_quantization: u64,
     gradient_saturation: usize,
     weight_saturation: usize,
 }
@@ -410,6 +419,7 @@ pub fn train_production_full_smoke(
         || config.epochs == 0
         || config.batch_windows == 0
         || config.max_optimizer_steps == 0
+        || config.evaluation_windows == 0
         || [
             matrix_group_shift(config.matrix_learning_rate_shift, 10),
             config.vector_learning_rate_shift,
@@ -426,7 +436,8 @@ pub fn train_production_full_smoke(
         return Err(TrainError::InvalidConfig);
     }
     let initial_model_hash = model.model_hash();
-    let initial_mistakes = evaluate_mistakes(model, &windows)?;
+    let evaluation_windows = config.evaluation_windows.min(windows.len());
+    let initial_mistakes = evaluate_mistakes(model, &windows[..evaluation_windows])?;
     let mut state =
         state.unwrap_or_else(|| ProductionOptimizerStateV2::new(model, token_stream_hash, config));
     state.validate_binding(model, token_stream_hash, config)?;
@@ -472,7 +483,7 @@ pub fn train_production_full_smoke(
         }
     }
     state.bound_model_hash = model.model_hash();
-    let final_mistakes = evaluate_mistakes(model, &windows)?;
+    let final_mistakes = evaluate_mistakes(model, &windows[..evaluation_windows])?;
     let trace = ProductionFullTrainTrace {
         profile: model.config.profile_id().unwrap_or("custom"),
         parameter_count: model.parameter_count(),
@@ -486,6 +497,7 @@ pub fn train_production_full_smoke(
         optimizer_steps,
         total_optimizer_step: state.step,
         batch_windows: config.batch_windows,
+        evaluation_windows,
         start_epoch,
         start_window,
         next_epoch: state.next_epoch,
@@ -499,6 +511,7 @@ pub fn train_production_full_smoke(
         update_nonzero_count: stats.update_nonzero,
         saturation_by_group: stats.saturation_by_group,
         backward_ste_rescue_count: stats.backward_ste_rescue,
+        backward_quantization_count: stats.backward_quantization,
         initial_model_hash,
         final_model_hash: model.model_hash(),
         optimizer_state_hash: state.state_hash(),
@@ -770,6 +783,7 @@ fn backward_update(
         let mut grad_up = vec![0_i16; seq_len * c.hidden_dim];
         let mut grad_gate = vec![0_i16; seq_len * c.hidden_dim];
         for index in 0..grad_gated.len() {
+            stats.backward_quantization = stats.backward_quantization.saturating_add(2);
             let grad = gated_activation_backward_i16_q15(
                 item.up[index],
                 item.gate[index],
@@ -1284,6 +1298,7 @@ fn round_ratio(
     denominator: i64,
     stats: &mut UpdateStats,
 ) -> Result<i64, TrainError> {
+    stats.backward_quantization = stats.backward_quantization.saturating_add(1);
     if denominator <= 0 {
         return Err(TrainError::InvalidConfig);
     }
@@ -1495,6 +1510,7 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
 }
 
 fn quantized_nonzero(value: i64, shift: u8, stats: &mut UpdateStats) -> i64 {
+    stats.backward_quantization = stats.backward_quantization.saturating_add(1);
     let rounded = round_shift_rhu_i64(value, shift);
     if rounded == 0 && value != 0 {
         stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);

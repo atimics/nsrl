@@ -29,6 +29,12 @@
     "path": "benchmarks/production-model-v1/prepilot-performance.json",
     "sha256": "13d26d6e2c32fdfa37ddab4a370f5e24bed16ebef2fcb6996ece25b8f313aa52"
   },
+  "pilot_contract": {
+    "path": "benchmarks/production-model-v1/p10m-pilot-contract.json",
+    "sha256": "e2eab91e4f780138558db296acc4d8f94f79b9b58c63064183ef522032278a9c",
+    "runner": "aws_graviton_parallel_lanes",
+    "instance_type": "c8g.2xlarge"
+  },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
     "attention": "causal_linear_attention",
@@ -97,7 +103,8 @@
     "float_twin_runner_ready": true,
     "float_twin_smoke_completed": true,
     "prepilot_optimization_completed": true,
-    "training_started": false,
-    "next_gate": "controlled_p10m_train_dev_pilot"
+    "controlled_p10m_pilot_launched": true,
+    "training_started": true,
+    "next_gate": "p10m_pilot_completion_and_promotion_review"
   }
 }

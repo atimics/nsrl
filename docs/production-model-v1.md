@@ -77,8 +77,10 @@ in residual state instead of forcing one-unit steps. The float twin remains a
 NumPy reference rather than an accelerator runner. Neither bounded smoke is a
 language-quality result.
 
-The next checkpoint is a controlled p10m train/dev pilot with a larger frozen
-window schedule, held-out evaluation, restart evidence, and integer/float
-comparison. The scaling plan keeps `training_started` false until that pilot is
-launched deliberately. Assisted retrieval, suffix memory, and routing oracles
-remain forbidden in headline generation rows.
+The controlled p10m train/dev pilot is now launched on a c8g.2xlarge Graviton
+runner. Its frozen schedule uses 1,024 train windows and 256 held-out dev
+windows at context 64, with durable chunking, a byte-identical midpoint replay,
+and concurrent integer/float lanes. Artifacts sync to S3 every 30 seconds and
+the instance terminates on completion. The next gate is checkpoint fetch and
+promotion review; assisted retrieval, suffix memory, and routing oracles remain
+forbidden in headline generation rows.

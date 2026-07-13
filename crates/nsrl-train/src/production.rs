@@ -165,6 +165,48 @@ pub struct ProductionForward {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionEvalTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub windows: usize,
+    pub mistakes: usize,
+    pub total_millibits: u64,
+    pub mean_millibits: u64,
+    pub residual_saturation_count: usize,
+    pub model_hash: u64,
+}
+
+impl ProductionEvalTrace {
+    pub fn to_json_line(self) -> String {
+        format!(
+            concat!(
+                "{{\"schema\":\"nsrl.production_model_eval.v1\",",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"evaluation\":{{\"context_tokens\":{},\"windows\":{},\"mistakes\":{},",
+                "\"total_millibits\":{},\"mean_millibits\":{}}},",
+                "\"health\":{{\"residual_saturation_count\":{}}},",
+                "\"model_hash\":\"0x{:016x}\"}}\n"
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.windows,
+            self.mistakes,
+            self.total_millibits,
+            self.mean_millibits,
+            self.residual_saturation_count,
+            self.model_hash,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductionSmokeConfig {
     pub context_tokens: usize,
     pub max_windows: usize,
@@ -498,6 +540,76 @@ pub fn forward_production_model(
         probabilities_q15,
         residual_saturation_count,
     })
+}
+
+pub fn evaluate_production_model(
+    model: &ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    context_tokens: usize,
+    max_windows: usize,
+) -> Result<ProductionEvalTrace, TrainError> {
+    model.validate()?;
+    if context_tokens == 0
+        || context_tokens > model.config.context_tokens
+        || max_windows == 0
+        || tokens
+            .iter()
+            .any(|&token| token as usize >= model.config.vocab_size)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let windows = document_windows(tokens, context_tokens, max_windows);
+    if windows.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut mistakes = 0_usize;
+    let mut total_millibits = 0_u64;
+    let mut residual_saturation_count = 0_usize;
+    for (context, target) in &windows {
+        let output = forward_production_model(model, context)?;
+        let predicted = argmax(&output.logits_q8);
+        mistakes = mistakes.saturating_add(usize::from(predicted != *target as usize));
+        total_millibits = total_millibits.saturating_add(q15_negative_log2_millibits(
+            output.probabilities_q15[*target as usize],
+        ));
+        residual_saturation_count =
+            residual_saturation_count.saturating_add(output.residual_saturation_count);
+    }
+    let count = windows.len() as u64;
+    Ok(ProductionEvalTrace {
+        profile: model.config.profile_id().unwrap_or("custom"),
+        parameter_count: model.parameter_count(),
+        tokenizer_hash: model.tokenizer_hash,
+        token_stream_hash,
+        context_tokens,
+        windows: windows.len(),
+        mistakes,
+        total_millibits,
+        mean_millibits: total_millibits.saturating_add(count / 2) / count,
+        residual_saturation_count,
+        model_hash: model.model_hash(),
+    })
+}
+
+fn q15_negative_log2_millibits(probability: i16) -> u64 {
+    let probability = u32::try_from(probability).unwrap_or(0);
+    if probability == 0 {
+        return 32_000;
+    }
+    let integer_log2 = 31_u32.saturating_sub(probability.leading_zeros());
+    let mut normalized = u64::from(probability) << (31 - integer_log2);
+    let mut fractional_q20 = 0_u64;
+    for bit in (0..20).rev() {
+        normalized = ((u128::from(normalized) * u128::from(normalized)) >> 31) as u64;
+        if normalized >= (2_u64 << 31) {
+            normalized >>= 1;
+            fractional_q20 |= 1_u64 << bit;
+        }
+    }
+    let loss_q20 =
+        (u64::from(15_u32.saturating_sub(integer_log2)) << 20).saturating_sub(fractional_q20);
+    loss_q20.saturating_mul(1_000).saturating_add(1 << 19) >> 20
 }
 
 pub fn train_production_output_smoke(
@@ -1137,6 +1249,21 @@ mod tests {
         assert_eq!(trace.windows, 2);
         assert_ne!(trace.initial_model_hash, trace.final_model_hash);
         assert!(trace.final_mistakes <= trace.initial_mistakes);
+    }
+
+    #[test]
+    fn production_eval_is_deterministic_and_reports_millibits() {
+        assert_eq!(q15_negative_log2_millibits(16_384), 1_000);
+        assert_eq!(q15_negative_log2_millibits(8_192), 2_000);
+        assert_eq!(q15_negative_log2_millibits(0), 32_000);
+        let model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
+        let tokens = [BOS_TOKEN_ID, 300, 301, 302, 303, 304, 305, EOS_TOKEN_ID];
+        let left = evaluate_production_model(&model, &tokens, 0x5678, 4, 2).expect("eval");
+        let right = evaluate_production_model(&model, &tokens, 0x5678, 4, 2).expect("eval");
+        assert_eq!(left, right);
+        assert_eq!(left.windows, 2);
+        assert!(left.total_millibits > 0);
+        assert!(left.to_json_line().contains("mean_millibits"));
     }
 
     #[test]

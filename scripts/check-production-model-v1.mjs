@@ -60,19 +60,22 @@ if (smoke.schema !== "nsrl.production_model_smoke_checkpoint.v1"
   || smoke.gates.float_twin !== false) {
   throw new Error("p10m smoke checkpoint gate failed");
 }
-const [fullBytes, floatBytes, optimizationBytes] = await Promise.all([
+const [fullBytes, floatBytes, optimizationBytes, pilotContractBytes] = await Promise.all([
   readFile(plan.full_train_checkpoint.path),
   readFile(plan.float_twin_checkpoint.path),
   readFile(plan.prepilot_optimization_checkpoint.path),
+  readFile(plan.pilot_contract.path),
 ]);
 if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_checkpoint.sha256
   || createHash("sha256").update(floatBytes).digest("hex") !== plan.float_twin_checkpoint.sha256
-  || createHash("sha256").update(optimizationBytes).digest("hex") !== plan.prepilot_optimization_checkpoint.sha256) {
+  || createHash("sha256").update(optimizationBytes).digest("hex") !== plan.prepilot_optimization_checkpoint.sha256
+  || createHash("sha256").update(pilotContractBytes).digest("hex") !== plan.pilot_contract.sha256) {
   throw new Error("production training checkpoint hash mismatch");
 }
 const full = JSON.parse(fullBytes);
 const float = JSON.parse(floatBytes);
 const optimization = JSON.parse(optimizationBytes);
+const pilotContract = JSON.parse(pilotContractBytes);
 if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || float.schema !== "nsrl.production_float_twin_smoke_checkpoint.v1"
   || full.parameter_count !== plan.points[0].parameter_count
@@ -91,6 +94,12 @@ if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || full.restart.byte_identical_optimizer !== true
   || Object.values(full.diagnostics.saturation_by_group).some((count) => count !== 0)
   || optimization.schema !== "nsrl.production_preflight_performance.v1"
+  || pilotContract.schema !== "nsrl.production_pilot_contract.v1"
+  || pilotContract.profile !== "p10m"
+  || pilotContract.schedule.train_windows !== 1024
+  || pilotContract.schedule.dev_windows !== 256
+  || pilotContract.schedule.context_tokens !== 64
+  || plan.pilot_contract.runner !== "aws_graviton_parallel_lanes"
   || JSON.stringify(optimization.results.map((row) => row.context_tokens)) !== JSON.stringify([4, 16, 64, 256])
   || full.moved_parameter_groups.length !== 13
   || float.moved_parameter_groups.length !== 13
@@ -108,8 +117,9 @@ if (!status.variable_vocab_artifact_ready
   || !status.float_twin_runner_ready
   || !status.float_twin_smoke_completed
   || !status.prepilot_optimization_completed
-  || status.training_started
-  || status.next_gate !== "controlled_p10m_train_dev_pilot") {
+  || !status.controlled_p10m_pilot_launched
+  || !status.training_started
+  || status.next_gate !== "p10m_pilot_completion_and_promotion_review") {
   throw new Error("production implementation status is inconsistent");
 }
 console.log(JSON.stringify({
