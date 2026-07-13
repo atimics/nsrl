@@ -28,9 +28,10 @@ function sumObjects(values) {
 }
 
 async function buildCheckpoint() {
-  const [contractBytes, preflightBytes, init, integerInitial, ...rest] = await Promise.all([
-    readFile("benchmarks/production-model-v1/p10m-stabilized-pilot-contract.json"),
+  const [contractBytes, preflightBytes, sourceAttemptBytes, init, integerInitial, ...rest] = await Promise.all([
+    readFile("benchmarks/production-model-v1/p10m-stabilized-pilot-contract-v2.json"),
     readFile("benchmarks/production-model-v1/p10m-stabilization.json"),
+    readFile("benchmarks/production-model-v1/p10m-stabilized-pilot-attempt-1.json"),
     readJson("init.json"),
     readJson("integer-dev-initial.json"),
     ...[0, 1, 2, 3].map((index) => readJson(`integer-durable-${index}.json`)),
@@ -98,6 +99,8 @@ async function buildCheckpoint() {
   const gates = {
     source_preflight_eligible: preflight.preflight_eligible === true
       && sha256(preflightBytes) === contract.source_preflight.sha256,
+    source_attempt_bound: sha256(sourceAttemptBytes) === contract.source_attempt.sha256
+      && JSON.parse(sourceAttemptBytes).failed_gate === "complete_gradient_path",
     initialization_locked: init.initialization_seed === contract.initialization.seed
       && init.output_init_amplitude === contract.initialization.output_init_amplitude
       && init.output_forward_shift === contract.initialization.output_forward_shift,
@@ -127,6 +130,7 @@ async function buildCheckpoint() {
     schema: "nsrl.production_stabilized_pilot_checkpoint.v1",
     contract,
     source_preflight_sha256: sha256(preflightBytes),
+    source_attempt_sha256: sha256(sourceAttemptBytes),
     contract_sha256: sha256(contractBytes),
     initialization: {
       seed: init.initialization_seed,
@@ -205,11 +209,12 @@ async function buildCheckpoint() {
 function validate(value) {
   const schedule = value.contract?.schedule;
   if (value.schema !== "nsrl.production_stabilized_pilot_checkpoint.v1"
-    || value.contract?.schema !== "nsrl.production_stabilized_pilot_contract.v1"
+    || value.contract?.schema !== "nsrl.production_stabilized_pilot_contract.v2"
     || schedule?.context_tokens !== 64 || schedule?.train_windows !== 1024
     || schedule?.dev_windows !== 256 || schedule?.batch_windows !== 4
-    || schedule?.source_to_pilot_shift_delta !== 2
-    || schedule?.integer_learning_rate_shifts?.output !== 36
+    || schedule?.source_to_pilot_non_output_shift_delta !== 2
+    || schedule?.source_to_pilot_output_shift_delta !== 0
+    || schedule?.integer_learning_rate_shifts?.output !== 34
     || schedule?.integer_learning_rate_shifts?.k !== 35
     || value.initialization?.output_init_amplitude !== 1
     || value.initialization?.output_forward_shift !== 14

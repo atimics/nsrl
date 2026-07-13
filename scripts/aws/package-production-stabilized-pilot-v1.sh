@@ -14,7 +14,8 @@ tar -czf "$out" \
   scripts/freeze-production-stabilized-pilot-v1.mjs \
   scripts/aws/run-production-stabilized-pilot-v1-graviton.sh \
   benchmarks/production-model-v1/p10m-stabilization.json \
-  benchmarks/production-model-v1/p10m-stabilized-pilot-contract.json \
+  benchmarks/production-model-v1/p10m-stabilized-pilot-attempt-1.json \
+  benchmarks/production-model-v1/p10m-stabilized-pilot-contract-v2.json \
   data/processed/production-corpus-v1/tokenizer.nsrlbpe \
   data/processed/production-corpus-v1/train.nsrltok \
   data/processed/production-corpus-v1/dev.nsrltok

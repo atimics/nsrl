@@ -40,7 +40,7 @@ integer_chunk() {
     --down-learning-rate-shift 25
     --vector-learning-rate-shift 23
     --embedding-learning-rate-shift 17
-    --output-learning-rate-shift 36 --output-backward-shift 8
+    --output-learning-rate-shift 34 --output-backward-shift 8
   )
   if [[ -n "$optimizer_in" ]]; then args+=(--optimizer-state "$optimizer_in"); fi
   "$binary" "${args[@]}"
