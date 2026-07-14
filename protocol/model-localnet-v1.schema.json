@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nsrl.dev/schemas/model-localnet-v1.schema.json",
   "title": "NSRL model localnet v1 public objects",
-  "description": "Signed intents, hash-linked ledger events, and public deterministic snapshots for the single-writer simulated-credit localnet.",
+  "description": "Signed intents, hash-linked ledger events, and public deterministic snapshots for the single-writer test-credit localnet and its sealed compute-provider market.",
   "oneOf": [
     { "$ref": "#/$defs/signedIntent" },
     { "$ref": "#/$defs/event" },
@@ -21,15 +21,28 @@
       "enum": [
         "network_initialized",
         "account_registered",
+        "test_credit_issued",
         "launch_published",
         "bounty_funded",
+        "compute_budget_funded",
+        "provider_collateral_deposited",
+        "provider_bid_committed",
+        "slot_advanced",
+        "provider_bid_revealed",
+        "stage_auction_closed",
         "stage_submitted",
+        "compute_metered",
         "validation_attested",
         "challenge_opened",
         "challenge_resolved",
         "stage_accepted",
+        "stage_payment_settled",
+        "compute_budget_refunded",
+        "provider_collateral_withdrawn",
         "candidate_submitted",
-        "model_published"
+        "model_published",
+        "compute_reward_distributed",
+        "launch_expired"
       ]
     },
     "signedIntent": {
@@ -134,6 +147,10 @@
             "height": { "type": "integer", "minimum": 1 },
             "head_sha256": { "$ref": "#/$defs/sha256" },
             "accounts": { "type": "integer", "minimum": 1 },
+            "market": {
+              "type": "object",
+              "description": "Additive test-credit market state: balances, escrows, collateral, auction results, meters, payments, reward distribution, and expiry rows. Event-specific invariants are enforced by the reducer."
+            },
             "valid": { "const": true }
           }
         },

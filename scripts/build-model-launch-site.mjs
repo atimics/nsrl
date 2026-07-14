@@ -131,15 +131,15 @@ function buildData() {
       },
       {
         capability: "Sponsor escrow",
-        status: "partial",
-        label: "Simulated",
-        detail: "Sponsors sign funding intents and deterministic payout/refund rows; no custody, deadlines, or payment rail.",
+        status: "prototype",
+        label: "Test adapter",
+        detail: "Conserved test balances enforce funding, deadlines, payout, refund, expiry, and slashing without custody.",
       },
       {
         capability: "Compute market",
-        status: "partial",
-        label: "Receipts",
-        detail: "Declared providers sign bounded stage evidence; bids, collateral, pricing, and stage payment remain open.",
+        status: "prototype",
+        label: "Auction",
+        detail: "Sealed bids, deterministic price clearing, collateral, signed meters, and accepted-stage payment replay locally.",
       },
       {
         capability: "Validator network",

@@ -44,6 +44,7 @@
         <a href="#bounties">Bounties</a>
         <a href="#ledger">Proof ledger</a>
         <a href="#localnet">Localnet</a>
+        <a href="#market">Compute market</a>
         <a href="#recipe">Recipe</a>
         <a href="#gaps">Gap map</a>
       </nav>
@@ -370,10 +371,101 @@
         </div>
       </section>
 
+      <section class="content-section market-section" id="market" aria-labelledby="market-title">
+        <div class="section-shell">
+          <div class="section-heading">
+            <div>
+              <p class="kicker"><span>05</span> Provider auction</p>
+              <h2 id="market-title">Compute clears in a sealed market.</h2>
+            </div>
+            <p>
+              Providers commit hidden bids, reveal after the deadline, and compete on
+              price under collateral. Only accepted, metered stage evidence can settle.
+            </p>
+          </div>
+
+          <dl class="market-stats" aria-label="Compute market statistics">
+            <div><dt>Sealed bids</dt><dd id="marketBidCount">9</dd></div>
+            <div><dt>Paid stages</dt><dd id="marketPaidStages">3 / 3</dd></div>
+            <div><dt>Provider payments</dt><dd id="marketPayments">7,168</dd></div>
+            <div><dt>Sponsor refund</dt><dd id="marketRefund">4,832</dd></div>
+          </dl>
+
+          <div class="market-layout">
+            <article class="auction-card panel" aria-labelledby="auction-title">
+              <div class="panel-topline">
+                <span class="micro-label">Deterministic winners</span>
+                <span class="market-settled">3 / 3 paid</span>
+              </div>
+              <h3 id="auction-title">Stage clearing ledger</h3>
+              <div class="auction-list" id="marketAuctionList"></div>
+              <a class="button button-secondary transcript-link" href="./market.json">
+                Inspect 76 signed events
+              </a>
+            </article>
+
+            <article class="escrow-card panel" aria-labelledby="escrow-title">
+              <div class="panel-topline">
+                <span class="micro-label">Conserved test credit</span>
+                <span class="market-conserved" id="marketConservation">146,000 = 146,000</span>
+              </div>
+              <h3 id="escrow-title">Escrow waterfall</h3>
+              <div class="escrow-meter" aria-hidden="true">
+                <i id="marketPaidBar"></i><i id="marketRefundBar"></i>
+              </div>
+              <dl class="escrow-facts">
+                <div><dt>Compute funded</dt><dd id="marketFunded">12,000</dd></div>
+                <div><dt>Metered + paid</dt><dd id="marketPaid">7,168</dd></div>
+                <div><dt>Unused refunded</dt><dd id="marketRefundDetail">4,832</dd></div>
+                <div><dt>Bounty paid</dt><dd id="marketBountyPaid">120,000</dd></div>
+              </dl>
+              <p>
+                Every test-credit unit remains in an account, open escrow, or locked
+                collateral. No wallet or transferable asset is created.
+              </p>
+            </article>
+          </div>
+
+          <div class="market-lab-layout">
+            <form class="auction-lab panel" id="auctionLab" aria-labelledby="auction-lab-title">
+              <div class="panel-topline">
+                <span class="micro-label">Counterfactual lab</span>
+                <span class="draft-mark">Local only</span>
+              </div>
+              <h3 id="auction-lab-title">Reprice the sealed bids</h3>
+              <label class="market-select-label" for="auctionStage">Stage</label>
+              <select id="auctionStage"></select>
+              <div class="bid-control-list" id="bidControlList"></div>
+              <button class="button button-primary" type="submit">Run counterfactual</button>
+              <output class="auction-result" id="auctionResult" aria-live="polite"></output>
+            </form>
+
+            <article class="provider-card panel" aria-labelledby="provider-title">
+              <div class="panel-topline">
+                <span class="micro-label">Useful-compute reward</span>
+                <span>22,400 ITP1</span>
+              </div>
+              <h3 id="provider-title">Actual providers earned the pool</h3>
+              <div class="provider-list" id="providerRewardList"></div>
+              <p>
+                The block’s compute allocation is redistributed by accepted compute
+                units. Largest-remainder allocation conserves the complete reward pool.
+              </p>
+            </article>
+          </div>
+
+          <p class="localnet-boundary">
+            <strong>Boundary:</strong> sealed bids, deadlines, collateral, signed meters,
+            refunds, slashing, and payouts execute in the deterministic localnet. Credits
+            are simulated and non-transferable; this is not financial infrastructure.
+          </p>
+        </div>
+      </section>
+
       <section class="content-section section-shell" id="recipe" aria-labelledby="recipe-title">
         <div class="section-heading">
           <div>
-            <p class="kicker"><span>05</span> Model recipe</p>
+            <p class="kicker"><span>06</span> Model recipe</p>
             <h2 id="recipe-title">One hashable contract for the whole attempt.</h2>
           </div>
           <p>
@@ -427,13 +519,13 @@
         <div class="section-shell">
           <div class="section-heading">
             <div>
-              <p class="kicker"><span>06</span> Gap analysis</p>
-              <h2 id="gaps-title">The proof layer is real. The market is not—yet.</h2>
+              <p class="kicker"><span>07</span> Gap analysis</p>
+              <h2 id="gaps-title">The local market works. The network comes next.</h2>
             </div>
             <p>
-              The signed localnet now covers identity, replay protection, role checks,
-              validator quorum, challenges, and simulated settlement. It deliberately
-              stops before wallets, custody, transferable assets, or consensus.
+              The signed localnet covers identity, replay, sealed auctions, collateral,
+              metering, quorum, challenges, expiry, and conserved test settlement. It
+              deliberately stops before custody, transferable assets, or consensus.
             </p>
           </div>
 
@@ -442,25 +534,25 @@
           <article class="next-build">
             <div>
               <p class="micro-label">Recommended next build</p>
-              <h3>Provider auction + escrow adapter</h3>
+              <h3>Durable multi-node testnet + artifact availability</h3>
               <p>
-                Let compute providers bid on frozen stages, meter accepted work, and
-                settle against a pluggable test escrow while keeping promotion entirely
-                under the evaluator and replay quorum.
+                Move the deterministic reducer behind a durable API, replicate artifacts
+                by content hash, and exercise validator and provider roles in separate
+                processes without weakening evaluator-controlled promotion.
               </p>
             </div>
             <ol>
-              <li>Commit sealed provider bids</li>
-              <li>Assign stages with collateral</li>
-              <li>Meter signed compute receipts</li>
-              <li>Settle through a test adapter</li>
+              <li>Persist and index signed events</li>
+              <li>Rotate keys and validator sets</li>
+              <li>Replicate content-addressed artifacts</li>
+              <li>Run timed challenge finality</li>
             </ol>
           </article>
         </div>
       </section>
 
       <section class="design-laws section-shell" aria-labelledby="laws-title">
-        <p class="kicker"><span>07</span> Protocol laws</p>
+        <p class="kicker"><span>08</span> Protocol laws</p>
         <h2 id="laws-title">What the token cannot buy.</h2>
         <div class="law-grid">
           <article><span>01</span><h3>Promotion</h3><p>Only the frozen evaluator can promote a model.</p></article>

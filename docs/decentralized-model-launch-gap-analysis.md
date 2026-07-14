@@ -20,15 +20,15 @@ identity, settlement, and adversarial network operation.
 | Frozen metric contract | `integer-transformer-proof-v1`, fixed baselines, dataset hash, typed results | Recipe binds evaluator, dataset, target, and guardrails | General metric registry and private/commit-reveal evaluation sets |
 | Deterministic model identity | Model hashes, artifact SHA-256s, replay hashes, frozen candidate manifests | Publication receipt binds model, artifact, recipe, proof, and metrics; Ed25519 actors sign every intent | Multi-writer content-addressed registry, key lifecycle, and artifact availability guarantees |
 | Model recipe | Training commands and manifests exist across scripts and docs | `nsrl.model_launch_recipe.v1` JSON Schema and checked specimen | Recipe compiler, migrations, compatibility policy, and secret-free container lock |
-| Metric bounty | Promotion thresholds exist but have no sponsor object | Signed sponsor funding, integer progress curve, promotion bonus, deterministic payout/refund rows, guardrails | Custodied escrow, deadlines, stacked claims, disputes, and audited settlement |
-| Compute contract | AWS stage plans record runner and artifact provenance | Recipe records bounded stages; declared provider signs input/output/evidence hashes and compute units | Provider discovery, sealed bids, pricing, collateral, metering, redundancy, and stage payment |
+| Metric bounty | Promotion thresholds exist but have no sponsor object | Signed sponsor funding, integer progress curve, promotion bonus, deterministic payout/refund/expiry rows, guardrails | Custodied escrow, stacked claims, external disputes, and audited settlement |
+| Compute contract | AWS stage plans record runner and artifact provenance | Bounded stages clear through sealed bids, collateral, deterministic assignment, signed meters, and accepted-work payment | Provider discovery network, hardware-independent metering, redundancy, and external payment rail |
 | Model publication | Promoted artifacts are frozen in repository JSON | Authority publishes after a clean replay quorum into a signed hash-linked event log | Multi-writer registry, distributed ordering/finality, availability, and revocation policy |
 | Block-style rewards | No protocol reward accounting | Capped model-local asset, exact role allocation, append-only ledger, replay protection | Multi-node consensus/finality, recovery, long-horizon economic simulation, and issuance governance |
-| Independent validation | Checkers can replay deterministic artifacts | Independent keys sign two-validator stage and three-validator candidate quorums; one full replay; challenge flow | Validator selection, timed windows, distributed resolution, slashing, and sampling policy |
+| Independent validation | Checkers can replay deterministic artifacts | Independent keys sign two-validator stage and three-validator candidate quorums; one full replay; challenge and provider-expiry slashing flows | Validator selection, distributed resolution, validator slashing, and sampling policy |
 | Sponsor and contributor identity | Repository and AWS provenance only | Namespaced accounts bind Ed25519 keys to every event | Key rotation/recovery, delegation, allowlists or stake, Sybil resistance, and organization policy |
 | Decentralized storage | S3 artifact manifests and local frozen files | Content hashes are settlement inputs | Replicated content-addressed storage, retention incentives, privacy, and deletion policy |
 | Inference revenue | Browser inference exists | Credits reserve inference quota conceptually | Metered service receipts, operator market, pricing, revenue routing, and abuse controls |
-| Public product surface | Solomon sampler and results dashboard | Forge launch site, bounty composer, reward simulator, recipe download, signed transcript, and gap map | Wallet/identity UI, durable API/indexer, accessibility audit, and operational support |
+| Public product surface | Solomon sampler and results dashboard | Forge site, bounty composer, reward simulator, signed transcript, compute auction lab, recipe download, and gap map | Durable API/indexer, identity operations, accessibility audit, and operational support |
 | Governance | Promotion boundary is documented | Active recipes cannot be changed; token voting cannot promote | Contract-version governance, emergency policy, treasury controls, and transparent upgrades |
 
 ## Readiness assessment
@@ -54,18 +54,24 @@ identity, settlement, and adversarial network operation.
 - role-conflict checks, stage and candidate validator quorums, one full replay,
   challenge resolution, and finality rules;
 - deterministic sponsor settlement and model-local balances;
+- conserved test-credit issuance, sponsor compute escrow, provider collateral,
+  deterministic deadlines, refunds, expiry, and unfinished-work slashing;
+- commit/reveal provider bids, lowest-price stage assignment, signed matching
+  meter receipts, accepted-work payments, and unused-budget refunds;
+- exact redistribution of the model-local compute reward to actual providers by
+  accepted compute units;
 - positive, quorum, conflict, replay, reorder, signature-tamper, and hash-tamper
-  validation; and
-- interactive static website using real promoted evidence and the 31-event
-  public localnet transcript.
+  validation plus adversarial reveal, deadline, winner, meter, payment, and
+  expiry cases; and
+- interactive static website using real promoted evidence, the 31-event core
+  transcript, and a 76-event provider-market transcript.
 
 ### Not yet implemented
 
-- money, custody, deadline-triggered refund execution, or smart-contract escrow;
+- money, custody, external payment execution, or smart-contract escrow;
 - transferable tokens or a wallet;
-- compute-provider bids, prices, collateral, or stage-payment settlement;
 - multi-process networking, shared ordering, consensus, or fork recovery;
-- decentralized validator selection, timed challenge windows, or slashing;
+- decentralized validator selection, wall-clock challenge windows, or validator slashing;
 - key rotation, delegation, recovery, or Sybil resistance;
 - decentralized artifact storage and availability proofs; and
 - production service revenue.
@@ -103,19 +109,22 @@ identity, settlement, and adversarial network operation.
 5. Add an explicit challenge/resolution flow and invalid/failing outcomes.
 6. Exercise the entire lifecycle with simulated credits and adversarial tests.
 
-### P1: provider auction + test settlement
+### P1: provider auction + test settlement — implemented locally
 
 1. Add sealed compute-provider bids, deterministic assignment, collateral, and
    signed metering receipts.
 2. Add a test-only escrow adapter, sponsor deadlines, and refund paths.
-3. Add a content-addressed artifact mirror and availability checks.
-4. Move the single-writer reducer behind a durable API/indexer and exercise
-   concurrent submissions without silently creating forks.
-5. Simulate emissions and adversarial provider/validator behavior across many
-   launches before enabling transferability.
-6. Commission security and economic reviews of the reward and challenge rules.
 
-### P2: narrow production pilot
+### P2: networked testnet
+
+1. Add a content-addressed artifact mirror and availability checks.
+2. Move the single-writer reducer behind a durable API/indexer and exercise
+   concurrent submissions without silently creating forks.
+3. Simulate emissions and adversarial provider/validator behavior across many
+   launches before enabling transferability.
+4. Commission security and economic reviews of the reward and challenge rules.
+
+### P3: narrow production pilot
 
 1. Launch one capped bounty on an existing frozen NSRL contract.
 2. Use a small allowlisted compute and validator set while preserving public
@@ -126,8 +135,8 @@ identity, settlement, and adversarial network operation.
 
 ## Decision
 
-The signed, simulated-credit localnet is now implemented. The next
-implementation should be a provider auction plus test escrow adapter—not a
-tradable global token. This tests whether compute can be priced and settled
-without weakening objective promotion before adding financial and consensus
-risk.
+The signed provider market and simulated-credit escrow adapter are now
+implemented. The next implementation should be a durable multi-process testnet
+with replicated content-addressed artifacts—not a tradable global token. This
+tests ordering, availability, and independent operation before adding financial
+or consensus risk.

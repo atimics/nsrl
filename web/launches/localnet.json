@@ -12,6 +12,8 @@
       "stage_quorum": 2,
       "candidate_quorum": 3,
       "full_replay_required": 1,
+      "test_credit_enabled": false,
+      "credit_symbol": null,
       "initialized_event_id": "adb73a48128ca1e272f63e85e44224348f985d68f8b335d1d9e90e69e3c0f1b3"
     },
     "height": 31,
@@ -27,7 +29,10 @@
         "accepted_stages": 3,
         "required_stages": 3,
         "candidate_event_id": "d68d64fd29426b3842824f331c28c74d14b80cbcb7e479fd85a31562c265bef2",
-        "publication_event_id": "4fae8c8319ae18f0d225f33262b7a9431705750fc2e2230798d5cd45d7612cca"
+        "publication_event_id": "4fae8c8319ae18f0d225f33262b7a9431705750fc2e2230798d5cd45d7612cca",
+        "compute_escrow_status": null,
+        "assigned_stages": 0,
+        "paid_stages": 0
       }
     ],
     "stage_submissions": 3,
@@ -56,6 +61,24 @@
         "nsrl:sponsor:prototype": "6400",
         "nsrl:treasury:public-goods": "3200"
       }
+    },
+    "market": {
+      "enabled": false,
+      "credit_symbol": null,
+      "slot": 0,
+      "issued_supply_units": "0",
+      "accounted_supply_units": "120000",
+      "balances": {},
+      "compute_escrows": {},
+      "provider_collateral": {},
+      "bid_commits": 0,
+      "bid_reveals": 0,
+      "auctions": [],
+      "meter_receipts": 0,
+      "stage_payments": {},
+      "compute_reward_distributions": {},
+      "expired_launches": {},
+      "conservation_valid": true
     },
     "valid": true
   },
