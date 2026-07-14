@@ -14,6 +14,13 @@ falls back to `web/assets/solomon-multimodal.nsrlmod` (`NSRLMOD1`). If that is
 also absent, it falls back to the current `NSRLTCH` WASM denoiser and Solomon
 text-signature index.
 
+`web/launches/` is NSRL Forge, a static protocol preview for metric bounties,
+model launch recipes, signed localnet transcripts, deterministic publication
+receipts, and capped proof-of-useful-compute rewards. Its visible specimen is
+generated from the real promoted `integer-transformer-proof-v1` artifact and a
+31-event deterministic Ed25519 test run. It is explicitly marked as simulated
+credit accounting rather than a wallet or live financial system.
+
 ```sh
 wasm-pack build crates/nsrl-web-wasm --release --target web --out-dir ../../web/pkg
 rm -f web/pkg/.gitignore
@@ -26,13 +33,22 @@ cp data/processed/key-solomon-goetia-attention-curriculum-v1/model.nsrllmm \
 python3 -m http.server 5173 --directory web
 ```
 
+Validate the launch recipe and its published web data:
+
+```sh
+node scripts/check-model-launch-v1.mjs
+node scripts/build-model-launch-site.mjs --check
+node scripts/check-model-localnet-v1.mjs
+node scripts/build-model-localnet-site.mjs --check
+```
+
 ## Publish
 
 `.github/workflows/web-pages.yml` rebuilds the WASM package, generates
-`web/results/` from checked-in result tables, tracked sample panels, and fast
-artifact probes, then deploys the static `web/` directory to GitHub Pages. The
-main CI workflow also runs the guarded results build so unsupported dashboard
-claims fail before publish.
+`web/results/` from checked-in result tables, checks the Forge publication
+specimen, and then deploys the static `web/` directory to GitHub Pages. The main
+CI workflow also runs the guarded results and Forge checks so unsupported claims
+fail before publish.
 
 1. Commit `web/`, `crates/nsrl-web-wasm/`, `Cargo.toml`, and `Cargo.lock`.
 2. Merge to `main` or `master`.

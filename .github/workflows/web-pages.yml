@@ -11,8 +11,17 @@ on:
       - "docs/assets/**"
       - "docs/solomon-*.tsv"
       - "data/processed/nsrl-mme-v0.json"
+      - "protocol/**"
+      - "scripts/build-model-launch-site.mjs"
+      - "scripts/build-model-localnet-site.mjs"
       - "scripts/build-pages-results.mjs"
+      - "scripts/check-model-launch-v1.mjs"
+      - "scripts/check-model-localnet-v1.mjs"
       - "scripts/check-solomon-attention-web-model-self-test.mjs"
+      - "scripts/lib/model-launch-v1.mjs"
+      - "scripts/lib/model-localnet-demo-v1.mjs"
+      - "scripts/lib/model-localnet-v1.mjs"
+      - "scripts/nsrl-model-localnet.mjs"
       - "scripts/check-solomon-attention-web-quality.mjs"
       - "scripts/probe-solomon-attention-body-start-rank.mjs"
       - "scripts/probe-solomon-attention-raw-rank.mjs"
@@ -56,6 +65,13 @@ jobs:
 
       - name: Check browser model compatibility
         run: node scripts/check-solomon-attention-web-model-self-test.mjs
+
+      - name: Check model launch protocol
+        run: |
+          node scripts/check-model-launch-v1.mjs
+          node scripts/build-model-launch-site.mjs --check
+          node scripts/check-model-localnet-v1.mjs
+          node scripts/build-model-localnet-site.mjs --check
 
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0

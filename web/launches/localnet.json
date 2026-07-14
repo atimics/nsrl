@@ -1,0 +1,1077 @@
+{
+  "schema": "nsrl.model_localnet_snapshot.v1",
+  "generated_at": "2026-07-13T00:00:00Z",
+  "notice": "Deterministic public test fixture · Ed25519 signatures · simulated credits · no wallet, custody, or financial value",
+  "launch_event_id": "567d003dfab689cbeca8df567f57903fd991d4f3c13c50160dc1553cd55d2317",
+  "candidate_event_id": "d68d64fd29426b3842824f331c28c74d14b80cbcb7e479fd85a31562c265bef2",
+  "summary": {
+    "schema": "nsrl.model_localnet_summary.v1",
+    "network": {
+      "id": "nsrl-model-localnet-v1",
+      "authority_account": "nsrl:authority:localnet",
+      "stage_quorum": 2,
+      "candidate_quorum": 3,
+      "full_replay_required": 1,
+      "initialized_event_id": "adb73a48128ca1e272f63e85e44224348f985d68f8b335d1d9e90e69e3c0f1b3"
+    },
+    "height": 31,
+    "head_sha256": "ab10b0a8562f35b216f94a70f9a84e9f24ed1090cbb704c971c39ffcdb74db4c",
+    "accounts": 10,
+    "launches": [
+      {
+        "id": "integer-transformer-proof-v1-localnet",
+        "status": "promoted",
+        "recipe_sha256": "5500366a4af1d7d2df58bad7aee25d8a6b9c4e50c60528d771e4a6287ae3ecaf",
+        "funded_bounties": 1,
+        "required_bounties": 1,
+        "accepted_stages": 3,
+        "required_stages": 3,
+        "candidate_event_id": "d68d64fd29426b3842824f331c28c74d14b80cbcb7e479fd85a31562c265bef2",
+        "publication_event_id": "4fae8c8319ae18f0d225f33262b7a9431705750fc2e2230798d5cd45d7612cca"
+      }
+    ],
+    "stage_submissions": 3,
+    "accepted_stages": 3,
+    "attestations": 9,
+    "challenges": {
+      "rejected": 1
+    },
+    "publications": 1,
+    "bounty_settlements": {
+      "integer-transformer-proof-v1-localnet": {
+        "beat-float-reference": {
+          "sponsor": "nsrl:sponsor:prototype",
+          "recipient": "nsrl:builder:integer-core",
+          "escrow_units": "120000",
+          "settled_units": "120000",
+          "refunded_units": "0"
+        }
+      }
+    },
+    "model_balances": {
+      "ITP1": {
+        "nsrl:builder:integer-core": "19200",
+        "nsrl:compute:graviton-pool": "22400",
+        "nsrl:validator:proof-v1": "12800",
+        "nsrl:sponsor:prototype": "6400",
+        "nsrl:treasury:public-goods": "3200"
+      }
+    },
+    "valid": true
+  },
+  "public_identities": [
+    {
+      "account": "nsrl:authority:localnet",
+      "public_key": "MCowBQYDK2VwAyEARHzRhePXouPUiwFWpjLWN2XB0Q8jcu8gjaI7Mtx0kFw=",
+      "authority": true
+    },
+    {
+      "account": "nsrl:lab:genesis",
+      "public_key": "MCowBQYDK2VwAyEALmY08/jZzuzeJeqvvpUyDIlfLQFZ/7two9gMAy4dLHQ=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:builder:integer-core",
+      "public_key": "MCowBQYDK2VwAyEAlQGlLj6dGOnGAAaBCFc8OXp4BZpeXDB5kJtvV3RPkQg=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:compute:graviton-pool",
+      "public_key": "MCowBQYDK2VwAyEAV/Bsm0DCRy6sn6DQoF+rnv5dIUOghSLh3a4E6XZdqXU=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:sponsor:prototype",
+      "public_key": "MCowBQYDK2VwAyEAgMv+SgrvdInbRK5V8Jjfg0m5rUhN9Fnm+OxoS4v3g8U=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:treasury:public-goods",
+      "public_key": "MCowBQYDK2VwAyEAI+BZRMumIQ0SW2TUBrXwOQNF2yhmxuq6ssXz1dHEUps=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:validator:proof-v1",
+      "public_key": "MCowBQYDK2VwAyEAICEeSb5wYGciMVBNSeLz5SMyehpnZcrtx2x5r0impKg=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:validator:replay-two",
+      "public_key": "MCowBQYDK2VwAyEAKO/M6iZUS5z/U8DlRi3D+lM2wwZlHfvMA+G6z+OlHBU=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:validator:replay-three",
+      "public_key": "MCowBQYDK2VwAyEA/b6vw3W/WpF8mkv+x/melQHnBP5F+DfWwcNDIJD6r1A=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:challenger:audit",
+      "public_key": "MCowBQYDK2VwAyEA5Drr3o95EfmH1I27pyx8eMdhbEMVnhOzMzpnoFeO9XE=",
+      "authority": false
+    }
+  ],
+  "events": [
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 0,
+      "previous_event_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "event_id": "adb73a48128ca1e272f63e85e44224348f985d68f8b335d1d9e90e69e3c0f1b3",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "network_initialized",
+        "actor": "nsrl:authority:localnet",
+        "public_key": "MCowBQYDK2VwAyEARHzRhePXouPUiwFWpjLWN2XB0Q8jcu8gjaI7Mtx0kFw=",
+        "payload": {
+          "network_id": "nsrl-model-localnet-v1",
+          "authority_account": "nsrl:authority:localnet",
+          "authority_public_key": "MCowBQYDK2VwAyEARHzRhePXouPUiwFWpjLWN2XB0Q8jcu8gjaI7Mtx0kFw=",
+          "stage_quorum": 2,
+          "candidate_quorum": 3,
+          "full_replay_required": 1
+        },
+        "signature": "EgUmuwqnEv8rCvdOeoOpQy8sz7YcII+Oz9q+vwQgqtMWlLig5zE5j27HKOgNY+eKmJ3jzcFNtnoTeKnd/1SuBg=="
+      },
+      "event_sha256": "b536a4be881927d50e852c05f5744b5ae26a950e627e7c8092ba099fba5551f5"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 1,
+      "previous_event_sha256": "b536a4be881927d50e852c05f5744b5ae26a950e627e7c8092ba099fba5551f5",
+      "event_id": "61003591eb646761b1647b12d071330bed259ac8b02be7233ffc6a5daa912c53",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:lab:genesis",
+        "public_key": "MCowBQYDK2VwAyEALmY08/jZzuzeJeqvvpUyDIlfLQFZ/7two9gMAy4dLHQ=",
+        "payload": {
+          "account": "nsrl:lab:genesis",
+          "public_key": "MCowBQYDK2VwAyEALmY08/jZzuzeJeqvvpUyDIlfLQFZ/7two9gMAy4dLHQ="
+        },
+        "signature": "GhFlpw/Vqp557LfYXC+w1+0FIT8OF8lWVxGGYFYqR0On/uhNmmEUKSC4jqf/YdDLh1eVd4Zmut3u2tG3ZbL5Aw=="
+      },
+      "event_sha256": "d35521d18360cd386261e3d2c1517b54461e922b9c586c92aa2261d096f3bd2e"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 2,
+      "previous_event_sha256": "d35521d18360cd386261e3d2c1517b54461e922b9c586c92aa2261d096f3bd2e",
+      "event_id": "ba561ff73258aa68ddf2a3bf17a0769f635555c7a38813529f32581031fb5591",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:builder:integer-core",
+        "public_key": "MCowBQYDK2VwAyEAlQGlLj6dGOnGAAaBCFc8OXp4BZpeXDB5kJtvV3RPkQg=",
+        "payload": {
+          "account": "nsrl:builder:integer-core",
+          "public_key": "MCowBQYDK2VwAyEAlQGlLj6dGOnGAAaBCFc8OXp4BZpeXDB5kJtvV3RPkQg="
+        },
+        "signature": "Ap7COsqybQAeTqoD+J9lizwkStGlEby2TXXFmfusRxhTlQIZqgXYjwpcIPoN1EadMFW1Kglhvh0iWyb/dnmxDw=="
+      },
+      "event_sha256": "60e3ca7cec7628da48ef406c1d08b56e40f8ea652dbeebe0ef88cfc82e213a69"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 3,
+      "previous_event_sha256": "60e3ca7cec7628da48ef406c1d08b56e40f8ea652dbeebe0ef88cfc82e213a69",
+      "event_id": "f8abb0f974829e5afd7a8582a99a19c1169cdcc2354d75af252cc83349357d7a",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:compute:graviton-pool",
+        "public_key": "MCowBQYDK2VwAyEAV/Bsm0DCRy6sn6DQoF+rnv5dIUOghSLh3a4E6XZdqXU=",
+        "payload": {
+          "account": "nsrl:compute:graviton-pool",
+          "public_key": "MCowBQYDK2VwAyEAV/Bsm0DCRy6sn6DQoF+rnv5dIUOghSLh3a4E6XZdqXU="
+        },
+        "signature": "tjC9YFTwlSDK+tvvKeVjNfCKBrBLokdguou1JfH26ASvR9ufIKaltwhbcbSlBQXmiGwPMPo35O3eI1m3LUlECA=="
+      },
+      "event_sha256": "6c956b79af6d63a59a931809002c052f40f1fd50e0df8ad5d6ea29b565d7a1a0"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 4,
+      "previous_event_sha256": "6c956b79af6d63a59a931809002c052f40f1fd50e0df8ad5d6ea29b565d7a1a0",
+      "event_id": "9c55fdfc466ed0e0104d517ad4a565206ce531fb7d3bac1f31220f8ed76bac0c",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:sponsor:prototype",
+        "public_key": "MCowBQYDK2VwAyEAgMv+SgrvdInbRK5V8Jjfg0m5rUhN9Fnm+OxoS4v3g8U=",
+        "payload": {
+          "account": "nsrl:sponsor:prototype",
+          "public_key": "MCowBQYDK2VwAyEAgMv+SgrvdInbRK5V8Jjfg0m5rUhN9Fnm+OxoS4v3g8U="
+        },
+        "signature": "49QU+NwgaYZRGMnRj07pWI8/vPr4mkSGc18y236Wn5XlD8W5EGjJ30BTQOcConXj8YOpQ/rqMOc5xiOiSwI3CQ=="
+      },
+      "event_sha256": "5f1d7b2cdbe3ba81eecfe84c9750d1c20ee81b2d02e56d77e53eb3710e5a8ba8"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 5,
+      "previous_event_sha256": "5f1d7b2cdbe3ba81eecfe84c9750d1c20ee81b2d02e56d77e53eb3710e5a8ba8",
+      "event_id": "bcf254163d6a64075562b66914085eca31ac6e07177009eb321de6197ba1b717",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:treasury:public-goods",
+        "public_key": "MCowBQYDK2VwAyEAI+BZRMumIQ0SW2TUBrXwOQNF2yhmxuq6ssXz1dHEUps=",
+        "payload": {
+          "account": "nsrl:treasury:public-goods",
+          "public_key": "MCowBQYDK2VwAyEAI+BZRMumIQ0SW2TUBrXwOQNF2yhmxuq6ssXz1dHEUps="
+        },
+        "signature": "4eRM7kcvfXN+2VkM45OoBMQFPUq6UEoGYqnrpXYd9rtujc0iS8vDsJxi/VtyqZaG1a6E+IO3SNUdoQUuxY4UAg=="
+      },
+      "event_sha256": "579d029046bfc50a21b71a36af46a2242585214e12bfffed3e9f7ea30b6225d2"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 6,
+      "previous_event_sha256": "579d029046bfc50a21b71a36af46a2242585214e12bfffed3e9f7ea30b6225d2",
+      "event_id": "8748316ee9098a0aa875d73fd495b46807d532423bfbdae6bccca25a1faa149c",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:validator:proof-v1",
+        "public_key": "MCowBQYDK2VwAyEAICEeSb5wYGciMVBNSeLz5SMyehpnZcrtx2x5r0impKg=",
+        "payload": {
+          "account": "nsrl:validator:proof-v1",
+          "public_key": "MCowBQYDK2VwAyEAICEeSb5wYGciMVBNSeLz5SMyehpnZcrtx2x5r0impKg="
+        },
+        "signature": "EP8X+6Gj14IVu1nnkLMK8YKsYY0Kaii+zmrXdWbjZmr7HjopDzdrjPsPrPgQqJ0DRi0t61dZRuQKRPcFRMtxDA=="
+      },
+      "event_sha256": "ed9ee4d73e77cc7f942faf667d1325e5cf38d0da4354ef057cb27bb3f8cff114"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 7,
+      "previous_event_sha256": "ed9ee4d73e77cc7f942faf667d1325e5cf38d0da4354ef057cb27bb3f8cff114",
+      "event_id": "741d1388b361f800bc65d856b44a9de3245693fcdfd50878961c755077fa7898",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:validator:replay-two",
+        "public_key": "MCowBQYDK2VwAyEAKO/M6iZUS5z/U8DlRi3D+lM2wwZlHfvMA+G6z+OlHBU=",
+        "payload": {
+          "account": "nsrl:validator:replay-two",
+          "public_key": "MCowBQYDK2VwAyEAKO/M6iZUS5z/U8DlRi3D+lM2wwZlHfvMA+G6z+OlHBU="
+        },
+        "signature": "3RuGNAV18q4itXmOWEB3YiMdS3JcN1+nt8x67SUFCe9Kd+TY+FW4Foh8nGyAwCjDDCCZfJ4ffRcIJEIcoJk9Dg=="
+      },
+      "event_sha256": "fa13a167cca4fc9963cd261b54bfddc2c2a4ae0a8c607656eee029e027ebe796"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 8,
+      "previous_event_sha256": "fa13a167cca4fc9963cd261b54bfddc2c2a4ae0a8c607656eee029e027ebe796",
+      "event_id": "59882e49e3ee414e1b8720073a3a6eff52569036c7f041f906c0b03959bb80b7",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:validator:replay-three",
+        "public_key": "MCowBQYDK2VwAyEA/b6vw3W/WpF8mkv+x/melQHnBP5F+DfWwcNDIJD6r1A=",
+        "payload": {
+          "account": "nsrl:validator:replay-three",
+          "public_key": "MCowBQYDK2VwAyEA/b6vw3W/WpF8mkv+x/melQHnBP5F+DfWwcNDIJD6r1A="
+        },
+        "signature": "SxZb2hoRsSXinB3BAx+GYI03Efnykzt6Idkg64BNhCWFPUzW5TII87BKfMPiRJAlcMuSBiZApe2T9ye6kovoBQ=="
+      },
+      "event_sha256": "184c33cd64a01eeb6a9da31669fb16efca3c6ac27349146eba685d09cf663b7e"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 9,
+      "previous_event_sha256": "184c33cd64a01eeb6a9da31669fb16efca3c6ac27349146eba685d09cf663b7e",
+      "event_id": "6a6b2b05d4a1020c751eab6258b3ea0b54f1a9612311d50779413cc4a4b36c09",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:challenger:audit",
+        "public_key": "MCowBQYDK2VwAyEA5Drr3o95EfmH1I27pyx8eMdhbEMVnhOzMzpnoFeO9XE=",
+        "payload": {
+          "account": "nsrl:challenger:audit",
+          "public_key": "MCowBQYDK2VwAyEA5Drr3o95EfmH1I27pyx8eMdhbEMVnhOzMzpnoFeO9XE="
+        },
+        "signature": "VLtNUD8xOhfLPEQnrAIHrP1rI42Pn/05QCDFyC3ch8Y9yILha2zqEN+wYrIaMsZGmM3Mk2EowdW1AhQAl9K4DQ=="
+      },
+      "event_sha256": "0ae2aa560c5bfb907be874f4479a697b4201da788f7d6dea9a7b291c5569d393"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 10,
+      "previous_event_sha256": "0ae2aa560c5bfb907be874f4479a697b4201da788f7d6dea9a7b291c5569d393",
+      "event_id": "567d003dfab689cbeca8df567f57903fd991d4f3c13c50160dc1553cd55d2317",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "launch_published",
+        "actor": "nsrl:lab:genesis",
+        "public_key": "MCowBQYDK2VwAyEALmY08/jZzuzeJeqvvpUyDIlfLQFZ/7two9gMAy4dLHQ=",
+        "payload": {
+          "recipe_sha256": "5500366a4af1d7d2df58bad7aee25d8a6b9c4e50c60528d771e4a6287ae3ecaf",
+          "recipe": {
+            "schema": "nsrl.model_launch_recipe.v1",
+            "launch": {
+              "id": "integer-transformer-proof-v1-localnet",
+              "title": "Integer Transformer Proof v1 · signed localnet",
+              "summary": "Re-run the frozen integer-transformer model launch through signed funding, compute, validation, challenge, and publication events.",
+              "network": "nsrl-model-localnet-v1",
+              "mode": "test",
+              "status": "open",
+              "published_at": "2026-07-13T00:00:00Z"
+            },
+            "proposer": {
+              "account": "nsrl:lab:genesis",
+              "bond_units": "25000"
+            },
+            "participants": {
+              "builder": "nsrl:builder:integer-core",
+              "compute": "nsrl:compute:graviton-pool",
+              "validator": "nsrl:validator:proof-v1",
+              "sponsor": "nsrl:sponsor:prototype",
+              "treasury": "nsrl:treasury:public-goods"
+            },
+            "model": {
+              "family": "NSRLMT5",
+              "artifact_format": "NSRLMT5",
+              "architecture_profile": "small-h8-d128-ff256",
+              "tokenizer_contract": "byte-v1",
+              "parent_model_hash": null,
+              "max_artifact_bytes": "600000"
+            },
+            "source": {
+              "repository": "https://github.com/atimics/nsrl",
+              "commit": "745e7750bb4cc3d666f5c749e7465afad11cc664",
+              "evaluator_sha256": "d8e951c9701dd6c331104bcf85a5164502bf721f2d59ed5b4dda03de6bbd1ff0"
+            },
+            "dataset": {
+              "contract": "integer-transformer-proof-v1",
+              "dataset_hash": "0x8fe7b86378f81951",
+              "manifest": "benchmarks/integer-transformer-proof-v1/manifest.tsv",
+              "heldout_targets": 5896
+            },
+            "run": {
+              "max_compute_units": "4096",
+              "compute_unit": "normalized-cpu-unit",
+              "stages": [
+                {
+                  "id": "train-candidate",
+                  "command": "scripts/run-integer-transformer-proof-candidate.sh data/experiments/integer-transformer-proof-v1/candidate-default",
+                  "compute_units": "3072"
+                },
+                {
+                  "id": "evaluate-candidate",
+                  "command": "cargo run -p nsrl-eval -- check --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv --results data/experiments/integer-transformer-proof-v1/candidate-default/proof-results.tsv",
+                  "compute_units": "768"
+                },
+                {
+                  "id": "freeze-publication",
+                  "command": "node scripts/freeze-integer-transformer-proof-candidate.mjs --check",
+                  "compute_units": "256"
+                }
+              ]
+            },
+            "bounties": [
+              {
+                "id": "beat-float-reference",
+                "sponsor": "nsrl:sponsor:prototype",
+                "escrow_units": "120000",
+                "metric": "probability_error_q15",
+                "direction": "minimize",
+                "baseline": "363650570",
+                "target": "350000000",
+                "payout": {
+                  "kind": "linear-with-promotion-bonus",
+                  "promotion_bonus_bps": 2500
+                },
+                "guardrails": [
+                  {
+                    "metric": "mistakes",
+                    "operator": "lte",
+                    "value": "3226"
+                  },
+                  {
+                    "metric": "unique_predicted_tokens",
+                    "operator": "gte",
+                    "value": "8"
+                  },
+                  {
+                    "metric": "rejected_batches",
+                    "operator": "eq",
+                    "value": "0"
+                  }
+                ]
+              }
+            ],
+            "promotion": {
+              "contract": "integer-transformer-proof-v1",
+              "checker_command": "cargo run -p nsrl-eval -- check --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv --results data/experiments/integer-transformer-proof-v1/candidate-default/proof-results.tsv",
+              "checker_sha256": "d8e951c9701dd6c331104bcf85a5164502bf721f2d59ed5b4dda03de6bbd1ff0",
+              "valid_exit_code": 0
+            },
+            "rewards": {
+              "asset": {
+                "symbol": "ITP1",
+                "name": "Integer Transformer Proof Credits",
+                "decimals": 0,
+                "max_supply_units": "1000000",
+                "transferability": "disabled-v1",
+                "utility": [
+                  "sponsor successor model runs",
+                  "redeem prototype inference quotas",
+                  "signal participation without controlling promotion"
+                ]
+              },
+              "emission": {
+                "initial_block_reward_units": "32000",
+                "halving_interval_blocks": 8,
+                "minimum_block_reward_units": "1000",
+                "event_multipliers_bps": {
+                  "launch_published": 2500,
+                  "stage_accepted": 5000,
+                  "candidate_valid": 10000,
+                  "independent_replay": 5000,
+                  "model_promoted": 20000
+                }
+              },
+              "allocation_bps": {
+                "builder": 3000,
+                "compute": 3500,
+                "validator": 2000,
+                "sponsor": 1000,
+                "treasury": 500
+              }
+            },
+            "publication": null
+          }
+        },
+        "signature": "ntS2FEfiQgXwWBNumobh5N1G6ErkRkBD6PtY+mlESpIdUvpDrQScgQyImnH3rSVmjlCaCIWbMUcY6uQ45x36BA=="
+      },
+      "event_sha256": "d7ad9d0c02ac77feaaa2c47d93d985837744950a6177d46c82e7325629405c2b"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 11,
+      "previous_event_sha256": "d7ad9d0c02ac77feaaa2c47d93d985837744950a6177d46c82e7325629405c2b",
+      "event_id": "cebe6306e81920e596ce83fcd6c36695fe5177fd42eb6fdcacaff9460601d2d0",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "bounty_funded",
+        "actor": "nsrl:sponsor:prototype",
+        "public_key": "MCowBQYDK2VwAyEAgMv+SgrvdInbRK5V8Jjfg0m5rUhN9Fnm+OxoS4v3g8U=",
+        "payload": {
+          "launch_id": "integer-transformer-proof-v1-localnet",
+          "bounty_id": "beat-float-reference",
+          "escrow_units": "120000"
+        },
+        "signature": "7v9hGjeZlE6tSFmGOgNoX23lv9bICcQj3fIhTALI1y4oW8m4hPavZ84fnnCOslN2BG5nkK83tqTRhTTxael4CQ=="
+      },
+      "event_sha256": "1da6dcf351e8e49398739d6dd705a47394a5a2565ad370bf52e982e58e84d3f9"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 12,
+      "previous_event_sha256": "1da6dcf351e8e49398739d6dd705a47394a5a2565ad370bf52e982e58e84d3f9",
+      "event_id": "8d4c295fe78e5cd37e9476fc518c8f5ff42ac5d69a7b07db9a507840a09e6bef",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "stage_submitted",
+        "actor": "nsrl:compute:graviton-pool",
+        "public_key": "MCowBQYDK2VwAyEAV/Bsm0DCRy6sn6DQoF+rnv5dIUOghSLh3a4E6XZdqXU=",
+        "payload": {
+          "launch_id": "integer-transformer-proof-v1-localnet",
+          "stage_id": "train-candidate",
+          "input_sha256": "27379c218f1709f4e1a3c16341fdbab96fa1ef3a58a7d93ab1b0fea9637c9423",
+          "output_sha256": "deeef077b6a42b14baf794531f33eddd8f2aadcd9145ce1e658200cada1f8d78",
+          "evidence_sha256": "7b7b4f086ea65c91ab19f3af9c10ff37442dc74a5ffd488fcf764c9d503083bb",
+          "compute_units": "3072"
+        },
+        "signature": "NXvLZIeddidfC1odGSCB2ASJP41K7IcRs7r/l0WUB2jM1lzxaDszK42N03AbjKzFVlbsDwM7+2XgjoVcKaDECw=="
+      },
+      "event_sha256": "616841b9d5ba70377c980398b5dd2c82c1b37db31137b9e7fe29b62b34249885"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 13,
+      "previous_event_sha256": "616841b9d5ba70377c980398b5dd2c82c1b37db31137b9e7fe29b62b34249885",
+      "event_id": "79c472f94a0bc70e35c2a18cd31f76f107a6deb1fc85f925ac1c0651afac2988",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:proof-v1",
+        "public_key": "MCowBQYDK2VwAyEAICEeSb5wYGciMVBNSeLz5SMyehpnZcrtx2x5r0impKg=",
+        "payload": {
+          "subject_type": "stage",
+          "subject_event_id": "8d4c295fe78e5cd37e9476fc518c8f5ff42ac5d69a7b07db9a507840a09e6bef",
+          "verdict": "valid",
+          "check_mode": "artifact_check",
+          "evidence_sha256": "1a5ad620847dc042bc47fb0b3fac03d6dafe3a8d53dc4018ce57c4cd55413fc5"
+        },
+        "signature": "7bzefm8cB2mPnHVnMateiOL0yXJEdS8w5lj+qx4WhTq9W1Me3rl7nbQoHNzAsGbBFoiE0aYmH8qWWfIdONKkDQ=="
+      },
+      "event_sha256": "bd5ddcc4e04fb980cac50bf877429882f99a1ca0f1318607b2fcb4c869203548"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 14,
+      "previous_event_sha256": "bd5ddcc4e04fb980cac50bf877429882f99a1ca0f1318607b2fcb4c869203548",
+      "event_id": "cfe5ffbbb11eb2a50d786c32c8ad3a006216767a6b16758b159eba224a13d68f",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:replay-two",
+        "public_key": "MCowBQYDK2VwAyEAKO/M6iZUS5z/U8DlRi3D+lM2wwZlHfvMA+G6z+OlHBU=",
+        "payload": {
+          "subject_type": "stage",
+          "subject_event_id": "8d4c295fe78e5cd37e9476fc518c8f5ff42ac5d69a7b07db9a507840a09e6bef",
+          "verdict": "valid",
+          "check_mode": "full_replay",
+          "evidence_sha256": "f6ac6e8ec4687b164e8d9976fc1eb04430194d1a8c06f12c5f111081c29bbe68"
+        },
+        "signature": "ZMYCKRlXNF1Au1PpKBcIisaVcMuox7kuSlRTxvx79d+Dfyb1ZiSaJqoEQLbi+sGg/vLMil0h9MOzU0t8xn4dDw=="
+      },
+      "event_sha256": "7f0edc31925637292af3985151980a596b052d653e1955b1385865ce1f50890d"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 15,
+      "previous_event_sha256": "7f0edc31925637292af3985151980a596b052d653e1955b1385865ce1f50890d",
+      "event_id": "4fa5096832ee6e3ac50ffb81180b3203559c0fa2b40f33f6f28858164411b30a",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "challenge_opened",
+        "actor": "nsrl:challenger:audit",
+        "public_key": "MCowBQYDK2VwAyEA5Drr3o95EfmH1I27pyx8eMdhbEMVnhOzMzpnoFeO9XE=",
+        "payload": {
+          "subject_type": "stage",
+          "subject_event_id": "8d4c295fe78e5cd37e9476fc518c8f5ff42ac5d69a7b07db9a507840a09e6bef",
+          "reason": "Confirm the submitted compute ceiling against the frozen recipe.",
+          "evidence_sha256": "f8a4a73f0123aefc0cabe9778e4ba0bfb90b9ebc9e885b8506fa40a2965b5e29"
+        },
+        "signature": "IgUBDSFPOi81ikfly+ijBtrDDbTZlMQCLuavM8eDh9pYHRjDew6ywfELG2ZEU3Ji+4Yfnc/PLkcNzNoYsC9WAw=="
+      },
+      "event_sha256": "b3fc111804fd183607341b97ca9ae14b395ef03b1acb28e5c85d9d9458aec4f9"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 16,
+      "previous_event_sha256": "b3fc111804fd183607341b97ca9ae14b395ef03b1acb28e5c85d9d9458aec4f9",
+      "event_id": "7f647c4a52bd55697f424324a90e1585362136c4f6ba3f51b58cdb892416590d",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "challenge_resolved",
+        "actor": "nsrl:authority:localnet",
+        "public_key": "MCowBQYDK2VwAyEARHzRhePXouPUiwFWpjLWN2XB0Q8jcu8gjaI7Mtx0kFw=",
+        "payload": {
+          "challenge_event_id": "4fa5096832ee6e3ac50ffb81180b3203559c0fa2b40f33f6f28858164411b30a",
+          "outcome": "rejected",
+          "evidence_sha256": "7b5686507e2e938385ecbe52d1245427b9ab460f61f6d7f363c08eaee66f13fc"
+        },
+        "signature": "iXfPa9HZIfEDXHUNBIYIxcJBxtbveTNUuz4yK1xU7CyW9e0JaRsUZtJfZmAU7wryRngOswvwvR6k4aPs5nb9BA=="
+      },
+      "event_sha256": "e9995f428d986c155b22ab4254ceec01182130df11b07948c3633d6cfdb0e1e8"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 17,
+      "previous_event_sha256": "e9995f428d986c155b22ab4254ceec01182130df11b07948c3633d6cfdb0e1e8",
+      "event_id": "2a5085fe0c6fd0b4c55bc9668cf8051356897a07b7b9f00af3624f616b0b4935",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "stage_accepted",
+        "actor": "nsrl:authority:localnet",
+        "public_key": "MCowBQYDK2VwAyEARHzRhePXouPUiwFWpjLWN2XB0Q8jcu8gjaI7Mtx0kFw=",
+        "payload": {
+          "stage_event_id": "8d4c295fe78e5cd37e9476fc518c8f5ff42ac5d69a7b07db9a507840a09e6bef"
+        },
+        "signature": "HkvK/TNSbrmJiHJvRIXJ+EJaC6lmPJr+EMw3xc64ffwcpEfYBcluFOPXwsAbz+wBsRZbSBhJPLqrOQ6BJJ5rCA=="
+      },
+      "event_sha256": "e64ed764a0d8ae837d8760b8387754549bd0f02c41989848fd34a0872cd1a9b6"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 18,
+      "previous_event_sha256": "e64ed764a0d8ae837d8760b8387754549bd0f02c41989848fd34a0872cd1a9b6",
+      "event_id": "039f138cd19ac122adff3aff5441c073a74b9cc5fe6598c76285d550e0304c54",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "stage_submitted",
+        "actor": "nsrl:compute:graviton-pool",
+        "public_key": "MCowBQYDK2VwAyEAV/Bsm0DCRy6sn6DQoF+rnv5dIUOghSLh3a4E6XZdqXU=",
+        "payload": {
+          "launch_id": "integer-transformer-proof-v1-localnet",
+          "stage_id": "evaluate-candidate",
+          "input_sha256": "9876dd79121ad56db5be0b4a0eb21b66be2efe323d1e4fa480eb23756de62899",
+          "output_sha256": "3aeab4ba79667de10885551282bf107c38422d7ee3361d3337d61f43a68f379d",
+          "evidence_sha256": "f9e4a0fa8fb8451b8e80569e6d26694dc3ce40512d0640f7401ad93d543b2977",
+          "compute_units": "768"
+        },
+        "signature": "gLUyoSt7CYwcZQSCkY3n/yfv+NSEvKLnKITDHpjQCaq+87FA1yaJP7rz8GHyBOi7SZl6yJzDreqfQqLm3XveCA=="
+      },
+      "event_sha256": "0c96f3d94981ca86336674881ecffab72102a8c346d9b6a09b63d9b27c4debdc"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 19,
+      "previous_event_sha256": "0c96f3d94981ca86336674881ecffab72102a8c346d9b6a09b63d9b27c4debdc",
+      "event_id": "36c75a3eda5749fb79c6da76358c731ebf908a7067ef6d12982dbdca985f3096",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:proof-v1",
+        "public_key": "MCowBQYDK2VwAyEAICEeSb5wYGciMVBNSeLz5SMyehpnZcrtx2x5r0impKg=",
+        "payload": {
+          "subject_type": "stage",
+          "subject_event_id": "039f138cd19ac122adff3aff5441c073a74b9cc5fe6598c76285d550e0304c54",
+          "verdict": "valid",
+          "check_mode": "artifact_check",
+          "evidence_sha256": "5ccd84c02dcaaa019045010987a2d73a61430001c775794065ef0bddde94816d"
+        },
+        "signature": "06C5vy5oEWiY0WCGiFNKvS//D5pa5whVkD7UPllgY5h9Sk6sFH4teGoSSUfyPTDxVviMCq5nC/XmCTaS+OnWAA=="
+      },
+      "event_sha256": "f5869d96b459de97f9eb88918e5f91cbd10b683e6a1200ee6d18e900def49f4b"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 20,
+      "previous_event_sha256": "f5869d96b459de97f9eb88918e5f91cbd10b683e6a1200ee6d18e900def49f4b",
+      "event_id": "bf59276c9d1ae44103516bd6c78e86aefa3f09e33dd11febc107990212d2d6bc",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:replay-two",
+        "public_key": "MCowBQYDK2VwAyEAKO/M6iZUS5z/U8DlRi3D+lM2wwZlHfvMA+G6z+OlHBU=",
+        "payload": {
+          "subject_type": "stage",
+          "subject_event_id": "039f138cd19ac122adff3aff5441c073a74b9cc5fe6598c76285d550e0304c54",
+          "verdict": "valid",
+          "check_mode": "artifact_check",
+          "evidence_sha256": "c0b121b5cd06dd904d98b4c8215c6158489b9650e4d6e108e6db2ad41299975a"
+        },
+        "signature": "gjtktYOEw/NSDbsU7H0rd4vBPREAbWLTvGF+NaRCpKaH4n2HKJognQwVX3mI7rhrSL4sacoZZtqK66UyBWcNCw=="
+      },
+      "event_sha256": "7896627727363829ca73f82b52bf9d81972441976f940a5aa2db596e43fde6c7"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 21,
+      "previous_event_sha256": "7896627727363829ca73f82b52bf9d81972441976f940a5aa2db596e43fde6c7",
+      "event_id": "391226399aba0c33883e73684def361b9dbf10e2a677687f602ecdd1025fb048",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "stage_accepted",
+        "actor": "nsrl:authority:localnet",
+        "public_key": "MCowBQYDK2VwAyEARHzRhePXouPUiwFWpjLWN2XB0Q8jcu8gjaI7Mtx0kFw=",
+        "payload": {
+          "stage_event_id": "039f138cd19ac122adff3aff5441c073a74b9cc5fe6598c76285d550e0304c54"
+        },
+        "signature": "+AkO4FgAn7bpLsq7En18SqFuQM/AuX13ye69Dtal4NmkmOKEauuTYT28Bd1s2bzaon16Ukvgr+7mp2W+XcWpBQ=="
+      },
+      "event_sha256": "050f3b0247000881f05d2cc34db67f7637242e0daa7b65dbb656df37cb999f7b"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 22,
+      "previous_event_sha256": "050f3b0247000881f05d2cc34db67f7637242e0daa7b65dbb656df37cb999f7b",
+      "event_id": "4f90103365da163bf81b0677962effa265a57bf5c272a0f629b6decd46bafc47",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "stage_submitted",
+        "actor": "nsrl:compute:graviton-pool",
+        "public_key": "MCowBQYDK2VwAyEAV/Bsm0DCRy6sn6DQoF+rnv5dIUOghSLh3a4E6XZdqXU=",
+        "payload": {
+          "launch_id": "integer-transformer-proof-v1-localnet",
+          "stage_id": "freeze-publication",
+          "input_sha256": "d1544e805c8f7040f381c13f0442fef18c84aa26c83b2a45f1c09aad3c38b1ec",
+          "output_sha256": "422dba7a5188eeee5581512f25b483f5f38bc7b9a5962f156303eacab5f4e851",
+          "evidence_sha256": "2801cfb1f58a025f1b47ef04e8fed1bb7c1e50b6e878b125c868de69b957c658",
+          "compute_units": "256"
+        },
+        "signature": "iMsCAlpX9hrTTUOydnbfq7XTATyJaOn+qV9JVIdfaLmjhJD/r5430qID5lkmO9F4uOg/ZBHXS1RjLA0bbSpACg=="
+      },
+      "event_sha256": "ab532bde40b9847f779d45a6cc7840e753c570efce240a3b7da488bdcacac00a"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 23,
+      "previous_event_sha256": "ab532bde40b9847f779d45a6cc7840e753c570efce240a3b7da488bdcacac00a",
+      "event_id": "5a26afc9a168278c84eb46c31e9e509e559c4f1b54430e186543e63f031c83e0",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:proof-v1",
+        "public_key": "MCowBQYDK2VwAyEAICEeSb5wYGciMVBNSeLz5SMyehpnZcrtx2x5r0impKg=",
+        "payload": {
+          "subject_type": "stage",
+          "subject_event_id": "4f90103365da163bf81b0677962effa265a57bf5c272a0f629b6decd46bafc47",
+          "verdict": "valid",
+          "check_mode": "artifact_check",
+          "evidence_sha256": "a043e64e8a81342a1d9a6a62fcd5920d849e8115765103e14ea08bc24a03cbb4"
+        },
+        "signature": "fksQQuheQO8ttUXvBZIkR34Ba7A8dsYAnHkws4+Xco70oUgl24+qLDNhfHVj2Uxw1jddsOuvnlXvBvQxTKfcCw=="
+      },
+      "event_sha256": "ff6d92684f58041e8110155f8ea8b9237c43960510f670d6e54bbfb8c0fdbe55"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 24,
+      "previous_event_sha256": "ff6d92684f58041e8110155f8ea8b9237c43960510f670d6e54bbfb8c0fdbe55",
+      "event_id": "d504f8bc7f9844e27c186f94ec0b69ed81eeb54fc9b82bc2020b971c1edff7be",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:replay-two",
+        "public_key": "MCowBQYDK2VwAyEAKO/M6iZUS5z/U8DlRi3D+lM2wwZlHfvMA+G6z+OlHBU=",
+        "payload": {
+          "subject_type": "stage",
+          "subject_event_id": "4f90103365da163bf81b0677962effa265a57bf5c272a0f629b6decd46bafc47",
+          "verdict": "valid",
+          "check_mode": "artifact_check",
+          "evidence_sha256": "be08734df81f0b65326001602db3271df76820eada7f7bbffb16a132ed626919"
+        },
+        "signature": "T0k5HmYlIRs7l5D6eqACZdjff4VyHdCRnMIK5LWeenYuWydBUIHxAKnOJmnMclewg4YlmyvO1HebyE86oYUIBg=="
+      },
+      "event_sha256": "b67099fee6db149a80fd09db3386bb1c3885882dad6d15e9a4de12368e168f17"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 25,
+      "previous_event_sha256": "b67099fee6db149a80fd09db3386bb1c3885882dad6d15e9a4de12368e168f17",
+      "event_id": "4bc622b2a39264509a1599a20fc502d2103834fd999b2fee95f0d053264e4fec",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "stage_accepted",
+        "actor": "nsrl:authority:localnet",
+        "public_key": "MCowBQYDK2VwAyEARHzRhePXouPUiwFWpjLWN2XB0Q8jcu8gjaI7Mtx0kFw=",
+        "payload": {
+          "stage_event_id": "4f90103365da163bf81b0677962effa265a57bf5c272a0f629b6decd46bafc47"
+        },
+        "signature": "tvGVD07hAwQ9iZkIEZBO1Jwu1P9JOStPIINHqL4/zO59nJAWxUUTnYvPW8TBNalfzOzmvR0e3GzU52gQTNTVBQ=="
+      },
+      "event_sha256": "93bb2cdab9a77a88f50e0bc91f05524b39006541b8f84674a950dd75feae688d"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 26,
+      "previous_event_sha256": "93bb2cdab9a77a88f50e0bc91f05524b39006541b8f84674a950dd75feae688d",
+      "event_id": "d68d64fd29426b3842824f331c28c74d14b80cbcb7e479fd85a31562c265bef2",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "candidate_submitted",
+        "actor": "nsrl:builder:integer-core",
+        "public_key": "MCowBQYDK2VwAyEAlQGlLj6dGOnGAAaBCFc8OXp4BZpeXDB5kJtvV3RPkQg=",
+        "payload": {
+          "launch_id": "integer-transformer-proof-v1-localnet",
+          "model_hash": "0x6ffd37de48a3121b",
+          "artifact_sha256": "37acae6a4f763182730c76f762c351eda5bb37d6d197358c252733b1f08dca10",
+          "artifact_path": "data/experiments/integer-transformer-proof-v1/candidate-default/candidate.nsrlmt",
+          "proof_sha256": "f3fddde409aa3d623ee55a5253aad42be2e90b7f2990a7c039437a1c571079d4",
+          "metrics": {
+            "targets": "5896",
+            "mistakes": "2482",
+            "probability_error_q15": "260536589",
+            "unique_predicted_tokens": "41",
+            "most_predicted_token_share_per_mille": "179",
+            "rejected_batches": "0"
+          }
+        },
+        "signature": "6Loox2AqrXXoCxnw+NIN+h8uW0YOsTZmtZPjSMItZjHfJuQYzVyqU/1u8LK5U4DFNC6H2XNd4oAbpsKkinbbBg=="
+      },
+      "event_sha256": "b88ccd785d45bff986d4084d6f772e18488b9e859ef744c86602cd5645b1f704"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 27,
+      "previous_event_sha256": "b88ccd785d45bff986d4084d6f772e18488b9e859ef744c86602cd5645b1f704",
+      "event_id": "0f0e181af4ffe98e342ffa73ffcf840cffeacbfa196ccaf4072bbdb9b0f06a1d",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:proof-v1",
+        "public_key": "MCowBQYDK2VwAyEAICEeSb5wYGciMVBNSeLz5SMyehpnZcrtx2x5r0impKg=",
+        "payload": {
+          "subject_type": "candidate",
+          "subject_event_id": "d68d64fd29426b3842824f331c28c74d14b80cbcb7e479fd85a31562c265bef2",
+          "verdict": "valid",
+          "check_mode": "full_replay",
+          "evidence_sha256": "be14e889c80b98eeb92cac1d770be93bf0e66a4e2b37d1fb1d0bd4f5e7cda73a"
+        },
+        "signature": "2/oo84fdL+vNiOJVa2cV757d/DrE1UDrz4TlceqWH/7WyC+fG9UQSY3QghgInI4WsjnyHCT49ue6YHzamO2nBQ=="
+      },
+      "event_sha256": "7e5cef8f9bbede3956519a1ed9c11a5cf1691362ef5059ac02c48d2a8746bbd6"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 28,
+      "previous_event_sha256": "7e5cef8f9bbede3956519a1ed9c11a5cf1691362ef5059ac02c48d2a8746bbd6",
+      "event_id": "b20097e718de7e4ec2c779137a3ce2c17a3b813acaa2232dddc1776d1ed761ab",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:replay-two",
+        "public_key": "MCowBQYDK2VwAyEAKO/M6iZUS5z/U8DlRi3D+lM2wwZlHfvMA+G6z+OlHBU=",
+        "payload": {
+          "subject_type": "candidate",
+          "subject_event_id": "d68d64fd29426b3842824f331c28c74d14b80cbcb7e479fd85a31562c265bef2",
+          "verdict": "valid",
+          "check_mode": "artifact_check",
+          "evidence_sha256": "47dcc871eea4d0eab36c457910abfcf8f0a293a85b6e8ab702911d0cd7b05227"
+        },
+        "signature": "+N/3wz+qyHrlbFzwOG2ZG8s7fHOXXhzB2rvTLOPUGZmycmZ4Q5PrlukxxNBPzJy8fVkOoKIyE66fL3kCxt7vCQ=="
+      },
+      "event_sha256": "7ccfd459fc8027ea99b79682b1252d1a4b6af7cb105d1c02c6b2a347864c5ab4"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 29,
+      "previous_event_sha256": "7ccfd459fc8027ea99b79682b1252d1a4b6af7cb105d1c02c6b2a347864c5ab4",
+      "event_id": "e60d29498d76fcfd5072c686c1d261d00bbf1eae483c08eb0eed29dfc711141c",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "validation_attested",
+        "actor": "nsrl:validator:replay-three",
+        "public_key": "MCowBQYDK2VwAyEA/b6vw3W/WpF8mkv+x/melQHnBP5F+DfWwcNDIJD6r1A=",
+        "payload": {
+          "subject_type": "candidate",
+          "subject_event_id": "d68d64fd29426b3842824f331c28c74d14b80cbcb7e479fd85a31562c265bef2",
+          "verdict": "valid",
+          "check_mode": "artifact_check",
+          "evidence_sha256": "0b893d6c597a35a96dd8bff4fa999f930639b0e91619360ebb70088858fae4ef"
+        },
+        "signature": "eEGxWV95Ie21uN5b0bpk8neHtyXWZMhpNJXS+H2833AROWJS12BayUTl+h6b8zK+pDa2K0OID45Cqm/ONGnfDA=="
+      },
+      "event_sha256": "d21312ee56e1e7b53526ff3fd1fd4122a0174b19c0250380fbba48cd3d712795"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 30,
+      "previous_event_sha256": "d21312ee56e1e7b53526ff3fd1fd4122a0174b19c0250380fbba48cd3d712795",
+      "event_id": "4fae8c8319ae18f0d225f33262b7a9431705750fc2e2230798d5cd45d7612cca",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "model_published",
+        "actor": "nsrl:authority:localnet",
+        "public_key": "MCowBQYDK2VwAyEARHzRhePXouPUiwFWpjLWN2XB0Q8jcu8gjaI7Mtx0kFw=",
+        "payload": {
+          "candidate_event_id": "d68d64fd29426b3842824f331c28c74d14b80cbcb7e479fd85a31562c265bef2",
+          "published_recipe": {
+            "schema": "nsrl.model_launch_recipe.v1",
+            "launch": {
+              "id": "integer-transformer-proof-v1-localnet",
+              "title": "Integer Transformer Proof v1 · signed localnet",
+              "summary": "Re-run the frozen integer-transformer model launch through signed funding, compute, validation, challenge, and publication events.",
+              "network": "nsrl-model-localnet-v1",
+              "mode": "test",
+              "status": "promoted",
+              "published_at": "2026-07-13T00:00:00Z"
+            },
+            "proposer": {
+              "account": "nsrl:lab:genesis",
+              "bond_units": "25000"
+            },
+            "participants": {
+              "builder": "nsrl:builder:integer-core",
+              "compute": "nsrl:compute:graviton-pool",
+              "validator": "nsrl:validator:proof-v1",
+              "sponsor": "nsrl:sponsor:prototype",
+              "treasury": "nsrl:treasury:public-goods"
+            },
+            "model": {
+              "family": "NSRLMT5",
+              "artifact_format": "NSRLMT5",
+              "architecture_profile": "small-h8-d128-ff256",
+              "tokenizer_contract": "byte-v1",
+              "parent_model_hash": null,
+              "max_artifact_bytes": "600000"
+            },
+            "source": {
+              "repository": "https://github.com/atimics/nsrl",
+              "commit": "745e7750bb4cc3d666f5c749e7465afad11cc664",
+              "evaluator_sha256": "d8e951c9701dd6c331104bcf85a5164502bf721f2d59ed5b4dda03de6bbd1ff0"
+            },
+            "dataset": {
+              "contract": "integer-transformer-proof-v1",
+              "dataset_hash": "0x8fe7b86378f81951",
+              "manifest": "benchmarks/integer-transformer-proof-v1/manifest.tsv",
+              "heldout_targets": 5896
+            },
+            "run": {
+              "max_compute_units": "4096",
+              "compute_unit": "normalized-cpu-unit",
+              "stages": [
+                {
+                  "id": "train-candidate",
+                  "command": "scripts/run-integer-transformer-proof-candidate.sh data/experiments/integer-transformer-proof-v1/candidate-default",
+                  "compute_units": "3072"
+                },
+                {
+                  "id": "evaluate-candidate",
+                  "command": "cargo run -p nsrl-eval -- check --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv --results data/experiments/integer-transformer-proof-v1/candidate-default/proof-results.tsv",
+                  "compute_units": "768"
+                },
+                {
+                  "id": "freeze-publication",
+                  "command": "node scripts/freeze-integer-transformer-proof-candidate.mjs --check",
+                  "compute_units": "256"
+                }
+              ]
+            },
+            "bounties": [
+              {
+                "id": "beat-float-reference",
+                "sponsor": "nsrl:sponsor:prototype",
+                "escrow_units": "120000",
+                "metric": "probability_error_q15",
+                "direction": "minimize",
+                "baseline": "363650570",
+                "target": "350000000",
+                "payout": {
+                  "kind": "linear-with-promotion-bonus",
+                  "promotion_bonus_bps": 2500
+                },
+                "guardrails": [
+                  {
+                    "metric": "mistakes",
+                    "operator": "lte",
+                    "value": "3226"
+                  },
+                  {
+                    "metric": "unique_predicted_tokens",
+                    "operator": "gte",
+                    "value": "8"
+                  },
+                  {
+                    "metric": "rejected_batches",
+                    "operator": "eq",
+                    "value": "0"
+                  }
+                ]
+              }
+            ],
+            "promotion": {
+              "contract": "integer-transformer-proof-v1",
+              "checker_command": "cargo run -p nsrl-eval -- check --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv --results data/experiments/integer-transformer-proof-v1/candidate-default/proof-results.tsv",
+              "checker_sha256": "d8e951c9701dd6c331104bcf85a5164502bf721f2d59ed5b4dda03de6bbd1ff0",
+              "valid_exit_code": 0
+            },
+            "rewards": {
+              "asset": {
+                "symbol": "ITP1",
+                "name": "Integer Transformer Proof Credits",
+                "decimals": 0,
+                "max_supply_units": "1000000",
+                "transferability": "disabled-v1",
+                "utility": [
+                  "sponsor successor model runs",
+                  "redeem prototype inference quotas",
+                  "signal participation without controlling promotion"
+                ]
+              },
+              "emission": {
+                "initial_block_reward_units": "32000",
+                "halving_interval_blocks": 8,
+                "minimum_block_reward_units": "1000",
+                "event_multipliers_bps": {
+                  "launch_published": 2500,
+                  "stage_accepted": 5000,
+                  "candidate_valid": 10000,
+                  "independent_replay": 5000,
+                  "model_promoted": 20000
+                }
+              },
+              "allocation_bps": {
+                "builder": 3000,
+                "compute": 3500,
+                "validator": 2000,
+                "sponsor": 1000,
+                "treasury": 500
+              }
+            },
+            "publication": {
+              "model_hash": "0x6ffd37de48a3121b",
+              "artifact_sha256": "37acae6a4f763182730c76f762c351eda5bb37d6d197358c252733b1f08dca10",
+              "artifact_path": "data/experiments/integer-transformer-proof-v1/candidate-default/candidate.nsrlmt",
+              "proof_sha256": "f3fddde409aa3d623ee55a5253aad42be2e90b7f2990a7c039437a1c571079d4",
+              "metrics": {
+                "targets": "5896",
+                "mistakes": "2482",
+                "probability_error_q15": "260536589",
+                "unique_predicted_tokens": "41",
+                "most_predicted_token_share_per_mille": "179",
+                "rejected_batches": "0"
+              }
+            }
+          },
+          "receipt": {
+            "schema": "nsrl.model_publish_receipt.v1",
+            "launch_id": "integer-transformer-proof-v1-localnet",
+            "model_hash": "0x6ffd37de48a3121b",
+            "artifact_sha256": "37acae6a4f763182730c76f762c351eda5bb37d6d197358c252733b1f08dca10",
+            "recipe_sha256": "c0756042de0e7aa25fbe5dd5f129e0f4542f7dd19efd9de9f65ee95e423c9c90",
+            "status": "promoted",
+            "reward_block": {
+              "schema": "nsrl.model_reward_block.v1",
+              "height": 0,
+              "previous_block_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "launch_id": "integer-transformer-proof-v1-localnet",
+              "recipe_sha256": "c0756042de0e7aa25fbe5dd5f129e0f4542f7dd19efd9de9f65ee95e423c9c90",
+              "event": "model_promoted",
+              "evidence_sha256": "f3fddde409aa3d623ee55a5253aad42be2e90b7f2990a7c039437a1c571079d4",
+              "model_hash": "0x6ffd37de48a3121b",
+              "metric_values": {
+                "targets": "5896",
+                "mistakes": "2482",
+                "probability_error_q15": "260536589",
+                "unique_predicted_tokens": "41",
+                "most_predicted_token_share_per_mille": "179",
+                "rejected_batches": "0"
+              },
+              "reward": {
+                "asset_symbol": "ITP1",
+                "subsidy_units": "32000",
+                "event_multiplier_bps": 20000,
+                "requested_units": "64000",
+                "minted_units": "64000",
+                "cumulative_supply_units": "64000",
+                "allocations": [
+                  {
+                    "role": "builder",
+                    "account": "nsrl:builder:integer-core",
+                    "basis_points": 3000,
+                    "units": "19200"
+                  },
+                  {
+                    "role": "compute",
+                    "account": "nsrl:compute:graviton-pool",
+                    "basis_points": 3500,
+                    "units": "22400"
+                  },
+                  {
+                    "role": "validator",
+                    "account": "nsrl:validator:proof-v1",
+                    "basis_points": 2000,
+                    "units": "12800"
+                  },
+                  {
+                    "role": "sponsor",
+                    "account": "nsrl:sponsor:prototype",
+                    "basis_points": 1000,
+                    "units": "6400"
+                  },
+                  {
+                    "role": "treasury",
+                    "account": "nsrl:treasury:public-goods",
+                    "basis_points": 500,
+                    "units": "3200"
+                  }
+                ]
+              },
+              "block_sha256": "683ed1ca7ea09ee6b99a03df72ef21b4d2cc9d75be143e940df4b1c01e92ffa4"
+            }
+          }
+        },
+        "signature": "05GLzeBz7x9NcmD5taNv6aNdLHdDznA0T2VWKDL4L4UNSNv1JeHM7+WgGHrjEwrcNnu6phYiEMjXI9/Q4qcLDQ=="
+      },
+      "event_sha256": "ab10b0a8562f35b216f94a70f9a84e9f24ed1090cbb704c971c39ffcdb74db4c"
+    }
+  ]
+}
