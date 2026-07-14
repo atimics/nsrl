@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#10120f" />
+    <meta
+      name="description"
+      content="NSRL Forge is a protocol preview for funding measurable model improvements and rewarding verified model work."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="NSRL Forge — Fund the metric. Reward the proof." />
+    <meta
+      property="og:description"
+      content="Launch measurable model bounties and reward verified useful compute."
+    />
+    <meta property="og:image" content="https://atimics.github.io/nsrl/launches/og.png" />
+    <meta property="og:image:width" content="1731" />
+    <meta property="og:image:height" content="909" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="NSRL Forge — Fund the metric. Reward the proof." />
+    <meta
+      name="twitter:description"
+      content="Launch measurable model bounties and reward verified useful compute."
+    />
+    <meta name="twitter:image" content="https://atimics.github.io/nsrl/launches/og.png" />
+    <title>Forge — Fund measurable model progress</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <div class="network-strip" role="status">
+      <span class="pulse" aria-hidden="true"></span>
+      <span id="networkNotice">Protocol preview · simulated credits</span>
+    </div>
+
+    <header class="site-header">
+      <a class="wordmark" href="../" aria-label="NSRL Forge home">
+        <span>NSRL</span>
+        <strong>FORGE</strong>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#bounties">Bounties</a>
+        <a href="#ledger">Proof ledger</a>
+        <a href="#localnet">Localnet</a>
+        <a href="#recipe">Recipe</a>
+        <a href="#gaps">Gap map</a>
+      </nav>
+      <a class="header-action" href="#composer">Compose bounty</a>
+    </header>
+
+    <main id="main">
+      <section class="hero section-shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="kicker"><span>01</span> A market for objective model progress</p>
+          <h1 id="hero-title">Fund the metric.<br />Reward the proof.</h1>
+          <p class="hero-lede">
+            Sponsors escrow a bounty. Builders compete on a frozen model contract.
+            Verified publication blocks reward the people and machines that made the
+            result real.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#composer">Draft a bounty</a>
+            <a class="button button-secondary" href="#ledger">Inspect genesis block</a>
+          </div>
+          <dl class="network-stats" aria-label="Prototype network statistics">
+            <div>
+              <dt>Published models</dt>
+              <dd id="publishedModels">1</dd>
+            </div>
+            <div>
+              <dt>Proof blocks</dt>
+              <dd id="proofBlocks">1</dd>
+            </div>
+            <div>
+              <dt>Credits minted</dt>
+              <dd><span id="mintedUnits">64,000</span> <small id="rewardSymbol">ITP1</small></dd>
+            </div>
+          </dl>
+        </div>
+
+        <article class="proof-card" aria-labelledby="proof-card-title">
+          <header>
+            <div>
+              <p>Latest accepted publication</p>
+              <h2 id="proof-card-title">Integer Transformer Proof v1</h2>
+            </div>
+            <span class="status-chip">Promoted</span>
+          </header>
+          <div class="proof-metric">
+            <span>Probability error · lower wins</span>
+            <strong id="achievedMetric">260,536,589</strong>
+            <small><span id="metricImprovement">28.3%</span> below reference baseline</small>
+          </div>
+          <div class="proof-scale" aria-hidden="true">
+            <span class="scale-baseline"></span>
+            <span class="scale-target"></span>
+            <span class="scale-result"></span>
+          </div>
+          <div class="scale-legend">
+            <span><i class="legend-baseline"></i>Reference <b id="baselineMetric">363,650,570</b></span>
+            <span><i class="legend-result"></i>Published result</span>
+          </div>
+          <dl class="proof-facts">
+            <div>
+              <dt>Model</dt>
+              <dd id="modelHash">0x6ffd…121b</dd>
+            </div>
+            <div>
+              <dt>Dataset</dt>
+              <dd id="datasetHash">0x8fe7…1951</dd>
+            </div>
+            <div>
+              <dt>Held-out targets</dt>
+              <dd id="heldoutTargets">5,896</dd>
+            </div>
+          </dl>
+          <a class="card-link" href="#ledger">Open proof block <span aria-hidden="true">↘</span></a>
+        </article>
+      </section>
+
+      <section class="manifesto-band" aria-label="Protocol principle">
+        <p>Capital selects the objective.</p>
+        <p>Compute attempts the work.</p>
+        <p>The frozen evaluator decides promotion.</p>
+      </section>
+
+      <section class="content-section section-shell" id="bounties" aria-labelledby="bounties-title">
+        <div class="section-heading">
+          <div>
+            <p class="kicker"><span>02</span> Metric bounties</p>
+            <h2 id="bounties-title">Buy an outcome, not a promise.</h2>
+          </div>
+          <p>
+            Every bounty binds one measurable target to a baseline, guardrails,
+            evaluator hash, escrow amount, and integer payout curve.
+          </p>
+        </div>
+
+        <div class="bounty-grid">
+          <article class="settled-bounty panel">
+            <div class="panel-topline">
+              <span class="micro-label">Settled specimen</span>
+              <span class="settled-mark">Fully paid</span>
+            </div>
+            <h3>Beat the floating-point reference</h3>
+            <p>
+              Minimize <code>probability_error_q15</code> while preserving mistake,
+              diversity, batch-health, and replay guarantees.
+            </p>
+            <div class="metric-stack">
+              <div>
+                <span>Reference baseline</span>
+                <strong id="settledBaseline">363,650,570</strong>
+              </div>
+              <div>
+                <span>Bounty target</span>
+                <strong id="settledTarget">350,000,000</strong>
+              </div>
+              <div class="metric-win">
+                <span>Accepted candidate</span>
+                <strong id="settledAchieved">260,536,589</strong>
+              </div>
+            </div>
+            <div class="escrow-row">
+              <span>Sponsor escrow settled</span>
+              <strong><span id="settledEscrow">120,000</span> credits</strong>
+            </div>
+            <ul class="guardrail-list" id="guardrailList">
+              <li>Mistakes ≤ 3,226</li>
+              <li>Unique predictions ≥ 8</li>
+              <li>Rejected batches = 0</li>
+            </ul>
+          </article>
+
+          <form class="composer panel" id="composer" aria-labelledby="composer-title">
+            <div class="panel-topline">
+              <span class="micro-label">Interactive draft</span>
+              <span class="draft-mark">Local only</span>
+            </div>
+            <h3 id="composer-title">Compose the successor bounty</h3>
+            <p>Start from the promoted model and price the next measurable frontier.</p>
+
+            <label class="field-label" for="improvementRange">
+              <span>Required improvement</span>
+              <output id="improvementOutput" for="improvementRange">10%</output>
+            </label>
+            <input id="improvementRange" type="range" min="1" max="30" step="1" value="10" />
+
+            <div class="target-readout">
+              <span>Target error</span>
+              <strong id="draftTarget">234,482,930</strong>
+              <small>from baseline <span id="draftBaseline">260,536,589</span></small>
+            </div>
+
+            <label class="field-label" for="rewardRange">
+              <span>Sponsor bounty</span>
+              <output id="rewardOutput" for="rewardRange">120,000 credits</output>
+            </label>
+            <input id="rewardRange" type="range" min="25000" max="500000" step="5000" value="120000" />
+
+            <label class="field-label" for="bonusRange">
+              <span>Reserved promotion bonus</span>
+              <output id="bonusOutput" for="bonusRange">25%</output>
+            </label>
+            <input id="bonusRange" type="range" min="0" max="50" step="5" value="25" />
+
+            <div class="payout-preview" aria-label="Example payout amounts">
+              <div>
+                <span>Halfway</span>
+                <strong id="halfwayPayout">45,000</strong>
+              </div>
+              <div>
+                <span>Target hit</span>
+                <strong id="targetPayout">90,000</strong>
+              </div>
+              <div>
+                <span>Promoted</span>
+                <strong id="promotedPayout">120,000</strong>
+              </div>
+            </div>
+
+            <button class="button button-primary composer-button" type="button" id="downloadRecipe">
+              Download model recipe
+            </button>
+            <p class="form-note">Creates a draft JSON recipe. It does not escrow funds or publish a transaction.</p>
+          </form>
+        </div>
+      </section>
+
+      <section class="content-section ledger-section" id="ledger" aria-labelledby="ledger-title">
+        <div class="section-shell">
+          <div class="section-heading">
+            <div>
+              <p class="kicker"><span>03</span> Proof-of-useful-compute</p>
+              <h2 id="ledger-title">Blocks mint for accepted evidence.</h2>
+            </div>
+            <p>
+              No arbitrary hashing race. A block exists only when a launch, stage,
+              candidate, independent replay, or promotion adds verifiable model state.
+            </p>
+          </div>
+
+          <div class="ledger-layout">
+            <article class="block-card" aria-labelledby="block-title">
+              <div class="block-index">BLOCK <span id="blockHeight">0000</span></div>
+              <header>
+                <div>
+                  <span class="micro-label">Accepted event</span>
+                  <h3 id="block-title">Model promoted</h3>
+                </div>
+                <span class="status-chip">Final</span>
+              </header>
+              <dl class="block-fields">
+                <div>
+                  <dt>Block hash</dt>
+                  <dd id="blockHash">2217c6b6…847ea7f</dd>
+                </div>
+                <div>
+                  <dt>Previous</dt>
+                  <dd id="previousHash">00000000…0000000</dd>
+                </div>
+                <div>
+                  <dt>Evidence</dt>
+                  <dd id="evidenceHash">f3fddde4…079d4</dd>
+                </div>
+                <div>
+                  <dt>Recipe</dt>
+                  <dd id="recipeHash">bbf8f8c1…07aa0a</dd>
+                </div>
+              </dl>
+              <div class="mint-callout">
+                <span>Block reward</span>
+                <strong><span id="blockReward">64,000</span> <small id="blockRewardSymbol">ITP1</small></strong>
+                <small>6.4% of the capped model-local supply</small>
+              </div>
+            </article>
+
+            <article class="allocation-card panel" aria-labelledby="allocation-title">
+              <div class="panel-topline">
+                <span class="micro-label">Deterministic allocation</span>
+                <span>10,000 bps</span>
+              </div>
+              <h3 id="allocation-title">Who earned the block</h3>
+              <div class="allocation-list" id="allocationList"></div>
+              <p class="allocation-note">
+                Largest-remainder integer allocation conserves every unit. Replaying
+                the same block produces the same recipients and amounts.
+              </p>
+            </article>
+          </div>
+
+          <ol class="event-chain" aria-label="Eligible reward events">
+            <li><span>01</span><strong>Launch</strong><small>Recipe accepted</small></li>
+            <li><span>02</span><strong>Stage</strong><small>Compute receipt</small></li>
+            <li><span>03</span><strong>Candidate</strong><small>Artifact valid</small></li>
+            <li><span>04</span><strong>Replay</strong><small>Independent proof</small></li>
+            <li class="event-active"><span>05</span><strong>Promote</strong><small>All gates pass</small></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="content-section localnet-section" id="localnet" aria-labelledby="localnet-title">
+        <div class="section-shell">
+          <div class="section-heading">
+            <div>
+              <p class="kicker"><span>04</span> Signed localnet</p>
+              <h2 id="localnet-title">The launch replays from signatures.</h2>
+            </div>
+            <p>
+              Every actor signs an Ed25519 intent. The reducer verifies identity,
+              role, quorum, ordering, challenges, and one-time settlement before
+              advancing the hash-linked ledger.
+            </p>
+          </div>
+
+          <dl class="localnet-stats" aria-label="Signed localnet statistics">
+            <div><dt>Ledger height</dt><dd id="localnetHeight">31</dd></div>
+            <div><dt>Registered keys</dt><dd id="localnetAccounts">10</dd></div>
+            <div><dt>Stage quorum</dt><dd id="localnetStageQuorum">2</dd></div>
+            <div><dt>Candidate quorum</dt><dd id="localnetCandidateQuorum">3</dd></div>
+          </dl>
+
+          <div class="localnet-layout">
+            <article class="transcript-card panel" aria-labelledby="transcript-title">
+              <div class="panel-topline">
+                <span class="micro-label">Deterministic transcript</span>
+                <span class="signed-mark">31 / 31 linked</span>
+              </div>
+              <h3 id="transcript-title">Launch lifecycle</h3>
+              <ol class="transcript-flow" id="transcriptFlow">
+                <li><i></i><span>Launch published</span><strong>signed</strong></li>
+                <li><i></i><span>Bounty funded</span><strong>120,000</strong></li>
+                <li><i></i><span>Compute stages</span><strong>3 / 3</strong></li>
+                <li><i></i><span>Validator attestations</span><strong>9</strong></li>
+                <li><i></i><span>Challenge resolved</span><strong>rejected</strong></li>
+                <li><i></i><span>Model published</span><strong>promoted</strong></li>
+              </ol>
+              <a class="button button-secondary transcript-link" href="./localnet.json">
+                Inspect all signed events
+              </a>
+            </article>
+
+            <article class="state-card" aria-labelledby="state-title">
+              <div class="state-terminal-bar">
+                <span>nsrl-model-localnet-v1</span>
+                <span class="terminal-live"><i></i> replay valid</span>
+              </div>
+              <div class="state-terminal">
+                <p class="terminal-prompt">$ nsrl-model-localnet status --dir ./localnet</p>
+                <dl class="state-facts">
+                  <div><dt>head_sha256</dt><dd id="localnetHead">ab10b0a8…db74db4c</dd></div>
+                  <div><dt>launch</dt><dd id="localnetLaunch">promoted</dd></div>
+                  <div><dt>stages</dt><dd id="localnetStages">3 accepted</dd></div>
+                  <div><dt>challenge</dt><dd id="localnetChallenges">1 rejected</dd></div>
+                  <div><dt>bounty</dt><dd id="localnetBounty">120,000 / 120,000 settled</dd></div>
+                </dl>
+                <p class="terminal-label">model-local balances · ITP1</p>
+                <div class="balance-list" id="localnetBalances"></div>
+              </div>
+            </article>
+          </div>
+
+          <p class="localnet-boundary">
+            <strong>Boundary:</strong> this is a single-process test network with
+            deterministic public fixture keys and simulated non-transferable credits.
+            It is not a wallet, custody system, consensus network, or financial asset.
+          </p>
+        </div>
+      </section>
+
+      <section class="content-section section-shell" id="recipe" aria-labelledby="recipe-title">
+        <div class="section-heading">
+          <div>
+            <p class="kicker"><span>05</span> Model recipe</p>
+            <h2 id="recipe-title">One hashable contract for the whole attempt.</h2>
+          </div>
+          <p>
+            The recipe freezes inputs before funding and binds outputs at publication.
+            Drafts may leave publication evidence empty; promoted models may not.
+          </p>
+        </div>
+
+        <div class="recipe-layout">
+          <ol class="recipe-layers">
+            <li>
+              <span>01</span>
+              <div><strong>Identity</strong><small>Proposer, participants, bond, lineage</small></div>
+            </li>
+            <li>
+              <span>02</span>
+              <div><strong>Model + data</strong><small>Artifact format, architecture, tokenizer, dataset</small></div>
+            </li>
+            <li>
+              <span>03</span>
+              <div><strong>Execution</strong><small>Source commit, evaluator, stages, compute ceiling</small></div>
+            </li>
+            <li>
+              <span>04</span>
+              <div><strong>Settlement</strong><small>Bounties, guardrails, promotion, emission</small></div>
+            </li>
+            <li>
+              <span>05</span>
+              <div><strong>Publication</strong><small>Model hash, artifact hash, proof, metrics</small></div>
+            </li>
+          </ol>
+
+          <div class="code-panel">
+            <div class="code-toolbar">
+              <span>model-launch-v1.json</span>
+              <button type="button" id="copyRecipe">Copy specimen</button>
+            </div>
+            <pre><code id="recipePreview">{
+  "schema": "nsrl.model_launch_recipe.v1",
+  "launch": { "status": "promoted" },
+  "bounties": [
+    { "metric": "probability_error_q15" }
+  ],
+  "rewards": { "asset": { "symbol": "ITP1" } }
+}</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section gap-section" id="gaps" aria-labelledby="gaps-title">
+        <div class="section-shell">
+          <div class="section-heading">
+            <div>
+              <p class="kicker"><span>06</span> Gap analysis</p>
+              <h2 id="gaps-title">The proof layer is real. The market is not—yet.</h2>
+            </div>
+            <p>
+              The signed localnet now covers identity, replay protection, role checks,
+              validator quorum, challenges, and simulated settlement. It deliberately
+              stops before wallets, custody, transferable assets, or consensus.
+            </p>
+          </div>
+
+          <div class="gap-grid" id="gapGrid"></div>
+
+          <article class="next-build">
+            <div>
+              <p class="micro-label">Recommended next build</p>
+              <h3>Provider auction + escrow adapter</h3>
+              <p>
+                Let compute providers bid on frozen stages, meter accepted work, and
+                settle against a pluggable test escrow while keeping promotion entirely
+                under the evaluator and replay quorum.
+              </p>
+            </div>
+            <ol>
+              <li>Commit sealed provider bids</li>
+              <li>Assign stages with collateral</li>
+              <li>Meter signed compute receipts</li>
+              <li>Settle through a test adapter</li>
+            </ol>
+          </article>
+        </div>
+      </section>
+
+      <section class="design-laws section-shell" aria-labelledby="laws-title">
+        <p class="kicker"><span>07</span> Protocol laws</p>
+        <h2 id="laws-title">What the token cannot buy.</h2>
+        <div class="law-grid">
+          <article><span>01</span><h3>Promotion</h3><p>Only the frozen evaluator can promote a model.</p></article>
+          <article><span>02</span><h3>Metric changes</h3><p>A funded recipe cannot move its target or guardrails.</p></article>
+          <article><span>03</span><h3>Duplicate rewards</h3><p>One evidence commitment can settle exactly once.</p></article>
+          <article><span>04</span><h3>Unbounded supply</h3><p>Every model lineage has an immutable emission cap.</p></article>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wordmark footer-mark"><span>NSRL</span><strong>FORGE</strong></div>
+      <p>Deterministic model work, made legible.</p>
+      <div>
+        <a href="../">Try Solomon</a>
+        <a href="../results/">Research results</a>
+        <a href="https://github.com/atimics/nsrl">Source</a>
+      </div>
+    </footer>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

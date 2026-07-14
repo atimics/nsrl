@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.dev/schemas/model-localnet-v1.schema.json",
+  "title": "NSRL model localnet v1 public objects",
+  "description": "Signed intents, hash-linked ledger events, and public deterministic snapshots for the single-writer simulated-credit localnet.",
+  "oneOf": [
+    { "$ref": "#/$defs/signedIntent" },
+    { "$ref": "#/$defs/event" },
+    { "$ref": "#/$defs/snapshot" }
+  ],
+  "$defs": {
+    "account": {
+      "type": "string",
+      "pattern": "^nsrl:[a-z0-9][a-z0-9:_-]{2,127}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "eventType": {
+      "enum": [
+        "network_initialized",
+        "account_registered",
+        "launch_published",
+        "bounty_funded",
+        "stage_submitted",
+        "validation_attested",
+        "challenge_opened",
+        "challenge_resolved",
+        "stage_accepted",
+        "candidate_submitted",
+        "model_published"
+      ]
+    },
+    "signedIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "event_type", "actor", "public_key", "payload", "signature"],
+      "properties": {
+        "schema": { "const": "nsrl.model_localnet_intent.v1" },
+        "event_type": { "$ref": "#/$defs/eventType" },
+        "actor": { "$ref": "#/$defs/account" },
+        "public_key": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "description": "DER SPKI Ed25519 public key encoded as base64."
+        },
+        "payload": {
+          "type": "object",
+          "description": "Event-type-specific payload validated by the model-localnet-v1 state reducer."
+        },
+        "signature": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "description": "Ed25519 signature of canonical JSON over schema, event_type, actor, public_key, and payload."
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "height",
+        "previous_event_sha256",
+        "event_id",
+        "signed_intent",
+        "event_sha256"
+      ],
+      "properties": {
+        "schema": { "const": "nsrl.model_localnet_event.v1" },
+        "height": { "type": "integer", "minimum": 0 },
+        "previous_event_sha256": { "$ref": "#/$defs/sha256" },
+        "event_id": {
+          "$ref": "#/$defs/sha256",
+          "description": "SHA-256 of the canonical signed-intent body; globally replay-protected within a ledger."
+        },
+        "signed_intent": { "$ref": "#/$defs/signedIntent" },
+        "event_sha256": {
+          "$ref": "#/$defs/sha256",
+          "description": "SHA-256 of the canonical event core, including the previous event hash."
+        }
+      }
+    },
+    "publicIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "public_key", "authority"],
+      "properties": {
+        "account": { "$ref": "#/$defs/account" },
+        "public_key": { "type": "string", "contentEncoding": "base64" },
+        "authority": { "type": "boolean" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "generated_at",
+        "notice",
+        "launch_event_id",
+        "candidate_event_id",
+        "summary",
+        "public_identities",
+        "events"
+      ],
+      "properties": {
+        "schema": { "const": "nsrl.model_localnet_snapshot.v1" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "notice": { "type": "string", "minLength": 1 },
+        "launch_event_id": { "$ref": "#/$defs/sha256" },
+        "candidate_event_id": { "$ref": "#/$defs/sha256" },
+        "summary": {
+          "type": "object",
+          "required": [
+            "schema",
+            "network",
+            "height",
+            "head_sha256",
+            "accounts",
+            "launches",
+            "stage_submissions",
+            "accepted_stages",
+            "attestations",
+            "challenges",
+            "publications",
+            "bounty_settlements",
+            "model_balances",
+            "valid"
+          ],
+          "properties": {
+            "schema": { "const": "nsrl.model_localnet_summary.v1" },
+            "height": { "type": "integer", "minimum": 1 },
+            "head_sha256": { "$ref": "#/$defs/sha256" },
+            "accounts": { "type": "integer", "minimum": 1 },
+            "valid": { "const": true }
+          }
+        },
+        "public_identities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/publicIdentity" },
+          "minItems": 1
+        },
+        "events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/event" },
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

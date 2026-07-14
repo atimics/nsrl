@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.dev/schemas/model-launch-v1.schema.json",
+  "title": "NSRL Model Launch Recipe v1",
+  "description": "Immutable model, run, bounty, promotion, and proof-of-useful-compute reward recipe.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "launch",
+    "proposer",
+    "participants",
+    "model",
+    "source",
+    "dataset",
+    "run",
+    "bounties",
+    "promotion",
+    "rewards",
+    "publication"
+  ],
+  "properties": {
+    "schema": { "const": "nsrl.model_launch_recipe.v1" },
+    "launch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "summary", "network", "mode", "status", "published_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "title": { "$ref": "#/$defs/nonempty" },
+        "summary": { "$ref": "#/$defs/nonempty" },
+        "network": { "$ref": "#/$defs/nonempty" },
+        "mode": { "enum": ["specimen", "test", "production"] },
+        "status": { "enum": ["draft", "open", "running", "candidate", "promoted", "failed", "expired"] },
+        "published_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "proposer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "bond_units"],
+      "properties": {
+        "account": { "$ref": "#/$defs/account" },
+        "bond_units": { "$ref": "#/$defs/uintString" }
+      }
+    },
+    "participants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["builder", "compute", "validator", "sponsor", "treasury"],
+      "properties": {
+        "builder": { "$ref": "#/$defs/account" },
+        "compute": { "$ref": "#/$defs/account" },
+        "validator": { "$ref": "#/$defs/account" },
+        "sponsor": { "$ref": "#/$defs/account" },
+        "treasury": { "$ref": "#/$defs/account" }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "artifact_format", "architecture_profile", "tokenizer_contract", "parent_model_hash", "max_artifact_bytes"],
+      "properties": {
+        "family": { "$ref": "#/$defs/nonempty" },
+        "artifact_format": { "$ref": "#/$defs/nonempty" },
+        "architecture_profile": { "$ref": "#/$defs/nonempty" },
+        "tokenizer_contract": { "$ref": "#/$defs/nonempty" },
+        "parent_model_hash": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/modelHash" }
+          ]
+        },
+        "max_artifact_bytes": { "$ref": "#/$defs/positiveUintString" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "evaluator_sha256"],
+      "properties": {
+        "repository": { "$ref": "#/$defs/nonempty" },
+        "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "evaluator_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "dataset_hash", "manifest", "heldout_targets"],
+      "properties": {
+        "contract": { "$ref": "#/$defs/nonempty" },
+        "dataset_hash": { "$ref": "#/$defs/nonempty" },
+        "manifest": { "$ref": "#/$defs/nonempty" },
+        "heldout_targets": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_compute_units", "compute_unit", "stages"],
+      "properties": {
+        "max_compute_units": { "$ref": "#/$defs/positiveUintString" },
+        "compute_unit": { "$ref": "#/$defs/nonempty" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "command", "compute_units"],
+            "properties": {
+              "id": { "$ref": "#/$defs/slug" },
+              "command": { "$ref": "#/$defs/nonempty" },
+              "compute_units": { "$ref": "#/$defs/positiveUintString" }
+            }
+          }
+        }
+      }
+    },
+    "bounties": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "sponsor", "escrow_units", "metric", "direction", "baseline", "target", "payout", "guardrails"],
+        "properties": {
+          "id": { "$ref": "#/$defs/slug" },
+          "sponsor": { "$ref": "#/$defs/account" },
+          "escrow_units": { "$ref": "#/$defs/positiveUintString" },
+          "metric": { "$ref": "#/$defs/nonempty" },
+          "direction": { "enum": ["minimize", "maximize"] },
+          "baseline": { "$ref": "#/$defs/uintString" },
+          "target": { "$ref": "#/$defs/uintString" },
+          "payout": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "promotion_bonus_bps"],
+            "properties": {
+              "kind": { "const": "linear-with-promotion-bonus" },
+              "promotion_bonus_bps": { "type": "integer", "minimum": 0, "maximum": 9999 }
+            }
+          },
+          "guardrails": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["metric", "operator", "value"],
+              "properties": {
+                "metric": { "$ref": "#/$defs/nonempty" },
+                "operator": { "enum": ["lt", "lte", "eq", "gte", "gt"] },
+                "value": { "$ref": "#/$defs/uintString" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract", "checker_command", "checker_sha256", "valid_exit_code"],
+      "properties": {
+        "contract": { "$ref": "#/$defs/nonempty" },
+        "checker_command": { "$ref": "#/$defs/nonempty" },
+        "checker_sha256": { "$ref": "#/$defs/sha256" },
+        "valid_exit_code": { "const": 0 }
+      }
+    },
+    "rewards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset", "emission", "allocation_bps"],
+      "properties": {
+        "asset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["symbol", "name", "decimals", "max_supply_units", "transferability", "utility"],
+          "properties": {
+            "symbol": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{2,11}$" },
+            "name": { "$ref": "#/$defs/nonempty" },
+            "decimals": { "const": 0 },
+            "max_supply_units": { "$ref": "#/$defs/positiveUintString" },
+            "transferability": { "const": "disabled-v1" },
+            "utility": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/nonempty" }
+            }
+          }
+        },
+        "emission": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["initial_block_reward_units", "halving_interval_blocks", "minimum_block_reward_units", "event_multipliers_bps"],
+          "properties": {
+            "initial_block_reward_units": { "$ref": "#/$defs/positiveUintString" },
+            "halving_interval_blocks": { "type": "integer", "minimum": 1 },
+            "minimum_block_reward_units": { "$ref": "#/$defs/positiveUintString" },
+            "event_multipliers_bps": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["launch_published", "stage_accepted", "candidate_valid", "independent_replay", "model_promoted"],
+              "properties": {
+                "launch_published": { "$ref": "#/$defs/positiveBpsMultiplier" },
+                "stage_accepted": { "$ref": "#/$defs/positiveBpsMultiplier" },
+                "candidate_valid": { "$ref": "#/$defs/positiveBpsMultiplier" },
+                "independent_replay": { "$ref": "#/$defs/positiveBpsMultiplier" },
+                "model_promoted": { "$ref": "#/$defs/positiveBpsMultiplier" }
+              }
+            }
+          }
+        },
+        "allocation_bps": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["builder", "compute", "validator", "sponsor", "treasury"],
+          "properties": {
+            "builder": { "$ref": "#/$defs/bps" },
+            "compute": { "$ref": "#/$defs/bps" },
+            "validator": { "$ref": "#/$defs/bps" },
+            "sponsor": { "$ref": "#/$defs/bps" },
+            "treasury": { "$ref": "#/$defs/bps" }
+          }
+        }
+      }
+    },
+    "publication": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model_hash", "artifact_sha256", "artifact_path", "proof_sha256", "metrics"],
+          "properties": {
+            "model_hash": { "$ref": "#/$defs/modelHash" },
+            "artifact_sha256": { "$ref": "#/$defs/sha256" },
+            "artifact_path": { "$ref": "#/$defs/nonempty" },
+            "proof_sha256": { "$ref": "#/$defs/sha256" },
+            "metrics": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": { "$ref": "#/$defs/uintString" }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "nonempty": { "type": "string", "minLength": 1 },
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "account": { "type": "string", "pattern": "^nsrl:[a-z0-9][a-z0-9:_-]{2,127}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "modelHash": { "type": "string", "pattern": "^0x[a-f0-9]{16}$" },
+    "uintString": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "positiveUintString": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "bps": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "positiveBpsMultiplier": { "type": "integer", "minimum": 1, "maximum": 100000 }
+  }
+}

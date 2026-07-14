@@ -89,6 +89,23 @@ jobs:
       - name: Check browser model compatibility
         run: node scripts/check-solomon-attention-web-model-self-test.mjs
 
+      - name: Check model launch protocol
+        run: |
+          node --check scripts/lib/model-launch-v1.mjs
+          node --check scripts/publish-model-launch.mjs
+          node --check scripts/check-model-launch-v1.mjs
+          node --check scripts/build-model-launch-site.mjs
+          node --check scripts/lib/model-localnet-v1.mjs
+          node --check scripts/lib/model-localnet-demo-v1.mjs
+          node --check scripts/nsrl-model-localnet.mjs
+          node --check scripts/check-model-localnet-v1.mjs
+          node --check scripts/build-model-localnet-site.mjs
+          node --check web/launches/app.js
+          node scripts/check-model-launch-v1.mjs
+          node scripts/build-model-launch-site.mjs --check
+          node scripts/check-model-localnet-v1.mjs
+          node scripts/build-model-localnet-site.mjs --check
+
       - name: Check fixed sample gallery
         run: |
           node scripts/generate-solomon-results-samples.mjs

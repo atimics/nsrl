@@ -1,4 +1,8 @@
 {
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "build": "node ../scripts/check-model-launch-v1.mjs && node ../scripts/build-model-launch-site.mjs --check && node ../scripts/check-model-localnet-v1.mjs && node ../scripts/build-model-localnet-site.mjs --check",
+    "test": "node --check launches/app.js && node ../scripts/check-model-launch-v1.mjs && node ../scripts/check-model-localnet-v1.mjs"
+  }
 }
