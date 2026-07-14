@@ -1,0 +1,67 @@
+{
+  "schema": "nsrl.model_publish_receipt.v1",
+  "launch_id": "integer-transformer-proof-v1-genesis",
+  "model_hash": "0x6ffd37de48a3121b",
+  "artifact_sha256": "37acae6a4f763182730c76f762c351eda5bb37d6d197358c252733b1f08dca10",
+  "recipe_sha256": "bbf8f8c1f9bb83b472cd3586a3ac49e3f9579a2c0b81b72e2619f50c6407aa0a",
+  "status": "promoted",
+  "reward_block": {
+    "schema": "nsrl.model_reward_block.v1",
+    "height": 0,
+    "previous_block_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "launch_id": "integer-transformer-proof-v1-genesis",
+    "recipe_sha256": "bbf8f8c1f9bb83b472cd3586a3ac49e3f9579a2c0b81b72e2619f50c6407aa0a",
+    "event": "model_promoted",
+    "evidence_sha256": "f3fddde409aa3d623ee55a5253aad42be2e90b7f2990a7c039437a1c571079d4",
+    "model_hash": "0x6ffd37de48a3121b",
+    "metric_values": {
+      "targets": "5896",
+      "mistakes": "2482",
+      "probability_error_q15": "260536589",
+      "unique_predicted_tokens": "41",
+      "most_predicted_token_share_per_mille": "179",
+      "rejected_batches": "0"
+    },
+    "reward": {
+      "asset_symbol": "ITP1",
+      "subsidy_units": "32000",
+      "event_multiplier_bps": 20000,
+      "requested_units": "64000",
+      "minted_units": "64000",
+      "cumulative_supply_units": "64000",
+      "allocations": [
+        {
+          "role": "builder",
+          "account": "nsrl:builder:integer-core",
+          "basis_points": 3000,
+          "units": "19200"
+        },
+        {
+          "role": "compute",
+          "account": "nsrl:compute:graviton-pool",
+          "basis_points": 3500,
+          "units": "22400"
+        },
+        {
+          "role": "validator",
+          "account": "nsrl:validator:proof-v1",
+          "basis_points": 2000,
+          "units": "12800"
+        },
+        {
+          "role": "sponsor",
+          "account": "nsrl:sponsor:prototype",
+          "basis_points": 1000,
+          "units": "6400"
+        },
+        {
+          "role": "treasury",
+          "account": "nsrl:treasury:public-goods",
+          "basis_points": 500,
+          "units": "3200"
+        }
+      ]
+    },
+    "block_sha256": "2217c6b6eaf472e9c2a1f8434d878fc213b55088665794f6a9c95a145847ea7f"
+  }
+}
