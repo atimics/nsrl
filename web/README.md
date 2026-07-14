@@ -18,8 +18,11 @@ text-signature index.
 model launch recipes, signed localnet transcripts, deterministic publication
 receipts, and capped proof-of-useful-compute rewards. Its visible specimen is
 generated from the real promoted `integer-transformer-proof-v1` artifact and a
-31-event deterministic Ed25519 test run. It is explicitly marked as simulated
-credit accounting rather than a wallet or live financial system.
+31-event deterministic Ed25519 core run plus a 76-event provider-market run.
+The market fixture exercises sealed bids, collateral, deterministic assignment,
+signed meters, accepted-work payment, refunds, expiry/slashing, and exact
+compute-reward distribution. It is explicitly marked as simulated credit
+accounting rather than a wallet or live financial system.
 
 ```sh
 wasm-pack build crates/nsrl-web-wasm --release --target web --out-dir ../../web/pkg
@@ -40,6 +43,8 @@ node scripts/check-model-launch-v1.mjs
 node scripts/build-model-launch-site.mjs --check
 node scripts/check-model-localnet-v1.mjs
 node scripts/build-model-localnet-site.mjs --check
+node scripts/check-model-market-v1.mjs
+node scripts/build-model-market-site.mjs --check
 ```
 
 ## Publish

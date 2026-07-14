@@ -56,7 +56,8 @@ a {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -1185,6 +1186,256 @@ input[type="range"] {
   color: #c9ceff;
 }
 
+.market-section {
+  border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 12% 18%, rgba(109, 227, 193, 0.08), transparent 30%),
+    var(--bg);
+}
+
+.market-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 20px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--line);
+}
+
+.market-stats div {
+  background: #151914;
+  padding: 18px 20px;
+}
+
+.market-stats dt {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.market-stats dd {
+  margin: 8px 0 0;
+  color: var(--aqua);
+  font-family: var(--mono);
+  font-size: 1.3rem;
+}
+
+.market-layout,
+.market-lab-layout {
+  display: grid;
+  grid-template-columns: 1.16fr 0.84fr;
+  gap: 20px;
+}
+
+.market-lab-layout {
+  grid-template-columns: 0.9fr 1.1fr;
+  margin-top: 20px;
+}
+
+.auction-card,
+.escrow-card,
+.auction-lab,
+.provider-card {
+  padding: 28px;
+}
+
+.auction-card h3,
+.escrow-card h3,
+.auction-lab h3,
+.provider-card h3 {
+  margin: 0 0 24px;
+}
+
+.market-settled,
+.market-conserved {
+  color: var(--aqua);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+}
+
+.auction-list {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--line);
+}
+
+.auction-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(125px, 0.9fr) repeat(3, auto);
+  gap: 16px;
+  align-items: center;
+  background: #141713;
+  padding: 14px 16px;
+}
+
+.auction-row > span,
+.auction-row > strong {
+  font-family: var(--mono);
+  font-size: 0.64rem;
+}
+
+.auction-row > span:first-child {
+  color: #d7dcd1;
+}
+
+.auction-row .provider-name {
+  color: var(--signal);
+}
+
+.auction-row small {
+  color: #798174;
+  font-size: 0.58rem;
+}
+
+.auction-row strong {
+  color: var(--aqua);
+}
+
+.escrow-meter {
+  display: flex;
+  height: 14px;
+  margin: 32px 0 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #0e110d;
+}
+
+.escrow-meter i:first-child {
+  width: 59.73%;
+  background: var(--aqua);
+}
+
+.escrow-meter i:last-child {
+  width: 40.27%;
+  background: var(--violet);
+}
+
+.escrow-facts {
+  display: grid;
+  gap: 0;
+  margin: 18px 0 24px;
+}
+
+.escrow-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.escrow-facts dt,
+.escrow-card > p,
+.provider-card > p {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.escrow-facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.escrow-card > p,
+.provider-card > p {
+  margin-bottom: 0;
+  line-height: 1.6;
+}
+
+.market-select-label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.auction-lab select,
+.bid-control input {
+  width: 100%;
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  outline: none;
+  background: #111410;
+  color: var(--ink);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.auction-lab select:focus,
+.bid-control input:focus {
+  border-color: var(--signal);
+}
+
+.bid-control-list {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 22px;
+}
+
+.bid-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 14px;
+  align-items: center;
+}
+
+.bid-control label {
+  overflow: hidden;
+  color: #c4cac0;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auction-result {
+  display: block;
+  min-height: 54px;
+  margin-top: 18px;
+  border-left: 2px solid var(--signal);
+  background: rgba(201, 255, 87, 0.06);
+  color: #dbe8c0;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
+
+.provider-list {
+  display: grid;
+  gap: 14px;
+  margin: 30px 0;
+}
+
+.provider-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) auto;
+  gap: 15px;
+  align-items: center;
+}
+
+.provider-row span,
+.provider-row strong {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+}
+
+.provider-row i {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--signal), var(--aqua));
+}
+
+.provider-row strong {
+  color: var(--signal);
+}
+
 .recipe-layout {
   grid-template-columns: 0.8fr 1.2fr;
 }
@@ -1483,7 +1734,9 @@ footer > div:last-child {
   }
 
   .gap-grid,
-  .law-grid {
+  .law-grid,
+  .market-layout,
+  .market-lab-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1513,12 +1766,15 @@ footer > div:last-child {
     font-size: clamp(3.3rem, 17vw, 5.1rem);
   }
 
-  .network-stats,
-  .localnet-stats,
-  .manifesto-band,
+    .network-stats,
+    .localnet-stats,
+    .market-stats,
+    .manifesto-band,
   .bounty-grid,
   .ledger-layout,
-  .localnet-layout,
+    .localnet-layout,
+    .market-layout,
+    .market-lab-layout,
   .recipe-layout,
   .section-heading,
   .next-build {
@@ -1587,8 +1843,9 @@ footer > div:last-child {
   }
 
   .proof-facts,
-  .block-fields,
-  .localnet-stats,
+    .block-fields,
+    .localnet-stats,
+    .market-stats,
   .gap-grid,
   .law-grid {
     grid-template-columns: 1fr;
@@ -1601,8 +1858,39 @@ footer > div:last-child {
   .settled-bounty,
   .composer,
   .allocation-card,
-  .next-build {
+    .next-build {
     padding: 20px;
+  }
+
+  .auction-card,
+  .escrow-card,
+  .auction-lab,
+  .provider-card {
+    padding: 20px;
+  }
+
+  .auction-row {
+    grid-template-columns: 1fr auto;
+    gap: 5px 14px;
+  }
+
+  .auction-row .provider-name,
+  .auction-row small {
+    grid-column: 1;
+  }
+
+  .auction-row strong {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .provider-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .provider-row i {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .metric-stack div,

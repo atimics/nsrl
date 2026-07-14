@@ -7,7 +7,13 @@ import process from "node:process";
 
 import {
   ModelLocalnetLedger,
+  buildComputeBudgetRefundPayload,
+  buildComputeRewardDistributionPayload,
+  buildLaunchExpiryPayload,
   buildModelPublicationPayload,
+  buildStageAuctionClosePayload,
+  buildStagePaymentSettlementPayload,
+  createProviderBidCommitment,
   createLocalnetIdentity,
   localnetStateSummary,
   readLocalnetIdentity,
@@ -19,17 +25,30 @@ import { sha256Canonical, validateModelLaunchRecipe } from "./lib/model-launch-v
 
 function usage() {
   return `Usage:
-  nsrl-model-localnet.mjs init --dir DIR --authority ACCOUNT [--network ID]
+  nsrl-model-localnet.mjs init --dir DIR --authority ACCOUNT [--network ID] [--test-credit-symbol SYMBOL]
   nsrl-model-localnet.mjs account --dir DIR --account ACCOUNT
+  nsrl-model-localnet.mjs issue-credit --dir DIR --recipient ACCOUNT --units N --key AUTHORITY_FILE
   nsrl-model-localnet.mjs publish-launch --dir DIR --recipe FILE --key FILE
   nsrl-model-localnet.mjs fund-bounty --dir DIR --launch ID --bounty ID --key FILE
+  nsrl-model-localnet.mjs fund-compute --dir DIR --launch ID --units N --bid-deadline SLOT --reveal-deadline SLOT --execution-deadline SLOT --minimum-collateral N --key FILE
+  nsrl-model-localnet.mjs deposit-collateral --dir DIR --units N --key PROVIDER_FILE
+  nsrl-model-localnet.mjs commit-bid --dir DIR --launch ID --stage ID --unit-price N --max-compute-units N --nonce TEXT --key PROVIDER_FILE
+  nsrl-model-localnet.mjs advance-slot --dir DIR --slot N --key AUTHORITY_FILE
+  nsrl-model-localnet.mjs reveal-bid --dir DIR --launch ID --stage ID --unit-price N --max-compute-units N --nonce TEXT --key PROVIDER_FILE
+  nsrl-model-localnet.mjs close-auction --dir DIR --launch ID --stage ID --key AUTHORITY_FILE
   nsrl-model-localnet.mjs submit-stage --dir DIR --launch ID --stage ID --input-sha HASH --output-sha HASH --evidence-sha HASH --compute-units N --key FILE
+  nsrl-model-localnet.mjs meter-stage --dir DIR --subject EVENT_ID --start-slot SLOT --end-slot SLOT --compute-units N --input-sha HASH --output-sha HASH --evidence-sha HASH --key PROVIDER_FILE
   nsrl-model-localnet.mjs attest --dir DIR --subject-type stage|candidate --subject EVENT_ID --verdict valid|invalid --mode artifact_check|full_replay --evidence-sha HASH --key FILE
   nsrl-model-localnet.mjs challenge --dir DIR --subject-type stage|candidate --subject EVENT_ID --reason TEXT --evidence-sha HASH --key FILE
   nsrl-model-localnet.mjs resolve-challenge --dir DIR --challenge EVENT_ID --outcome upheld|rejected --evidence-sha HASH --key FILE
   nsrl-model-localnet.mjs accept-stage --dir DIR --subject EVENT_ID --key AUTHORITY_FILE
+  nsrl-model-localnet.mjs settle-stage --dir DIR --subject EVENT_ID --key AUTHORITY_FILE
+  nsrl-model-localnet.mjs refund-compute --dir DIR --launch ID --key AUTHORITY_FILE
+  nsrl-model-localnet.mjs withdraw-collateral --dir DIR --units N --key PROVIDER_FILE
+  nsrl-model-localnet.mjs expire-launch --dir DIR --launch ID --key AUTHORITY_FILE
   nsrl-model-localnet.mjs submit-candidate --dir DIR --launch ID --candidate FILE --key FILE
   nsrl-model-localnet.mjs publish-model --dir DIR --candidate EVENT_ID --key AUTHORITY_FILE
+  nsrl-model-localnet.mjs distribute-compute-reward --dir DIR --launch ID --key AUTHORITY_FILE
   nsrl-model-localnet.mjs status --dir DIR`;
 }
 
@@ -56,6 +75,18 @@ function requireOption(options, name) {
     throw new Error(`--${name} is required`);
   }
   return value;
+}
+
+function requireIntegerOption(options, name) {
+  const value = requireOption(options, name);
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`--${name} must be a nonnegative integer`);
+  }
+  const integer = Number(value);
+  if (!Number.isSafeInteger(integer)) {
+    throw new Error(`--${name} exceeds the safe integer range`);
+  }
+  return integer;
 }
 
 function identityFile(directory, account) {
@@ -122,6 +153,12 @@ function main() {
       full_replay_required: options["full-replay-required"]
         ? Number.parseInt(options["full-replay-required"], 10)
         : 1,
+      ...(options["test-credit-symbol"]
+        ? {
+            test_credit_enabled: true,
+            credit_symbol: options["test-credit-symbol"],
+          }
+        : {}),
     });
     output = { ...eventOutput(result), authority: account, identity_file: keyPath };
   } else if (command === "account") {
@@ -143,7 +180,12 @@ function main() {
     output = localnetStateSummary(ledger.inspect().state);
   } else {
     const identity = readLocalnetIdentity(requireOption(options, "key"));
-    if (command === "publish-launch") {
+    if (command === "issue-credit") {
+      output = append(ledger, identity, "test_credit_issued", {
+        recipient: requireOption(options, "recipient"),
+        units: requireOption(options, "units"),
+      });
+    } else if (command === "publish-launch") {
       const recipe = readJson(requireOption(options, "recipe"));
       validateModelLaunchRecipe(recipe);
       output = append(ledger, identity, "launch_published", {
@@ -163,6 +205,57 @@ function main() {
         bounty_id: bountyId,
         escrow_units: bounty.escrow_units,
       });
+    } else if (command === "fund-compute") {
+      output = append(ledger, identity, "compute_budget_funded", {
+        launch_id: requireOption(options, "launch"),
+        escrow_units: requireOption(options, "units"),
+        bid_deadline_slot: requireIntegerOption(options, "bid-deadline"),
+        reveal_deadline_slot: requireIntegerOption(options, "reveal-deadline"),
+        execution_deadline_slot: requireIntegerOption(options, "execution-deadline"),
+        minimum_collateral_units: requireOption(options, "minimum-collateral"),
+      });
+    } else if (command === "deposit-collateral") {
+      output = append(ledger, identity, "provider_collateral_deposited", {
+        units: requireOption(options, "units"),
+      });
+    } else if (command === "commit-bid") {
+      const reveal = {
+        launch_id: requireOption(options, "launch"),
+        stage_id: requireOption(options, "stage"),
+        provider: identity.account,
+        unit_price_units: requireOption(options, "unit-price"),
+        max_compute_units: requireOption(options, "max-compute-units"),
+        nonce: requireOption(options, "nonce"),
+      };
+      output = append(ledger, identity, "provider_bid_committed", {
+        launch_id: reveal.launch_id,
+        stage_id: reveal.stage_id,
+        commitment_sha256: createProviderBidCommitment(reveal),
+      });
+    } else if (command === "advance-slot") {
+      output = append(ledger, identity, "slot_advanced", {
+        slot: requireIntegerOption(options, "slot"),
+      });
+    } else if (command === "reveal-bid") {
+      output = append(ledger, identity, "provider_bid_revealed", {
+        launch_id: requireOption(options, "launch"),
+        stage_id: requireOption(options, "stage"),
+        unit_price_units: requireOption(options, "unit-price"),
+        max_compute_units: requireOption(options, "max-compute-units"),
+        nonce: requireOption(options, "nonce"),
+      });
+    } else if (command === "close-auction") {
+      const state = ledger.inspect().state;
+      output = append(
+        ledger,
+        identity,
+        "stage_auction_closed",
+        buildStageAuctionClosePayload(
+          state,
+          requireOption(options, "launch"),
+          requireOption(options, "stage"),
+        ),
+      );
     } else if (command === "submit-stage") {
       output = append(ledger, identity, "stage_submitted", {
         launch_id: requireOption(options, "launch"),
@@ -171,6 +264,16 @@ function main() {
         output_sha256: requireOption(options, "output-sha"),
         evidence_sha256: requireOption(options, "evidence-sha"),
         compute_units: requireOption(options, "compute-units"),
+      });
+    } else if (command === "meter-stage") {
+      output = append(ledger, identity, "compute_metered", {
+        stage_event_id: requireOption(options, "subject"),
+        start_slot: requireIntegerOption(options, "start-slot"),
+        end_slot: requireIntegerOption(options, "end-slot"),
+        compute_units: requireOption(options, "compute-units"),
+        input_sha256: requireOption(options, "input-sha"),
+        output_sha256: requireOption(options, "output-sha"),
+        evidence_sha256: requireOption(options, "evidence-sha"),
       });
     } else if (command === "attest") {
       output = append(ledger, identity, "validation_attested", {
@@ -197,6 +300,34 @@ function main() {
       output = append(ledger, identity, "stage_accepted", {
         stage_event_id: requireOption(options, "subject"),
       });
+    } else if (command === "settle-stage") {
+      const subject = requireOption(options, "subject");
+      output = append(
+        ledger,
+        identity,
+        "stage_payment_settled",
+        buildStagePaymentSettlementPayload(ledger.inspect().state, subject),
+      );
+    } else if (command === "refund-compute") {
+      const launch = requireOption(options, "launch");
+      output = append(
+        ledger,
+        identity,
+        "compute_budget_refunded",
+        buildComputeBudgetRefundPayload(ledger.inspect().state, launch),
+      );
+    } else if (command === "withdraw-collateral") {
+      output = append(ledger, identity, "provider_collateral_withdrawn", {
+        units: requireOption(options, "units"),
+      });
+    } else if (command === "expire-launch") {
+      const launch = requireOption(options, "launch");
+      output = append(
+        ledger,
+        identity,
+        "launch_expired",
+        buildLaunchExpiryPayload(ledger.inspect().state, launch),
+      );
     } else if (command === "submit-candidate") {
       const candidate = readJson(requireOption(options, "candidate"));
       const artifactPath = path.resolve(candidate.artifact_path);
@@ -221,6 +352,14 @@ function main() {
       const candidateEventId = requireOption(options, "candidate");
       const payload = buildModelPublicationPayload(ledger.inspect().state, candidateEventId);
       output = append(ledger, identity, "model_published", payload);
+    } else if (command === "distribute-compute-reward") {
+      const launch = requireOption(options, "launch");
+      output = append(
+        ledger,
+        identity,
+        "compute_reward_distributed",
+        buildComputeRewardDistributionPayload(ledger.inspect().state, launch),
+      );
     } else {
       throw new Error(`unknown command ${command}\n${usage()}`);
     }

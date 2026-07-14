@@ -10,6 +10,13 @@ that exercise the shared substrate. Their results inform candidate design, but
 they do not replace the frozen proof contract in
 [`docs/integer-transformer-proof-v1.md`](docs/integer-transformer-proof-v1.md).
 
+[NSRL Forge](https://atimics.github.io/nsrl/launches/) turns that deterministic
+proof substrate into a model-launch prototype: sponsors fund metric bounties,
+compute providers clear sealed stage auctions, signed evidence settles conserved
+test credit, and promoted models allocate capped model-local rewards. The full
+protocol and its non-financial boundary are documented in
+[`docs/decentralized-model-launches.md`](docs/decentralized-model-launches.md).
+
 ![72 text-conditioned seals sampled from the integer denoiser](docs/assets/solomon-text-conditioned-seals.png)
 
 The current model family is:

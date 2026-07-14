@@ -50,6 +50,23 @@ const nodes = {
   localnetBalances: document.querySelector("#localnetBalances"),
   transcriptFlow: document.querySelector("#transcriptFlow"),
   signedMark: document.querySelector(".signed-mark"),
+  marketBidCount: document.querySelector("#marketBidCount"),
+  marketPaidStages: document.querySelector("#marketPaidStages"),
+  marketPayments: document.querySelector("#marketPayments"),
+  marketRefund: document.querySelector("#marketRefund"),
+  marketAuctionList: document.querySelector("#marketAuctionList"),
+  marketConservation: document.querySelector("#marketConservation"),
+  marketFunded: document.querySelector("#marketFunded"),
+  marketPaid: document.querySelector("#marketPaid"),
+  marketRefundDetail: document.querySelector("#marketRefundDetail"),
+  marketBountyPaid: document.querySelector("#marketBountyPaid"),
+  marketPaidBar: document.querySelector("#marketPaidBar"),
+  marketRefundBar: document.querySelector("#marketRefundBar"),
+  auctionLab: document.querySelector("#auctionLab"),
+  auctionStage: document.querySelector("#auctionStage"),
+  bidControlList: document.querySelector("#bidControlList"),
+  auctionResult: document.querySelector("#auctionResult"),
+  providerRewardList: document.querySelector("#providerRewardList"),
   toast: document.querySelector("#toast"),
   targetBar: document.querySelector(".scale-target"),
   resultBar: document.querySelector(".scale-result"),
@@ -65,14 +82,16 @@ const guardrailOperators = {
 };
 
 let networkData = null;
+let marketData = null;
 let toastTimer = null;
 
 boot();
 
 async function boot() {
-  const [networkResult, localnetResult] = await Promise.allSettled([
+  const [networkResult, localnetResult, marketResult] = await Promise.allSettled([
     fetchJson("./network.json"),
     fetchJson("./localnet.json"),
+    fetchJson("./market.json"),
   ]);
   if (networkResult.status === "fulfilled") {
     networkData = networkResult.value;
@@ -86,12 +105,20 @@ async function boot() {
   } else {
     console.warn("Could not load signed localnet transcript", localnetResult.reason);
   }
+  if (marketResult.status === "fulfilled") {
+    marketData = marketResult.value;
+    hydrateMarket(marketData);
+  } else {
+    console.warn("Could not load compute market transcript", marketResult.reason);
+  }
 
   nodes.improvementRange?.addEventListener("input", updateComposer);
   nodes.rewardRange?.addEventListener("input", updateComposer);
   nodes.bonusRange?.addEventListener("input", updateComposer);
   nodes.downloadRecipe?.addEventListener("click", downloadDraftRecipe);
   nodes.copyRecipe?.addEventListener("click", copySpecimenRecipe);
+  nodes.auctionStage?.addEventListener("change", renderBidControls);
+  nodes.auctionLab?.addEventListener("submit", runAuctionCounterfactual);
   document.querySelector("#composer")?.addEventListener("submit", (event) => event.preventDefault());
   updateComposer();
 }
@@ -298,6 +325,170 @@ function renderTranscriptFlow(events, launch) {
   );
 }
 
+function hydrateMarket(data) {
+  const market = data.summary.market;
+  const [escrow] = Object.values(market.compute_escrows);
+  const payments = Object.values(market.stage_payments);
+  const paidUnits = payments.reduce((sum, payment) => sum + BigInt(payment.payment_units), 0n);
+  const fundedUnits = BigInt(escrow.funded_units);
+  const refundedUnits = BigInt(escrow.refunded_units);
+  const bountyPaid = Object.values(data.summary.bounty_settlements)
+    .flatMap((launch) => Object.values(launch))
+    .reduce((sum, bounty) => sum + BigInt(bounty.settled_units), 0n);
+
+  setText(nodes.marketBidCount, market.bid_reveals);
+  setText(nodes.marketPaidStages, `${payments.length} / ${market.auctions.length}`);
+  setText(nodes.marketPayments, formatInteger(paidUnits));
+  setText(nodes.marketRefund, formatInteger(refundedUnits));
+  setText(nodes.marketConservation, `${formatInteger(market.accounted_supply_units)} = ${formatInteger(market.issued_supply_units)}`);
+  setText(nodes.marketFunded, formatInteger(fundedUnits));
+  setText(nodes.marketPaid, formatInteger(paidUnits));
+  setText(nodes.marketRefundDetail, formatInteger(refundedUnits));
+  setText(nodes.marketBountyPaid, formatInteger(bountyPaid));
+  if (fundedUnits > 0n) {
+    nodes.marketPaidBar.style.width = `${Number((paidUnits * 10000n) / fundedUnits) / 100}%`;
+    nodes.marketRefundBar.style.width = `${Number((refundedUnits * 10000n) / fundedUnits) / 100}%`;
+  }
+
+  renderMarketAuctions(market.auctions);
+  renderProviderRewards(market.compute_reward_distributions);
+  nodes.auctionStage.replaceChildren(
+    ...market.auctions.map((auction) => {
+      const option = document.createElement("option");
+      option.value = auction.stage_id;
+      option.textContent = humanize(auction.stage_id);
+      return option;
+    }),
+  );
+  renderBidControls();
+}
+
+function renderMarketAuctions(auctions) {
+  if (!nodes.marketAuctionList) {
+    return;
+  }
+  nodes.marketAuctionList.replaceChildren(
+    ...auctions.map((auction) => {
+      const row = document.createElement("div");
+      row.className = "auction-row";
+      const stage = document.createElement("span");
+      stage.textContent = humanize(auction.stage_id);
+      const provider = document.createElement("span");
+      provider.className = "provider-name";
+      provider.textContent = providerLabel(auction.provider);
+      provider.title = auction.provider;
+      const bids = document.createElement("small");
+      bids.textContent = `${auction.revealed_bids} reveals`;
+      const price = document.createElement("small");
+      price.textContent = `${auction.unit_price_units} / unit`;
+      const payment = document.createElement("strong");
+      payment.textContent = formatInteger(auction.payment_units);
+      payment.title = "settled test credits";
+      row.append(stage, provider, bids, price, payment);
+      return row;
+    }),
+  );
+}
+
+function renderProviderRewards(distributions) {
+  if (!nodes.providerRewardList) {
+    return;
+  }
+  const [distribution] = Object.values(distributions);
+  const total = BigInt(distribution.total_units);
+  nodes.providerRewardList.replaceChildren(
+    ...distribution.allocations.map((allocation) => {
+      const row = document.createElement("div");
+      row.className = "provider-row";
+      const provider = document.createElement("span");
+      provider.textContent = providerLabel(allocation.provider);
+      provider.title = allocation.provider;
+      const track = document.createElement("i");
+      track.style.width = `${Number((BigInt(allocation.units) * 10000n) / total) / 100}%`;
+      const units = document.createElement("strong");
+      units.textContent = `${formatInteger(allocation.units)} ITP1`;
+      row.append(provider, track, units);
+      return row;
+    }),
+  );
+}
+
+function revealedBidsForStage(stageId) {
+  return marketData.events
+    .filter(
+      (event) =>
+        event.signed_intent.event_type === "provider_bid_revealed" &&
+        event.signed_intent.payload.stage_id === stageId,
+    )
+    .map((event) => ({
+      event_id: event.event_id,
+      ...event.signed_intent.payload,
+    }));
+}
+
+function renderBidControls() {
+  if (!marketData || !nodes.bidControlList) {
+    return;
+  }
+  const bids = revealedBidsForStage(nodes.auctionStage.value);
+  nodes.bidControlList.replaceChildren(
+    ...bids.map((bid) => {
+      const row = document.createElement("div");
+      row.className = "bid-control";
+      const label = document.createElement("label");
+      const id = `bid-${bid.stage_id}-${bid.provider.split(":").at(-1)}`;
+      label.htmlFor = id;
+      label.textContent = providerLabel(bid.provider);
+      label.title = bid.provider;
+      const input = document.createElement("input");
+      input.id = id;
+      input.name = bid.provider;
+      input.type = "number";
+      input.min = "1";
+      input.max = "99";
+      input.step = "1";
+      input.value = bid.unit_price_units;
+      input.setAttribute("aria-label", `${providerLabel(bid.provider)} unit price`);
+      row.append(label, input);
+      return row;
+    }),
+  );
+  runAuctionCounterfactual();
+}
+
+function runAuctionCounterfactual(event) {
+  event?.preventDefault();
+  if (!marketData || !nodes.auctionResult) {
+    return;
+  }
+  const stageId = nodes.auctionStage.value;
+  const actual = marketData.summary.market.auctions.find((row) => row.stage_id === stageId);
+  const bids = revealedBidsForStage(stageId)
+    .map((bid) => {
+      const input = [...nodes.bidControlList.querySelectorAll("input")].find(
+        (node) => node.name === bid.provider,
+      );
+      return { ...bid, price: BigInt(input?.value || bid.unit_price_units) };
+    })
+    .sort((left, right) => {
+      if (left.price !== right.price) {
+        return left.price < right.price ? -1 : 1;
+      }
+      return left.event_id.localeCompare(right.event_id);
+    });
+  const winner = bids[0];
+  const computeUnits = BigInt(actual.payment_units) / BigInt(actual.unit_price_units);
+  const cost = computeUnits * winner.price;
+  const delta = BigInt(actual.payment_units) - cost;
+  const comparison =
+    delta === 0n
+      ? "same cost as signed clearing"
+      : delta > 0n
+        ? `${formatInteger(delta)} below signed clearing`
+        : `${formatInteger(-delta)} above signed clearing`;
+  nodes.auctionResult.textContent = `${providerLabel(winner.provider)} wins at ${winner.price} / unit · ${formatInteger(cost)} total · ${comparison}.`;
+}
+
 function updateComposer() {
   const improvementPercent = Number(nodes.improvementRange?.value ?? 10);
   const bountyUnits = BigInt(nodes.rewardRange?.value ?? 120000);
@@ -413,4 +604,8 @@ function humanize(value) {
   return String(value)
     .replaceAll("_", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function providerLabel(account) {
+  return String(account).split(":").at(-1).replaceAll("-", " ");
 }

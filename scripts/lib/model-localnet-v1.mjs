@@ -26,15 +26,28 @@ export const LOCALNET_STATE_SCHEMA = "nsrl.model_localnet_state.v1";
 export const LOCALNET_EVENT_TYPES = [
   "network_initialized",
   "account_registered",
+  "test_credit_issued",
   "launch_published",
   "bounty_funded",
+  "compute_budget_funded",
+  "provider_collateral_deposited",
+  "provider_bid_committed",
+  "slot_advanced",
+  "provider_bid_revealed",
+  "stage_auction_closed",
   "stage_submitted",
+  "compute_metered",
   "validation_attested",
   "challenge_opened",
   "challenge_resolved",
   "stage_accepted",
+  "stage_payment_settled",
+  "compute_budget_refunded",
+  "provider_collateral_withdrawn",
   "candidate_submitted",
   "model_published",
+  "compute_reward_distributed",
+  "launch_expired",
 ];
 
 const ZERO_HASH = "0".repeat(64);
@@ -92,6 +105,13 @@ function asUintString(value, label, { positive = false } = {}) {
 function asPositiveInteger(value, label) {
   if (!Number.isSafeInteger(value) || value <= 0) {
     fail(`${label} must be a positive integer`);
+  }
+  return value;
+}
+
+function asNonnegativeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    fail(`${label} must be a nonnegative integer`);
   }
   return value;
 }
@@ -244,9 +264,289 @@ function emptyState() {
     publications: {},
     bounty_settlements: {},
     model_balances: {},
+    compute_reward_distributions: {},
+    test_credit_supply_units: "0",
+    test_balances: {},
+    compute_escrows: {},
+    provider_collateral: {},
+    bid_commits: {},
+    bid_reveals: {},
+    stage_assignments: {},
+    meter_receipts: {},
+    stage_payments: {},
+    expired_launches: {},
+    slot: 0,
     event_ids: {},
     height: 0,
     head_sha256: ZERO_HASH,
+  };
+}
+
+function stageKey(launchId, stageId) {
+  return `${launchId}:${stageId}`;
+}
+
+function requireStage(launch, stageId) {
+  const stage = launch.recipe.run.stages.find(
+    (row) => row.id === asString(stageId, "stage id"),
+  );
+  if (!stage) {
+    fail(`unknown stage ${stageId}`);
+  }
+  return stage;
+}
+
+function balanceUnits(state, account) {
+  return BigInt(state.test_balances[account] ?? "0");
+}
+
+function addBalance(state, account, units) {
+  state.test_balances[account] = (balanceUnits(state, account) + BigInt(units)).toString();
+}
+
+function debitBalance(state, account, units, label) {
+  const amount = BigInt(units);
+  const balance = balanceUnits(state, account);
+  if (balance < amount) {
+    fail(`${label} exceeds ${account}'s available test-credit balance`);
+  }
+  state.test_balances[account] = (balance - amount).toString();
+}
+
+function accountedTestCreditUnits(state) {
+  const balances = Object.values(state.test_balances).reduce(
+    (sum, units) => sum + BigInt(units),
+    0n,
+  );
+  const computeEscrows = Object.values(state.compute_escrows).reduce(
+    (sum, escrow) => sum + BigInt(escrow.balance_units),
+    0n,
+  );
+  const bountyEscrows = Object.values(state.launches).reduce(
+    (sum, launch) =>
+      sum +
+      Object.values(launch.funded_bounties).reduce(
+        (launchSum, bounty) => launchSum + BigInt(bounty.escrow_balance_units ?? "0"),
+        0n,
+      ),
+    0n,
+  );
+  const collateral = Object.values(state.provider_collateral).reduce(
+    (sum, row) => sum + BigInt(row.locked_units),
+    0n,
+  );
+  return balances + computeEscrows + bountyEscrows + collateral;
+}
+
+function assertTestCreditConservation(state) {
+  if (
+    state.network?.test_credit_enabled === true &&
+    accountedTestCreditUnits(state) !== BigInt(state.test_credit_supply_units)
+  ) {
+    fail("test-credit supply is not conserved across balances, escrows, and collateral");
+  }
+}
+
+function requireTestCredits(state) {
+  const network = requireNetwork(state);
+  if (!network.test_credit_enabled) {
+    fail("test-credit settlement is not enabled for this network");
+  }
+  return network;
+}
+
+function requireComputeEscrow(state, launchId) {
+  const escrow = state.compute_escrows[launchId];
+  if (!escrow) {
+    fail(`launch ${launchId} has no funded compute escrow`);
+  }
+  if (escrow.status !== "open") {
+    fail(`launch ${launchId} compute escrow is ${escrow.status}`);
+  }
+  return escrow;
+}
+
+export function createProviderBidCommitment({
+  launch_id,
+  stage_id,
+  provider,
+  unit_price_units,
+  max_compute_units,
+  nonce,
+}) {
+  return sha256Canonical({
+    schema: "nsrl.provider_bid_reveal.v1",
+    launch_id: asString(launch_id, "bid launch_id"),
+    stage_id: asString(stage_id, "bid stage_id"),
+    provider: asAccount(provider, "bid provider"),
+    unit_price_units: asUintString(unit_price_units, "bid unit_price_units", {
+      positive: true,
+    }),
+    max_compute_units: asUintString(max_compute_units, "bid max_compute_units", {
+      positive: true,
+    }),
+    nonce: asString(nonce, "bid nonce"),
+  });
+}
+
+export function buildStageAuctionClosePayload(state, launchId, stageId) {
+  const launch = requireLaunch(state, launchId);
+  const escrow = requireComputeEscrow(state, launch.id);
+  const stage = requireStage(launch, stageId);
+  const key = stageKey(launch.id, stage.id);
+  const availableBudget = BigInt(escrow.balance_units) - BigInt(escrow.reserved_units);
+  const eligible = Object.values(state.bid_reveals[key] ?? {})
+    .filter((bid) => {
+      const collateral = state.provider_collateral[bid.provider];
+      const availableCollateral = collateral
+        ? BigInt(collateral.locked_units) - BigInt(collateral.reserved_units)
+        : 0n;
+      const total = BigInt(stage.compute_units) * BigInt(bid.unit_price_units);
+      return (
+        BigInt(bid.max_compute_units) >= BigInt(stage.compute_units) &&
+        total <= availableBudget &&
+        availableCollateral >= BigInt(escrow.minimum_collateral_units)
+      );
+    })
+    .sort((left, right) => {
+      const priceDelta = BigInt(left.unit_price_units) - BigInt(right.unit_price_units);
+      if (priceDelta !== 0n) {
+        return priceDelta < 0n ? -1 : 1;
+      }
+      return left.event_id.localeCompare(right.event_id);
+    });
+  if (eligible.length === 0) {
+    fail(`stage ${stage.id} has no eligible revealed provider bid`);
+  }
+  const winner = eligible[0];
+  return {
+    launch_id: launch.id,
+    stage_id: stage.id,
+    provider: winner.provider,
+    winning_bid_event_id: winner.event_id,
+    reserved_payment_units: (
+      BigInt(stage.compute_units) * BigInt(winner.unit_price_units)
+    ).toString(),
+  };
+}
+
+export function buildComputeRewardDistributionPayload(state, launchId) {
+  const launch = requireLaunch(state, launchId);
+  const publication = state.publications[launch.id];
+  if (!publication) {
+    fail(`launch ${launch.id} is not published`);
+  }
+  const computeAllocation = publication.receipt.reward_block.reward.allocations.find(
+    (allocation) => allocation.role === "compute",
+  );
+  if (!computeAllocation) {
+    fail("publication reward has no compute allocation");
+  }
+  const byProvider = {};
+  for (const payment of Object.values(state.stage_payments)) {
+    if (payment.launch_id === launch.id) {
+      byProvider[payment.provider] = (
+        BigInt(byProvider[payment.provider] ?? "0") + BigInt(payment.compute_units)
+      ).toString();
+    }
+  }
+  const totalCompute = Object.values(byProvider).reduce(
+    (sum, units) => sum + BigInt(units),
+    0n,
+  );
+  if (totalCompute === 0n) {
+    fail("compute reward distribution requires paid accepted stages");
+  }
+  const totalReward = BigInt(computeAllocation.units);
+  const rows = Object.entries(byProvider)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([provider, computeUnits]) => {
+      const numerator = totalReward * BigInt(computeUnits);
+      return {
+        provider,
+        accepted_compute_units: computeUnits,
+        units: numerator / totalCompute,
+        remainder: numerator % totalCompute,
+      };
+    });
+  let assigned = rows.reduce((sum, row) => sum + row.units, 0n);
+  const remainderOrder = [...rows].sort((left, right) => {
+    if (left.remainder === right.remainder) {
+      return left.provider.localeCompare(right.provider);
+    }
+    return left.remainder > right.remainder ? -1 : 1;
+  });
+  let cursor = 0;
+  while (assigned < totalReward) {
+    remainderOrder[cursor % remainderOrder.length].units += 1n;
+    assigned += 1n;
+    cursor += 1;
+  }
+  return {
+    launch_id: launch.id,
+    asset_symbol: publication.receipt.reward_block.reward.asset_symbol,
+    source_account: computeAllocation.account,
+    total_units: computeAllocation.units,
+    allocations: rows.map(({ provider, accepted_compute_units, units }) => ({
+      provider,
+      accepted_compute_units,
+      units: units.toString(),
+    })),
+  };
+}
+
+export function buildStagePaymentSettlementPayload(state, stageEventId) {
+  const subjectId = asHash(stageEventId, "paid stage event id");
+  const accepted = state.accepted_stages[subjectId];
+  const submission = state.stage_submissions[subjectId];
+  if (!accepted || !submission) {
+    fail("stage payment requires accepted stage evidence");
+  }
+  const assignment = state.stage_assignments[
+    stageKey(submission.launch_id, submission.stage_id)
+  ];
+  if (!assignment) {
+    fail("stage payment requires a market assignment");
+  }
+  const meter = state.meter_receipts[subjectId];
+  if (!meter) {
+    fail("stage payment requires a signed meter receipt");
+  }
+  return {
+    stage_event_id: subjectId,
+    provider: assignment.provider,
+    payment_units: (
+      BigInt(submission.compute_units) * BigInt(assignment.unit_price_units)
+    ).toString(),
+    meter_event_id: meter.event_id,
+  };
+}
+
+export function buildComputeBudgetRefundPayload(state, launchId) {
+  const launch = requireLaunch(state, launchId);
+  const escrow = requireComputeEscrow(state, launch.id);
+  return {
+    launch_id: launch.id,
+    sponsor: escrow.sponsor,
+    refund_units: escrow.balance_units,
+  };
+}
+
+export function buildLaunchExpiryPayload(state, launchId) {
+  const launch = requireLaunch(state, launchId);
+  const escrow = requireComputeEscrow(state, launch.id);
+  const slashed = Object.values(state.stage_assignments)
+    .filter((assignment) => assignment.launch_id === launch.id && assignment.status === "assigned")
+    .reduce((sum, assignment) => sum + BigInt(assignment.collateral_units), 0n);
+  const bountyRefund = Object.values(launch.funded_bounties).reduce(
+    (sum, bounty) => sum + BigInt(bounty.escrow_balance_units ?? "0"),
+    0n,
+  );
+  return {
+    launch_id: launch.id,
+    compute_refund_units: escrow.balance_units,
+    bounty_refund_units: bountyRefund.toString(),
+    slashed_collateral_units: slashed.toString(),
   };
 }
 
@@ -323,14 +623,20 @@ function attestationCounts(state, subjectEventId) {
   };
 }
 
-function conflictAccounts(recipe) {
-  return new Set([
-    recipe.proposer.account,
-    recipe.participants.builder,
-    recipe.participants.compute,
-    recipe.participants.sponsor,
-    recipe.participants.treasury,
+function conflictAccounts(state, launch) {
+  const conflicts = new Set([
+    launch.recipe.proposer.account,
+    launch.recipe.participants.builder,
+    launch.recipe.participants.compute,
+    launch.recipe.participants.sponsor,
+    launch.recipe.participants.treasury,
   ]);
+  for (const assignment of Object.values(state.stage_assignments)) {
+    if (assignment.launch_id === launch.id) {
+      conflicts.add(assignment.provider);
+    }
+  }
+  return conflicts;
 }
 
 function applyIntent(state, intent, eventId) {
@@ -357,6 +663,11 @@ function applyIntent(state, intent, eventId) {
           payload.full_replay_required,
           "full_replay_required",
         ),
+        test_credit_enabled: payload.test_credit_enabled === true,
+        credit_symbol:
+          payload.test_credit_enabled === true
+            ? asString(payload.credit_symbol, "credit_symbol")
+            : null,
         initialized_event_id: eventId,
       };
       if (state.network.full_replay_required > state.network.candidate_quorum) {
@@ -383,6 +694,22 @@ function applyIntent(state, intent, eventId) {
         registered_event_id: eventId,
         authority: false,
       };
+      break;
+    }
+    case "test_credit_issued": {
+      requireAuthority(state, intent);
+      requireTestCredits(state);
+      const recipient = asAccount(payload.recipient, "test-credit recipient");
+      if (!state.accounts[recipient]) {
+        fail(`test-credit recipient ${recipient} is not registered`);
+      }
+      const units = asUintString(payload.units, "issued test-credit units", {
+        positive: true,
+      });
+      addBalance(state, recipient, units);
+      state.test_credit_supply_units = (
+        BigInt(state.test_credit_supply_units) + BigInt(units)
+      ).toString();
       break;
     }
     case "launch_published": {
@@ -428,27 +755,231 @@ function applyIntent(state, intent, eventId) {
       if (launch.funded_bounties[bounty.id]) {
         fail(`bounty ${bounty.id} is already funded`);
       }
+      if (state.network.test_credit_enabled) {
+        debitBalance(state, intent.actor, bounty.escrow_units, "bounty funding");
+      }
       launch.funded_bounties[bounty.id] = {
         sponsor: intent.actor,
         escrow_units: bounty.escrow_units,
+        escrow_balance_units: bounty.escrow_units,
         funded_event_id: eventId,
+      };
+      break;
+    }
+    case "compute_budget_funded": {
+      requireRegisteredActor(state, intent);
+      requireTestCredits(state);
+      const launch = requireLaunch(state, payload.launch_id);
+      if (intent.actor !== launch.recipe.participants.sponsor) {
+        fail("only the declared sponsor can fund the compute budget");
+      }
+      if (state.compute_escrows[launch.id]) {
+        fail(`launch ${launch.id} already has a compute escrow`);
+      }
+      const units = asUintString(payload.escrow_units, "compute escrow units", {
+        positive: true,
+      });
+      const bidDeadline = asPositiveInteger(payload.bid_deadline_slot, "bid_deadline_slot");
+      const revealDeadline = asPositiveInteger(
+        payload.reveal_deadline_slot,
+        "reveal_deadline_slot",
+      );
+      const executionDeadline = asPositiveInteger(
+        payload.execution_deadline_slot,
+        "execution_deadline_slot",
+      );
+      if (
+        bidDeadline <= state.slot ||
+        revealDeadline <= bidDeadline ||
+        executionDeadline <= revealDeadline
+      ) {
+        fail("compute escrow deadlines must increase after the current slot");
+      }
+      const minimumCollateral = asUintString(
+        payload.minimum_collateral_units,
+        "minimum_collateral_units",
+        { positive: true },
+      );
+      debitBalance(state, intent.actor, units, "compute budget funding");
+      state.compute_escrows[launch.id] = {
+        launch_id: launch.id,
+        sponsor: intent.actor,
+        funded_units: units,
+        balance_units: units,
+        reserved_units: "0",
+        bid_deadline_slot: bidDeadline,
+        reveal_deadline_slot: revealDeadline,
+        execution_deadline_slot: executionDeadline,
+        minimum_collateral_units: minimumCollateral,
+        funded_event_id: eventId,
+        status: "open",
+      };
+      break;
+    }
+    case "provider_collateral_deposited": {
+      requireRegisteredActor(state, intent);
+      requireTestCredits(state);
+      const units = asUintString(payload.units, "provider collateral units", {
+        positive: true,
+      });
+      debitBalance(state, intent.actor, units, "collateral deposit");
+      const collateral = state.provider_collateral[intent.actor] ?? {
+        provider: intent.actor,
+        locked_units: "0",
+        reserved_units: "0",
+        deposit_event_ids: [],
+      };
+      collateral.locked_units = (BigInt(collateral.locked_units) + BigInt(units)).toString();
+      collateral.deposit_event_ids.push(eventId);
+      state.provider_collateral[intent.actor] = collateral;
+      break;
+    }
+    case "provider_bid_committed": {
+      requireRegisteredActor(state, intent);
+      const launch = requireLaunch(state, payload.launch_id);
+      const escrow = requireComputeEscrow(state, launch.id);
+      const stage = requireStage(launch, payload.stage_id);
+      if (state.slot > escrow.bid_deadline_slot) {
+        fail("provider bid commitment arrived after the bid deadline");
+      }
+      const collateral = state.provider_collateral[intent.actor];
+      const availableCollateral = collateral
+        ? BigInt(collateral.locked_units) - BigInt(collateral.reserved_units)
+        : 0n;
+      if (availableCollateral < BigInt(escrow.minimum_collateral_units)) {
+        fail("provider bid requires the minimum available collateral");
+      }
+      const key = stageKey(launch.id, stage.id);
+      state.bid_commits[key] ??= {};
+      if (state.bid_commits[key][intent.actor]) {
+        fail(`provider ${intent.actor} already committed a bid for ${stage.id}`);
+      }
+      state.bid_commits[key][intent.actor] = {
+        event_id: eventId,
+        launch_id: launch.id,
+        stage_id: stage.id,
+        provider: intent.actor,
+        commitment_sha256: asHash(payload.commitment_sha256, "bid commitment_sha256"),
+        slot: state.slot,
+      };
+      break;
+    }
+    case "slot_advanced": {
+      requireAuthority(state, intent);
+      const nextSlot = asPositiveInteger(payload.slot, "slot");
+      if (nextSlot <= state.slot) {
+        fail("logical slot must advance monotonically");
+      }
+      state.slot = nextSlot;
+      break;
+    }
+    case "provider_bid_revealed": {
+      requireRegisteredActor(state, intent);
+      const launch = requireLaunch(state, payload.launch_id);
+      const escrow = requireComputeEscrow(state, launch.id);
+      const stage = requireStage(launch, payload.stage_id);
+      if (state.slot <= escrow.bid_deadline_slot) {
+        fail("provider bid cannot be revealed before the bid window closes");
+      }
+      if (state.slot > escrow.reveal_deadline_slot) {
+        fail("provider bid reveal arrived after the reveal deadline");
+      }
+      const key = stageKey(launch.id, stage.id);
+      const commit = state.bid_commits[key]?.[intent.actor];
+      if (!commit) {
+        fail(`provider ${intent.actor} has no committed bid for ${stage.id}`);
+      }
+      state.bid_reveals[key] ??= {};
+      if (state.bid_reveals[key][intent.actor]) {
+        fail(`provider ${intent.actor} already revealed its bid for ${stage.id}`);
+      }
+      const reveal = {
+        launch_id: launch.id,
+        stage_id: stage.id,
+        provider: intent.actor,
+        unit_price_units: asUintString(payload.unit_price_units, "bid unit_price_units", {
+          positive: true,
+        }),
+        max_compute_units: asUintString(
+          payload.max_compute_units,
+          "bid max_compute_units",
+          { positive: true },
+        ),
+        nonce: asString(payload.nonce, "bid nonce"),
+      };
+      if (createProviderBidCommitment(reveal) !== commit.commitment_sha256) {
+        fail("revealed provider bid does not match its commitment");
+      }
+      state.bid_reveals[key][intent.actor] = {
+        ...reveal,
+        event_id: eventId,
+        commitment_event_id: commit.event_id,
+        slot: state.slot,
+      };
+      break;
+    }
+    case "stage_auction_closed": {
+      requireAuthority(state, intent);
+      const launch = requireLaunch(state, payload.launch_id);
+      const escrow = requireComputeEscrow(state, launch.id);
+      const stage = requireStage(launch, payload.stage_id);
+      if (state.slot <= escrow.reveal_deadline_slot) {
+        fail("stage auction cannot close before the reveal deadline");
+      }
+      if (state.slot > escrow.execution_deadline_slot) {
+        fail("stage auction cannot close after the execution deadline");
+      }
+      const key = stageKey(launch.id, stage.id);
+      if (state.stage_assignments[key]) {
+        fail(`stage ${stage.id} is already assigned`);
+      }
+      const expected = buildStageAuctionClosePayload(state, launch.id, stage.id);
+      if (canonicalJson(payload) !== canonicalJson(expected)) {
+        fail("stage assignment does not match deterministic auction ranking");
+      }
+      const winner = state.bid_reveals[key][expected.provider];
+      const reservedCost = expected.reserved_payment_units;
+      const collateral = state.provider_collateral[winner.provider];
+      collateral.reserved_units = (
+        BigInt(collateral.reserved_units) + BigInt(escrow.minimum_collateral_units)
+      ).toString();
+      escrow.reserved_units = (BigInt(escrow.reserved_units) + BigInt(reservedCost)).toString();
+      state.stage_assignments[key] = {
+        event_id: eventId,
+        launch_id: launch.id,
+        stage_id: stage.id,
+        provider: winner.provider,
+        winning_bid_event_id: winner.event_id,
+        unit_price_units: winner.unit_price_units,
+        max_compute_units: winner.max_compute_units,
+        reserved_payment_units: reservedCost,
+        collateral_units: escrow.minimum_collateral_units,
+        status: "assigned",
       };
       break;
     }
     case "stage_submitted": {
       requireRegisteredActor(state, intent);
       const launch = requireLaunch(state, payload.launch_id);
-      if (intent.actor !== launch.recipe.participants.compute) {
-        fail("stage submission must be signed by the declared compute provider");
+      if (state.expired_launches[launch.id]) {
+        fail("expired launches cannot accept stage evidence");
       }
       for (const bounty of launch.recipe.bounties) {
         if (!launch.funded_bounties[bounty.id]) {
           fail(`bounty ${bounty.id} must be funded before compute begins`);
         }
       }
-      const stage = launch.recipe.run.stages.find((row) => row.id === payload.stage_id);
-      if (!stage) {
-        fail(`unknown stage ${payload.stage_id}`);
+      const stage = requireStage(launch, payload.stage_id);
+      const assignment = state.stage_assignments[stageKey(launch.id, stage.id)];
+      const expectedProvider = assignment?.provider ?? launch.recipe.participants.compute;
+      if (intent.actor !== expectedProvider) {
+        fail("stage submission must be signed by the assigned compute provider");
+      }
+      if (assignment) {
+        const escrow = requireComputeEscrow(state, launch.id);
+        if (state.slot > escrow.execution_deadline_slot) {
+          fail("stage evidence arrived after the execution deadline");
+        }
       }
       if (
         Object.values(state.stage_submissions).some(
@@ -475,11 +1006,66 @@ function applyIntent(state, intent, eventId) {
       };
       break;
     }
+    case "compute_metered": {
+      requireRegisteredActor(state, intent);
+      const subjectId = asHash(payload.stage_event_id, "metered stage event id");
+      const submission = state.stage_submissions[subjectId];
+      if (!submission) {
+        fail(`unknown stage submission ${subjectId}`);
+      }
+      const key = stageKey(submission.launch_id, submission.stage_id);
+      const assignment = state.stage_assignments[key];
+      if (!assignment || assignment.provider !== intent.actor) {
+        fail("meter receipt must be signed by the assigned provider");
+      }
+      if (state.meter_receipts[subjectId]) {
+        fail("stage submission already has a meter receipt");
+      }
+      const startSlot = asNonnegativeInteger(payload.start_slot, "meter start_slot");
+      const endSlot = asPositiveInteger(payload.end_slot, "meter end_slot");
+      if (endSlot <= startSlot || endSlot > state.slot) {
+        fail("meter slots must increase and end no later than the current slot");
+      }
+      const escrow = requireComputeEscrow(state, submission.launch_id);
+      if (endSlot > escrow.execution_deadline_slot || state.slot > escrow.execution_deadline_slot) {
+        fail("meter receipt arrived after the execution deadline");
+      }
+      const computeUnits = asUintString(payload.compute_units, "meter compute_units", {
+        positive: true,
+      });
+      if (computeUnits !== submission.compute_units) {
+        fail("metered compute units must equal the submitted stage claim");
+      }
+      if (
+        payload.input_sha256 !== submission.input_sha256 ||
+        payload.output_sha256 !== submission.output_sha256 ||
+        payload.evidence_sha256 !== submission.evidence_sha256
+      ) {
+        fail("meter receipt hashes must match the submitted stage evidence");
+      }
+      state.meter_receipts[subjectId] = {
+        event_id: eventId,
+        stage_event_id: subjectId,
+        launch_id: submission.launch_id,
+        stage_id: submission.stage_id,
+        provider: intent.actor,
+        start_slot: startSlot,
+        end_slot: endSlot,
+        compute_units: computeUnits,
+        input_sha256: submission.input_sha256,
+        output_sha256: submission.output_sha256,
+        evidence_sha256: submission.evidence_sha256,
+      };
+      break;
+    }
     case "validation_attested": {
       requireRegisteredActor(state, intent);
       const subject = requireSubject(state, payload.subject_type, payload.subject_event_id);
       const launch = requireLaunch(state, subject.launch_id);
-      if (conflictAccounts(launch.recipe).has(intent.actor)) {
+      if (state.expired_launches[launch.id]) {
+        fail("expired launches cannot accept validator attestations");
+      }
+      if (conflictAccounts(state, launch).has(intent.actor)) {
         fail(`validator ${intent.actor} conflicts with launch execution or funding roles`);
       }
       if (
@@ -512,6 +1098,9 @@ function applyIntent(state, intent, eventId) {
       requireRegisteredActor(state, intent);
       const subject = requireSubject(state, payload.subject_type, payload.subject_event_id);
       const launch = requireLaunch(state, subject.launch_id);
+      if (state.expired_launches[launch.id]) {
+        fail("expired launches cannot accept challenges");
+      }
       if (
         (subject.type === "stage" && state.accepted_stages[payload.subject_event_id]) ||
         (subject.type === "candidate" && state.publications[launch.id])
@@ -572,12 +1161,19 @@ function applyIntent(state, intent, eventId) {
       if (state.accepted_stages[subjectId]) {
         fail("stage submission is already accepted");
       }
+      if (state.expired_launches[stage.launch_id]) {
+        fail("expired launches cannot accept stage evidence");
+      }
       if (state.invalid_subjects[subjectId] || openChallenges(state, subjectId).length > 0) {
         fail("challenged or invalid stage evidence cannot be accepted");
       }
       const counts = attestationCounts(state, subjectId);
       if (counts.invalid > 0 || counts.valid < state.network.stage_quorum) {
         fail("stage submission has not reached a clean validator quorum");
+      }
+      const assignment = state.stage_assignments[stageKey(stage.launch_id, stage.stage_id)];
+      if (assignment && !state.meter_receipts[subjectId]) {
+        fail("market-assigned stage evidence requires a signed meter receipt");
       }
       state.accepted_stages[subjectId] = {
         event_id: eventId,
@@ -589,9 +1185,116 @@ function applyIntent(state, intent, eventId) {
       };
       break;
     }
+    case "stage_payment_settled": {
+      requireAuthority(state, intent);
+      requireTestCredits(state);
+      const subjectId = asHash(payload.stage_event_id, "paid stage event id");
+      const accepted = state.accepted_stages[subjectId];
+      const submission = state.stage_submissions[subjectId];
+      if (!accepted || !submission) {
+        fail("stage payment requires accepted stage evidence");
+      }
+      if (state.stage_payments[subjectId]) {
+        fail("accepted stage evidence is already paid");
+      }
+      const expectedPayment = buildStagePaymentSettlementPayload(state, subjectId);
+      if (canonicalJson(payload) !== canonicalJson(expectedPayment)) {
+        fail("stage payment does not match assignment, meter, and accepted compute");
+      }
+      const key = stageKey(submission.launch_id, submission.stage_id);
+      const assignment = state.stage_assignments[key];
+      if (!assignment) {
+        fail("stage payment requires a market assignment");
+      }
+      const escrow = requireComputeEscrow(state, submission.launch_id);
+      const payment = (
+        BigInt(submission.compute_units) * BigInt(assignment.unit_price_units)
+      ).toString();
+      if (
+        BigInt(payment) > BigInt(escrow.balance_units) ||
+        BigInt(payment) > BigInt(escrow.reserved_units)
+      ) {
+        fail("stage payment exceeds the funded or reserved compute escrow");
+      }
+      escrow.balance_units = (BigInt(escrow.balance_units) - BigInt(payment)).toString();
+      escrow.reserved_units = (BigInt(escrow.reserved_units) - BigInt(payment)).toString();
+      addBalance(state, assignment.provider, payment);
+
+      const collateral = state.provider_collateral[assignment.provider];
+      collateral.locked_units = (
+        BigInt(collateral.locked_units) - BigInt(assignment.collateral_units)
+      ).toString();
+      collateral.reserved_units = (
+        BigInt(collateral.reserved_units) - BigInt(assignment.collateral_units)
+      ).toString();
+      addBalance(state, assignment.provider, assignment.collateral_units);
+      assignment.status = "paid";
+      assignment.payment_event_id = eventId;
+      state.stage_payments[subjectId] = {
+        event_id: eventId,
+        stage_event_id: subjectId,
+        launch_id: submission.launch_id,
+        stage_id: submission.stage_id,
+        provider: assignment.provider,
+        compute_units: submission.compute_units,
+        unit_price_units: assignment.unit_price_units,
+        payment_units: payment,
+        collateral_released_units: assignment.collateral_units,
+        meter_event_id: payload.meter_event_id,
+      };
+      break;
+    }
+    case "compute_budget_refunded": {
+      requireAuthority(state, intent);
+      requireTestCredits(state);
+      const launch = requireLaunch(state, payload.launch_id);
+      const escrow = requireComputeEscrow(state, launch.id);
+      for (const stage of launch.recipe.run.stages) {
+        const paid = Object.values(state.stage_payments).some(
+          (row) => row.launch_id === launch.id && row.stage_id === stage.id,
+        );
+        if (!paid) {
+          fail(`compute budget cannot close before stage ${stage.id} is paid`);
+        }
+      }
+      if (escrow.reserved_units !== "0") {
+        fail("compute budget cannot close with reserved stage payments");
+      }
+      const refund = escrow.balance_units;
+      if (canonicalJson(payload) !== canonicalJson(buildComputeBudgetRefundPayload(state, launch.id))) {
+        fail("compute budget refund does not match remaining escrow");
+      }
+      addBalance(state, escrow.sponsor, refund);
+      escrow.balance_units = "0";
+      escrow.refunded_units = refund;
+      escrow.refund_event_id = eventId;
+      escrow.status = "settled";
+      break;
+    }
+    case "provider_collateral_withdrawn": {
+      requireRegisteredActor(state, intent);
+      requireTestCredits(state);
+      const collateral = state.provider_collateral[intent.actor];
+      if (!collateral) {
+        fail(`provider ${intent.actor} has no collateral balance`);
+      }
+      const units = asUintString(payload.units, "collateral withdrawal units", {
+        positive: true,
+      });
+      const available = BigInt(collateral.locked_units) - BigInt(collateral.reserved_units);
+      if (BigInt(units) > available) {
+        fail("collateral withdrawal exceeds the unreserved balance");
+      }
+      collateral.locked_units = (BigInt(collateral.locked_units) - BigInt(units)).toString();
+      addBalance(state, intent.actor, units);
+      break;
+    }
     case "candidate_submitted": {
       requireRegisteredActor(state, intent);
       const launch = requireLaunch(state, payload.launch_id);
+      if (state.expired_launches[launch.id]) {
+        fail("expired launches cannot accept a candidate");
+      }
       if (intent.actor !== launch.recipe.participants.builder) {
         fail("candidate submission must be signed by the declared builder");
       }
@@ -602,6 +1305,10 @@ function applyIntent(state, intent, eventId) {
         if (!accepted) {
           fail(`candidate cannot be submitted before stage ${stage.id} is accepted`);
         }
+      }
+      const computeEscrow = state.compute_escrows[launch.id];
+      if (computeEscrow && computeEscrow.status !== "settled") {
+        fail("candidate cannot be submitted before compute payments and refund settle");
       }
       if (Object.values(state.candidates).some((row) => row.launch_id === launch.id)) {
         fail(`launch ${launch.id} already has a candidate`);
@@ -635,6 +1342,9 @@ function applyIntent(state, intent, eventId) {
         fail(`unknown candidate ${candidateId}`);
       }
       const launch = requireLaunch(state, candidate.launch_id);
+      if (state.expired_launches[launch.id]) {
+        fail("expired launches cannot publish a model");
+      }
       if (state.publications[launch.id]) {
         fail(`launch ${launch.id} is already published`);
       }
@@ -661,7 +1371,8 @@ function applyIntent(state, intent, eventId) {
 
       const bountyRows = {};
       for (const bounty of launch.recipe.bounties) {
-        if (!launch.funded_bounties[bounty.id]) {
+        const funded = launch.funded_bounties[bounty.id];
+        if (!funded) {
           fail(`funded bounty evidence is missing for ${bounty.id}`);
         }
         const payout = bountyPayoutUnits(
@@ -677,6 +1388,15 @@ function applyIntent(state, intent, eventId) {
           settled_units: payout,
           refunded_units: (BigInt(bounty.escrow_units) - BigInt(payout)).toString(),
         };
+        if (state.network.test_credit_enabled) {
+          const refund = BigInt(bounty.escrow_units) - BigInt(payout);
+          if (BigInt(funded.escrow_balance_units) !== BigInt(bounty.escrow_units)) {
+            fail(`bounty escrow balance is inconsistent for ${bounty.id}`);
+          }
+          addBalance(state, launch.recipe.participants.builder, payout);
+          addBalance(state, bounty.sponsor, refund);
+          funded.escrow_balance_units = "0";
+        }
       }
       state.bounty_settlements[launch.id] = bountyRows;
 
@@ -700,9 +1420,106 @@ function applyIntent(state, intent, eventId) {
       launch.published_recipe_sha256 = payload.receipt.recipe_sha256;
       break;
     }
+    case "compute_reward_distributed": {
+      requireAuthority(state, intent);
+      const launch = requireLaunch(state, payload.launch_id);
+      if (state.compute_reward_distributions[launch.id]) {
+        fail(`launch ${launch.id} compute reward is already distributed`);
+      }
+      const expected = buildComputeRewardDistributionPayload(state, launch.id);
+      if (canonicalJson(payload) !== canonicalJson(expected)) {
+        fail("compute reward distribution does not match accepted stage work");
+      }
+      const balances = state.model_balances[payload.asset_symbol];
+      if (!balances || BigInt(balances[payload.source_account] ?? "0") < BigInt(payload.total_units)) {
+        fail("compute reward pool does not contain the distributable allocation");
+      }
+      balances[payload.source_account] = (
+        BigInt(balances[payload.source_account]) - BigInt(payload.total_units)
+      ).toString();
+      for (const allocation of payload.allocations) {
+        balances[allocation.provider] = (
+          BigInt(balances[allocation.provider] ?? "0") + BigInt(allocation.units)
+        ).toString();
+      }
+      state.compute_reward_distributions[launch.id] = {
+        event_id: eventId,
+        ...clone(payload),
+      };
+      break;
+    }
+    case "launch_expired": {
+      requireAuthority(state, intent);
+      requireTestCredits(state);
+      const launch = requireLaunch(state, payload.launch_id);
+      const escrow = requireComputeEscrow(state, launch.id);
+      if (state.publications[launch.id]) {
+        fail("published launches cannot expire");
+      }
+      if (state.slot <= escrow.execution_deadline_slot) {
+        fail("launch cannot expire before its execution deadline");
+      }
+      const expectedExpiry = buildLaunchExpiryPayload(state, launch.id);
+      if (canonicalJson(payload) !== canonicalJson(expectedExpiry)) {
+        fail("launch expiry settlement does not match deterministic refunds and slashing");
+      }
+      let slashed = 0n;
+      for (const assignment of Object.values(state.stage_assignments)) {
+        if (assignment.launch_id !== launch.id || assignment.status !== "assigned") {
+          continue;
+        }
+        const collateral = state.provider_collateral[assignment.provider];
+        const amount = BigInt(assignment.collateral_units);
+        collateral.locked_units = (BigInt(collateral.locked_units) - amount).toString();
+        collateral.reserved_units = (BigInt(collateral.reserved_units) - amount).toString();
+        assignment.status = "slashed";
+        assignment.slash_event_id = eventId;
+        slashed += amount;
+      }
+      addBalance(state, escrow.sponsor, slashed);
+
+      const computeRefund = BigInt(escrow.balance_units);
+      addBalance(state, escrow.sponsor, computeRefund);
+      escrow.balance_units = "0";
+      escrow.reserved_units = "0";
+      escrow.refunded_units = computeRefund.toString();
+      escrow.status = "expired";
+      escrow.refund_event_id = eventId;
+
+      let bountyRefund = 0n;
+      const bountyRows = {};
+      for (const bounty of launch.recipe.bounties) {
+        const funded = launch.funded_bounties[bounty.id];
+        if (!funded) {
+          continue;
+        }
+        const refund = BigInt(funded.escrow_balance_units);
+        addBalance(state, funded.sponsor, refund);
+        funded.escrow_balance_units = "0";
+        bountyRefund += refund;
+        bountyRows[bounty.id] = {
+          sponsor: funded.sponsor,
+          recipient: null,
+          escrow_units: funded.escrow_units,
+          settled_units: "0",
+          refunded_units: refund.toString(),
+        };
+      }
+      state.bounty_settlements[launch.id] = bountyRows;
+      state.expired_launches[launch.id] = {
+        event_id: eventId,
+        slot: state.slot,
+        compute_refund_units: computeRefund.toString(),
+        bounty_refund_units: bountyRefund.toString(),
+        slashed_collateral_units: slashed.toString(),
+      };
+      launch.status = "expired";
+      break;
+    }
     default:
       fail(`unhandled event type ${intent.event_type}`);
   }
+  assertTestCreditConservation(state);
 }
 
 function verifyAndApplyEvent(state, event, expectedHeight, previousHash) {
@@ -786,15 +1603,20 @@ export class ModelLocalnetLedger {
     if (this.inspect().events.length !== 0) {
       fail("localnet ledger is already initialized");
     }
-    return this.append(
-      signLocalnetIntent(authorityIdentity, "network_initialized", {
+    const payload = {
         network_id: config.network_id ?? "nsrl-model-localnet-v1",
         authority_account: authorityIdentity.account,
         authority_public_key: authorityIdentity.public_key,
         stage_quorum: config.stage_quorum ?? 2,
         candidate_quorum: config.candidate_quorum ?? 3,
         full_replay_required: config.full_replay_required ?? 1,
-      }),
+    };
+    if (config.test_credit_enabled === true) {
+      payload.test_credit_enabled = true;
+      payload.credit_symbol = config.credit_symbol ?? "FORGE-TEST";
+    }
+    return this.append(
+      signLocalnetIntent(authorityIdentity, "network_initialized", payload),
     );
   }
 
@@ -874,7 +1696,31 @@ export function localnetStateSummary(state) {
       Object.values(state.candidates).find((candidate) => candidate.launch_id === launch.id)
         ?.event_id ?? null,
     publication_event_id: state.publications[launch.id]?.event_id ?? null,
+    compute_escrow_status: state.compute_escrows[launch.id]?.status ?? null,
+    assigned_stages: Object.values(state.stage_assignments).filter(
+      (assignment) => assignment.launch_id === launch.id,
+    ).length,
+    paid_stages: Object.values(state.stage_payments).filter(
+      (payment) => payment.launch_id === launch.id,
+    ).length,
   }));
+  const auctionRows = Object.entries(state.stage_assignments).map(([key, assignment]) => ({
+    key,
+    launch_id: assignment.launch_id,
+    stage_id: assignment.stage_id,
+    provider: assignment.provider,
+    unit_price_units: assignment.unit_price_units,
+    reserved_payment_units: assignment.reserved_payment_units,
+    status: assignment.status,
+    revealed_bids: Object.keys(state.bid_reveals[key] ?? {}).length,
+    payment_units:
+      Object.values(state.stage_payments).find(
+        (payment) =>
+          payment.launch_id === assignment.launch_id &&
+          payment.stage_id === assignment.stage_id,
+      )?.payment_units ?? null,
+  }));
+  const accountedSupplyUnits = accountedTestCreditUnits(state).toString();
   return {
     schema: "nsrl.model_localnet_summary.v1",
     network: state.network,
@@ -898,6 +1744,32 @@ export function localnetStateSummary(state) {
     publications: Object.keys(state.publications).length,
     bounty_settlements: clone(state.bounty_settlements),
     model_balances: clone(state.model_balances),
+    market: {
+      enabled: state.network?.test_credit_enabled === true,
+      credit_symbol: state.network?.credit_symbol ?? null,
+      slot: state.slot,
+      issued_supply_units: state.test_credit_supply_units,
+      accounted_supply_units: accountedSupplyUnits,
+      balances: clone(state.test_balances),
+      compute_escrows: clone(state.compute_escrows),
+      provider_collateral: clone(state.provider_collateral),
+      bid_commits: Object.values(state.bid_commits).reduce(
+        (sum, rows) => sum + Object.keys(rows).length,
+        0,
+      ),
+      bid_reveals: Object.values(state.bid_reveals).reduce(
+        (sum, rows) => sum + Object.keys(rows).length,
+        0,
+      ),
+      auctions: auctionRows,
+      meter_receipts: Object.keys(state.meter_receipts).length,
+      stage_payments: clone(state.stage_payments),
+      compute_reward_distributions: clone(state.compute_reward_distributions),
+      expired_launches: clone(state.expired_launches),
+      conservation_valid:
+        state.network?.test_credit_enabled !== true ||
+        state.test_credit_supply_units === accountedSupplyUnits,
+    },
     valid: true,
   };
 }

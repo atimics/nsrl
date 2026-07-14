@@ -34,9 +34,10 @@ than inventing an unverified model result.
 
 The localnet wraps each coordination action in an Ed25519-signed canonical
 intent and then appends it to a replay-protected, hash-linked JSONL ledger. Its
-events cover account registration, recipe publication, bounty funding, compute
-stage evidence, validator attestations, challenges, stage acceptance, candidate
-submission, and model publication.
+events cover account registration, test-credit issuance, recipe publication,
+bounty and compute funding, sealed provider auctions, collateral, signed compute
+meters, validator attestations, challenges, stage payment, expiry, candidate
+submission, model publication, and compute-reward distribution.
 
 [`protocol/model-localnet-v1.schema.json`](../protocol/model-localnet-v1.schema.json)
 defines the public envelopes. [`model-localnet-v1.md`](model-localnet-v1.md)
@@ -67,9 +68,24 @@ The run budget pays actual accepted compute independently of model success.
 Honest negative results are useful evidence and do not slash a compute provider.
 Bonds apply to forged, missing, duplicated, or contract-incompatible evidence.
 
-The present recipe records normalized compute units. A production contract must
-bind those units to provider offers, prices, runner identity, checkpoint roots,
-and accepted stage receipts.
+The local market binds those units to sealed provider offers, deterministic
+prices, runner identity, signed input/output/evidence hashes, accepted stage
+receipts, and test-credit payment. A production contract must additionally bind
+hardware attestations or auditable meter semantics and durable artifact roots.
+
+### Sealed provider auction
+
+Each provider deposits conserved test collateral, then signs a commitment to a
+stage ID, unit price, maximum compute, and private nonce. After the bid deadline,
+providers reveal the bid. After the reveal deadline, the reducer selects the
+lowest eligible unit price, using the reveal event ID as the deterministic tie
+break, and reserves the stage ceiling plus minimum collateral.
+
+Only the assigned key may submit and meter that stage. Settlement requires a
+clean validator quorum and pays actual accepted units rather than the ceiling.
+Unused compute budget returns to the sponsor. If the execution deadline passes,
+expiry refunds open escrows and slashes collateral still reserved against
+unfinished assignments.
 
 ### Model publication
 
@@ -132,14 +148,18 @@ sources of value auditable.
 ```text
 recipe proposed
   -> sponsor signs simulated escrow funding
-  -> compute provider signs stage evidence
+  -> providers commit and reveal sealed stage bids
+  -> deterministic assignment reserves payment + collateral
+  -> assigned provider signs stage evidence + meter
   -> independent validators attest
   -> challenge resolved
   -> authority accepts clean stage quorum
+  -> accepted provider payment + unused compute refund
   -> candidate submitted
   -> three-validator candidate quorum + full replay
   -> bounty settlement
   -> model publication + reward block
+  -> compute pool allocated to actual providers
 ```
 
 Every step must be idempotent. Re-submitting the same evidence cannot create a
@@ -160,6 +180,11 @@ second stage payment, bounty payout, or reward block.
 - A validator cannot also be the launch proposer, builder, compute provider,
   sponsor, or treasury.
 - Finalized stage evidence and published candidates cannot be reopened.
+- Test-credit supply is conserved across balances, escrows, and collateral.
+- A revealed bid must open its prior commitment and may not arrive outside its
+  signed logical-slot window.
+- Stage payment cannot exceed reserved escrow and requires the assigned
+  provider's matching signed meter receipt.
 
 ## Current boundary
 
@@ -167,7 +192,8 @@ This repository implements a signed, single-process localnet specimen, not a
 live financial or blockchain system. It has Ed25519 identities, a hash-linked
 append-only event log, replay protection, clean validator quorums, an explicit
 challenge flow, and simulated bounty/reward settlement. It has no wallet,
-custody, transferable asset, external escrow, provider auction, multi-writer
-consensus, Sybil resistance, or deployed smart contract. Production financial
+custody, transferable asset, external escrow, multi-writer consensus, Sybil
+resistance, or deployed smart contract. Its provider auction and escrow adapter
+operate only over deterministic test credit. Production financial
 claims would require a separate threat model, jurisdiction-specific legal
 review, and audited settlement implementation.

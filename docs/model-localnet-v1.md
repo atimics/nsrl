@@ -34,22 +34,44 @@ The accepted event sequence is:
 ```text
 network_initialized
   -> account_registered
+  -> test_credit_issued
   -> launch_published
   -> bounty_funded
+  -> compute_budget_funded
+  -> provider_collateral_deposited
+  -> provider_bid_committed
+  -> slot_advanced
+  -> provider_bid_revealed
+  -> stage_auction_closed
   -> stage_submitted
+  -> compute_metered
   -> validation_attested
   -> challenge_opened / challenge_resolved
   -> stage_accepted
+  -> stage_payment_settled
+  -> compute_budget_refunded
+  -> provider_collateral_withdrawn
   -> candidate_submitted
   -> validation_attested
   -> model_published
+  -> compute_reward_distributed
 ```
+
+An incomplete launch can instead transition to `launch_expired` after its
+logical execution deadline. Expiry refunds unused compute and bounty escrow,
+slashes collateral reserved by unfinished assignments, and permanently blocks
+new candidate or stage evidence for that launch.
 
 The reducer enforces these role and settlement rules:
 
 - the recipe proposer alone publishes the immutable open recipe;
 - the declared sponsor alone funds the exact bounty amount;
-- the declared compute account alone submits each bounded stage once;
+- compute providers commit a SHA-256 of their bid before revealing its price,
+  compute ceiling, and nonce in a later logical-slot window;
+- the authority closes each auction to the eligible lowest price, breaking ties
+  by reveal event ID and reserving both the maximum payment and collateral;
+- only the assigned provider can submit and meter a stage; meter hashes and
+  units must exactly match the stage evidence;
 - validators cannot also be the proposer, builder, compute provider, sponsor,
   or treasury for that launch;
 - stage acceptance requires a clean validator quorum and no open or upheld
@@ -60,6 +82,10 @@ The reducer enforces these role and settlement rules:
   attestations or challenges;
 - model publication deterministically binds the artifact, proof, metric vector,
   bounty payout/refund rows, and capped model-local reward allocation.
+- accepted metered work pays exactly `compute_units * winning_unit_price`, and
+  the remainder of the compute escrow returns to the sponsor; and
+- the model-local compute allocation is distributed among actual paid providers
+  in proportion to their accepted units using exact largest-remainder arithmetic.
 
 The checked fixture uses a two-validator stage quorum and a three-validator
 candidate quorum with one full replay. Challenge outcomes are resolved by the
@@ -72,7 +98,8 @@ Create a new localnet and self-register accounts:
 ```sh
 node scripts/nsrl-model-localnet.mjs init \
   --dir /tmp/nsrl-localnet \
-  --authority nsrl:authority:localnet
+  --authority nsrl:authority:localnet \
+  --test-credit-symbol FORGE-TEST
 
 node scripts/nsrl-model-localnet.mjs account \
   --dir /tmp/nsrl-localnet \
@@ -83,10 +110,11 @@ node scripts/nsrl-model-localnet.mjs status --dir /tmp/nsrl-localnet
 
 The command prints the generated identity path. Identity files include private
 keys, are written with mode `0600`, and must not be committed. The CLI also
-provides commands for publishing a recipe, funding a bounty, submitting and
-attesting stages, opening/resolving challenges, accepting stages, submitting a
-candidate, and publishing the model; run it with `--help` for the complete
-argument list.
+provides commands for issuing test credit, publishing a recipe, funding bounty
+and compute escrows, depositing collateral, committing/revealing bids, advancing
+logical slots, closing auctions, submitting/metering/attesting/accepting/paying
+stages, refunding or expiring launches, publishing candidates, and distributing
+the compute reward; run it with `--help` for the complete argument list.
 
 Rebuild and validate the deterministic public transcript used by Forge:
 
@@ -94,6 +122,8 @@ Rebuild and validate the deterministic public transcript used by Forge:
 node scripts/check-model-localnet-v1.mjs
 node scripts/build-model-localnet-site.mjs
 node scripts/build-model-localnet-site.mjs --check
+node scripts/check-model-market-v1.mjs
+node scripts/build-model-market-site.mjs --check
 ```
 
 The public fixture contains only public keys, signatures, events, and reduced
@@ -109,12 +139,11 @@ V1 is deliberately narrow:
 - account registration is permissionless and has no Sybil resistance, key
   rotation, delegation, or recovery;
 - the authority configures quorums, accepts stages, and resolves challenges;
-- escrow and balances are deterministic accounting rows, not custodied assets;
-- there are no deadlines, slashing, provider auctions, stage pricing, or
-  external payment adapters; and
+- escrow, balances, deadlines, slashing, bids, meters, and stage payments are
+  deterministic test accounting, not custodied assets or an external rail;
 - artifact hashes do not guarantee replicated availability.
 
-The next useful milestone is a sealed provider auction plus a test escrow
-adapter, followed by multi-process networking and an explicit validator
-selection/finality design. Transferability should remain out of scope until
-those mechanisms have survived economic and security review.
+The next useful milestone is multi-process networking, a durable event index,
+replicated artifact availability, and an explicit validator-selection/finality
+design. Transferability should remain out of scope until those mechanisms have
+survived economic, legal, and security review.
