@@ -13,7 +13,8 @@ const groups = [
 ];
 
 function traceFor(interval, { outputMoved = false, fullGradientPath = false,
-  trunkMoved = false, residualSaturation = 0, initialModel = `model-${interval}` } = {}) {
+  trunkMoved = false, biasMoved = false, residualSaturation = 0,
+  initialModel = `model-${interval}` } = {}) {
   const active = new Set(fullGradientPath ? groups : ["final_rms", "output", "bias"]);
   return {
     training: { optimizer_steps: 4 },
@@ -21,6 +22,7 @@ function traceFor(interval, { outputMoved = false, fullGradientPath = false,
     movement_l1: { output: outputMoved ? 1 : 0 },
     moved_parameter_groups: [
       ...(outputMoved ? ["output"] : []),
+      ...(biasMoved ? ["bias"] : []),
       ...(trunkMoved ? ["q"] : []),
     ],
     diagnostics: {
@@ -82,6 +84,20 @@ try {
   assert.equal(starvation.status, 3);
   assert.equal(starvation.event.classification, "trunk_update_timeout");
 
+  const headOnlyDir = path.join(root, "head-only");
+  await mkdir(headOnlyDir);
+  let headOnly;
+  for (let interval = 0; interval < 8; interval += 1) {
+    headOnly = await runInterval(headOnlyDir, interval, traceFor(interval, {
+      outputMoved: interval === 3,
+      biasMoved: interval >= 4,
+      fullGradientPath: interval >= 6,
+    }), ["--require-trunk-update-by-interval", "7"]);
+  }
+  assert.equal(headOnly.status, 3);
+  assert.equal(headOnly.event.classification, "trunk_update_timeout");
+  assert.deepEqual(headOnly.event.moved_trunk_groups, []);
+
   const continued = await runInterval(starvationDir, 8,
     traceFor(8, { fullGradientPath: true }), ["--require-trunk-update-by-interval", "7"]);
   assert.notEqual(continued.status, 0);
@@ -119,7 +135,7 @@ try {
   assert.notEqual(changedPolicy.status, 0);
   assert.match(changedPolicy.stderr, /does not bind the next model interval/);
 
-  console.log(JSON.stringify({ passed: true, checks: 29 }));
+  console.log(JSON.stringify({ passed: true, checks: 32 }));
 } finally {
   await rm(root, { recursive: true, force: true });
 }

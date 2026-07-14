@@ -54,6 +54,8 @@ node scripts/freeze-production-integer-stabilization-v1.mjs --check
 node scripts/freeze-production-stabilized-pilot-v1.mjs --check
 node scripts/freeze-production-liveness-audit-v1.mjs --check
 node scripts/check-production-training-liveness-self-test.mjs
+node scripts/check-production-optimizer-residual-analysis-self-test.mjs
+node scripts/freeze-production-trunk-unlock-preflight-v1.mjs --check
 node scripts/check-production-model-v1.mjs
 node scripts/check-production-optimization-v1.mjs
 ```
@@ -160,5 +162,31 @@ before its declared deadline without losing the now-proven held-out,
 saturation, liveness-state binding, and restart properties. A larger run is not
 authorized merely because held-out loss is improving while the trunk remains
 unmoved.
+
+The bounded local trunk-unlock preflight is now complete. Instead of sweeping
+arbitrary static shifts, it inspected the exact residual-SGD state from the
+liveness checkpoint and estimated the smallest one-group action that would
+cross an integer update boundary. V was nearest: its maximum accumulated
+absolute residual implied shift 30, three bits below the frozen shift 33, with
+303 parameters predicted to cross. Output and bias were explicitly excluded
+from trunk identity so head-only movement cannot satisfy this gate.
+
+The fresh four-interval run changed only V. V crossed the boundary at the hard
+256-window deadline with 269 updates, while output made 1,052 updates across
+the run. All 13 gradient paths remained active after warm-up, gradient,
+residual, and weight saturation stayed zero, and held-out total improved by 415
+millibits (mean 13.065 to 13.063 bits/token). Replaying windows 128-256 from the
+midpoint reproduced the final model and optimizer byte-for-byte. The runner
+writes interval artifacts atomically and skips complete intervals when
+restarted. The contract and frozen evidence are
+`benchmarks/production-model-v1/p10m-trunk-unlock-contract.json` and
+`benchmarks/production-model-v1/p10m-trunk-unlock-preflight.json`.
+
+This is the first real trunk update, not full trunk training and not a learned
+hyperparameter controller. The residual policy is deliberately a bounded
+bootstrap that produces state/action/outcome data for a future controller. The
+next gate is a trunk-unlock pilot contract; it must preserve the V boundary,
+declare its update deadline before launch, and retain the same liveness,
+held-out, saturation, and exact-restart gates.
 Assisted retrieval, suffix memory, and routing oracles remain forbidden in
 headline generation rows.

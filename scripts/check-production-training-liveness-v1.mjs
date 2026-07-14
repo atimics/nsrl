@@ -8,6 +8,7 @@ const requiredGroups = [
   "embeddings", "attention_rms", "mlp_rms", "final_rms", "q", "k", "v",
   "o", "up", "gate", "down", "output", "bias",
 ];
+const trunkGroups = requiredGroups.filter((group) => !["output", "bias"].includes(group));
 let tracePath = "";
 let stateInPath = "";
 let stateOutPath = "";
@@ -96,7 +97,8 @@ if (!exactGroupKeys(gradientCounts) || !validCounts(gradientCounts)
 }
 const activeGroups = requiredGroups.filter((group) => gradientCounts[group] > 0).sort();
 const outputMoved = trace.movement_l1.output > 0;
-const trunkMoved = trace.moved_parameter_groups.some((group) => group !== "output");
+const movedTrunkGroups = trace.moved_parameter_groups.filter((group) => trunkGroups.includes(group));
+const trunkMoved = movedTrunkGroups.length > 0;
 const trunkUpdateObserved = (previous.trunk_update_observed ?? false) || trunkMoved;
 const outputUnlocked = previous.output_unlocked || outputMoved;
 const fullGradientPath = activeGroups.length === 13;
@@ -152,6 +154,7 @@ const event = {
   output_moved: outputMoved,
   output_unlocked: outputUnlocked,
   trunk_moved: trunkMoved,
+  moved_trunk_groups: movedTrunkGroups,
   trunk_update_observed: trunkUpdateObserved,
   active_gradient_groups: activeGroups,
   full_gradient_path: fullGradientPath,

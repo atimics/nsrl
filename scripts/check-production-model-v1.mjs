@@ -63,6 +63,7 @@ if (smoke.schema !== "nsrl.production_model_smoke_checkpoint.v1"
 const [
   fullBytes, floatBytes, optimizationBytes, pilotContractBytes, pilotBytes, stabilizationBytes,
   stabilizedAttemptBytes, stabilizedContractBytes, stabilizedBytes, livenessBytes,
+  trunkUnlockContractBytes, trunkUnlockBytes,
 ] = await Promise.all([
   readFile(plan.full_train_checkpoint.path),
   readFile(plan.float_twin_checkpoint.path),
@@ -74,6 +75,8 @@ const [
   readFile(plan.stabilized_pilot_contract.path),
   readFile(plan.stabilized_pilot_checkpoint.path),
   readFile(plan.training_liveness_checkpoint.path),
+  readFile(plan.trunk_unlock_contract.path),
+  readFile(plan.trunk_unlock_preflight_checkpoint.path),
 ]);
 if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_checkpoint.sha256
   || createHash("sha256").update(floatBytes).digest("hex") !== plan.float_twin_checkpoint.sha256
@@ -89,7 +92,11 @@ if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_che
   || createHash("sha256").update(stabilizedBytes).digest("hex")
     !== plan.stabilized_pilot_checkpoint.sha256
   || createHash("sha256").update(livenessBytes).digest("hex")
-    !== plan.training_liveness_checkpoint.sha256) {
+    !== plan.training_liveness_checkpoint.sha256
+  || createHash("sha256").update(trunkUnlockContractBytes).digest("hex")
+    !== plan.trunk_unlock_contract.sha256
+  || createHash("sha256").update(trunkUnlockBytes).digest("hex")
+    !== plan.trunk_unlock_preflight_checkpoint.sha256) {
   throw new Error("production training checkpoint hash mismatch");
 }
 const full = JSON.parse(fullBytes);
@@ -102,6 +109,8 @@ const stabilizedAttempt = JSON.parse(stabilizedAttemptBytes);
 const stabilizedContract = JSON.parse(stabilizedContractBytes);
 const stabilized = JSON.parse(stabilizedBytes);
 const liveness = JSON.parse(livenessBytes);
+const trunkUnlockContract = JSON.parse(trunkUnlockContractBytes);
+const trunkUnlock = JSON.parse(trunkUnlockBytes);
 if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || float.schema !== "nsrl.production_float_twin_smoke_checkpoint.v1"
   || full.parameter_count !== plan.points[0].parameter_count
@@ -204,6 +213,24 @@ if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || liveness.micro_probe.trunk_update_observed_by_256_windows !== false
   || !Object.values(liveness.gates).every(Boolean)
   || liveness.audit_eligible !== true
+  || trunkUnlockContract.schema !== "nsrl.production_trunk_unlock_preflight_contract.v1"
+  || trunkUnlockContract.source_liveness.sha256 !== plan.training_liveness_checkpoint.sha256
+  || trunkUnlockContract.candidate.group !== "v"
+  || trunkUnlockContract.candidate.candidate_shift !== 30
+  || trunkUnlockContract.schedule.train_windows !== 256
+  || trunkUnlockContract.liveness_policy.require_trunk_update_by_interval !== 3
+  || trunkUnlock.schema !== "nsrl.production_trunk_unlock_preflight_checkpoint.v1"
+  || trunkUnlock.contract.sha256 !== plan.trunk_unlock_contract.sha256
+  || trunkUnlock.source_liveness.sha256 !== plan.training_liveness_checkpoint.sha256
+  || trunkUnlock.candidate.group !== "v"
+  || trunkUnlock.candidate.candidate_shift !== 30
+  || trunkUnlock.intervals[3].movement_l1.v !== 269
+  || trunkUnlock.heldout.total_millibits_delta !== -415
+  || trunkUnlock.restart.final_model_sha256 !== trunkUnlock.restart.replay_model_sha256
+  || trunkUnlock.restart.final_optimizer_sha256 !== trunkUnlock.restart.replay_optimizer_sha256
+  || !Object.values(trunkUnlock.gates).every(Boolean)
+  || trunkUnlock.preflight_eligible !== true
+  || trunkUnlock.next_gate !== "p10m_trunk_unlock_pilot_contract"
   || plan.pilot_contract.runner !== "aws_graviton_parallel_lanes"
   || JSON.stringify(optimization.results.map((row) => row.context_tokens)) !== JSON.stringify([4, 16, 64, 256])
   || full.moved_parameter_groups.length !== 13
@@ -234,8 +261,11 @@ if (!status.variable_vocab_artifact_ready
   || !status.training_liveness_audit_eligible
   || !status.phase_aware_liveness_ready
   || !status.residual_saturation_observable
+  || !status.residual_boundary_policy_ready
+  || !status.trunk_unlock_preflight_completed
+  || !status.trunk_unlock_preflight_eligible
   || !status.training_started
-  || status.next_gate !== "p10m_trunk_unlock_preflight") {
+  || status.next_gate !== "p10m_trunk_unlock_pilot_contract") {
   throw new Error("production implementation status is inconsistent");
 }
 console.log(JSON.stringify({
@@ -267,6 +297,15 @@ console.log(JSON.stringify({
     output_unlock_interval: liveness.micro_probe.observed_output_unlock_interval,
     trunk_activation_interval: liveness.micro_probe.observed_trunk_activation_interval,
     trunk_update_observed: liveness.micro_probe.trunk_update_observed_by_256_windows,
+  },
+  trunk_unlock: {
+    preflight_eligible: trunkUnlock.preflight_eligible,
+    group: trunkUnlock.candidate.group,
+    candidate_shift: trunkUnlock.candidate.candidate_shift,
+    movement_l1: trunkUnlock.intervals[3].movement_l1.v,
+    heldout_total_millibits_delta: trunkUnlock.heldout.total_millibits_delta,
+    exact_restart: trunkUnlock.gates.midpoint_restart_model_byte_identical
+      && trunkUnlock.gates.midpoint_restart_optimizer_byte_identical,
   },
   next_gate: plan.implementation_status.next_gate,
 }));

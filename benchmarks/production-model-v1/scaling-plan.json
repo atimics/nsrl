@@ -65,6 +65,15 @@
     "sha256": "4bfecf31e5472bfa4e8f92945dbd7cdc7c4c4eb5737865adbd9580c0e67e2a49",
     "source_run": "data/experiments/production-model-v1/p10m-liveness-audit-local-v2"
   },
+  "trunk_unlock_contract": {
+    "path": "benchmarks/production-model-v1/p10m-trunk-unlock-contract.json",
+    "sha256": "6e0f92eb556fd2738c5603fc2f6cf1b7d310085470db4622f3c6b7a7a17ccbcd"
+  },
+  "trunk_unlock_preflight_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-trunk-unlock-preflight.json",
+    "sha256": "3378c769f88e91a9f8337cd33d5c1a0146dd2b6c54b66cf465a57b195cb49c2b",
+    "source_run": "data/experiments/production-model-v1/p10m-trunk-unlock-v-boundary"
+  },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
     "attention": "causal_linear_attention",
@@ -145,7 +154,10 @@
     "training_liveness_audit_eligible": true,
     "phase_aware_liveness_ready": true,
     "residual_saturation_observable": true,
+    "residual_boundary_policy_ready": true,
+    "trunk_unlock_preflight_completed": true,
+    "trunk_unlock_preflight_eligible": true,
     "training_started": true,
-    "next_gate": "p10m_trunk_unlock_preflight"
+    "next_gate": "p10m_trunk_unlock_pilot_contract"
   }
 }
