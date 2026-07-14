@@ -62,7 +62,7 @@ if (smoke.schema !== "nsrl.production_model_smoke_checkpoint.v1"
 }
 const [
   fullBytes, floatBytes, optimizationBytes, pilotContractBytes, pilotBytes, stabilizationBytes,
-  stabilizedAttemptBytes, stabilizedContractBytes, stabilizedBytes,
+  stabilizedAttemptBytes, stabilizedContractBytes, stabilizedBytes, livenessBytes,
 ] = await Promise.all([
   readFile(plan.full_train_checkpoint.path),
   readFile(plan.float_twin_checkpoint.path),
@@ -73,6 +73,7 @@ const [
   readFile(plan.stabilized_pilot_attempt.path),
   readFile(plan.stabilized_pilot_contract.path),
   readFile(plan.stabilized_pilot_checkpoint.path),
+  readFile(plan.training_liveness_checkpoint.path),
 ]);
 if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_checkpoint.sha256
   || createHash("sha256").update(floatBytes).digest("hex") !== plan.float_twin_checkpoint.sha256
@@ -86,7 +87,9 @@ if (createHash("sha256").update(fullBytes).digest("hex") !== plan.full_train_che
   || createHash("sha256").update(stabilizedContractBytes).digest("hex")
     !== plan.stabilized_pilot_contract.sha256
   || createHash("sha256").update(stabilizedBytes).digest("hex")
-    !== plan.stabilized_pilot_checkpoint.sha256) {
+    !== plan.stabilized_pilot_checkpoint.sha256
+  || createHash("sha256").update(livenessBytes).digest("hex")
+    !== plan.training_liveness_checkpoint.sha256) {
   throw new Error("production training checkpoint hash mismatch");
 }
 const full = JSON.parse(fullBytes);
@@ -98,6 +101,7 @@ const stabilization = JSON.parse(stabilizationBytes);
 const stabilizedAttempt = JSON.parse(stabilizedAttemptBytes);
 const stabilizedContract = JSON.parse(stabilizedContractBytes);
 const stabilized = JSON.parse(stabilizedBytes);
+const liveness = JSON.parse(livenessBytes);
 if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || float.schema !== "nsrl.production_float_twin_smoke_checkpoint.v1"
   || full.parameter_count !== plan.points[0].parameter_count
@@ -186,6 +190,20 @@ if (full.schema !== "nsrl.production_full_train_smoke_checkpoint.v1"
   || !Object.values(stabilized.gates).every(Boolean)
   || stabilized.replay_eligible !== true
   || stabilized.next_gate !== "p10m_trunk_unlock_preflight"
+  || liveness.schema !== "nsrl.production_training_liveness_audit.v1"
+  || liveness.parameter_count !== plan.points[0].parameter_count
+  || liveness.interval.windows !== 64
+  || liveness.interval.total_windows !== 256
+  || liveness.negative_control.event.classification !== "output_unlock_timeout"
+  || liveness.negative_control.event.dead !== true
+  || liveness.micro_probe.interval_windows !== 16
+  || liveness.micro_probe.output_unlock_deadline_intervals !== 4
+  || liveness.micro_probe.trunk_activation_deadline_intervals !== 3
+  || liveness.micro_probe.observed_output_unlock_interval !== 3
+  || liveness.micro_probe.observed_trunk_activation_interval !== 6
+  || liveness.micro_probe.trunk_update_observed_by_256_windows !== false
+  || !Object.values(liveness.gates).every(Boolean)
+  || liveness.audit_eligible !== true
   || plan.pilot_contract.runner !== "aws_graviton_parallel_lanes"
   || JSON.stringify(optimization.results.map((row) => row.context_tokens)) !== JSON.stringify([4, 16, 64, 256])
   || full.moved_parameter_groups.length !== 13
@@ -212,6 +230,10 @@ if (!status.variable_vocab_artifact_ready
   || !status.stabilized_pilot_first_attempt_early_stopped
   || !status.stabilized_pilot_replay_completed
   || !status.stabilized_pilot_replay_eligible
+  || !status.training_liveness_audit_completed
+  || !status.training_liveness_audit_eligible
+  || !status.phase_aware_liveness_ready
+  || !status.residual_saturation_observable
   || !status.training_started
   || status.next_gate !== "p10m_trunk_unlock_preflight") {
   throw new Error("production implementation status is inconsistent");
@@ -239,6 +261,12 @@ console.log(JSON.stringify({
     float_final_mean_millibits: stabilized.float.evaluation.final_mean_millibits,
     integer_float_regression_per_mille: stabilized.comparison.integer_regression_vs_float_per_mille,
     moved_parameter_groups: stabilized.integer.moved_parameter_groups.length,
+  },
+  training_liveness: {
+    audit_eligible: liveness.audit_eligible,
+    output_unlock_interval: liveness.micro_probe.observed_output_unlock_interval,
+    trunk_activation_interval: liveness.micro_probe.observed_trunk_activation_interval,
+    trunk_update_observed: liveness.micro_probe.trunk_update_observed_by_256_windows,
   },
   next_gate: plan.implementation_status.next_gate,
 }));

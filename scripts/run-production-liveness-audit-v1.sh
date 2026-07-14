@@ -49,7 +49,9 @@ run_negative_control() {
   node scripts/check-production-training-liveness-v1.mjs \
     --trace "$out_dir/negative-0.json" --interval 0 \
     --state-out "$out_dir/negative-state-0.json" \
-    --event-out "$out_dir/negative-event-0.json" --expect-dead
+    --event-out "$out_dir/negative-event-0.json" \
+    --output-unlock-deadline-intervals 1 \
+    --trunk-activation-deadline-intervals 1 --expect-dead
 }
 
 run_positive_control() {
@@ -67,6 +69,8 @@ run_positive_control() {
       --event-out "$out_dir/positive-event-$index.json"
       --dev-initial "$out_dir/dev-initial.json"
       --dev-current "$out_dir/positive-dev-$index.json"
+      --output-unlock-deadline-intervals 1
+      --trunk-activation-deadline-intervals 1
     )
     if [[ -n "$state_in" ]]; then args+=(--state-in "$state_in"); fi
     node scripts/check-production-training-liveness-v1.mjs "${args[@]}"

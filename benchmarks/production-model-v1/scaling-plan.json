@@ -60,6 +60,11 @@
     "sha256": "428d6c4bc1a39b9a8df6620a494cb396cfce2a344d171d2dba0e00eaa861e3ab",
     "source_run": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/runs/production-p10m-stabilized-pilot-v2-20260713T140032Z"
   },
+  "training_liveness_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-liveness-audit.json",
+    "sha256": "4bfecf31e5472bfa4e8f92945dbd7cdc7c4c4eb5737865adbd9580c0e67e2a49",
+    "source_run": "data/experiments/production-model-v1/p10m-liveness-audit-local-v2"
+  },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
     "attention": "causal_linear_attention",
@@ -136,6 +141,10 @@
     "stabilized_pilot_first_attempt_early_stopped": true,
     "stabilized_pilot_replay_completed": true,
     "stabilized_pilot_replay_eligible": true,
+    "training_liveness_audit_completed": true,
+    "training_liveness_audit_eligible": true,
+    "phase_aware_liveness_ready": true,
+    "residual_saturation_observable": true,
     "training_started": true,
     "next_gate": "p10m_trunk_unlock_preflight"
   }

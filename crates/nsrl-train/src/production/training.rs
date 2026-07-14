@@ -255,12 +255,14 @@ pub struct ProductionFullTrainTrace {
     pub learning_rate_shifts: [u8; 13],
     pub output_backward_shift: u8,
     pub gradient_saturation_count: usize,
+    pub residual_saturation_count: usize,
     pub weight_saturation_count: usize,
     pub movement_l1: [u64; 13],
     pub gradient_nonzero_count: [u64; 13],
     pub residual_carry_count: [u64; 13],
     pub update_nonzero_count: [u64; 13],
     pub saturation_by_group: [u64; 13],
+    pub residual_saturation_by_group: [u64; 13],
     pub backward_ste_rescue_count: u64,
     pub backward_quantization_count: u64,
     pub initial_model_hash: u64,
@@ -305,8 +307,8 @@ impl ProductionFullTrainTrace {
                 "\"training\":{{\"optimizer\":\"integer_residual_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"evaluation_windows\":{},\"epochs\":{},\"batch_windows\":{},\"optimizer_steps\":{},\"total_optimizer_step\":{},\"initial_mistakes\":{},\"final_mistakes\":{},\"learning_rate_shifts\":{{{}}},\"output_backward_shift\":{}}},",
                 "\"cursor\":{{\"start_epoch\":{},\"start_window\":{},\"next_epoch\":{},\"next_window\":{},\"schedule_complete\":{}}},",
                 "\"movement_l1\":{{{}}},\"moved_parameter_groups\":[{}],",
-                "\"diagnostics\":{{\"gradient_nonzero_count\":{{{}}},\"residual_carry_count\":{{{}}},\"update_nonzero_count\":{{{}}},\"saturation_by_group\":{{{}}},\"backward_ste_rescue_count\":{},\"backward_quantization_count\":{},\"backward_ste_rescue_per_million\":{}}},",
-                "\"health\":{{\"gradient_saturation_count\":{},\"weight_saturation_count\":{}}},",
+                "\"diagnostics\":{{\"gradient_nonzero_count\":{{{}}},\"residual_carry_count\":{{{}}},\"update_nonzero_count\":{{{}}},\"saturation_by_group\":{{{}}},\"residual_saturation_by_group\":{{{}}},\"backward_ste_rescue_count\":{},\"backward_quantization_count\":{},\"backward_ste_rescue_per_million\":{}}},",
+                "\"health\":{{\"gradient_saturation_count\":{},\"residual_saturation_count\":{},\"weight_saturation_count\":{}}},",
                 "\"hashes\":{{\"initial_model\":\"0x{:016x}\",\"final_model\":\"0x{:016x}\",\"optimizer_state\":\"0x{:016x}\"}},",
                 "\"gates\":{{\"all_parameter_groups_moved\":{},\"model_hash_changed\":{},\"resumable_optimizer_state\":true,\"batched_residual_updates\":true}},",
                 "\"known_non_claims\":[\"bounded_full_backward_smoke_not_scaling_run\",\"straight_through_backward_derivatives\",\"not_open_generation_quality\"]}}\n"
@@ -337,11 +339,13 @@ impl ProductionFullTrainTrace {
             render_groups(self.residual_carry_count),
             render_groups(self.update_nonzero_count),
             render_groups(self.saturation_by_group),
+            render_groups(self.residual_saturation_by_group),
             self.backward_ste_rescue_count,
             self.backward_quantization_count,
             self.backward_ste_rescue_count.saturating_mul(1_000_000)
                 / self.backward_quantization_count.max(1),
             self.gradient_saturation_count,
+            self.residual_saturation_count,
             self.weight_saturation_count,
             self.initial_model_hash,
             self.final_model_hash,
@@ -381,9 +385,11 @@ struct UpdateStats {
     residual_carry: [u64; 13],
     update_nonzero: [u64; 13],
     saturation_by_group: [u64; 13],
+    residual_saturation_by_group: [u64; 13],
     backward_ste_rescue: u64,
     backward_quantization: u64,
     gradient_saturation: usize,
+    residual_saturation: usize,
     weight_saturation: usize,
 }
 
@@ -530,12 +536,14 @@ pub fn train_production_full_smoke(
             .output_backward_shift
             .unwrap_or(model.scales.output_shift),
         gradient_saturation_count: stats.gradient_saturation,
+        residual_saturation_count: stats.residual_saturation,
         weight_saturation_count: stats.weight_saturation,
         movement_l1: stats.movement,
         gradient_nonzero_count: stats.gradient_nonzero,
         residual_carry_count: stats.residual_carry,
         update_nonzero_count: stats.update_nonzero,
         saturation_by_group: stats.saturation_by_group,
+        residual_saturation_by_group: stats.residual_saturation_by_group,
         backward_ste_rescue_count: stats.backward_ste_rescue,
         backward_quantization_count: stats.backward_quantization,
         initial_model_hash,
@@ -1135,7 +1143,7 @@ fn update_i8_matrix_rows(
             let index = output * input_dim + input_index;
             stats.gradient_nonzero[group] =
                 stats.gradient_nonzero[group].saturating_add(u64::from(gradient != 0));
-            residuals[index] = residuals[index].saturating_add(gradient);
+            accumulate_residual(&mut residuals[index], gradient, group, stats);
             if !apply_updates {
                 continue;
             }
@@ -1384,7 +1392,7 @@ fn update_i16(
 ) {
     stats.gradient_nonzero[group] =
         stats.gradient_nonzero[group].saturating_add(u64::from(gradient != 0));
-    *residual = residual.saturating_add(gradient);
+    accumulate_residual(residual, gradient, group, stats);
     if !apply_updates {
         return;
     }
@@ -1416,7 +1424,7 @@ fn update_i32(
 ) {
     stats.gradient_nonzero[group] =
         stats.gradient_nonzero[group].saturating_add(u64::from(gradient != 0));
-    *residual = residual.saturating_add(gradient);
+    accumulate_residual(residual, gradient, group, stats);
     if !apply_updates {
         return;
     }
@@ -1442,6 +1450,17 @@ fn consume_residual(residual: &mut i64, update: i64, shift: u8) {
     let consumed = i128::from(update) * (1_i128 << shift);
     let remaining = i128::from(*residual) - consumed;
     *residual = remaining.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64;
+}
+
+fn accumulate_residual(residual: &mut i64, gradient: i64, group: usize, stats: &mut UpdateStats) {
+    if let Some(next) = residual.checked_add(gradient) {
+        *residual = next;
+    } else {
+        *residual = residual.saturating_add(gradient);
+        stats.residual_saturation = stats.residual_saturation.saturating_add(1);
+        stats.residual_saturation_by_group[group] =
+            stats.residual_saturation_by_group[group].saturating_add(1);
+    }
 }
 fn add_rows(left: &[i16], right: &[i16]) -> Vec<i16> {
     left.iter()
@@ -1624,7 +1643,7 @@ fn vector_group_shift(base: u8, group: usize) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        FNV_OFFSET, FNV_PRIME, ProductionFullTrainConfig, UpdateStats,
+        FNV_OFFSET, FNV_PRIME, ProductionFullTrainConfig, UpdateStats, accumulate_residual,
         effective_learning_rate_shifts, quantized_nonzero, schedule_hash,
     };
 
@@ -1680,5 +1699,15 @@ mod tests {
         assert_eq!(quantized_nonzero(-1, 12, &mut stats), -1);
         assert_eq!(stats.backward_quantization, 2);
         assert_eq!(stats.backward_ste_rescue, 2);
+    }
+
+    #[test]
+    fn residual_accumulation_reports_integer_overflow_by_group() {
+        let mut stats = UpdateStats::default();
+        let mut residual = i64::MAX;
+        accumulate_residual(&mut residual, 1, 4, &mut stats);
+        assert_eq!(residual, i64::MAX);
+        assert_eq!(stats.residual_saturation, 1);
+        assert_eq!(stats.residual_saturation_by_group[4], 1);
     }
 }

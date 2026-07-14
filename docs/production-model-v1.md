@@ -24,6 +24,11 @@ The runtime now provides:
   epoch/window cursor state, and one carried i64 residual per parameter;
 - per-parameter-group gradient, carry, update, movement, and saturation
   diagnostics;
+- explicit residual-accumulator overflow counts globally and by parameter
+  group;
+- phase-aware interval liveness state bound to the exact preceding model hash,
+  with a chained event-history hash and hard output, trunk-gradient, and
+  trunk-update deadlines;
 - a same-shape NumPy float reference runner mapped from the integer
   initialization and trained on the same bounded windows.
 
@@ -47,6 +52,8 @@ node scripts/freeze-production-full-train-v1.mjs --check
 node scripts/freeze-production-float-twin-v1.mjs --check
 node scripts/freeze-production-integer-stabilization-v1.mjs --check
 node scripts/freeze-production-stabilized-pilot-v1.mjs --check
+node scripts/freeze-production-liveness-audit-v1.mjs --check
+node scripts/check-production-training-liveness-self-test.mjs
 node scripts/check-production-model-v1.mjs
 node scripts/check-production-optimization-v1.mjs
 ```
@@ -126,9 +133,32 @@ mille behind float, inside the 150-per-mille bound, and the 512-window midpoint
 restart reproduced the final model and optimizer byte-for-byte. The frozen
 checkpoint is `benchmarks/production-model-v1/p10m-stabilized-pilot.json`.
 
+The follow-up liveness audit ran locally in 16-window probes before allowing
+another long runner. With output update shift 34, the first output update lands
+in interval 3 (windows 48-64), while all 13 quantized gradient paths first
+become active in interval 6 (windows 96-112). Treating those as one event would
+therefore reject a healthy warm-up. The phase-aware policy gives output unlock
+four intervals and subsequent trunk activation three intervals; after the
+trunk is live, any gradient-path loss is immediately fatal. The known-dead
+shift-36 control remains locked for all four probes and exits at window 64.
+
+The same audit found a previously silent failure channel: i64 optimizer
+residual accumulation used saturating addition without reporting overflow.
+Residual saturation is now counted globally and per parameter group and is a
+hard liveness failure alongside gradient and weight saturation. Interval state
+also rejects skipped intervals or a model hash that does not match the prior
+state, and an explicit trunk-update deadline turns persistent sub-quantum
+updates into `trunk_update_timeout`. All local probes had zero saturation and
+non-increasing held-out loss, but the trunk still had not crossed an integer
+update boundary by 256 windows. The frozen evidence is
+`benchmarks/production-model-v1/p10m-liveness-audit.json`.
+
 This remains a warm-up/stability result rather than model promotion: only the
 output projection crosses an integer update boundary. The next gate is a
 bounded trunk-unlock preflight that must make non-output parameter groups move
-without losing the now-proven held-out, saturation, and restart properties.
+before its declared deadline without losing the now-proven held-out,
+saturation, liveness-state binding, and restart properties. A larger run is not
+authorized merely because held-out loss is improving while the trunk remains
+unmoved.
 Assisted retrieval, suffix memory, and routing oracles remain forbidden in
 headline generation rows.
