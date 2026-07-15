@@ -659,6 +659,15 @@ a:focus-visible {
   border-top: 1px solid var(--line);
 }
 
+.receipt-links {
+  margin: 24px -28px -28px;
+  border-top: 1px solid var(--line);
+}
+
+.receipt-links .card-link + .card-link {
+  border-top: 1px solid var(--line);
+}
+
 .challenge-card {
   border: 1px solid rgba(201, 255, 87, 0.32);
   border-radius: var(--radius);
@@ -2358,6 +2367,10 @@ footer > div:last-child {
   }
 
   .inline-card-link {
+    margin: 22px -20px -20px;
+  }
+
+  .receipt-links {
     margin: 22px -20px -20px;
   }
 
