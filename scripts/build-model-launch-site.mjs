@@ -142,6 +142,12 @@ function buildData() {
         detail: "Sealed bids, deterministic price clearing, collateral, signed meters, and accepted-stage payment replay locally.",
       },
       {
+        capability: "Bounty automation",
+        status: "prototype",
+        label: "Keeper",
+        detail: "Sponsor-signed budgets, cooldowns, cycle caps, pause controls, approvals, and resumable reserved funding open exact promoted successors.",
+      },
+      {
         capability: "Validator network",
         status: "prototype",
         label: "Localnet",

@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.dev/schemas/bounty-automation-policy-v1.schema.json",
+  "title": "NSRL bounty automation policy v1",
+  "description": "A sponsor-signed, bounded policy for automatically opening successor model bounties after objective promotion evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "sponsor",
+    "proposer",
+    "keeper",
+    "source_launch_id",
+    "trigger",
+    "objective",
+    "budgets",
+    "limits",
+    "auction"
+  ],
+  "properties": {
+    "schema": { "const": "nsrl.bounty_automation_policy.v1" },
+    "id": { "$ref": "#/$defs/slug" },
+    "sponsor": { "$ref": "#/$defs/account" },
+    "proposer": { "$ref": "#/$defs/account" },
+    "keeper": { "$ref": "#/$defs/account" },
+    "source_launch_id": { "$ref": "#/$defs/slug" },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event"],
+      "properties": { "event": { "const": "model_promoted" } }
+    },
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "direction", "relative_improvement_bps"],
+      "properties": {
+        "metric": { "type": "string", "minLength": 1 },
+        "direction": { "enum": ["minimize", "maximize"] },
+        "relative_improvement_bps": { "type": "integer", "minimum": 1, "maximum": 9999 }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bounty_units",
+        "compute_budget_units",
+        "max_total_spend_units",
+        "manual_approval_above_units"
+      ],
+      "properties": {
+        "bounty_units": { "$ref": "#/$defs/positiveUintString" },
+        "compute_budget_units": { "$ref": "#/$defs/positiveUintString" },
+        "max_total_spend_units": { "$ref": "#/$defs/positiveUintString" },
+        "manual_approval_above_units": { "$ref": "#/$defs/uintString" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_active_bounties", "max_cycles", "cooldown_slots"],
+      "properties": {
+        "max_active_bounties": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "max_cycles": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "cooldown_slots": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "auction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bid_window_slots",
+        "reveal_window_slots",
+        "execution_window_slots",
+        "minimum_collateral_units"
+      ],
+      "properties": {
+        "bid_window_slots": { "type": "integer", "minimum": 1 },
+        "reveal_window_slots": { "type": "integer", "minimum": 1 },
+        "execution_window_slots": { "type": "integer", "minimum": 3 },
+        "minimum_collateral_units": { "$ref": "#/$defs/positiveUintString" }
+      }
+    }
+  },
+  "$defs": {
+    "account": {
+      "type": "string",
+      "pattern": "^nsrl:[a-z0-9][a-z0-9:_-]{2,127}$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "uintString": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "positiveUintString": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    }
+  }
+}

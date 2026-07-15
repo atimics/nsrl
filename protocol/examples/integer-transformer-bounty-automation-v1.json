@@ -1,0 +1,33 @@
+{
+  "schema": "nsrl.bounty_automation_policy.v1",
+  "id": "integer-transformer-frontier-auto",
+  "sponsor": "nsrl:sponsor:prototype",
+  "proposer": "nsrl:lab:genesis",
+  "keeper": "nsrl:keeper:frontier",
+  "source_launch_id": "integer-transformer-proof-v1-market",
+  "trigger": {
+    "event": "model_promoted"
+  },
+  "objective": {
+    "metric": "probability_error_q15",
+    "direction": "minimize",
+    "relative_improvement_bps": 1000
+  },
+  "budgets": {
+    "bounty_units": "120000",
+    "compute_budget_units": "12000",
+    "max_total_spend_units": "396000",
+    "manual_approval_above_units": "250000"
+  },
+  "limits": {
+    "max_active_bounties": 1,
+    "max_cycles": 3,
+    "cooldown_slots": 5
+  },
+  "auction": {
+    "bid_window_slots": 2,
+    "reveal_window_slots": 2,
+    "execution_window_slots": 10,
+    "minimum_collateral_units": "500"
+  }
+}

@@ -55,6 +55,9 @@ network_initialized
   -> validation_attested
   -> model_published
   -> compute_reward_distributed
+  -> bounty_automation_policy_registered
+  -> bounty_automation_cycle_opened
+  -> launch_published / bounty_funded / compute_budget_funded
 ```
 
 An incomplete launch can instead transition to `launch_expired` after its
@@ -81,11 +84,16 @@ The reducer enforces these role and settlement rules:
 - accepted stages and published candidates are final and cannot receive new
   attestations or challenges;
 - model publication deterministically binds the artifact, proof, metric vector,
-  bounty payout/refund rows, and capped model-local reward allocation.
+  bounty payout/refund rows, and capped model-local reward allocation;
 - accepted metered work pays exactly `compute_units * winning_unit_price`, and
-  the remainder of the compute escrow returns to the sponsor; and
+  the remainder of the compute escrow returns to the sponsor;
 - the model-local compute allocation is distributed among actual paid providers
-  in proportion to their accepted units using exact largest-remainder arithmetic.
+  in proportion to their accepted units using exact largest-remainder arithmetic;
+  and
+- an automation keeper may open only the deterministic successor of a promoted
+  source under its sponsor-signed budget, cooldown, approval, and cycle limits;
+  the full spend is reserved once and interrupted linked funding resumes from
+  the ledger without duplication.
 
 The checked fixture uses a two-validator stage quorum and a three-validator
 candidate quorum with one full replay. Challenge outcomes are resolved by the
@@ -124,7 +132,14 @@ node scripts/build-model-localnet-site.mjs
 node scripts/build-model-localnet-site.mjs --check
 node scripts/check-model-market-v1.mjs
 node scripts/build-model-market-site.mjs --check
+node scripts/check-bounty-automation-v1.mjs
+node scripts/build-bounty-automation-site.mjs --check
 ```
+
+`scripts/nsrl-bounty-keeper.mjs` registers and inspects signed policies, plans
+or executes eligible cycles, and exposes sponsor `approve`, `pause`, and
+`resume` controls. The full policy and restart semantics are documented in
+[`bounty-automation-v1.md`](bounty-automation-v1.md).
 
 The public fixture contains only public keys, signatures, events, and reduced
 state. Its keypairs are deterministic test identities and must never be reused

@@ -67,6 +67,29 @@ const nodes = {
   bidControlList: document.querySelector("#bidControlList"),
   auctionResult: document.querySelector("#auctionResult"),
   providerRewardList: document.querySelector("#providerRewardList"),
+  automationTrigger: document.querySelector("#automationTrigger"),
+  automationImprovement: document.querySelector("#automationImprovement"),
+  automationCycle: document.querySelector("#automationCycle"),
+  automationCommitted: document.querySelector("#automationCommitted"),
+  automationSource: document.querySelector("#automationSource"),
+  automationLaunch: document.querySelector("#automationLaunch"),
+  automationTarget: document.querySelector("#automationTarget"),
+  keeperEvents: document.querySelector("#keeperEvents"),
+  automationPolicyHash: document.querySelector("#automationPolicyHash"),
+  automationMaxSpend: document.querySelector("#automationMaxSpend"),
+  automationRemaining: document.querySelector("#automationRemaining"),
+  automationActiveLimit: document.querySelector("#automationActiveLimit"),
+  automationCooldown: document.querySelector("#automationCooldown"),
+  automationApproval: document.querySelector("#automationApproval"),
+  automationState: document.querySelector("#automationState"),
+  automationLab: document.querySelector("#automationLab"),
+  automationImprovementRange: document.querySelector("#automationImprovementRange"),
+  automationImprovementOutput: document.querySelector("#automationImprovementOutput"),
+  automationBountyRange: document.querySelector("#automationBountyRange"),
+  automationBountyOutput: document.querySelector("#automationBountyOutput"),
+  automationComputeRange: document.querySelector("#automationComputeRange"),
+  automationComputeOutput: document.querySelector("#automationComputeOutput"),
+  automationLabResult: document.querySelector("#automationLabResult"),
   toast: document.querySelector("#toast"),
   targetBar: document.querySelector(".scale-target"),
   resultBar: document.querySelector(".scale-result"),
@@ -83,15 +106,17 @@ const guardrailOperators = {
 
 let networkData = null;
 let marketData = null;
+let automationData = null;
 let toastTimer = null;
 
 boot();
 
 async function boot() {
-  const [networkResult, localnetResult, marketResult] = await Promise.allSettled([
+  const [networkResult, localnetResult, marketResult, automationResult] = await Promise.allSettled([
     fetchJson("./network.json"),
     fetchJson("./localnet.json"),
     fetchJson("./market.json"),
+    fetchJson("./automation.json"),
   ]);
   if (networkResult.status === "fulfilled") {
     networkData = networkResult.value;
@@ -111,6 +136,12 @@ async function boot() {
   } else {
     console.warn("Could not load compute market transcript", marketResult.reason);
   }
+  if (automationResult.status === "fulfilled") {
+    automationData = automationResult.value;
+    hydrateAutomation(automationData);
+  } else {
+    console.warn("Could not load bounty automation transcript", automationResult.reason);
+  }
 
   nodes.improvementRange?.addEventListener("input", updateComposer);
   nodes.rewardRange?.addEventListener("input", updateComposer);
@@ -119,8 +150,13 @@ async function boot() {
   nodes.copyRecipe?.addEventListener("click", copySpecimenRecipe);
   nodes.auctionStage?.addEventListener("change", renderBidControls);
   nodes.auctionLab?.addEventListener("submit", runAuctionCounterfactual);
+  nodes.automationImprovementRange?.addEventListener("input", updateAutomationLab);
+  nodes.automationBountyRange?.addEventListener("input", updateAutomationLab);
+  nodes.automationComputeRange?.addEventListener("input", updateAutomationLab);
+  nodes.automationLab?.addEventListener("submit", (event) => event.preventDefault());
   document.querySelector("#composer")?.addEventListener("submit", (event) => event.preventDefault());
   updateComposer();
+  updateAutomationLab();
 }
 
 async function fetchJson(url) {
@@ -363,6 +399,57 @@ function hydrateMarket(data) {
   renderBidControls();
 }
 
+function hydrateAutomation(data) {
+  const record = data.summary.automation.policies[0];
+  const policy = record.policy;
+  const cycle = record.cycles[0];
+  const result = data.keeper_result;
+  const improvementPercent = policy.objective.relative_improvement_bps / 100;
+
+  setText(nodes.automationTrigger, "Promoted");
+  setText(nodes.automationImprovement, `${improvementPercent}%`);
+  setText(nodes.automationCycle, `${cycle.cycle_index} / ${policy.limits.max_cycles}`);
+  setText(nodes.automationCommitted, formatInteger(cycle.committed_units));
+  setText(nodes.automationSource, cycle.source_launch_id);
+  setText(nodes.automationLaunch, cycle.launch_id);
+  setText(nodes.automationTarget, formatInteger(result.target));
+  setText(nodes.automationPolicyHash, shortHash(record.policy_sha256));
+  nodes.automationPolicyHash.title = record.policy_sha256;
+  setText(nodes.automationMaxSpend, formatInteger(policy.budgets.max_total_spend_units));
+  setText(nodes.automationRemaining, formatInteger(record.remaining_units));
+  setText(nodes.automationActiveLimit, `${policy.limits.max_active_bounties} max`);
+  setText(nodes.automationCooldown, `${policy.limits.cooldown_slots} slots`);
+  setText(
+    nodes.automationApproval,
+    formatInteger(policy.budgets.manual_approval_above_units),
+  );
+  setText(nodes.automationState, cycle.status);
+  renderKeeperEvents(result.events);
+
+  nodes.automationImprovementRange.value = String(improvementPercent);
+  nodes.automationBountyRange.value = policy.budgets.bounty_units;
+  nodes.automationComputeRange.value = policy.budgets.compute_budget_units;
+  updateAutomationLab();
+}
+
+function renderKeeperEvents(events) {
+  if (!nodes.keeperEvents) {
+    return;
+  }
+  nodes.keeperEvents.replaceChildren(
+    ...events.map((event) => {
+      const item = document.createElement("li");
+      const height = document.createElement("span");
+      height.textContent = `#${String(event.height).padStart(2, "0")}`;
+      const type = document.createElement("strong");
+      type.textContent = humanize(event.event_type);
+      type.title = event.event_id;
+      item.append(height, type);
+      return item;
+    }),
+  );
+}
+
 function renderMarketAuctions(auctions) {
   if (!nodes.marketAuctionList) {
     return;
@@ -506,6 +593,34 @@ function updateComposer() {
   setText(nodes.halfwayPayout, formatInteger(halfway));
   setText(nodes.targetPayout, formatInteger(progressPool));
   setText(nodes.promotedPayout, formatInteger(bountyUnits));
+}
+
+function updateAutomationLab() {
+  const improvementPercent = Number(nodes.automationImprovementRange?.value ?? 10);
+  const bountyUnits = BigInt(nodes.automationBountyRange?.value ?? 120000);
+  const computeUnits = BigInt(nodes.automationComputeRange?.value ?? 12000);
+  const baseline = BigInt(automationData?.keeper_result?.baseline ?? 260536589);
+  const approvalThreshold = BigInt(
+    automationData?.summary?.automation?.policies?.[0]?.policy?.budgets
+      ?.manual_approval_above_units ?? 250000,
+  );
+  const target = (baseline * BigInt(100 - improvementPercent)) / 100n;
+  const cycleSpend = bountyUnits + computeUnits;
+
+  setText(nodes.automationImprovementOutput, `${improvementPercent}%`);
+  setText(nodes.automationBountyOutput, formatInteger(bountyUnits));
+  setText(nodes.automationComputeOutput, formatInteger(computeUnits));
+  if (!nodes.automationLabResult) {
+    return;
+  }
+  const headline = document.createElement("strong");
+  headline.textContent = `${formatInteger(target)} target · ${formatInteger(cycleSpend)} credits`;
+  const detail = document.createElement("span");
+  detail.textContent =
+    cycleSpend > approvalThreshold
+      ? `Separate sponsor approval required above ${formatInteger(approvalThreshold)}.`
+      : `Within the signed automatic threshold of ${formatInteger(approvalThreshold)}.`;
+  nodes.automationLabResult.replaceChildren(headline, detail);
 }
 
 function draftRecipe() {

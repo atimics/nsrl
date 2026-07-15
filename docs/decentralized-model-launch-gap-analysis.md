@@ -21,6 +21,7 @@ identity, settlement, and adversarial network operation.
 | Deterministic model identity | Model hashes, artifact SHA-256s, replay hashes, frozen candidate manifests | Publication receipt binds model, artifact, recipe, proof, and metrics; Ed25519 actors sign every intent | Multi-writer content-addressed registry, key lifecycle, and artifact availability guarantees |
 | Model recipe | Training commands and manifests exist across scripts and docs | `nsrl.model_launch_recipe.v1` JSON Schema and checked specimen | Recipe compiler, migrations, compatibility policy, and secret-free container lock |
 | Metric bounty | Promotion thresholds exist but have no sponsor object | Signed sponsor funding, integer progress curve, promotion bonus, deterministic payout/refund/expiry rows, guardrails | Custodied escrow, stacked claims, external disputes, and audited settlement |
+| Bounty automation | Promoted models and immutable metric evidence can trigger successor work | Sponsor-signed policy, deterministic target/recipe derivation, bounded keeper, pause/approval controls, conserved reservation, and restart-safe funding | Durable scheduler, isolated key custody, multi-writer ordering, expired-reservation recovery, and audited external execution |
 | Compute contract | AWS stage plans record runner and artifact provenance | Bounded stages clear through sealed bids, collateral, deterministic assignment, signed meters, and accepted-work payment | Provider discovery network, hardware-independent metering, redundancy, and external payment rail |
 | Model publication | Promoted artifacts are frozen in repository JSON | Authority publishes after a clean replay quorum into a signed hash-linked event log | Multi-writer registry, distributed ordering/finality, availability, and revocation policy |
 | Block-style rewards | No protocol reward accounting | Capped model-local asset, exact role allocation, append-only ledger, replay protection | Multi-node consensus/finality, recovery, long-horizon economic simulation, and issuance governance |
@@ -60,11 +61,17 @@ identity, settlement, and adversarial network operation.
   meter receipts, accepted-work payments, and unused-budget refunds;
 - exact redistribution of the model-local compute reward to actual providers by
   accepted compute units;
+- promotion-triggered successor bounties with sponsor-signed budgets, cooldowns,
+  cycle and concurrency caps, pause/resume, high-value approvals, and exact
+  deterministic targets;
+- one-time cycle reservation plus interruption-safe keeper replay that conserves
+  test-credit supply between publication and escrow funding;
 - positive, quorum, conflict, replay, reorder, signature-tamper, and hash-tamper
   validation plus adversarial reveal, deadline, winner, meter, payment, and
   expiry cases; and
 - interactive static website using real promoted evidence, the 31-event core
-  transcript, and a 76-event provider-market transcript.
+  transcript, a 76-event provider-market transcript, and an 84-event automated
+  bounty transcript with a counterfactual policy lab.
 
 ### Not yet implemented
 
@@ -124,6 +131,10 @@ identity, settlement, and adversarial network operation.
    launches before enabling transferability.
 4. Commission security and economic reviews of the reward and challenge rules.
 
+The local P1 prototype also includes the bounded bounty keeper. P2 must run it
+against durable indexed events with isolated role keys and explicit recovery
+for reservations whose signed auction window has elapsed.
+
 ### P3: narrow production pilot
 
 1. Launch one capped bounty on an existing frozen NSRL contract.
@@ -135,8 +146,9 @@ identity, settlement, and adversarial network operation.
 
 ## Decision
 
-The signed provider market and simulated-credit escrow adapter are now
-implemented. The next implementation should be a durable multi-process testnet
-with replicated content-addressed artifacts—not a tradable global token. This
-tests ordering, availability, and independent operation before adding financial
-or consensus risk.
+The signed provider market, simulated-credit escrow adapter, and automated
+successor-bounty keeper are now implemented locally. The next implementation
+should be a durable multi-process testnet with replicated content-addressed
+artifacts—not a tradable global token. This tests ordering, availability,
+independent operation, and keeper recovery before adding financial or consensus
+risk.

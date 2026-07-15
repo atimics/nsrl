@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nsrl.dev/schemas/model-localnet-v1.schema.json",
   "title": "NSRL model localnet v1 public objects",
-  "description": "Signed intents, hash-linked ledger events, and public deterministic snapshots for the single-writer test-credit localnet and its sealed compute-provider market.",
+  "description": "Signed intents, hash-linked ledger events, and public deterministic snapshots for the single-writer test-credit localnet, its sealed compute-provider market, and bounded bounty automation.",
   "oneOf": [
     { "$ref": "#/$defs/signedIntent" },
     { "$ref": "#/$defs/event" },
@@ -22,6 +22,11 @@
         "network_initialized",
         "account_registered",
         "test_credit_issued",
+        "bounty_automation_policy_registered",
+        "bounty_automation_policy_paused",
+        "bounty_automation_policy_resumed",
+        "bounty_automation_cycle_approved",
+        "bounty_automation_cycle_opened",
         "launch_published",
         "bounty_funded",
         "compute_budget_funded",
@@ -124,6 +129,15 @@
         "notice": { "type": "string", "minLength": 1 },
         "launch_event_id": { "$ref": "#/$defs/sha256" },
         "candidate_event_id": { "$ref": "#/$defs/sha256" },
+        "automation_cycle_event_id": { "$ref": "#/$defs/sha256" },
+        "waiting_plan": {
+          "type": "object",
+          "description": "Optional public keeper decision captured before an automation cycle became eligible. Reducer-specific fields remain additive."
+        },
+        "keeper_result": {
+          "type": "object",
+          "description": "Optional public result of one bounded keeper tick. Reducer-specific fields remain additive."
+        },
         "summary": {
           "type": "object",
           "required": [
@@ -140,6 +154,7 @@
             "publications",
             "bounty_settlements",
             "model_balances",
+            "automation",
             "valid"
           ],
           "properties": {
@@ -147,6 +162,10 @@
             "height": { "type": "integer", "minimum": 1 },
             "head_sha256": { "$ref": "#/$defs/sha256" },
             "accounts": { "type": "integer", "minimum": 1 },
+            "automation": {
+              "type": "object",
+              "description": "Sponsor-signed policies, approvals, reserved cycle funding, deterministic successor launches, and current policy spend."
+            },
             "market": {
               "type": "object",
               "description": "Additive test-credit market state: balances, escrows, collateral, auction results, meters, payments, reward distribution, and expiry rows. Event-specific invariants are enforced by the reducer."
