@@ -392,6 +392,11 @@ a:focus-visible {
   text-transform: uppercase;
 }
 
+.status-chip.status-rejected {
+  background: rgba(255, 139, 93, 0.12);
+  color: #ffad8d;
+}
+
 .proof-metric {
   padding: 22px 24px 14px;
   border-top: 1px solid var(--line);
@@ -415,6 +420,33 @@ a:focus-visible {
 .proof-metric small span {
   display: inline;
   color: var(--signal);
+}
+
+.atom-row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin: 18px 24px;
+}
+
+.atom-row span {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(201, 255, 87, 0.34);
+  border-radius: 50%;
+  background: rgba(201, 255, 87, 0.07);
+  color: var(--signal);
+  font-family: var(--mono);
+  font-size: clamp(0.7rem, 1vw, 0.85rem);
+  font-weight: 800;
+}
+
+.experiment-summary {
+  padding: 4px 24px 24px;
+  color: #c7ccc1;
+  font-size: 0.84rem;
+  line-height: 1.6;
 }
 
 .proof-scale {
@@ -544,6 +576,122 @@ a:focus-visible {
 
 .manifesto-band p + p {
   border-left: 1px solid rgba(18, 22, 10, 0.25);
+}
+
+.experiment-section {
+  background:
+    radial-gradient(circle at 10% 20%, rgba(201, 255, 87, 0.08), transparent 25%),
+    radial-gradient(circle at 90% 70%, rgba(140, 150, 255, 0.08), transparent 28%),
+    #141712;
+}
+
+.method-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 0 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  padding: 0;
+  background: var(--line);
+  list-style: none;
+}
+
+.method-flow li {
+  min-height: 250px;
+  background: var(--panel);
+  padding: 28px;
+}
+
+.method-flow li > span {
+  color: var(--signal);
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.method-flow h3 {
+  margin: 54px 0 12px;
+}
+
+.method-flow p,
+.finding-card > p,
+.challenge-card > p,
+.challenge-card li {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.experiment-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+  gap: 20px;
+}
+
+.finding-card,
+.challenge-card {
+  padding: 28px;
+}
+
+.finding-card h3,
+.challenge-card h3 {
+  margin-bottom: 18px;
+  font-size: clamp(1.75rem, 3vw, 2.6rem);
+  letter-spacing: -0.04em;
+}
+
+.finding-mark {
+  border-radius: 999px;
+  background: rgba(109, 227, 193, 0.1);
+  color: var(--aqua);
+  padding: 6px 9px;
+  font-family: var(--mono);
+  font-size: 0.59rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.inline-card-link {
+  margin: 24px -28px -28px;
+  border-top: 1px solid var(--line);
+}
+
+.challenge-card {
+  border: 1px solid rgba(201, 255, 87, 0.32);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(140deg, rgba(201, 255, 87, 0.12), transparent 48%),
+    var(--panel);
+}
+
+.challenge-card .micro-label {
+  color: var(--signal);
+}
+
+.challenge-card ol {
+  display: grid;
+  gap: 10px;
+  margin: 24px 0 28px;
+  padding-left: 22px;
+}
+
+.challenge-card li::marker {
+  color: var(--signal);
+  font-family: var(--mono);
+  font-weight: 800;
+}
+
+.challenge-card .button {
+  width: 100%;
+}
+
+.challenge-card .challenge-boundary {
+  margin: 18px 0 0;
+  color: #92988c;
+  font-size: 0.72rem;
 }
 
 .content-section {
@@ -2014,6 +2162,10 @@ footer > div:last-child {
   .automation-lab-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .experiment-result {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2055,7 +2207,8 @@ footer > div:last-child {
   .automation-lab-layout,
   .recipe-layout,
   .section-heading,
-  .next-build {
+  .next-build,
+  .method-flow {
     grid-template-columns: 1fr;
   }
 
@@ -2103,6 +2256,14 @@ footer > div:last-child {
     gap: 28px;
   }
 
+  .method-flow li {
+    min-height: 0;
+  }
+
+  .method-flow h3 {
+    margin-top: 32px;
+  }
+
   footer {
     grid-template-columns: 1fr;
     gap: 15px;
@@ -2137,7 +2298,9 @@ footer > div:last-child {
   .settled-bounty,
   .composer,
   .allocation-card,
-  .next-build {
+  .next-build,
+  .finding-card,
+  .challenge-card {
     padding: 20px;
   }
 
@@ -2192,6 +2355,10 @@ footer > div:last-child {
 
   .keeper-rules li:last-child {
     grid-column: auto;
+  }
+
+  .inline-card-link {
+    margin: 22px -20px -20px;
   }
 
   .metric-stack div,
