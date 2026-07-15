@@ -1,0 +1,289 @@
+{
+  "schema": "nsrl.production_probability_normalization_accuracy_checkpoint.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-probability-normalization-accuracy-contract.json",
+    "sha256": "e5d0b76911717c56ca8611a498259a1005c4924b79e3eebac0218c07c1cffa8c"
+  },
+  "source_preflight": {
+    "contract_path": "benchmarks/production-model-v1/p10m-wide-probability-gradient-preflight-contract.json",
+    "contract_sha256": "921aebf3bf24ceb525ddb073579512abfdda27959bad282216e0ec782b01ad9a",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-wide-probability-gradient-preflight.json",
+    "checkpoint_sha256": "0f15922c15cdc7c4f427cb7e99ee0f48d5e29dd26053b089570820ff6af41fd9",
+    "required_outcome": "wide_precision_no_preflight_gain",
+    "required_next_gate": "p10m_probability_normalization_accuracy_review"
+  },
+  "reference_probability_resolution": {
+    "contract_path": "benchmarks/production-model-v1/p10m-target-probability-resolution-contract.json",
+    "contract_sha256": "1ddfa4a3625be7d05d6ca20498eb098ba29e91235c85bbe9dd686f2d41655686",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-target-probability-resolution.json",
+    "checkpoint_sha256": "04f5be4f9942eb79e6d7d1911f5c5feaa3660dbcc71c236096adb10c06e7b407",
+    "fractional_bits": 23,
+    "target_probability_changed_windows": 13
+  },
+  "models": {
+    "source": {
+      "role": "up_learning_shift23",
+      "path": "data/experiments/production-model-v1/p10m-up-useful-update/model-3.nsrlpm",
+      "sha256": "4a83e3301cd5d15c5c8f919c5816c49e5d81ae2fa60884a09bb65a06b1567b4e",
+      "common_forward_model_hash": "0x4dc415c2fba2da25"
+    },
+    "candidate": {
+      "role": "up_learning_shift22",
+      "path": "data/experiments/production-model-v1/p10m-up-shift22-breakthrough/model-3.nsrlpm",
+      "sha256": "3e66e97dfeefaa6f1e1c2f6bf129646e401d9596051a3f861198aa8515cfea9d",
+      "common_forward_model_hash": "0x5fd8eba1e15d2f9d"
+    },
+    "common_up_forward_shift": 7
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "evaluation": {
+    "context_tokens": 64,
+    "windows": 256,
+    "probability_fractional_bits": 23,
+    "probability_scale": 8388608,
+    "logit_changed_windows": 250,
+    "target_logit_changed_windows": 4
+  },
+  "normalization_rows": [
+    {
+      "normalization": "legacy_q31_lut",
+      "reciprocal_fractional_bits": 31,
+      "uniform_probability_floor": 1024,
+      "source_target": {
+        "min": 826,
+        "max": 1165,
+        "unique_values": 115,
+        "zero_windows": 0
+      },
+      "candidate_target": {
+        "min": 826,
+        "max": 1165,
+        "unique_values": 111,
+        "zero_windows": 0
+      },
+      "mass": {
+        "source_zero_values": 0,
+        "candidate_zero_values": 0,
+        "source_error_l1": 121387440,
+        "source_error_max": 829840,
+        "candidate_error_l1": 121409628,
+        "candidate_error_max": 829877,
+        "source_error_max_ppm": 98925,
+        "candidate_error_max_ppm": 98929
+      },
+      "delta": {
+        "probability_changed_windows": 250,
+        "probability_changed_values": 90465,
+        "probability_delta_l1": 234734,
+        "target_probability_changed_windows": 13,
+        "target_probability_delta_l1": 36
+      },
+      "quality": {
+        "source_total_microbits": 3348249089,
+        "candidate_total_microbits": 3348254586,
+        "total_microbits_delta": 5497,
+        "improved_loss_windows": 6,
+        "worsened_loss_windows": 7,
+        "equal_loss_windows": 243
+      },
+      "accuracy_eligible": false
+    },
+    {
+      "normalization": "q47_lut",
+      "reciprocal_fractional_bits": 47,
+      "uniform_probability_floor": 1024,
+      "source_target": {
+        "min": 885,
+        "max": 1220,
+        "unique_values": 147,
+        "zero_windows": 0
+      },
+      "candidate_target": {
+        "min": 885,
+        "max": 1220,
+        "unique_values": 150,
+        "zero_windows": 0
+      },
+      "mass": {
+        "source_zero_values": 0,
+        "candidate_zero_values": 0,
+        "source_error_l1": 5403752,
+        "source_error_max": 53299,
+        "candidate_error_l1": 5424534,
+        "candidate_error_max": 53260,
+        "source_error_max_ppm": 6354,
+        "candidate_error_max_ppm": 6349
+      },
+      "delta": {
+        "probability_changed_windows": 250,
+        "probability_changed_values": 90521,
+        "probability_delta_l1": 246106,
+        "target_probability_changed_windows": 13,
+        "target_probability_delta_l1": 36
+      },
+      "quality": {
+        "source_total_microbits": 3325689148,
+        "candidate_total_microbits": 3325685631,
+        "total_microbits_delta": -3517,
+        "improved_loss_windows": 7,
+        "worsened_loss_windows": 6,
+        "equal_loss_windows": 243
+      },
+      "accuracy_eligible": false
+    },
+    {
+      "normalization": "q47_newton1",
+      "reciprocal_fractional_bits": 47,
+      "uniform_probability_floor": 1024,
+      "source_target": {
+        "min": 882,
+        "max": 1216,
+        "unique_values": 139,
+        "zero_windows": 0
+      },
+      "candidate_target": {
+        "min": 882,
+        "max": 1216,
+        "unique_values": 140,
+        "zero_windows": 0
+      },
+      "mass": {
+        "source_zero_values": 0,
+        "candidate_zero_values": 0,
+        "source_error_l1": 44897,
+        "source_error_max": 824,
+        "candidate_error_l1": 43783,
+        "candidate_error_max": 700,
+        "source_error_max_ppm": 98,
+        "candidate_error_max_ppm": 83
+      },
+      "delta": {
+        "probability_changed_windows": 250,
+        "probability_changed_values": 24444,
+        "probability_delta_l1": 55984,
+        "target_probability_changed_windows": 5,
+        "target_probability_delta_l1": 12
+      },
+      "quality": {
+        "source_total_microbits": 3326600619,
+        "candidate_total_microbits": 3326603109,
+        "total_microbits_delta": 2490,
+        "improved_loss_windows": 2,
+        "worsened_loss_windows": 3,
+        "equal_loss_windows": 251
+      },
+      "accuracy_eligible": false
+    },
+    {
+      "normalization": "q47_exact_division",
+      "reciprocal_fractional_bits": 47,
+      "uniform_probability_floor": 1024,
+      "source_target": {
+        "min": 882,
+        "max": 1216,
+        "unique_values": 140,
+        "zero_windows": 0
+      },
+      "candidate_target": {
+        "min": 882,
+        "max": 1216,
+        "unique_values": 141,
+        "zero_windows": 0
+      },
+      "mass": {
+        "source_zero_values": 0,
+        "candidate_zero_values": 0,
+        "source_error_l1": 43090,
+        "source_error_max": 613,
+        "candidate_error_l1": 42956,
+        "candidate_error_max": 617,
+        "source_error_max_ppm": 73,
+        "candidate_error_max_ppm": 74
+      },
+      "delta": {
+        "probability_changed_windows": 250,
+        "probability_changed_values": 23594,
+        "probability_delta_l1": 55166,
+        "target_probability_changed_windows": 4,
+        "target_probability_delta_l1": 11
+      },
+      "quality": {
+        "source_total_microbits": 3326596577,
+        "candidate_total_microbits": 3326597699,
+        "total_microbits_delta": 1122,
+        "improved_loss_windows": 2,
+        "worsened_loss_windows": 2,
+        "equal_loss_windows": 252
+      },
+      "accuracy_eligible": false
+    }
+  ],
+  "accuracy_effect": {
+    "best_nondivision_normalization": "q47_newton1",
+    "best_nondivision_meets_mass_threshold": true,
+    "source_max_mass_error_reduction_vs_legacy": 1007.0873786407767,
+    "candidate_max_mass_error_reduction_vs_legacy": 1185.5385714285715,
+    "newton_target_probability_changed_windows": 5,
+    "exact_division_target_probability_changed_windows": 4,
+    "legacy_target_probability_changed_windows": 13,
+    "newton_target_change_excess_vs_exact": 1,
+    "legacy_target_change_excess_vs_exact": 9,
+    "classification": "mass_accuracy_recovered_but_legacy_target_signal_requires_attribution"
+  },
+  "selection": {
+    "policy": {
+      "baseline_normalization": "legacy_q31_lut",
+      "maximum_mass_error_ppm": 1000,
+      "minimum_target_probability_changed_windows": 13,
+      "select_lowest_compute_nonlegacy_method_meeting_both_source_and_candidate_mass_threshold": true,
+      "require_target_signal_not_worse_than_legacy_q23": true,
+      "exact_division_is_accuracy_ceiling_not_default": true,
+      "quality_is_diagnostic_not_promotional": true,
+      "require_zero_forward_saturation": true,
+      "no_test_split_access": true
+    },
+    "selected_normalization": null,
+    "selected_reciprocal_fractional_bits": null,
+    "selected_source_mass_error_max": null,
+    "selected_candidate_mass_error_max": null,
+    "selected_target_probability_changed_windows": null
+  },
+  "health": {
+    "source_residual_saturation_count": 0,
+    "candidate_residual_saturation_count": 0
+  },
+  "gates": {
+    "source_preflight_matches": true,
+    "reference_probability_resolution_matches": true,
+    "artifact_and_data_hashes_match": true,
+    "four_predeclared_normalization_rows_complete": true,
+    "only_probability_normalization_changes": true,
+    "legacy_q23_metrics_reproduced_exactly": true,
+    "probability_mass_and_loss_accounting_complete": true,
+    "selection_policy_applied_exactly": true,
+    "zero_forward_saturation": true,
+    "test_split_not_accessed": true,
+    "paid_cloud_execution_not_authorized": true
+  },
+  "diagnostic_eligible": true,
+  "outcome": "normalization_accuracy_not_recovered",
+  "promotion_eligible": false,
+  "paid_scale_authorized": false,
+  "next_gate": "p10m_probability_normalization_signal_attribution_review",
+  "known_non_claims": [
+    "normalization_accuracy_is_not_training_quality",
+    "exact_division_is_an_accuracy_ceiling_not_a_selected_default_unless_required",
+    "dev_split_diagnostic_does_not_reopen_test",
+    "no_quality_or_scaling_promotion",
+    "not_open_generation_quality"
+  ]
+}

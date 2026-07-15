@@ -1,0 +1,375 @@
+{
+  "schema": "nsrl.production_normalized_wide_gradient_preflight_checkpoint.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-normalized-wide-gradient-preflight-contract.json",
+    "sha256": "3dcb53ac99d29628289ac281ca2aead915067b9e0675d416a11432bc707cbcc5"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "initialization": {
+    "path": "data/experiments/production-model-v1/p10m-up-forward-scale-training/initial.nsrlpm",
+    "sha256": "35f9d96518af70143c46f50f33fb5731831b18a93fce9305eb4bb6315b12c7ca",
+    "model_hash": "0xa3acffd1f55c9094",
+    "up_forward_shift": 7,
+    "output_forward_shift": 14
+  },
+  "numeric_path": {
+    "probability_fractional_bits": 23,
+    "normalization": "q47_newton1",
+    "reciprocal_fractional_bits": 47,
+    "integer_newton_steps": 1,
+    "optimizer_residual_type": "i64"
+  },
+  "lanes": {
+    "normalized_control": {
+      "training": {
+        "optimizer": "integer_residual_sgd",
+        "backward": "full_quantized_straight_through",
+        "context_tokens": 64,
+        "windows": 1024,
+        "evaluation_windows": 64,
+        "epochs": 1,
+        "batch_windows": 4,
+        "optimizer_steps": 64,
+        "total_optimizer_step": 64,
+        "initial_mistakes": 64,
+        "final_mistakes": 45,
+        "learning_rate_shifts": {
+          "embeddings": 17,
+          "attention_rms": 19,
+          "mlp_rms": 13,
+          "final_rms": 19,
+          "q": 29,
+          "k": 26,
+          "v": 30,
+          "o": 25,
+          "up": 22,
+          "gate": 23,
+          "down": 25,
+          "output": 34,
+          "bias": 23
+        },
+        "output_backward_shift": 8,
+        "probability_gradient_fractional_bits": 23,
+        "probability_normalization": "q47_newton1",
+        "probability_gradient_shift_delta": 8,
+        "effective_output_backward_shift": 16,
+        "effective_output_learning_rate_shift": 42,
+        "effective_bias_learning_rate_shift": 31
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 4960,
+        "v": 269,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 1054,
+        "bias": 0
+      },
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "output"
+      ],
+      "health": {
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0
+      },
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3344185,
+        "mean_millibits": 13063
+      },
+      "model_sha256": "4f03c1ecef2c8113aecb55bab4e4f57a011d9edc3b0b41eb7e7e10c15b749c11",
+      "optimizer_sha256": "83c86d81dbfb96e14e571b73b64f9640a0011243626534c6036de245af4c7e5c",
+      "residual_recommendation": {
+        "policy": "minimum_single_group_boundary_reduction_v1",
+        "group": "up",
+        "source_shift": 22,
+        "candidate_shift": 21,
+        "shift_reduction": 1,
+        "predicted_parameter_crossings": 120
+      }
+    },
+    "up_boundary": {
+      "training": {
+        "optimizer": "integer_residual_sgd",
+        "backward": "full_quantized_straight_through",
+        "context_tokens": 64,
+        "windows": 1024,
+        "evaluation_windows": 64,
+        "epochs": 1,
+        "batch_windows": 4,
+        "optimizer_steps": 64,
+        "total_optimizer_step": 64,
+        "initial_mistakes": 64,
+        "final_mistakes": 45,
+        "learning_rate_shifts": {
+          "embeddings": 17,
+          "attention_rms": 19,
+          "mlp_rms": 13,
+          "final_rms": 19,
+          "q": 29,
+          "k": 26,
+          "v": 30,
+          "o": 25,
+          "up": 21,
+          "gate": 23,
+          "down": 25,
+          "output": 34,
+          "bias": 23
+        },
+        "output_backward_shift": 8,
+        "probability_gradient_fractional_bits": 23,
+        "probability_normalization": "q47_newton1",
+        "probability_gradient_shift_delta": 8,
+        "effective_output_backward_shift": 16,
+        "effective_output_learning_rate_shift": 42,
+        "effective_bias_learning_rate_shift": 31
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 4960,
+        "v": 269,
+        "o": 0,
+        "up": 155,
+        "gate": 0,
+        "down": 0,
+        "output": 1054,
+        "bias": 0
+      },
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "up",
+        "output"
+      ],
+      "health": {
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0
+      },
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3344185,
+        "mean_millibits": 13063
+      },
+      "model_sha256": "6dc1bfd017960be9e7fcd07a6c9d67486569dc1797b85962c9911ba415a2fcb1",
+      "optimizer_sha256": "205515156b2c0ec757c714b46004792afc640c627cde0a59cff66ecfd20577d4",
+      "residual_recommendation": {
+        "policy": "minimum_single_group_boundary_reduction_v1",
+        "group": "gate",
+        "source_shift": 23,
+        "candidate_shift": 21,
+        "shift_reduction": 2,
+        "predicted_parameter_crossings": 137
+      },
+      "functional_delta_vs_control": {
+        "feature_changed_windows": 84,
+        "feature_delta_l1": 9846,
+        "logits_changed_windows": 84,
+        "logit_changed_values": 3088,
+        "logit_delta_l1": 3088,
+        "target_logit_changed_windows": 1,
+        "probabilities_changed_windows": 29,
+        "probability_changed_values": 143,
+        "probability_delta_l1": 143,
+        "target_probability_changed_windows": 0,
+        "prediction_changed_windows": 0
+      },
+      "quality_vs_control": {
+        "source_mistakes": 256,
+        "candidate_mistakes": 256,
+        "source_total_millibits": 3344185,
+        "candidate_total_millibits": 3344185,
+        "total_millibits_delta": 0,
+        "improved_loss_windows": 0,
+        "worsened_loss_windows": 0,
+        "equal_loss_windows": 256
+      }
+    },
+    "output_boundary": {
+      "training": {
+        "optimizer": "integer_residual_sgd",
+        "backward": "full_quantized_straight_through",
+        "context_tokens": 64,
+        "windows": 1024,
+        "evaluation_windows": 64,
+        "epochs": 1,
+        "batch_windows": 4,
+        "optimizer_steps": 64,
+        "total_optimizer_step": 64,
+        "initial_mistakes": 64,
+        "final_mistakes": 43,
+        "learning_rate_shifts": {
+          "embeddings": 17,
+          "attention_rms": 19,
+          "mlp_rms": 13,
+          "final_rms": 19,
+          "q": 29,
+          "k": 26,
+          "v": 30,
+          "o": 25,
+          "up": 22,
+          "gate": 23,
+          "down": 25,
+          "output": 33,
+          "bias": 23
+        },
+        "output_backward_shift": 8,
+        "probability_gradient_fractional_bits": 23,
+        "probability_normalization": "q47_newton1",
+        "probability_gradient_shift_delta": 8,
+        "effective_output_backward_shift": 16,
+        "effective_output_learning_rate_shift": 41,
+        "effective_bias_learning_rate_shift": 31
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 83584,
+        "v": 4136,
+        "o": 0,
+        "up": 2,
+        "gate": 0,
+        "down": 0,
+        "output": 3597,
+        "bias": 0
+      },
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "up",
+        "output"
+      ],
+      "health": {
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0
+      },
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3344600,
+        "mean_millibits": 13065
+      },
+      "model_sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+      "optimizer_sha256": "d3df6c5bf7e7bd33cd1a699d34cb3cfaf44fc9ea6904dd6fd42d278a12cbd8ea",
+      "residual_recommendation": {
+        "policy": "minimum_single_group_boundary_reduction_v1",
+        "group": "gate",
+        "source_shift": 23,
+        "candidate_shift": 22,
+        "shift_reduction": 1,
+        "predicted_parameter_crossings": 2
+      },
+      "functional_delta_vs_control": {
+        "feature_changed_windows": 256,
+        "feature_delta_l1": 11703683,
+        "logits_changed_windows": 256,
+        "logit_changed_values": 559905,
+        "logit_delta_l1": 629778,
+        "target_logit_changed_windows": 64,
+        "probabilities_changed_windows": 256,
+        "probability_changed_values": 69976,
+        "probability_delta_l1": 69989,
+        "target_probability_changed_windows": 3,
+        "prediction_changed_windows": 56
+      },
+      "quality_vs_control": {
+        "source_mistakes": 256,
+        "candidate_mistakes": 256,
+        "source_total_millibits": 3344185,
+        "candidate_total_millibits": 3344600,
+        "total_millibits_delta": 415,
+        "improved_loss_windows": 1,
+        "worsened_loss_windows": 2,
+        "equal_loss_windows": 253
+      }
+    }
+  },
+  "precision_effect": {
+    "normalized_control_model_byte_identical_to_q15": true,
+    "normalized_control_optimizer_differs_from_legacy_q23": true,
+    "up_boundary_materialized_updates": 155,
+    "up_boundary_feature_changed_windows": 84,
+    "output_boundary_target_logit_changed_windows": 64,
+    "output_boundary_target_probability_changed_windows": 3,
+    "classification": "precision_reaches_target_probability_at_output_boundary"
+  },
+  "quality_effect": {
+    "normalized_control_dev_total_millibits_delta": 0,
+    "up_boundary_dev_total_millibits_delta": 0,
+    "output_boundary_dev_total_millibits_delta": 415,
+    "classification": "no_dev_gain"
+  },
+  "replay": {
+    "selected_model_sha256": "4f03c1ecef2c8113aecb55bab4e4f57a011d9edc3b0b41eb7e7e10c15b749c11",
+    "replay_model_sha256": "4f03c1ecef2c8113aecb55bab4e4f57a011d9edc3b0b41eb7e7e10c15b749c11",
+    "selected_optimizer_sha256": "83c86d81dbfb96e14e571b73b64f9640a0011243626534c6036de245af4c7e5c",
+    "replay_optimizer_sha256": "83c86d81dbfb96e14e571b73b64f9640a0011243626534c6036de245af4c7e5c"
+  },
+  "selection": {
+    "selected_probability_fractional_bits": 23,
+    "selected_normalization": "q47_newton1",
+    "selected_up_learning_rate_shift": 22,
+    "selected_output_learning_rate_shift": 34,
+    "aggressive_materialization_boundary_promoted": false
+  },
+  "safety_gates": {
+    "source_normalization_attribution_matches": true,
+    "bound_inputs_and_initial_model_match": true,
+    "schedules_and_dev_shapes_match": true,
+    "all_13_gradient_paths_active": true,
+    "all_saturation_zero": true,
+    "normalization_changes_optimizer_not_materialized_control": true,
+    "normalized_control_exact_replay": true,
+    "up_boundary_materializes_functional_model_signal": true,
+    "output_boundary_recovers_target_probability_signal": true,
+    "test_split_not_accessed": true,
+    "paid_cloud_execution_not_authorized": true
+  },
+  "safety_eligible": true,
+  "integer_precision_bottleneck_resolved": true,
+  "dev_quality_gain": false,
+  "promotion_eligible": false,
+  "outcome": "integer_precision_recovered_without_dev_gain",
+  "paid_scale_authorized": false,
+  "next_gate": "p10m_target_aligned_integer_objective_review",
+  "known_non_claims": [
+    "boundary_lanes_are_diagnostics_not_promoted_defaults",
+    "numeric_signal_recovery_is_not_quality_gain",
+    "bounded_256_window_preflight_not_scaling_evidence",
+    "not_open_generation_quality"
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "schema": "nsrl.production_probability_normalization_signal_attribution_contract.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_normalization_review": {
+    "contract_path": "benchmarks/production-model-v1/p10m-probability-normalization-accuracy-contract.json",
+    "contract_sha256": "e5d0b76911717c56ca8611a498259a1005c4924b79e3eebac0218c07c1cffa8c",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-probability-normalization-accuracy.json",
+    "checkpoint_sha256": "8968c9ccbb1c58ae91ff26f382d0fb2c47804fbba54db7e978c6c7a9a9d937dd",
+    "required_outcome": "normalization_accuracy_not_recovered",
+    "required_next_gate": "p10m_probability_normalization_signal_attribution_review",
+    "legacy_target_changed_windows": 13,
+    "newton_target_changed_windows": 5,
+    "exact_target_changed_windows": 4,
+    "newton_mass_threshold_passed": true
+  },
+  "models": {
+    "source": {
+      "path": "data/experiments/production-model-v1/p10m-up-useful-update/model-3.nsrlpm",
+      "sha256": "4a83e3301cd5d15c5c8f919c5816c49e5d81ae2fa60884a09bb65a06b1567b4e",
+      "common_forward_model_hash": "0x4dc415c2fba2da25"
+    },
+    "candidate": {
+      "path": "data/experiments/production-model-v1/p10m-up-shift22-breakthrough/model-3.nsrlpm",
+      "sha256": "3e66e97dfeefaa6f1e1c2f6bf129646e401d9596051a3f861198aa8515cfea9d",
+      "common_forward_model_hash": "0x5fd8eba1e15d2f9d"
+    },
+    "common_up_forward_shift": 7
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "evaluation": {
+    "context_tokens": 64,
+    "windows": 256,
+    "probability_fractional_bits": 23,
+    "methods": [
+      {
+        "id": "legacy_q31_lut",
+        "reciprocal_fractional_bits": 31
+      },
+      {
+        "id": "q47_newton1",
+        "reciprocal_fractional_bits": 47
+      },
+      {
+        "id": "q47_exact_division",
+        "reciprocal_fractional_bits": 47
+      }
+    ],
+    "all_other_forward_shifts_frozen": {
+      "qkv": 8,
+      "o": 8,
+      "gate": 10,
+      "down": 12,
+      "output": 14
+    }
+  },
+  "selection_policy": {
+    "candidate_normalization": "q47_newton1",
+    "accuracy_ceiling": "q47_exact_division",
+    "require_every_exact_target_change_in_candidate": true,
+    "maximum_candidate_only_target_change_windows": 1,
+    "maximum_candidate_probability_error_q23_units": 1,
+    "maximum_candidate_target_error_q23_units": 1,
+    "require_at_least_one_legacy_only_target_change": true,
+    "require_legacy_only_changes_have_weight_or_denominator_movement": true,
+    "no_test_split_access": true
+  },
+  "outcome_policy": {
+    "newton_normalization_attributed_and_ready": "newton_preserves_every_exact_target_change_and_stays_within_all_exact_ceiling_error_budgets",
+    "newton_misses_exact_signal": "one_or_more_exact_target_change_windows_are_absent_under_newton",
+    "newton_deviates_from_exact_ceiling": "newton_preserves_exact_signal_but_exceeds_an_error_or_candidate_only_budget",
+    "failed_contract": "any_contract_or_attribution_gate_fails"
+  },
+  "authorization": {
+    "local_execution": true,
+    "paid_cloud_execution": false,
+    "paid_scale_requires_separate_contract": true
+  },
+  "known_non_claims": [
+    "signal_attribution_is_not_training_quality",
+    "exact_division_is_an_accuracy_ceiling_not_the_runtime_candidate",
+    "one_q23_boundary_difference_is_not_a_quality_gain",
+    "dev_split_diagnostic_does_not_reopen_test",
+    "no_paid_scale_or_model_promotion",
+    "not_open_generation_quality"
+  ]
+}
