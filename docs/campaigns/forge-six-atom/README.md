@@ -1,7 +1,6 @@
 # Forge six-atom campaign
 
-Status: launch-ready for The Crowley Bard account. Public posting is the only
-remaining external step.
+Status: evidence-integrated launch package for The Crowley Bard account.
 
 ## Campaign objective
 
@@ -13,9 +12,11 @@ hypothesis -> frozen experiment -> falsifier -> checked outcome -> reusable arti
 ```
 
 The six-atom experiment is the flagship because it did not produce a new model
-performance claim. It found interesting aggregate structure, pointed back to a
-move that had already failed prospectively, and stopped paid scaling. The
-method worked even though the candidate did not.
+performance claim. The proposal found interesting aggregate structure, pointed
+back to a move that had already failed prospectively, and stopped paid scaling.
+A frozen confirmation then supported three narrow within-source actions while
+falsifying the stronger pairwise and Gibbs parameter-map stories. The cleanest
+surviving mechanism is a routed conditional exchange, not a global winner.
 
 ## Public promise
 
@@ -40,12 +41,14 @@ Success, failure, and uncertainty all remain publishable outcomes.
    tested all of them.
 2. **Stakes:** The compact mathematical answer looked promising but selected a
    move already falsified on unused data.
-3. **Method:** Freeze the claim, data boundary, checker, success test, and
+3. **Plot twist:** A frozen follow-up found a narrow routed exchange, while the
+   pairwise and Gibbs maps that generated two actions failed to replicate.
+4. **Method:** Freeze the claim, data boundary, checker, success test, and
    falsifier before promotion.
-4. **Artifact:** Publish the code, hashes, outcome, and signed coordination
+5. **Artifact:** Publish the code, hashes, outcome, and signed coordination
    record so someone else can replay or challenge it.
-5. **Invitation:** Reproduce the audit, independently check the frozen
-   follow-up on untouched documents, preserve the sealed range, and publish any
+6. **Invitation:** Independently replay the audit and confirmation, preserve
+   the sealed range, design the missing multi-source test, and publish any
    checked outcome.
 
 ## Tone for The Crowley Bard
@@ -114,8 +117,12 @@ performs well.
 - Forge v1 is a signed single-process localnet with simulated,
   non-transferable credits. It has no wallet, custody, consensus, or financial
   settlement.
-- The six-atom experiment is a proposal-only structure audit. It does not
-  authorize optimizer changes or paid scaling.
+- The original six-atom structure audit is proposal-only. Its frozen
+  confirmation is within one source cluster. Neither authorizes optimizer
+  changes or paid scaling.
+- A clean checkout replays the hash-bound cubes and derived results. The model
+  and corpus bytes used for the original exact forwards are not repository
+  artifacts; say this plainly when describing reproducibility.
 
 ## Asset inventory
 

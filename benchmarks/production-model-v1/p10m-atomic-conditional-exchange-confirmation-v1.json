@@ -1,0 +1,390 @@
+{
+  "schema": "nsrl.production_atomic_conditional_exchange_confirmation.v1",
+  "analysis_role": "post_confirmation_theory_revision",
+  "source_sha256": {
+    "proposal_structure": "7d7432057cfa2b86796abdcaf73604541699a9fed1a939a57ad94b42bf9ce7ca",
+    "confirmation_structure": "353fff30b136bfbfe68130740a97ed60c89c99c5a71a499b68bb514b23475e7e",
+    "primary_ising_confirmation": "106f4724056a483d84e9ee2cd178fa54a7164ed85ad6475770cea172e7dbf0a3",
+    "analyzer": "72b8904433adfdf1527c0865ca1466f4b73d0315a12a94444a95c89437a48a67"
+  },
+  "exchange": {
+    "base_mask": 43,
+    "outgoing_atom": 2,
+    "incoming_atom": 4,
+    "control_mask": 47,
+    "candidate_mask": 59,
+    "identity": "Delta_swap=(singleton_in-singleton_out)+sum_nonempty_T_subset_base(mu(T+in)-mu(T+out))"
+  },
+  "router": {
+    "features": "Q32 singleton contrasts",
+    "medoids": [
+      [
+        "0",
+        "0",
+        "0",
+        "0",
+        "1977",
+        "-4068"
+      ],
+      [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-6398",
+        "-4020"
+      ]
+    ],
+    "distance": "L1",
+    "tie_break": "cluster_zero"
+  },
+  "proposal": {
+    "label": "proposal_documents_8_71",
+    "analysis_role": "proposal_only_calibration",
+    "document_start": 8,
+    "documents": 64,
+    "q20": [
+      {
+        "cluster": 0,
+        "documents": 40,
+        "incoming_q32_singleton": {
+          "favorable": 13,
+          "unfavorable": 26,
+          "ties": 1,
+          "aggregate": "82826",
+          "minimum": "-2212",
+          "maximum": "8484"
+        },
+        "singleton_difference": {
+          "favorable": 8,
+          "unfavorable": 21,
+          "ties": 11,
+          "aggregate": "20",
+          "minimum": "-1",
+          "maximum": "3"
+        },
+        "conditional_exchange": {
+          "favorable": 2,
+          "unfavorable": 19,
+          "ties": 19,
+          "aggregate": "25",
+          "minimum": "-1",
+          "maximum": "2"
+        },
+        "interaction_residual": {
+          "favorable": 8,
+          "unfavorable": 13,
+          "ties": 19,
+          "aggregate": "5",
+          "minimum": "-2",
+          "maximum": "2"
+        },
+        "singleton_exchange_sign_agreement": 17
+      },
+      {
+        "cluster": 1,
+        "documents": 24,
+        "incoming_q32_singleton": {
+          "favorable": 24,
+          "unfavorable": 0,
+          "ties": 0,
+          "aggregate": "-140357",
+          "minimum": "-8748",
+          "maximum": "-2277"
+        },
+        "singleton_difference": {
+          "favorable": 23,
+          "unfavorable": 0,
+          "ties": 1,
+          "aggregate": "-33",
+          "minimum": "-2",
+          "maximum": "0"
+        },
+        "conditional_exchange": {
+          "favorable": 23,
+          "unfavorable": 0,
+          "ties": 1,
+          "aggregate": "-37",
+          "minimum": "-3",
+          "maximum": "0"
+        },
+        "interaction_residual": {
+          "favorable": 6,
+          "unfavorable": 4,
+          "ties": 14,
+          "aggregate": "-4",
+          "minimum": "-2",
+          "maximum": "1"
+        },
+        "singleton_exchange_sign_agreement": 22
+      }
+    ],
+    "q32": [
+      {
+        "cluster": 0,
+        "documents": 40,
+        "incoming_q32_singleton": {
+          "favorable": 13,
+          "unfavorable": 26,
+          "ties": 1,
+          "aggregate": "82826",
+          "minimum": "-2212",
+          "maximum": "8484"
+        },
+        "singleton_difference": {
+          "favorable": 12,
+          "unfavorable": 27,
+          "ties": 1,
+          "aggregate": "91136",
+          "minimum": "-4302",
+          "maximum": "8484"
+        },
+        "conditional_exchange": {
+          "favorable": 12,
+          "unfavorable": 27,
+          "ties": 1,
+          "aggregate": "86904",
+          "minimum": "-2211",
+          "maximum": "8485"
+        },
+        "interaction_residual": {
+          "favorable": 12,
+          "unfavorable": 8,
+          "ties": 20,
+          "aggregate": "-4232",
+          "minimum": "-4308",
+          "maximum": "4178"
+        },
+        "singleton_exchange_sign_agreement": 39
+      },
+      {
+        "cluster": 1,
+        "documents": 24,
+        "incoming_q32_singleton": {
+          "favorable": 24,
+          "unfavorable": 0,
+          "ties": 0,
+          "aggregate": "-140357",
+          "minimum": "-8748",
+          "maximum": "-2277"
+        },
+        "singleton_difference": {
+          "favorable": 24,
+          "unfavorable": 0,
+          "ties": 0,
+          "aggregate": "-144475",
+          "minimum": "-10542",
+          "maximum": "-1816"
+        },
+        "conditional_exchange": {
+          "favorable": 24,
+          "unfavorable": 0,
+          "ties": 0,
+          "aggregate": "-142412",
+          "minimum": "-10542",
+          "maximum": "-1817"
+        },
+        "interaction_residual": {
+          "favorable": 7,
+          "unfavorable": 7,
+          "ties": 10,
+          "aggregate": "2063",
+          "minimum": "-4042",
+          "maximum": "2219"
+        },
+        "singleton_exchange_sign_agreement": 24
+      }
+    ],
+    "decomposition_verified_documents": 128
+  },
+  "confirmation": {
+    "label": "untouched_confirmation_documents_136_199",
+    "analysis_role": "untouched_confirmation",
+    "document_start": 136,
+    "documents": 64,
+    "q20": [
+      {
+        "cluster": 0,
+        "documents": 47,
+        "incoming_q32_singleton": {
+          "favorable": 14,
+          "unfavorable": 30,
+          "ties": 3,
+          "aggregate": "91576",
+          "minimum": "-2127",
+          "maximum": "8084"
+        },
+        "singleton_difference": {
+          "favorable": 4,
+          "unfavorable": 23,
+          "ties": 20,
+          "aggregate": "26",
+          "minimum": "-2",
+          "maximum": "3"
+        },
+        "conditional_exchange": {
+          "favorable": 5,
+          "unfavorable": 18,
+          "ties": 24,
+          "aggregate": "22",
+          "minimum": "-1",
+          "maximum": "2"
+        },
+        "interaction_residual": {
+          "favorable": 14,
+          "unfavorable": 11,
+          "ties": 22,
+          "aggregate": "-4",
+          "minimum": "-2",
+          "maximum": "2"
+        },
+        "singleton_exchange_sign_agreement": 15
+      },
+      {
+        "cluster": 1,
+        "documents": 17,
+        "incoming_q32_singleton": {
+          "favorable": 17,
+          "unfavorable": 0,
+          "ties": 0,
+          "aggregate": "-88441",
+          "minimum": "-8384",
+          "maximum": "-2214"
+        },
+        "singleton_difference": {
+          "favorable": 16,
+          "unfavorable": 0,
+          "ties": 1,
+          "aggregate": "-23",
+          "minimum": "-3",
+          "maximum": "0"
+        },
+        "conditional_exchange": {
+          "favorable": 16,
+          "unfavorable": 0,
+          "ties": 1,
+          "aggregate": "-21",
+          "minimum": "-2",
+          "maximum": "0"
+        },
+        "interaction_residual": {
+          "favorable": 3,
+          "unfavorable": 5,
+          "ties": 9,
+          "aggregate": "2",
+          "minimum": "-1",
+          "maximum": "1"
+        },
+        "singleton_exchange_sign_agreement": 15
+      }
+    ],
+    "q32": [
+      {
+        "cluster": 0,
+        "documents": 47,
+        "incoming_q32_singleton": {
+          "favorable": 14,
+          "unfavorable": 30,
+          "ties": 3,
+          "aggregate": "91576",
+          "minimum": "-2127",
+          "maximum": "8084"
+        },
+        "singleton_difference": {
+          "favorable": 14,
+          "unfavorable": 30,
+          "ties": 3,
+          "aggregate": "99790",
+          "minimum": "-3968",
+          "maximum": "10413"
+        },
+        "conditional_exchange": {
+          "favorable": 13,
+          "unfavorable": 30,
+          "ties": 4,
+          "aggregate": "91696",
+          "minimum": "-4203",
+          "maximum": "10052"
+        },
+        "interaction_residual": {
+          "favorable": 13,
+          "unfavorable": 11,
+          "ties": 23,
+          "aggregate": "-8094",
+          "minimum": "-4061",
+          "maximum": "2236"
+        },
+        "singleton_exchange_sign_agreement": 40
+      },
+      {
+        "cluster": 1,
+        "documents": 17,
+        "incoming_q32_singleton": {
+          "favorable": 17,
+          "unfavorable": 0,
+          "ties": 0,
+          "aggregate": "-88441",
+          "minimum": "-8384",
+          "maximum": "-2214"
+        },
+        "singleton_difference": {
+          "favorable": 17,
+          "unfavorable": 0,
+          "ties": 0,
+          "aggregate": "-88441",
+          "minimum": "-8384",
+          "maximum": "-2214"
+        },
+        "conditional_exchange": {
+          "favorable": 17,
+          "unfavorable": 0,
+          "ties": 0,
+          "aggregate": "-88447",
+          "minimum": "-8384",
+          "maximum": "-2214"
+        },
+        "interaction_residual": {
+          "favorable": 7,
+          "unfavorable": 2,
+          "ties": 8,
+          "aggregate": "-6",
+          "minimum": "-2",
+          "maximum": "2"
+        },
+        "singleton_exchange_sign_agreement": 17
+      }
+    ],
+    "decomposition_verified_documents": 128
+  },
+  "replicated_directional_partition": {
+    "routed_cluster_proposal_q32": {
+      "favorable": 24,
+      "unfavorable": 0,
+      "ties": 0,
+      "aggregate": "-142412",
+      "minimum": "-10542",
+      "maximum": "-1817"
+    },
+    "routed_cluster_confirmation_q32": {
+      "favorable": 17,
+      "unfavorable": 0,
+      "ties": 0,
+      "aggregate": "-88447",
+      "minimum": "-8384",
+      "maximum": "-2214"
+    },
+    "routed_cluster_all_nonties_favorable_on_both_surfaces": true,
+    "nonrouted_cluster_exchange_aggregate_positive_on_both_surfaces": true
+  },
+  "interpretation": {
+    "revised_mechanism": "probe-routed conditional exchange, not a globally stable pairwise coupling",
+    "proposal_max_residual_is_not_a_uniform_transfer_certificate": true,
+    "same_source_cluster_only": true,
+    "cross_source_generalization_identified": false
+  },
+  "decision": {
+    "optimizer_change_authorized": false,
+    "paid_scaling_authorized": false,
+    "documents_200_212_read": false
+  }
+}

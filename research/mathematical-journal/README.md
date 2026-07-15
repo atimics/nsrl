@@ -91,6 +91,9 @@ representations only when needed; for example, `p^(23)` is a Q23 probability.
 | [MJ-2026-07-15-07](MJ-2026-07-15-07-prospective-boolean-jet-falsification.md) | Prospective Boolean-jet falsification and stability theory | Frozen synergy falsified; audit engineering closed; new proposal required |
 | [MJ-2026-07-15-08](MJ-2026-07-15-08-hierarchical-distributional-boolean-jets.md) | Hierarchical distributional Boolean jets and certifiability | Block pushforward and certification bounds established; hierarchical proposal operator open |
 | [MJ-2026-07-15-09](MJ-2026-07-15-09-objective-boundary-phase-calculus.md) | Objective-boundary phase calculus | Exact Q20 boundary decomposition established; reverse boundary proposal map open |
+| [MJ-2026-07-15-13](MJ-2026-07-15-13-six-atom-structure-audit.md) | Proposal-only six-atom structure audit | Compact aggregate structure observed; selected move already falsified; no scaling |
+| [MJ-2026-07-15-14](MJ-2026-07-15-14-quenched-document-ising-theory.md) | Quenched document Ising theory | Three within-source confirmation mechanisms frozen prospectively |
+| [MJ-2026-07-15-15](MJ-2026-07-15-15-conditional-exchange-confirmation.md) | Conditional-exchange confirmation | Routed partition replicated within source; pairwise and Gibbs maps did not |
 
 ## Entry template
 

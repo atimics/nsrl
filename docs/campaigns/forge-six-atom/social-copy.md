@@ -63,44 +63,51 @@ Alt text:
 
 ### 4/7
 
-> The observed loss map had a surprisingly compact shape at high precision.
-> That sounds exciting.
+> The proposal map looked almost cubic at high precision. Then science did its
+> favorite party trick: it killed the headline.
 >
-> Then science did its favorite party trick: it ruined the headline.
-
-### 5/7
-
-> The compact rule chose the all-atom move. But that move had already lost on
-> unused data: head-only won 11 non-tied documents, the joint move won 7, and 46
-> tied.
+> Its compact rule chose the all-atom move—a move that had already lost on
+> unused data.
 >
 > Decision: do not scale.
 
+### 5/7
+
+> We had already frozen a follow-up. On documents 136–199, all 3 comparisons
+> passed their within-source tests.
+>
+> But the pairwise and Gibbs maps changed when re-estimated.
+>
+> The actions transferred. The explanations did not.
+
 ### 6/7
 
-> That “no” is the flagship Forge artifact.
+> What did replicate? A tiny router choosing between two actions.
 >
-> Forge binds the hypothesis, experiment, falsifier, hashes, signed launch
-> events, model publication receipt, and outcome—so a failed idea becomes
-> reusable evidence instead of disappearing.
+> It rerouted 17 documents to an atom exchange, and that exchange improved all
+> 17. Always using the exchanged action was worse overall.
+>
+> The partition—not a global winner—is the signal.
 
 ### 7/7
 
-> Open challenge: reproduce the audit. Check the frozen follow-up on documents
-> 136–199. Move no thresholds. Keep 200–212 sealed.
+> Open challenge: independently replay the artifacts and exact checker. Then
+> design the missing multi-source test for that conditional exchange.
 >
-> Supported, falsified, or inconclusive all count. Forge v1 uses simulated credits.
+> Keep 200–212 sealed. Move no thresholds. Supported, falsified, or
+> inconclusive all count.
 >
 > https://atimics.github.io/nsrl/launches/#challenge
 
 ## D+1: the receipts post
 
-> The six-atom experiment is replayable down to the contract and result hashes.
+> The six-atom evidence replays to contract and result hashes.
 >
-> The result did not authorize a bigger run. That is the point: the checker can
-> stop the story from outrunning the evidence.
+> The proposal stopped scaling. Confirmation kept a narrow routed exchange and
+> killed two stronger explanations. The checker keeps the story inside the
+> evidence.
 >
-> Audit + replay bindings:
+> Receipts:
 > https://github.com/atimics/nsrl/blob/main/research/mathematical-journal/MJ-2026-07-15-13-six-atom-structure-audit.md
 
 ## D+3: what “falsifiable bounty” means
@@ -120,11 +127,10 @@ Alt text:
 
 > The Forge is open.
 >
-> Reproduce the six-atom audit and its frozen follow-up on documents 136–199.
-> Check the exact Holm family and the 17/17 routed exchange. Keep 200–212
-> sealed.
+> Independently replay the six-atom audit and confirmation. Recompute the exact
+> Holm family and the 17/17 routed exchange. Keep 200–212 sealed.
 >
-> Then help build the missing multi-source test. Valid negative results count.
+> Then help build the missing multi-source test. Valid “no”s count.
 >
 > https://atimics.github.io/nsrl/launches/#challenge
 
@@ -152,9 +158,9 @@ Alt text:
 
 ### “So did the model get better?”
 
-> No new performance improvement is claimed here. The experiment found compact
-> structure on its proposal data, but the selected move had already failed on
-> unused data. The checked decision was not to scale.
+> No new deployed-model performance improvement is claimed. Frozen actions won
+> narrow within-source comparisons, but their pairwise and Gibbs explanations
+> changed on confirmation. The checked decision remains: do not scale.
 
 ### “Why celebrate a failed candidate?”
 
@@ -176,9 +182,9 @@ Alt text:
 
 ### “What should I try next?”
 
-> First reproduce the frozen audit. Then replay the fixed follow-up on documents
-> 136–199. The next open test: does the conditional-exchange partition survive
-> across source clusters? Publish negative and inconclusive outcomes too.
+> First independently replay the frozen audit and confirmation. Then freeze a
+> multi-source test: does the conditional-exchange partition survive across
+> source clusters? Publish negative and inconclusive outcomes too.
 
 ## Hashtags
 
