@@ -1,0 +1,785 @@
+{
+  "schema": "nsrl.production_probability_normalization_signal_attribution_checkpoint.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-probability-normalization-signal-attribution-contract.json",
+    "sha256": "af0778ae9339b93d4a8cf31b435e7f1159bf0632b77f29e5e15c0a3cd7c517c9"
+  },
+  "source_normalization_review": {
+    "contract_path": "benchmarks/production-model-v1/p10m-probability-normalization-accuracy-contract.json",
+    "contract_sha256": "e5d0b76911717c56ca8611a498259a1005c4924b79e3eebac0218c07c1cffa8c",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-probability-normalization-accuracy.json",
+    "checkpoint_sha256": "8968c9ccbb1c58ae91ff26f382d0fb2c47804fbba54db7e978c6c7a9a9d937dd",
+    "required_outcome": "normalization_accuracy_not_recovered",
+    "required_next_gate": "p10m_probability_normalization_signal_attribution_review",
+    "legacy_target_changed_windows": 13,
+    "newton_target_changed_windows": 5,
+    "exact_target_changed_windows": 4,
+    "newton_mass_threshold_passed": true
+  },
+  "models": {
+    "source": {
+      "path": "data/experiments/production-model-v1/p10m-up-useful-update/model-3.nsrlpm",
+      "sha256": "4a83e3301cd5d15c5c8f919c5816c49e5d81ae2fa60884a09bb65a06b1567b4e",
+      "common_forward_model_hash": "0x4dc415c2fba2da25"
+    },
+    "candidate": {
+      "path": "data/experiments/production-model-v1/p10m-up-shift22-breakthrough/model-3.nsrlpm",
+      "sha256": "3e66e97dfeefaa6f1e1c2f6bf129646e401d9596051a3f861198aa8515cfea9d",
+      "common_forward_model_hash": "0x5fd8eba1e15d2f9d"
+    },
+    "common_up_forward_shift": 7
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "evaluation": {
+    "context_tokens": 64,
+    "windows": 256,
+    "probability_fractional_bits": 23,
+    "logit_changed_windows": 250,
+    "target_logit_changed_windows": 4
+  },
+  "methods": [
+    {
+      "normalization": "legacy_q31_lut",
+      "reciprocal_fractional_bits": 31,
+      "target_changed_window_indices": [
+        6,
+        13,
+        16,
+        41,
+        75,
+        79,
+        99,
+        110,
+        150,
+        151,
+        159,
+        173,
+        193
+      ],
+      "source_error_vs_exact": {
+        "probability_changed_values": 2086492,
+        "probability_error_l1": 121398488,
+        "probability_error_max": 126,
+        "target_error_windows": 256,
+        "target_error_l1": 14915,
+        "target_error_max": 106
+      },
+      "candidate_error_vs_exact": {
+        "probability_changed_values": 2086229,
+        "probability_error_l1": 121420028,
+        "probability_error_max": 126,
+        "target_error_windows": 256,
+        "target_error_l1": 14918,
+        "target_error_max": 106
+      }
+    },
+    {
+      "normalization": "q47_newton1",
+      "reciprocal_fractional_bits": 47,
+      "target_changed_window_indices": [
+        6,
+        79,
+        173,
+        174,
+        193
+      ],
+      "source_error_vs_exact": {
+        "probability_changed_values": 19949,
+        "probability_error_l1": 19949,
+        "probability_error_max": 1,
+        "target_error_windows": 3,
+        "target_error_l1": 3,
+        "target_error_max": 1
+      },
+      "candidate_error_vs_exact": {
+        "probability_changed_values": 19259,
+        "probability_error_l1": 19259,
+        "probability_error_max": 1,
+        "target_error_windows": 4,
+        "target_error_l1": 4,
+        "target_error_max": 1
+      }
+    },
+    {
+      "normalization": "q47_exact_division",
+      "reciprocal_fractional_bits": 47,
+      "target_changed_window_indices": [
+        6,
+        79,
+        173,
+        193
+      ],
+      "source_error_vs_exact": {
+        "probability_changed_values": 0,
+        "probability_error_l1": 0,
+        "probability_error_max": 0,
+        "target_error_windows": 0,
+        "target_error_l1": 0,
+        "target_error_max": 0
+      },
+      "candidate_error_vs_exact": {
+        "probability_changed_values": 0,
+        "probability_error_l1": 0,
+        "probability_error_max": 0,
+        "target_error_windows": 0,
+        "target_error_l1": 0,
+        "target_error_max": 0
+      }
+    }
+  ],
+  "set_attribution": {
+    "legacy_exact_overlap_indices": [
+      6,
+      79,
+      173,
+      193
+    ],
+    "legacy_only_indices": [
+      13,
+      16,
+      41,
+      75,
+      99,
+      110,
+      150,
+      151,
+      159
+    ],
+    "exact_missing_from_legacy_indices": [],
+    "newton_exact_overlap_indices": [
+      6,
+      79,
+      173,
+      193
+    ],
+    "newton_only_indices": [
+      174
+    ],
+    "exact_missing_from_newton_indices": []
+  },
+  "legacy_only_attribution": {
+    "windows": 9,
+    "target_logit_changed_windows": 0,
+    "target_weight_changed_windows": 9,
+    "normalization_sum_changed_windows": 9,
+    "all_exact_q23_deltas_zero": true,
+    "classification": "legacy_reciprocal_amplifies_sub_q23_weight_or_denominator_movement"
+  },
+  "newton_only_attribution": {
+    "windows": 1,
+    "target_logit_changed_windows": 0,
+    "target_weight_changed_windows": 0,
+    "normalization_sum_changed_windows": 1,
+    "all_exact_q23_deltas_zero": true
+  },
+  "window_attributions": [
+    {
+      "window_index": 6,
+      "target_token": 805,
+      "target_logit_q8": {
+        "source": 10,
+        "candidate": 9,
+        "changed": true
+      },
+      "target_weight_q15": {
+        "source": 23108,
+        "candidate": 23045,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 184137128,
+        "candidate": 184136328,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 993,
+          "candidate": 990,
+          "delta": -3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1053,
+          "candidate": 1050,
+          "delta": -3
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1053,
+          "candidate": 1050,
+          "delta": -3
+        }
+      ]
+    },
+    {
+      "window_index": 13,
+      "target_token": 1526,
+      "target_logit_q8": {
+        "source": 3,
+        "candidate": 3,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 24726,
+        "candidate": 24659,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 200673265,
+        "candidate": 200130542,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 966,
+          "candidate": 963,
+          "delta": -3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1034,
+          "candidate": 1034,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1034,
+          "candidate": 1034,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 16,
+      "target_token": 1463,
+      "target_logit_q8": {
+        "source": 10,
+        "candidate": 10,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 27110,
+        "candidate": 27184,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 215971779,
+        "candidate": 216558413,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 953,
+          "candidate": 956,
+          "delta": 3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1053,
+          "candidate": 1053,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1053,
+          "candidate": 1053,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 41,
+      "target_token": 7220,
+      "target_logit_q8": {
+        "source": 35,
+        "candidate": 35,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 24860,
+        "candidate": 24928,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 185323067,
+        "candidate": 185825322,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 1068,
+          "candidate": 1071,
+          "delta": 3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1125,
+          "candidate": 1125,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1125,
+          "candidate": 1125,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 75,
+      "target_token": 329,
+      "target_logit_q8": {
+        "source": 26,
+        "candidate": 26,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 24196,
+        "candidate": 24131,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 184828131,
+        "candidate": 184328073,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 1040,
+          "candidate": 1037,
+          "delta": -3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1098,
+          "candidate": 1098,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1098,
+          "candidate": 1098,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 79,
+      "target_token": 2319,
+      "target_logit_q8": {
+        "source": -3,
+        "candidate": -2,
+        "changed": true
+      },
+      "target_weight_q15": {
+        "source": 26530,
+        "candidate": 26601,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 219317158,
+        "candidate": 219316817,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 933,
+          "candidate": 935,
+          "delta": 2
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1015,
+          "candidate": 1017,
+          "delta": 2
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1015,
+          "candidate": 1017,
+          "delta": 2
+        }
+      ]
+    },
+    {
+      "window_index": 99,
+      "target_token": 1718,
+      "target_logit_q8": {
+        "source": -11,
+        "candidate": -11,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 26031,
+        "candidate": 26102,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 219522729,
+        "candidate": 220118522,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 915,
+          "candidate": 918,
+          "delta": 3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 995,
+          "candidate": 995,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 995,
+          "candidate": 995,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 110,
+      "target_token": 1567,
+      "target_logit_q8": {
+        "source": -5,
+        "candidate": -5,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 26386,
+        "candidate": 26458,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 219202699,
+        "candidate": 219796169,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 928,
+          "candidate": 930,
+          "delta": 2
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1010,
+          "candidate": 1010,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1010,
+          "candidate": 1010,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 150,
+      "target_token": 508,
+      "target_logit_q8": {
+        "source": 3,
+        "candidate": 3,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 16834,
+        "candidate": 16788,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 136849272,
+        "candidate": 136479349,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 986,
+          "candidate": 984,
+          "delta": -2
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1032,
+          "candidate": 1032,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1032,
+          "candidate": 1032,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 151,
+      "target_token": 97,
+      "target_logit_q8": {
+        "source": 2,
+        "candidate": 2,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 26818,
+        "candidate": 26746,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 218689476,
+        "candidate": 218098766,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 943,
+          "candidate": 940,
+          "delta": -3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1029,
+          "candidate": 1029,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1029,
+          "candidate": 1029,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 159,
+      "target_token": 5695,
+      "target_logit_q8": {
+        "source": 7,
+        "candidate": 7,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 27332,
+        "candidate": 27258,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 219855578,
+        "candidate": 219260397,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 961,
+          "candidate": 958,
+          "delta": -3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1043,
+          "candidate": 1043,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1043,
+          "candidate": 1043,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 173,
+      "target_token": 114,
+      "target_logit_q8": {
+        "source": 11,
+        "candidate": 12,
+        "changed": true
+      },
+      "target_weight_q15": {
+        "source": 26964,
+        "candidate": 27037,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 214567832,
+        "candidate": 214567570,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 1053,
+          "candidate": 1056,
+          "delta": 3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1054,
+          "candidate": 1057,
+          "delta": 3
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1054,
+          "candidate": 1057,
+          "delta": 3
+        }
+      ]
+    },
+    {
+      "window_index": 174,
+      "target_token": 1000,
+      "target_logit_q8": {
+        "source": 11,
+        "candidate": 11,
+        "changed": false
+      },
+      "target_weight_q15": {
+        "source": 24995,
+        "candidate": 24995,
+        "changed": false
+      },
+      "normalization_sum": {
+        "source": 198834125,
+        "candidate": 198835005,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 976,
+          "candidate": 976,
+          "delta": 0
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1055,
+          "candidate": 1054,
+          "delta": -1
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1055,
+          "candidate": 1055,
+          "delta": 0
+        }
+      ]
+    },
+    {
+      "window_index": 193,
+      "target_token": 593,
+      "target_logit_q8": {
+        "source": 26,
+        "candidate": 25,
+        "changed": true
+      },
+      "target_weight_q15": {
+        "source": 22859,
+        "candidate": 22797,
+        "changed": true
+      },
+      "normalization_sum": {
+        "source": 174700863,
+        "candidate": 174700029,
+        "changed": true
+      },
+      "target_probabilities_q23": [
+        {
+          "normalization": "legacy_q31_lut",
+          "source": 1072,
+          "candidate": 1069,
+          "delta": -3
+        },
+        {
+          "normalization": "q47_newton1",
+          "source": 1098,
+          "candidate": 1095,
+          "delta": -3
+        },
+        {
+          "normalization": "q47_exact_division",
+          "source": 1098,
+          "candidate": 1095,
+          "delta": -3
+        }
+      ]
+    }
+  ],
+  "health": {
+    "source_residual_saturation_count": 0,
+    "candidate_residual_saturation_count": 0
+  },
+  "gates": {
+    "source_normalization_review_matches": true,
+    "artifact_and_data_hashes_match": true,
+    "only_signal_attribution_observation_changes": true,
+    "three_predeclared_methods_complete": true,
+    "aggregate_target_change_counts_reproduced": true,
+    "exact_division_is_zero_error_ceiling": true,
+    "window_attribution_accounting_complete": true,
+    "zero_forward_saturation": true,
+    "test_split_not_accessed": true,
+    "paid_cloud_execution_not_authorized": true
+  },
+  "candidate_gates": {
+    "every_exact_target_change_preserved": true,
+    "candidate_only_target_changes_within_budget": true,
+    "source_probability_error_within_one_q23_unit": true,
+    "candidate_probability_error_within_one_q23_unit": true,
+    "source_target_error_within_one_q23_unit": true,
+    "candidate_target_error_within_one_q23_unit": true,
+    "legacy_only_target_changes_attributed": true
+  },
+  "diagnostic_eligible": true,
+  "candidate_eligible": true,
+  "selection": {
+    "policy": {
+      "candidate_normalization": "q47_newton1",
+      "accuracy_ceiling": "q47_exact_division",
+      "require_every_exact_target_change_in_candidate": true,
+      "maximum_candidate_only_target_change_windows": 1,
+      "maximum_candidate_probability_error_q23_units": 1,
+      "maximum_candidate_target_error_q23_units": 1,
+      "require_at_least_one_legacy_only_target_change": true,
+      "require_legacy_only_changes_have_weight_or_denominator_movement": true,
+      "no_test_split_access": true
+    },
+    "selected_normalization": "q47_newton1"
+  },
+  "outcome": "newton_normalization_attributed_and_ready",
+  "promotion_eligible": false,
+  "paid_scale_authorized": false,
+  "next_gate": "p10m_normalized_wide_gradient_preflight_contract",
+  "known_non_claims": [
+    "signal_attribution_is_not_training_quality",
+    "exact_division_is_an_accuracy_ceiling_not_the_runtime_candidate",
+    "one_q23_boundary_difference_is_not_a_quality_gain",
+    "dev_split_diagnostic_does_not_reopen_test",
+    "no_paid_scale_or_model_promotion",
+    "not_open_generation_quality"
+  ]
+}

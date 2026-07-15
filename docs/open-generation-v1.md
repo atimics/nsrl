@@ -39,7 +39,9 @@ panel remains under `data/private/open-generation-v1/` and is represented in
 the checked-in contract only by its SHA-256 commitment. The hidden panel must
 not be used for training or model selection.
 
-This checkpoint freezes evaluation structure and tokenizer conformance. The
-next modeling work is to freeze a licensed and deduplicated quality corpus,
-train the actual 8K-16K tokenizer, and run three controlled 10M-30M scaling
-points with same-shape float twins.
+This checkpoint freezes evaluation structure and tokenizer conformance.
+`production-corpus-v1` now freezes the first licensed-source registry,
+deduplicated split, contamination gate, actual 8,192-token vocabulary, and
+document-indexed token streams. The next modeling work is the variable-vocabulary
+training artifact followed by three controlled 10M-30M scaling points with
+same-shape float twins.

@@ -1,53 +1,118 @@
-# Test-Time Training & Inference-Time Adaptation
+# Test-Time Training and Inference-Time Adaptation
 
-Papers on updating model parameters during inference. Directly relevant to NSRL because integer arithmetic makes this cheap and exact.
+Test-time training (TTT) covers several different mechanisms. This note keeps
+them separate because they imply different integer implementations.
 
----
+## Three mechanisms
 
-## Key Papers
+### Parameter adaptation on retrieved data
 
-### TTT with KV Binding is Secretly Linear Attention (2025)
-- **arXiv**: https://arxiv.org/pdf/2602.21204
-- **Key insight**: Test-time training on a linear attention model (updating weights on the current context using a gradient step) is mathematically equivalent to updating the KV state S. The "learning" that happens at test time is the same operation as the linear attention state update.
-- **Implication for NSRL**: Incremental linear attention state update IS test-time training. NSRL can implement TTT without any separate gradient computation step — just maintain S across the generation window. The integer arithmetic makes this exact and reproducible (no float accumulation drift).
-- **Direct connection**: The state S = Σ kₜ⊗vₜ can be interpreted as a weight matrix W that has been "trained" on the current context. Each new token updates W via an outer product step.
+[Test-Time Training on Nearest Neighbors for Large Language Models](https://proceedings.iclr.cc/paper_files/paper/2024/hash/f02f1185b97518ab5bd7ebde466992d3-Abstract-Conference.html)
+(Hardt & Sun, ICLR 2024) retrieves nearby sequences and applies ordinary
+fine-tuning steps before evaluating an input. It reports improvements across
+Pile domains with as few as 20 retrieved neighbors.
 
-### Test-Time Training on Nearest Neighbors for Large Language Models (2024)
-- **arXiv**: https://arxiv.org/abs/2511.16691
-- **Approach**: At inference, retrieve nearest-neighbor sequences from a corpus, fine-tune on them briefly, then generate. Reduces perplexity across diverse domains.
-- **Relevance**: Shows TTT is practically useful for domain adaptation. NSRL's fast integer training loop makes retrieval-and-finetune cheap — a 4096-window fine-tune takes ~4 seconds.
+This is genuine parameter adaptation. It requires a retrieval index, a backward
+pass, optimizer state, and a policy for retaining or reverting the update. A
+[2025 reproducibility report](https://arxiv.org/abs/2511.16691) supports the
+central result on additional model families.
 
-### SLOT: Sample-specific Language Model Optimization at Test-time (2025)
-- **arXiv**: https://arxiv.org/html/2505.12392v1
-- **Approach**: Treat the prompt itself as training data; run a few gradient steps before generating.
-- **Relevance**: NSRL's rollback mechanism + i64 batch accumulation enables this without risk of destructive updates — if the gradient step causes overflow or quality regression, roll back.
+### Small sample-specific residuals
 
----
+[SLOT](https://arxiv.org/abs/2505.12392) (Hu et al., 2025) caches final-layer
+features and optimizes a small sample-specific vector from the prompt. This is
+closer to NSRL's successful frozen-trunk residual strategy than mutating the
+whole trunk at inference.
 
-## NSRL's TTT Opportunity
+### Trainable recurrent state
 
-NSRL has properties that make TTT unusually practical:
+[Learning to (Learn at Test Time)](https://proceedings.mlr.press/v267/sun25h.html)
+(Sun et al., ICML 2025) uses a model as the recurrent hidden state and updates
+that model with a self-supervised objective while processing the sequence.
 
-**Fast training**: ~1ms per window at d=16, seq=32. A 64-window context update takes ~64ms on CPU. Negligible for interactive use.
+[Test-Time Training with KV Binding Is Secretly Linear Attention](https://arxiv.org/abs/2602.21204)
+(Liu et al., ICML 2026) shows that a broad class of KV-binding TTT architectures
+can be rewritten as learned linear-attention operators. The result covers more
+than a single linear fast-weight layer and explains why several apparently
+different TTT updates admit parallel forms.
 
-**Exact reproducibility**: Integer arithmetic means the same context always produces the same weight delta. No float accumulation drift across TTT steps.
+The correct implication is narrower than the repository's previous wording:
 
-**Built-in rollback**: The ring-buffer checkpoint mechanism already handles destructive updates. TTT can be wrapped in the same try-update / rollback logic used during training.
+> Some structured KV-binding TTT layers can be represented as learned linear
+> attention. This does not make every form of test-time parameter optimization
+> equivalent to NSRL's existing additive KV accumulator.
 
-**Linear attention duality**: With incremental linear attention state, TTT is free — the state update IS the adaptation. No backward pass needed.
+The equivalence depends on the inner model, loss, update rule, and the layer
+being adapted.
 
-**No float state**: Standard TTT requires float optimizer state (Adam moments, etc.). NSRL's integer optimizer has no float state, so TTT adds zero memory overhead beyond the model weights.
+## Earlier fast-weight connection
 
----
+[Linear Transformers Are Secretly Fast Weight Programmers](https://proceedings.mlr.press/v139/schlag21a.html)
+(Schlag et al., ICML 2021) already established that linear attention's
+outer-product state can be interpreted as fast weights. It also introduced a
+delta-rule update that corrects an existing key/value association rather than
+only adding another association.
 
-## Connection to Self-Synthesis Pipeline
+For NSRL, the additive state
 
-The `run-simplewiki-self-synthesis.sh` script is a coarse form of TTT at corpus scale: generate synthetic text, train on it, generate again. The TTT literature suggests doing this at inference time (per prompt) rather than as a separate training run.
+```text
+S_t = S_{t-1} + k_t outer_product v_t
+```
 
-A viable architecture:
-1. Receive prompt
-2. Run 8–16 gradient steps on recent context (O(ms) with integer training)
-3. Generate with updated model
-4. Optionally revert weights after generation (stateless serving) or keep (continual learning)
+is therefore best described as an integer fast-weight memory. Calling it
+“training” is reasonable under the fast-weight interpretation, but it is not a
+substitute for an experiment with an explicit self-supervised TTT objective.
 
-The rollback mechanism already implements step 4 optionally.
+## NSRL opportunities
+
+### 1. Transactional residual adaptation
+
+Freeze the trunk, adapt a small `i16` residual, evaluate an exact guard set, and
+commit or revert the update. This bounds optimizer memory and avoids the known
+i8 trunk cliff.
+
+Required evidence:
+
+- update and revert are byte-identical;
+- the guard set is disjoint from the adapted prompt tokens;
+- the residual improves the target task without degrading the guard set;
+- the same prompt and seed produce the same artifact hash.
+
+### 2. Integer delta-rule memory
+
+Compare additive linear-attention state with a bounded integer delta-rule
+correction. Measure retrieval accuracy, state saturation, stale-memory error,
+and cross-platform replay. This is a state-update experiment, not ordinary
+backpropagation.
+
+### 3. Retrieval-conditioned adaptation
+
+Reproduce the nearest-neighbor TTT protocol first with a float reference, then
+with a frozen integer trunk plus residual adapter. Keep retrieval-only,
+adaptation-only, and combined rows separate.
+
+### 4. Prompt-only adaptation
+
+Use a SLOT-like residual vector as the smallest test of sample-specific integer
+optimization. A full-trunk update is unjustified until the small residual has a
+measured ceiling.
+
+## Risks
+
+- **Self-reinforcement:** optimizing on the prompt can increase confidence
+  without improving correctness.
+- **Catastrophic local updates:** exact replay makes a bad update reproducible,
+  not safe.
+- **State contamination:** persistent fast weights can leak information between
+  requests unless session boundaries are explicit.
+- **Metric leakage:** selecting an update on the same tokens used to report the
+  gain is not held-out evidence.
+- **Optimizer memory:** integer Adam or per-parameter residual carry can exceed
+  the inference model size even though no state is floating point.
+
+## Recommended order
+
+1. Additive state versus delta-rule state on a synthetic binding task.
+2. Frozen-trunk prompt residual with transactional rollback.
+3. Retrieval-conditioned residual adaptation with matched ablations.
+4. Only then test persistent session learning or full-trunk TTT.

@@ -1,0 +1,66 @@
+{
+  "schema": "nsrl.integer_reachable_capacity_longitudinal_contract.v1",
+  "claim": "early_reachable_functional_updates_predict_disjoint_heldout_gain_after_longer_training",
+  "source_matrix": {
+    "path": "benchmarks/integer-reachable-capacity-v1/matrix.json",
+    "sha256": "795d2ff5b5c82d20260a68eb76b7213e49484dce01c34cbdb67257b7a7ac7c96",
+    "early_windows": 256,
+    "early_optimizer_steps": 8
+  },
+  "inputs": {
+    "model": {
+      "path": "data/local-runs/literary-rms-adam-8k-shift8/model.nsrlmt",
+      "sha256": "fbf58840e16bdc8dd52e2c07a9f0998997296aac83ec0be61d34412c2c5439bf"
+    },
+    "train_tokens": {
+      "path": "data/local-runs/literary-scale-8k-seq32/tokens.u8",
+      "sha256": "5da0894ae7377c599c12f09b6e504601cfe34675cd6de617a4dc73280e93d648"
+    },
+    "heldout_tokens": {
+      "path": "data/local-runs/literary-scale-8k-seq32/holdout.tokens.u8",
+      "sha256": "88362558795f12a48df1d8cca609533de24e1ae5faf6d57a13fb17904a01bb67",
+      "split_provenance": "corpus.manifest.json holdout_bytes_per_author_limit"
+    }
+  },
+  "matrix": {
+    "ranks": [8, 16, 32],
+    "learning_rate_shifts": [0, 1, 2, 3, 4],
+    "error_feedback": [false, true],
+    "cells": 30,
+    "learning_rate": 16384,
+    "long_train_windows": 2048,
+    "long_optimizer_steps": 64,
+    "batch_windows": 32,
+    "heldout_windows": 4096
+  },
+  "predictors": {
+    "binary": "early functional_update.nonzero_count > 0",
+    "continuous": [
+      "early functional_update.delta_l1",
+      "early functional_update.nonzero_count",
+      "early active_rank"
+    ]
+  },
+  "outcome": {
+    "primary": "zero_expert_heldout_probability_error_q15 - candidate_heldout_probability_error_q15",
+    "positive_gain": "primary > 0",
+    "secondary": "zero_expert_heldout_mistakes - candidate_heldout_mistakes"
+  },
+  "analysis": {
+    "binary_metrics": ["precision", "recall", "specificity", "accuracy", "matthews_correlation"],
+    "continuous_metric": "spearman_rank_correlation",
+    "permutation_test": {
+      "alternative": "greater",
+      "permutations": 10000,
+      "seed": 20260714
+    },
+    "support_rule": "matthews_correlation > 0, functional_delta_l1_spearman > 0, one_sided_permutation_p <= 0.05, and mean gain for early-reachable cells exceeds early-no-op cells"
+  },
+  "known_non_claims": [
+    "small_fixed_matrix_not_a_scaling_law",
+    "association_not_causal_identification",
+    "single_trunk_and_corpus_family",
+    "probability_error_not_open_generation_quality",
+    "hash_identity_is_not_an_ordered_capacity_measure"
+  ]
+}

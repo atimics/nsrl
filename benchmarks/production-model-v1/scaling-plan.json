@@ -1,0 +1,163 @@
+{
+  "schema": "nsrl.production_model_scaling_plan.v1",
+  "contract_id": "production-model-v1",
+  "corpus_checkpoint": {
+    "path": "benchmarks/production-corpus-v1/checkpoint.json",
+    "sha256": "2d77bfe66489755b3332f9db513ec8c55b19665c8b586314c8726ea1abfaf9c8",
+    "train_token_hash_fnv64": "0x97e5254c31c27bda",
+    "dev_token_hash_fnv64": "0xda195778ceb603ab",
+    "test_token_hash_fnv64": "0xaa9e97e34df7cd03"
+  },
+  "tokenizer": {
+    "id": "deterministic_byte_bpe_v1",
+    "vocab_size": 8192,
+    "artifact_hash_fnv64": "0xf4fe71d93c438c1a"
+  },
+  "smoke_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-smoke.json",
+    "sha256": "63b6ea6a7810cbbcf4edb57ac1a89d4a77b07dd670406a5f5e4db5b71f8639c5"
+  },
+  "full_train_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-full-smoke.json",
+    "sha256": "e3247418ce7f491d9243279e80428684987a01365c34b395f3b095d74abae07e"
+  },
+  "float_twin_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-float-smoke.json",
+    "sha256": "de9076e76601c2d8986415cbdd725f309245abc70c8b042f2e88ff248451b484"
+  },
+  "prepilot_optimization_checkpoint": {
+    "path": "benchmarks/production-model-v1/prepilot-performance.json",
+    "sha256": "13d26d6e2c32fdfa37ddab4a370f5e24bed16ebef2fcb6996ece25b8f313aa52"
+  },
+  "pilot_contract": {
+    "path": "benchmarks/production-model-v1/p10m-pilot-contract.json",
+    "sha256": "e2eab91e4f780138558db296acc4d8f94f79b9b58c63064183ef522032278a9c",
+    "runner": "aws_graviton_parallel_lanes",
+    "instance_type": "c8g.2xlarge"
+  },
+  "pilot_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-pilot.json",
+    "sha256": "324df33e3a69d3ee267f313cb6706ec6dd423094a670b96e631e26601ccd2293",
+    "source_run": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/runs/production-p10m-pilot-20260713T043933Z"
+  },
+  "integer_stabilization_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-stabilization.json",
+    "sha256": "d1d377248a0238a176897270e6fd87acb57d403edef4af0012eb0d2981e128a8"
+  },
+  "stabilized_pilot_attempt": {
+    "path": "benchmarks/production-model-v1/p10m-stabilized-pilot-attempt-1.json",
+    "sha256": "373f120cac7857b9c1db5087c631b756ed3c34d7a64e1483b403387d949e41f8",
+    "source_run": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/runs/production-p10m-stabilized-pilot-20260713T134929Z"
+  },
+  "stabilized_pilot_contract": {
+    "path": "benchmarks/production-model-v1/p10m-stabilized-pilot-contract-v2.json",
+    "sha256": "2328b251465821639f55e861ebe1307d571fcc742b42799374e100146b3ade32",
+    "runner": "aws_graviton_parallel_lanes_with_durable_early_stop",
+    "instance_type": "c8g.2xlarge"
+  },
+  "stabilized_pilot_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-stabilized-pilot.json",
+    "sha256": "428d6c4bc1a39b9a8df6620a494cb396cfce2a344d171d2dba0e00eaa861e3ab",
+    "source_run": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/runs/production-p10m-stabilized-pilot-v2-20260713T140032Z"
+  },
+  "training_liveness_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-liveness-audit.json",
+    "sha256": "4bfecf31e5472bfa4e8f92945dbd7cdc7c4c4eb5737865adbd9580c0e67e2a49",
+    "source_run": "data/experiments/production-model-v1/p10m-liveness-audit-local-v2"
+  },
+  "trunk_unlock_contract": {
+    "path": "benchmarks/production-model-v1/p10m-trunk-unlock-contract.json",
+    "sha256": "6e0f92eb556fd2738c5603fc2f6cf1b7d310085470db4622f3c6b7a7a17ccbcd"
+  },
+  "trunk_unlock_preflight_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-trunk-unlock-preflight.json",
+    "sha256": "3378c769f88e91a9f8337cd33d5c1a0146dd2b6c54b66cf465a57b195cb49c2b",
+    "source_run": "data/experiments/production-model-v1/p10m-trunk-unlock-v-boundary"
+  },
+  "architecture": {
+    "family": "causal_decoder_rmsnorm_gated_mlp",
+    "attention": "causal_linear_attention",
+    "embedding_tying": "untied",
+    "attention_projections_per_layer": 4,
+    "mlp_projections_per_layer": 3,
+    "rms_vectors_per_layer": 2,
+    "final_rms_vectors": 1,
+    "output_bias": true
+  },
+  "points": [
+    {
+      "id": "p10m",
+      "d_model": 256,
+      "heads": 8,
+      "layers": 6,
+      "hidden_dim": 768,
+      "context_tokens": 256,
+      "parameter_count": 9317632,
+      "pair": ["integer", "float"]
+    },
+    {
+      "id": "p20m",
+      "d_model": 384,
+      "heads": 8,
+      "layers": 8,
+      "hidden_dim": 1152,
+      "context_tokens": 256,
+      "parameter_count": 21641600,
+      "pair": ["integer", "float"]
+    },
+    {
+      "id": "p30m",
+      "d_model": 448,
+      "heads": 8,
+      "layers": 8,
+      "hidden_dim": 1344,
+      "context_tokens": 256,
+      "parameter_count": 28229056,
+      "pair": ["integer", "float"]
+    }
+  ],
+  "run_order": ["p10m", "p20m", "p30m"],
+  "comparison_contract": {
+    "same_initial_seed": true,
+    "same_token_order": true,
+    "same_context_and_batch_schedule": true,
+    "same_train_dev_test_splits": true,
+    "integer_has_no_retrieval_or_suffix_memory": true,
+    "headline_generation_is_unassisted": true
+  },
+  "promotion_gates": {
+    "finite_or_valid_integer_forward_rate_per_mille": 1000,
+    "integer_dev_bits_per_byte_regression_vs_float_max_per_mille": 150,
+    "heldout_loss_improves_with_scale": true,
+    "open_generation_v1_required": true
+  },
+  "implementation_status": {
+    "corpus_and_tokenizer_ready": true,
+    "variable_vocab_artifact_ready": true,
+    "u32_forward_runtime_ready": true,
+    "output_head_smoke_runtime_ready": true,
+    "p10m_smoke_completed": true,
+    "full_layer_backward_ready": true,
+    "full_layer_backward_smoke_completed": true,
+    "float_twin_runner_ready": true,
+    "float_twin_smoke_completed": true,
+    "prepilot_optimization_completed": true,
+    "controlled_p10m_pilot_launched": true,
+    "controlled_p10m_pilot_completed": true,
+    "controlled_p10m_pilot_promotion_eligible": false,
+    "integer_shift_stabilization_preflight_completed": true,
+    "integer_shift_stabilization_preflight_eligible": true,
+    "stabilized_pilot_first_attempt_early_stopped": true,
+    "stabilized_pilot_replay_completed": true,
+    "stabilized_pilot_replay_eligible": true,
+    "training_liveness_audit_completed": true,
+    "training_liveness_audit_eligible": true,
+    "phase_aware_liveness_ready": true,
+    "residual_saturation_observable": true,
+    "residual_boundary_policy_ready": true,
+    "trunk_unlock_preflight_completed": true,
+    "trunk_unlock_preflight_eligible": true,
+    "training_started": true,
+    "next_gate": "p10m_trunk_unlock_pilot_contract"
+  }
+}

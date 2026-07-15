@@ -1,0 +1,276 @@
+{
+  "schema": "nsrl.production_corpus_checkpoint.v1",
+  "contract_id": "production-corpus-v1",
+  "config": {
+    "path": "benchmarks/production-corpus-v1/config.json",
+    "sha256": "7bc0c4b3fe478e17b8cf6e8aa3609054b793d0dfe95ae20aa09ee35b20b7b53c",
+    "canonical_sha256": "be24a8d59978b6948f2eed758a8f5368d90dd53c4236c44fc4399bad9ca67bdd"
+  },
+  "sources": [
+    {
+      "id": "shakespeare-gutenberg-100",
+      "sha256": "3cf4b3d44ee14cff4e14e78e2ad3318eff76f3f7f2afc3cee6bb925879110a37",
+      "format": "gutenberg_text",
+      "source_url": "https://www.gutenberg.org/ebooks/100",
+      "license_id": "LicenseRef-Public-Domain-US-Project-Gutenberg",
+      "rights_basis_url": "https://www.gutenberg.org/policy/permission",
+      "rights_scope": "research build; confirm deployment jurisdiction and Project Gutenberg trademark terms before distribution",
+      "attribution": "The Complete Works of William Shakespeare, Project Gutenberg ebook 100",
+      "documents_loaded": 336,
+      "upstream": null,
+      "provenance_files": []
+    },
+    {
+      "id": "blake-poems-gutenberg-574",
+      "sha256": "7e40d6eee71365362973c0083a3117bc11d49c1feaf5566163109d54bd573a24",
+      "format": "gutenberg_text",
+      "source_url": "https://www.gutenberg.org/ebooks/574",
+      "license_id": "LicenseRef-Public-Domain-US-Project-Gutenberg",
+      "rights_basis_url": "https://www.gutenberg.org/policy/permission",
+      "rights_scope": "research build; confirm deployment jurisdiction and Project Gutenberg trademark terms before distribution",
+      "attribution": "Poems of William Blake, Project Gutenberg ebook 574",
+      "documents_loaded": 3,
+      "upstream": null,
+      "provenance_files": []
+    },
+    {
+      "id": "blake-marriage-gutenberg-45315",
+      "sha256": "fc9a76619fcb76c58273d7fc9e034108b0d7fffed3780ad5b8226954a12b289a",
+      "format": "gutenberg_text",
+      "source_url": "https://www.gutenberg.org/ebooks/45315",
+      "license_id": "LicenseRef-Public-Domain-US-Project-Gutenberg",
+      "rights_basis_url": "https://www.gutenberg.org/policy/permission",
+      "rights_scope": "research build; confirm deployment jurisdiction and Project Gutenberg trademark terms before distribution",
+      "attribution": "The Marriage of Heaven and Hell by William Blake, Project Gutenberg ebook 45315",
+      "documents_loaded": 2,
+      "upstream": null,
+      "provenance_files": []
+    },
+    {
+      "id": "simplewiki-pages-2026-06-20",
+      "sha256": "06bae5941d17b6a863a317930cc6d044828c6997ede80a196f3c7b734e0ac489",
+      "format": "nsrl_simplewiki_pages",
+      "source_url": "https://dumps.wikimedia.org/simplewiki/latest/",
+      "license_id": "CC-BY-SA-4.0 OR GFDL-1.3-or-later",
+      "rights_basis_url": "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use/en",
+      "rights_scope": "research build and compliant reuse; preserve attribution and share-alike obligations for redistributed corpus text",
+      "attribution": "Simple English Wikipedia contributors; page titles are retained in records and source URLs resolve through simple.wikipedia.org",
+      "documents_loaded": 20000,
+      "upstream": {
+        "path": "data/raw/simplewiki-latest-pages-articles.xml.bz2",
+        "sha256": "464bf7332bd7d43a3a9ae5c1190fa00a9145de9c1ccc64b77a110e23237605bc",
+        "extraction": "nsrl-corpus extract-simplewiki"
+      },
+      "provenance_files": [
+        {
+          "path": "data/processed/wiki-bard-corpus.trace.jsonl",
+          "sha256": "f48f7ef86f60f2d65b917733ad2f5fdfed2b68bc79aa3655179079349a7ab113"
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "document": {
+      "min_bytes": 256,
+      "max_bytes": 16384
+    },
+    "near_dedup": {
+      "shingle_words": 5,
+      "signature_size": 24,
+      "bands": 6,
+      "threshold_per_mille": 850
+    },
+    "contamination": {
+      "shingle_words": 5,
+      "min_direct_bytes": 64,
+      "prompt_overlap_per_mille": 500,
+      "panels": [
+        {
+          "id": "open-generation-v1-development",
+          "path": "benchmarks/open-generation-v1/development-panel.tsv",
+          "sha256": "c50d6fdd75c4f93cacf521c4512057d38e3a2551da51e91bd88e7d2b63d3bef4",
+          "prompts": 12
+        },
+        {
+          "id": "open-generation-v1-hidden",
+          "path": "data/private/open-generation-v1/hidden-panel.txt",
+          "sha256": "b7be1577444b77b9b2c0aecb8955655cfa8003a0f1600649a2039e72b3a6c53d",
+          "prompts": 6
+        }
+      ]
+    },
+    "split": {
+      "seed": "nsrl-production-corpus-v1-split-2026-07-12",
+      "permyriad": {
+        "train": 9800,
+        "dev": 100,
+        "test": 100
+      },
+      "require_nonempty": true
+    },
+    "tokenizer_training": {
+      "source_split": "train",
+      "max_bytes": 1048576,
+      "target_vocab_size": 8192,
+      "min_pair_frequency": 2
+    }
+  },
+  "counts": {
+    "loaded": 20341,
+    "exact_duplicates_removed": 0,
+    "near_duplicates_removed": 0,
+    "contaminated_quarantined": 0,
+    "accepted": 20341
+  },
+  "artifacts": {
+    "train": {
+      "file": "train.txt",
+      "bytes": 54828895,
+      "sha256": "6ffc29a0bb7008524edb6f5bb40ecce0c20449c366d3859a865ada8cd55f5fb4",
+      "documents": 19929
+    },
+    "train_index": {
+      "file": "train.index.tsv",
+      "bytes": 3726475,
+      "sha256": "0c02d8090cb1a5df47844f1a306fe62541dc1b0a1da88d5551254bd4786dcf52",
+      "documents": 19929
+    },
+    "dev": {
+      "file": "dev.txt",
+      "bytes": 630279,
+      "sha256": "bcf4b69810acda73932a8ca6618b85ed8fd2b24a2514cfb16449a5c54d5f3796",
+      "documents": 213
+    },
+    "dev_index": {
+      "file": "dev.index.tsv",
+      "bytes": 39018,
+      "sha256": "8a7c3cf22ece5b5f9c7efd3be6ae887260cf250e3623bf678b8d73628ae2af47",
+      "documents": 213
+    },
+    "test": {
+      "file": "test.txt",
+      "bytes": 469006,
+      "sha256": "780919383d84c180d07219b440fe5e41e09083e99a02b49199da6fbc7baae074",
+      "documents": 199
+    },
+    "test_index": {
+      "file": "test.index.tsv",
+      "bytes": 36667,
+      "sha256": "c0dfe9b4932b2e97e6fbd9624695242ff0a5b02dc5a96d01f7955c54a8e475b4",
+      "documents": 199
+    },
+    "records": {
+      "file": "records.jsonl",
+      "bytes": 7983838,
+      "sha256": "a954550f28e94d18d3ce55098d3e17dc9151887abb1a37e165108ea7cb4557b1",
+      "records": 20341
+    },
+    "tokenizer_training": {
+      "file": "tokenizer-train.txt",
+      "bytes": 1048576,
+      "sha256": "3f2b0f9856fc57466b24326c383fa4a785c21275d58894e03a45293bbd6afc72",
+      "source_split": "train"
+    },
+    "contamination": {
+      "file": "contamination.json",
+      "bytes": 552,
+      "sha256": "c2a27b0d7b8169e6d58e66250373059f19e423e2a2340d9a6fe7aed060ef3354",
+      "quarantined": 0
+    },
+    "tokenizer": {
+      "file": "tokenizer.nsrlbpe",
+      "bytes": 63496,
+      "sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce"
+    },
+    "tokenizer_trace": {
+      "file": "tokenizer.trace.json",
+      "bytes": 392,
+      "sha256": "557e782bfc2c13039c0538956e6e3e6af6f48c257dc5983074481a55b7cc29c9"
+    },
+    "train_tokens": {
+      "file": "train.nsrltok",
+      "bytes": 57429644,
+      "sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8"
+    },
+    "train_token_trace": {
+      "file": "train.tokens.json",
+      "bytes": 309,
+      "sha256": "85cb24ee9ac483bdd717c0a256ec5796e481df5899ab710acf5951ee1bb5f61a"
+    },
+    "dev_tokens": {
+      "file": "dev.nsrltok",
+      "bytes": 660608,
+      "sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8"
+    },
+    "dev_token_trace": {
+      "file": "dev.tokens.json",
+      "bytes": 299,
+      "sha256": "32dcef70fe49d23c12ea017efbe49fef6beddbc3260d0bf6d5852de7e113f999"
+    },
+    "test_tokens": {
+      "file": "test.nsrltok",
+      "bytes": 499528,
+      "sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+    },
+    "test_token_trace": {
+      "file": "test.tokens.json",
+      "bytes": 299,
+      "sha256": "ecc9657e28c41ed1788062569c3e0f90ef4dbdc48505831b190a71abe9ed3c5d"
+    }
+  },
+  "tokenizer": {
+    "id": "deterministic_byte_bpe_v1",
+    "target_vocab_size": 8192,
+    "actual_vocab_size": 8192,
+    "merges": 7933,
+    "min_pair_frequency": 2,
+    "source_hash_fnv64": "0x579c9ac0dff629c9",
+    "artifact_hash_fnv64": "0xf4fe71d93c438c1a",
+    "training_tokens": 249978,
+    "tokens_per_input_byte_per_mille": 238
+  },
+  "encodings": {
+    "train": {
+      "documents": 19929,
+      "input_bytes": 54789038,
+      "tokens": 14357405,
+      "token_hash_fnv64": "0x97e5254c31c27bda",
+      "tokens_per_input_byte_per_mille": 262,
+      "bos_tokens": 19929,
+      "eos_tokens": 19929
+    },
+    "dev": {
+      "documents": 213,
+      "input_bytes": 629854,
+      "tokens": 165146,
+      "token_hash_fnv64": "0xda195778ceb603ab",
+      "tokens_per_input_byte_per_mille": 262,
+      "bos_tokens": 213,
+      "eos_tokens": 213
+    },
+    "test": {
+      "documents": 199,
+      "input_bytes": 468609,
+      "tokens": 124876,
+      "token_hash_fnv64": "0xaa9e97e34df7cd03",
+      "tokens_per_input_byte_per_mille": 266,
+      "bos_tokens": 199,
+      "eos_tokens": 199
+    }
+  },
+  "gates": {
+    "rights_approved_sources": 4,
+    "no_cross_split_documents": true,
+    "tokenizer_training_is_train_only": true,
+    "evaluation_panels_excluded": true,
+    "tokenizer_bound": true,
+    "all_splits_encoded": true
+  },
+  "known_non_claims": [
+    "simplewiki_source_is_capped_at_20000_documents",
+    "project_gutenberg_inputs_require_deployment_jurisdiction_review",
+    "corpus_freeze_does_not_claim_model_quality",
+    "ten_to_thirty_million_parameter_models_not_trained_yet",
+    "same_shape_float_twins_not_trained_yet"
+  ]
+}

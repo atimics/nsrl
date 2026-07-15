@@ -1,0 +1,99 @@
+{
+  "schema": "nsrl.production_boolean_jet_rank_two_contract.v1",
+  "profile": "p10m",
+  "purpose": "post-hoc four-vertex trunk/head interaction calibration on the frozen v3 move set",
+  "trace_schema": "nsrl.production_boolean_jet_rank_two.v1",
+  "bindings": {
+    "model_path": "data/experiments/production-model-v1/p10m-normalized-wide-gradient-preflight/model-q23-newton-output33.nsrlpm",
+    "model_sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+    "model_hash": "0xb10996e0707ab342",
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "token_stream_hash": "0xda195778ceb603ab",
+    "source_alignment_contract": "p10m-gradient-lane-alignment-v3-contract.json",
+    "source_alignment_result": "p10m-gradient-lane-alignment-v3.json"
+  },
+  "selection": {
+    "context_tokens": 64,
+    "proposal_windows": 8,
+    "transfer_windows": 8,
+    "documents_per_surface": 4,
+    "rescue_stratified_sampling": true,
+    "include_mass_corrected_no_rescue": true,
+    "coordinates_per_group_per_stratum": 1,
+    "sample_seed": 43,
+    "primary_lane": "mass-corrected-normalized-rhu",
+    "expected_trunk_moves": 4,
+    "expected_head_moves": 2,
+    "move_fingerprint_algorithm": "fnv1a64_block_tag_group_u64le_coordinate_u64le_delta_u8",
+    "expected_move_fingerprint": "0xc11353911a5130fb"
+  },
+  "moves": {
+    "trunk": [
+      {"group": "final_rms", "group_index": 3, "coordinate": 40, "delta": -1},
+      {"group": "final_rms", "group_index": 3, "coordinate": 68, "delta": -1},
+      {"group": "final_rms", "group_index": 3, "coordinate": 206, "delta": -1},
+      {"group": "final_rms", "group_index": 3, "coordinate": 218, "delta": -1}
+    ],
+    "head": [
+      {"group": "output", "group_index": 11, "coordinate": 1424062, "delta": 1},
+      {"group": "bias", "group_index": 12, "coordinate": 7866, "delta": -1}
+    ]
+  },
+  "move_contract": {
+    "state_scope": "deployed_parameters_only",
+    "hidden_optimizer_state": "excluded",
+    "action_order": "coordinate_ascending_within_block_trunk_then_head",
+    "collision_semantics": "reject",
+    "repeated_action_semantics": "reject",
+    "boundary_saturation_semantics": "reject"
+  },
+  "objective": {
+    "name": "integer_base2_softmax_nll_q20",
+    "vertices": ["empty", "trunk", "head", "trunk_head"],
+    "surfaces": ["proposal", "document_disjoint_transfer"],
+    "average_surfaces": false,
+    "report": [
+      "mu_trunk_q20",
+      "mu_head_q20",
+      "mu_trunk_head_q20",
+      "joint_delta_q20",
+      "function_visibility",
+      "parameter_saturation_count",
+      "minimizing_vertices",
+      "escape_order"
+    ]
+  },
+  "training_numeric_contract": {
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "learning_rate_shifts": {
+      "matrix_default": 25,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 22,
+      "gate": 23,
+      "down": 25,
+      "vector": 23,
+      "embedding": 17,
+      "output": 33
+    }
+  },
+  "interpretation": {
+    "evidence_level": "post_hoc_calibration",
+    "question": "is the sampled trunk block useful only after the aligned head block",
+    "confirmation_if_useful": "freeze a new selection rule and repeat on unseen documents"
+  },
+  "authorization": {
+    "local_bounded_execution": true,
+    "training_behavior_change": false,
+    "optimizer_promotion": false,
+    "paid_cloud_execution": false
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "schema": "nsrl.production_probability_normalization_accuracy_contract.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_preflight": {
+    "contract_path": "benchmarks/production-model-v1/p10m-wide-probability-gradient-preflight-contract.json",
+    "contract_sha256": "921aebf3bf24ceb525ddb073579512abfdda27959bad282216e0ec782b01ad9a",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-wide-probability-gradient-preflight.json",
+    "checkpoint_sha256": "0f15922c15cdc7c4f427cb7e99ee0f48d5e29dd26053b089570820ff6af41fd9",
+    "required_outcome": "wide_precision_no_preflight_gain",
+    "required_next_gate": "p10m_probability_normalization_accuracy_review"
+  },
+  "reference_probability_resolution": {
+    "contract_path": "benchmarks/production-model-v1/p10m-target-probability-resolution-contract.json",
+    "contract_sha256": "1ddfa4a3625be7d05d6ca20498eb098ba29e91235c85bbe9dd686f2d41655686",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-target-probability-resolution.json",
+    "checkpoint_sha256": "04f5be4f9942eb79e6d7d1911f5c5feaa3660dbcc71c236096adb10c06e7b407",
+    "fractional_bits": 23,
+    "target_probability_changed_windows": 13
+  },
+  "models": {
+    "source": {
+      "role": "up_learning_shift23",
+      "path": "data/experiments/production-model-v1/p10m-up-useful-update/model-3.nsrlpm",
+      "sha256": "4a83e3301cd5d15c5c8f919c5816c49e5d81ae2fa60884a09bb65a06b1567b4e",
+      "common_forward_model_hash": "0x4dc415c2fba2da25"
+    },
+    "candidate": {
+      "role": "up_learning_shift22",
+      "path": "data/experiments/production-model-v1/p10m-up-shift22-breakthrough/model-3.nsrlpm",
+      "sha256": "3e66e97dfeefaa6f1e1c2f6bf129646e401d9596051a3f861198aa8515cfea9d",
+      "common_forward_model_hash": "0x5fd8eba1e15d2f9d"
+    },
+    "common_up_forward_shift": 7
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "evaluation": {
+    "context_tokens": 64,
+    "windows": 256,
+    "vocab_size": 8192,
+    "probability_fractional_bits": 23,
+    "normalizations": [
+      {
+        "id": "legacy_q31_lut",
+        "reciprocal_fractional_bits": 31,
+        "compute_rank": 0
+      },
+      {
+        "id": "q47_lut",
+        "reciprocal_fractional_bits": 47,
+        "compute_rank": 1
+      },
+      {
+        "id": "q47_newton1",
+        "reciprocal_fractional_bits": 47,
+        "compute_rank": 2
+      },
+      {
+        "id": "q47_exact_division",
+        "reciprocal_fractional_bits": 47,
+        "compute_rank": 3
+      }
+    ],
+    "all_other_forward_shifts_frozen": {
+      "qkv": 8,
+      "o": 8,
+      "gate": 10,
+      "down": 12,
+      "output": 14
+    }
+  },
+  "selection_policy": {
+    "baseline_normalization": "legacy_q31_lut",
+    "maximum_mass_error_ppm": 1000,
+    "minimum_target_probability_changed_windows": 13,
+    "select_lowest_compute_nonlegacy_method_meeting_both_source_and_candidate_mass_threshold": true,
+    "require_target_signal_not_worse_than_legacy_q23": true,
+    "exact_division_is_accuracy_ceiling_not_default": true,
+    "quality_is_diagnostic_not_promotional": true,
+    "require_zero_forward_saturation": true,
+    "no_test_split_access": true
+  },
+  "outcome_policy": {
+    "normalization_candidate_found": "a_nondivision_q47_method_meets_mass_accuracy_and_target_signal_gates",
+    "only_exact_division_meets_accuracy": "only_the_exact_integer_division_ceiling_meets_mass_accuracy_and_target_signal_gates",
+    "normalization_accuracy_not_recovered": "no_nonlegacy_method_meets_mass_accuracy_and_target_signal_gates",
+    "failed_contract": "any_contract_gate_fails"
+  },
+  "authorization": {
+    "local_execution": true,
+    "paid_cloud_execution": false,
+    "paid_scale_requires_separate_contract": true
+  },
+  "known_non_claims": [
+    "normalization_accuracy_is_not_training_quality",
+    "exact_division_is_an_accuracy_ceiling_not_a_selected_default_unless_required",
+    "dev_split_diagnostic_does_not_reopen_test",
+    "no_quality_or_scaling_promotion",
+    "not_open_generation_quality"
+  ]
+}

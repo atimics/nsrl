@@ -1,0 +1,92 @@
+{
+  "schema": "nsrl.production_gradient_lane_alignment_contract.v3",
+  "profile": "p10m",
+  "purpose": "causal mass-corrected no-rescue replay on the v2 rescue-stratified coordinate design",
+  "trace_schema": "nsrl.production_gradient_alignment.v6",
+  "bindings": {
+    "model_path": "data/experiments/production-model-v1/p10m-normalized-wide-gradient-preflight/model-q23-newton-output33.nsrlpm",
+    "model_sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+    "model_hash": "0xb10996e0707ab342",
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "token_stream_hash": "0xda195778ceb603ab"
+  },
+  "audit": {
+    "context_tokens": 64,
+    "proposal_windows": 8,
+    "transfer_windows": 8,
+    "documents_per_surface": 4,
+    "rescue_stratified_sampling": true,
+    "include_mass_corrected_no_rescue": true,
+    "transfer_policy": "strict_disjoint_document_blocks",
+    "coordinates_per_group_per_stratum": 1,
+    "coordinate_sampling": "v2_public_lane_union_plus_source_specific_rescue_strata_control_evaluation_only",
+    "selection_strata": [
+      "union_activity",
+      "normalized_rescue",
+      "mass_corrected_rescue",
+      "reciprocal_free_rescue"
+    ],
+    "sample_seed": 43,
+    "perturbations": [-1, 1],
+    "objective": "integer_base2_softmax_nll_q20",
+    "random_control": "paired_deterministic_sign"
+  },
+  "training_numeric_contract": {
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "learning_rate_shifts": {
+      "matrix_default": 25,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 22,
+      "gate": 23,
+      "down": 25,
+      "vector": 23,
+      "embedding": 17,
+      "output": 33
+    }
+  },
+  "lanes": [
+    "normalized-rescued-rhu",
+    "mass-corrected-normalized-rhu",
+    "reciprocal-free-rescued-rhu",
+    "reciprocal-free-late-rhu",
+    "reciprocal-free-late-stochastic",
+    "mass-corrected-normalized-no-rescue-rhu"
+  ],
+  "causal_endpoint": {
+    "intervention": "replace rescued_rhu_with_plain_rhu_only",
+    "held_constant": [
+      "normalized_mass_corrected_output_source",
+      "model",
+      "windows",
+      "coordinates",
+      "numeric_shifts",
+      "objective"
+    ],
+    "source_equivalence_required": true,
+    "separation": "aggregate_rescue_exposed_trunk_gradient_sign_or_magnitude_differs",
+    "quality_direction": "control_improves_proposal_agreement_or_exact_descent_without_regressing_the_other"
+  },
+  "gates": {
+    "primary_rescue_stratum_must_be_observed": true,
+    "exact_zero_mass_required_for_both_causal_lanes": true,
+    "model_restoration_and_seeded_replay_required": true,
+    "gradient_and_residual_saturation_must_be_zero": true,
+    "proposal_and_transfer_results_must_be_reported_separately": true,
+    "optimizer_refinement_authorized_by_this_calibration": false
+  },
+  "authorization": {
+    "local_bounded_execution": true,
+    "training_behavior_change": false,
+    "paid_cloud_execution": false,
+    "p10m_training_promotion": false
+  }
+}

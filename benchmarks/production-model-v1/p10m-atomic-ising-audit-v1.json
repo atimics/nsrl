@@ -1,0 +1,2241 @@
+{
+  "schema": "nsrl.production_atomic_ising_audit.v1",
+  "analysis_role": "proposal_only_calibration",
+  "source_result_sha256": "7d7432057cfa2b86796abdcaf73604541699a9fed1a939a57ad94b42bf9ce7ca",
+  "source_contract_sha256": "a55fa73adf8c2650e36cc367dcae6aca1fec87a6bb422fa337e0d0b00a306184",
+  "audit_contract_sha256": "18b2e0bf250e3cd752185b9ec48423775ed34d4344916dcde3ee5fb7a0898bd8",
+  "rank": 6,
+  "vertices": 64,
+  "bindings": {
+    "source_fnv64": "0xc19b8402483e9d33",
+    "binary_fnv64": "0xfa0351bca0c5631e",
+    "model_hash": "0xb10996e0707ab342",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "token_stream_hash": "0xda195778ceb603ab",
+    "source_index_hash": "0x75f51a06dd94fda8",
+    "move_fingerprint": "0x48eccb62ab07b717",
+    "manifest_hash": "0x2ce8888292aa6852"
+  },
+  "implementation": {
+    "kernel_sha256": "e19d478df519ca2cbc0cae16379633c467906671fe6286113574f67deedbe996",
+    "analyzer_sha256": "8a0a3766a94f1519fa072e9168dc43477a58be8feec5da49696190f2ebf3e740",
+    "checker_sha256": "fee46cb8d7c5d57771c688cd2a3d524d93ee5790c1a844218ba3efabe2458ba7"
+  },
+  "arithmetic": {
+    "objective_integer_type": "arbitrary_precision_signed",
+    "objective_floating_point_operations": 0,
+    "walsh_normalization_denominator": 64,
+    "dyadic_weight_shift": 128,
+    "dyadic_weight_formula": "delta=q*T+r; weight=(2*T-r)*2^(127-q); require 0<=q<128",
+    "rational_encoding": "reduced_decimal_numerator_denominator"
+  },
+  "q20": {
+    "fractional_bits": 20,
+    "ising_walsh": {
+      "spin_convention": "s_i=(-1)^bit_i",
+      "hamiltonian": "loss(mask)=sum_A coupling_numerator[A]*product_(i in A)s_i/64",
+      "normalization_denominator": 64,
+      "coupling_numerators": [
+        "111721475788",
+        "144",
+        "-16",
+        "-44",
+        "4",
+        "24",
+        "-8",
+        "20",
+        "132",
+        "16",
+        "12",
+        "8",
+        "-4",
+        "0",
+        "4",
+        "0",
+        "460",
+        "-4",
+        "-8",
+        "0",
+        "-4",
+        "-4",
+        "0",
+        "0",
+        "-8",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "1896",
+        "4",
+        "-12",
+        "8",
+        "-24",
+        "-12",
+        "20",
+        "0",
+        "12",
+        "-16",
+        "-4",
+        "-8",
+        "20",
+        "0",
+        "-12",
+        "0",
+        "16",
+        "-8",
+        "-12",
+        "-4",
+        "24",
+        "0",
+        "-12",
+        "4",
+        "16",
+        "0",
+        "0",
+        "0",
+        "-8",
+        "0",
+        "0",
+        "0"
+      ],
+      "energy_numerator_squared_by_order": [
+        "12481688152248670220944",
+        "3844848",
+        "4288",
+        "2816",
+        "432",
+        "16",
+        "0"
+      ],
+      "nonzero_couplings": 42,
+      "ground_state_masks": [
+        63
+      ],
+      "walsh_inversion_verified": true,
+      "parseval_verified": true
+    },
+    "temperature_sweep": [
+      {
+        "temperature_units": "1",
+        "maximum_energy_bucket": 86,
+        "partition_weight": "507406268140334861026617274784211271680",
+        "minimum_vertex_weight": "4398046511104",
+        "maximum_vertex_weight": "340282366920938463463374607431768211456",
+        "ground_state_probability": {
+          "numerator": "38685626227668133590597632",
+          "denominator": "57685414065001039151254335"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "73703143913473736341722826",
+          "denominator": "57685414065001039151254335"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "56415889077014167560794573",
+          "denominator": "69222496878001246981505202"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "4616672619543092012242361927740611791258826896530939",
+          "denominator": "6655213991701239423931529916564557758772007712584450"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "395412733517460593729828023480055006866285869961781",
+          "denominator": "798625679004148730871783589987746931052640925510134"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "7054033645217511580886707376168692346887451619538093",
+          "denominator": "1996564197510371827179458974969367327631602313775335"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-44169722184023999685839233",
+            "denominator": "57685414065001039151254335"
+          },
+          {
+            "numerator": "-10230405544418849795019889",
+            "denominator": "19228471355000346383751445"
+          },
+          {
+            "numerator": "-13148641257548544187700414",
+            "denominator": "19228471355000346383751445"
+          },
+          {
+            "numerator": "-17468389872879741199795067",
+            "denominator": "19228471355000346383751445"
+          },
+          {
+            "numerator": "-11536399822300878734101133",
+            "denominator": "11537082813000207830250867"
+          },
+          {
+            "numerator": "-57685414065001038900081857",
+            "denominator": "57685414065001039151254335"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "2",
+        "maximum_energy_bucket": 43,
+        "partition_weight": "2175738540416433713348913932645429149696",
+        "minimum_vertex_weight": "77371252455336267181195264",
+        "maximum_vertex_weight": "680564733841876926926749214863536422912",
+        "ground_state_probability": {
+          "numerator": "8796093022208",
+          "denominator": "28120761540889"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "92223150942251",
+          "denominator": "28120761540889"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "16823207948893",
+          "denominator": "28120761540889"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "1087081540593120171076688039",
+          "denominator": "2372331688918625656856730963"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "800398901485671463248268748",
+          "denominator": "2372331688918625656856730963"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "1544563447418738270773067062",
+          "denominator": "790777229639541885618910321"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-13957033127999",
+            "denominator": "28120761540889"
+          },
+          {
+            "numerator": "-4039953616667",
+            "denominator": "28120761540889"
+          },
+          {
+            "numerator": "-9304509761587",
+            "denominator": "28120761540889"
+          },
+          {
+            "numerator": "-17768816601171",
+            "denominator": "28120761540889"
+          },
+          {
+            "numerator": "-27748173127527",
+            "denominator": "28120761540889"
+          },
+          {
+            "numerator": "-28120761458407",
+            "denominator": "28120761540889"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "4",
+        "maximum_energy_bucket": 21,
+        "partition_weight": "9259750751564353120952485091478979215360",
+        "minimum_vertex_weight": "486777830487640090174734030864384",
+        "maximum_vertex_weight": "1361129467683753853853498429727072845824",
+        "ground_state_probability": {
+          "numerator": "2097152",
+          "denominator": "14266905"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "165998143",
+          "denominator": "28533810"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "3775720",
+          "denominator": "8560143"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "87654665718001",
+          "denominator": "271392771038700"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "44859429707119",
+          "denominator": "244253493934830"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "849125462366627",
+          "denominator": "610633734837075"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-859384",
+            "denominator": "2853381"
+          },
+          {
+            "numerator": "-66356",
+            "denominator": "2853381"
+          },
+          {
+            "numerator": "-3825527",
+            "denominator": "28533810"
+          },
+          {
+            "numerator": "-3290583",
+            "denominator": "9511270"
+          },
+          {
+            "numerator": "-4004677",
+            "denominator": "4755635"
+          },
+          {
+            "numerator": "-4755277",
+            "denominator": "4755635"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "8",
+        "maximum_energy_bucket": 10,
+        "partition_weight": "34981957779069523485145942308927968378880",
+        "minimum_vertex_weight": "1661534994731144841129758825350430720",
+        "maximum_vertex_weight": "2722258935367507707706996859454145691648",
+        "ground_state_probability": {
+          "numerator": "4096",
+          "denominator": "52635"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "160726",
+          "denominator": "17545"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "203333",
+          "denominator": "631620"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "14812260493",
+          "denominator": "66490637400"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "53414902691",
+          "denominator": "531925099200"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "500706979",
+          "denominator": "443270916"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-8929",
+            "denominator": "52635"
+          },
+          {
+            "numerator": "-9",
+            "denominator": "17545"
+          },
+          {
+            "numerator": "-923",
+            "denominator": "17545"
+          },
+          {
+            "numerator": "-6121",
+            "denominator": "35090"
+          },
+          {
+            "numerator": "-1917",
+            "denominator": "3509"
+          },
+          {
+            "numerator": "-3467",
+            "denominator": "3509"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "16",
+        "maximum_energy_bucket": 5,
+        "partition_weight": "114664523828389982860174012248023644504064",
+        "minimum_vertex_weight": "138239711561631250781995934269155835904",
+        "maximum_vertex_weight": "5444517870735015415413993718908291383296",
+        "ground_state_probability": {
+          "numerator": "512",
+          "denominator": "10783"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "164497",
+          "denominator": "10783"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "4795",
+          "denominator": "21566"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "97464205",
+          "denominator": "697638534"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "607856821",
+          "denominator": "11162216544"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "357967273",
+          "denominator": "348819267"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-909",
+            "denominator": "10783"
+          },
+          {
+            "numerator": "1",
+            "denominator": "263"
+          },
+          {
+            "numerator": "-209",
+            "denominator": "10783"
+          },
+          {
+            "numerator": "-844",
+            "denominator": "10783"
+          },
+          {
+            "numerator": "-3215",
+            "denominator": "10783"
+          },
+          {
+            "numerator": "-9249",
+            "denominator": "10783"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "32",
+        "maximum_energy_bucket": 2,
+        "partition_weight": "350278161449241030827611236525076402667520",
+        "minimum_vertex_weight": "1786482426334926933182716689016783110144",
+        "maximum_vertex_weight": "10889035741470030830827987437816582766592",
+        "ground_state_probability": {
+          "numerator": "256",
+          "denominator": "8235"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "207253",
+          "denominator": "8235"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "1088",
+          "denominator": "8235"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "11707043",
+          "denominator": "203445675"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "5336413",
+          "denominator": "180840600"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "203952314",
+          "denominator": "203445675"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-367",
+            "denominator": "8235"
+          },
+          {
+            "numerator": "7",
+            "denominator": "2745"
+          },
+          {
+            "numerator": "-41",
+            "denominator": "8235"
+          },
+          {
+            "numerator": "-65",
+            "denominator": "1647"
+          },
+          {
+            "numerator": "-1139",
+            "denominator": "8235"
+          },
+          {
+            "numerator": "-1559",
+            "denominator": "2745"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "64",
+        "maximum_energy_bucket": 1,
+        "partition_weight": "948622168383846201520022561867911831486464",
+        "minimum_vertex_weight": "9017482723404869281779427096941857603584",
+        "maximum_vertex_weight": "21778071482940061661655974875633165533184",
+        "ground_state_probability": {
+          "numerator": "256",
+          "denominator": "11151"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "123971",
+          "denominator": "3717"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "110",
+          "denominator": "1593"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "237149",
+          "denominator": "13816089"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "728243",
+          "denominator": "47369448"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "373087682",
+          "denominator": "373034403"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-227",
+            "denominator": "11151"
+          },
+          {
+            "numerator": "17",
+            "denominator": "11151"
+          },
+          {
+            "numerator": "-13",
+            "denominator": "11151"
+          },
+          {
+            "numerator": "-205",
+            "denominator": "11151"
+          },
+          {
+            "numerator": "-695",
+            "denominator": "11151"
+          },
+          {
+            "numerator": "-3497",
+            "denominator": "11151"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "128",
+        "maximum_energy_bucket": 0,
+        "partition_weight": "2317322918731590936185581076610341520015360",
+        "minimum_vertex_weight": "28924001188279769394386841631700297973760",
+        "maximum_vertex_weight": "43556142965880123323311949751266331066368",
+        "ground_state_probability": {
+          "numerator": "64",
+          "denominator": "3405"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "26401",
+          "denominator": "681"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "131",
+          "denominator": "4086"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "80101",
+          "denominator": "23188050"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "13837921",
+          "denominator": "1780842240"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "34782343",
+          "denominator": "34782075"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-12",
+            "denominator": "1135"
+          },
+          {
+            "numerator": "4",
+            "denominator": "3405"
+          },
+          {
+            "numerator": "-1",
+            "denominator": "3405"
+          },
+          {
+            "numerator": "-11",
+            "denominator": "1135"
+          },
+          {
+            "numerator": "-23",
+            "denominator": "681"
+          },
+          {
+            "numerator": "-158",
+            "denominator": "1135"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      }
+    ],
+    "sigma_delta_residual": {
+      "retained_walsh_degree": 3,
+      "residual_characters": 22,
+      "vertex_order": "binary_reflected_gray_code",
+      "quantizer_denominator": 64,
+      "rounding": "nearest_ties_away_from_zero",
+      "trace_columns": [
+        "step",
+        "vertex_mask",
+        "input_residual_numerator",
+        "accumulator_before",
+        "emitted_integer_residual",
+        "accumulator_after"
+      ],
+      "residual_energy_numerator_squared": "448",
+      "residual_oscillation_numerator": "96",
+      "surrogate_minimizers": [
+        63
+      ],
+      "selected_minimizer": 63,
+      "exact_gap": "0",
+      "input_sum_numerator": "0",
+      "emitted_sum": "0",
+      "final_accumulator": "0",
+      "maximum_absolute_accumulator": "32",
+      "conservation_verified": true,
+      "bounded_carry_verified": true,
+      "trace": [
+        [
+          0,
+          0,
+          "-40",
+          "0",
+          "-1",
+          "24"
+        ],
+        [
+          1,
+          1,
+          "-24",
+          "24",
+          "0",
+          "0"
+        ],
+        [
+          2,
+          3,
+          "8",
+          "0",
+          "0",
+          "8"
+        ],
+        [
+          3,
+          2,
+          "24",
+          "8",
+          "1",
+          "-32"
+        ],
+        [
+          4,
+          6,
+          "0",
+          "-32",
+          "-1",
+          "32"
+        ],
+        [
+          5,
+          7,
+          "-32",
+          "32",
+          "0",
+          "0"
+        ],
+        [
+          6,
+          5,
+          "48",
+          "0",
+          "1",
+          "-16"
+        ],
+        [
+          7,
+          4,
+          "16",
+          "-16",
+          "0",
+          "0"
+        ],
+        [
+          8,
+          12,
+          "-8",
+          "0",
+          "0",
+          "-8"
+        ],
+        [
+          9,
+          13,
+          "-8",
+          "-8",
+          "0",
+          "-16"
+        ],
+        [
+          10,
+          15,
+          "-8",
+          "-16",
+          "0",
+          "-24"
+        ],
+        [
+          11,
+          14,
+          "-8",
+          "-24",
+          "-1",
+          "32"
+        ],
+        [
+          12,
+          10,
+          "0",
+          "32",
+          "1",
+          "-32"
+        ],
+        [
+          13,
+          11,
+          "16",
+          "-32",
+          "0",
+          "-16"
+        ],
+        [
+          14,
+          9,
+          "0",
+          "-16",
+          "0",
+          "-16"
+        ],
+        [
+          15,
+          8,
+          "16",
+          "-16",
+          "0",
+          "0"
+        ],
+        [
+          16,
+          24,
+          "24",
+          "0",
+          "0",
+          "24"
+        ],
+        [
+          17,
+          25,
+          "8",
+          "24",
+          "1",
+          "-32"
+        ],
+        [
+          18,
+          27,
+          "-24",
+          "-32",
+          "-1",
+          "8"
+        ],
+        [
+          19,
+          26,
+          "-40",
+          "8",
+          "-1",
+          "32"
+        ],
+        [
+          20,
+          30,
+          "16",
+          "32",
+          "1",
+          "-16"
+        ],
+        [
+          21,
+          31,
+          "48",
+          "-16",
+          "1",
+          "-32"
+        ],
+        [
+          22,
+          29,
+          "-32",
+          "-32",
+          "-1",
+          "0"
+        ],
+        [
+          23,
+          28,
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          24,
+          20,
+          "-8",
+          "0",
+          "0",
+          "-8"
+        ],
+        [
+          25,
+          21,
+          "-8",
+          "-8",
+          "0",
+          "-16"
+        ],
+        [
+          26,
+          23,
+          "-8",
+          "-16",
+          "0",
+          "-24"
+        ],
+        [
+          27,
+          22,
+          "-8",
+          "-24",
+          "-1",
+          "32"
+        ],
+        [
+          28,
+          18,
+          "16",
+          "32",
+          "1",
+          "-16"
+        ],
+        [
+          29,
+          19,
+          "0",
+          "-16",
+          "0",
+          "-16"
+        ],
+        [
+          30,
+          17,
+          "16",
+          "-16",
+          "0",
+          "0"
+        ],
+        [
+          31,
+          16,
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          32,
+          48,
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          33,
+          49,
+          "-16",
+          "0",
+          "0",
+          "-16"
+        ],
+        [
+          34,
+          51,
+          "0",
+          "-16",
+          "0",
+          "-16"
+        ],
+        [
+          35,
+          50,
+          "-16",
+          "-16",
+          "-1",
+          "32"
+        ],
+        [
+          36,
+          54,
+          "8",
+          "32",
+          "1",
+          "-24"
+        ],
+        [
+          37,
+          55,
+          "8",
+          "-24",
+          "0",
+          "-16"
+        ],
+        [
+          38,
+          53,
+          "8",
+          "-16",
+          "0",
+          "-8"
+        ],
+        [
+          39,
+          52,
+          "8",
+          "-8",
+          "0",
+          "0"
+        ],
+        [
+          40,
+          60,
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          41,
+          61,
+          "32",
+          "0",
+          "1",
+          "-32"
+        ],
+        [
+          42,
+          63,
+          "-48",
+          "-32",
+          "-1",
+          "-16"
+        ],
+        [
+          43,
+          62,
+          "-16",
+          "-16",
+          "-1",
+          "32"
+        ],
+        [
+          44,
+          58,
+          "40",
+          "32",
+          "1",
+          "8"
+        ],
+        [
+          45,
+          59,
+          "24",
+          "8",
+          "1",
+          "-32"
+        ],
+        [
+          46,
+          57,
+          "-8",
+          "-32",
+          "-1",
+          "24"
+        ],
+        [
+          47,
+          56,
+          "-24",
+          "24",
+          "0",
+          "0"
+        ],
+        [
+          48,
+          40,
+          "-16",
+          "0",
+          "0",
+          "-16"
+        ],
+        [
+          49,
+          41,
+          "0",
+          "-16",
+          "0",
+          "-16"
+        ],
+        [
+          50,
+          43,
+          "-16",
+          "-16",
+          "-1",
+          "32"
+        ],
+        [
+          51,
+          42,
+          "0",
+          "32",
+          "1",
+          "-32"
+        ],
+        [
+          52,
+          46,
+          "8",
+          "-32",
+          "0",
+          "-24"
+        ],
+        [
+          53,
+          47,
+          "8",
+          "-24",
+          "0",
+          "-16"
+        ],
+        [
+          54,
+          45,
+          "8",
+          "-16",
+          "0",
+          "-8"
+        ],
+        [
+          55,
+          44,
+          "8",
+          "-8",
+          "0",
+          "0"
+        ],
+        [
+          56,
+          36,
+          "-16",
+          "0",
+          "0",
+          "-16"
+        ],
+        [
+          57,
+          37,
+          "-48",
+          "-16",
+          "-1",
+          "0"
+        ],
+        [
+          58,
+          39,
+          "32",
+          "0",
+          "1",
+          "-32"
+        ],
+        [
+          59,
+          38,
+          "0",
+          "-32",
+          "-1",
+          "32"
+        ],
+        [
+          60,
+          34,
+          "-24",
+          "32",
+          "0",
+          "8"
+        ],
+        [
+          61,
+          35,
+          "-8",
+          "8",
+          "0",
+          "0"
+        ],
+        [
+          62,
+          33,
+          "24",
+          "0",
+          "0",
+          "24"
+        ],
+        [
+          63,
+          32,
+          "40",
+          "24",
+          "1",
+          "0"
+        ]
+      ]
+    }
+  },
+  "q32": {
+    "fractional_bits": 32,
+    "ising_walsh": {
+      "spin_convention": "s_i=(-1)^bit_i",
+      "hamiltonian": "loss(mask)=sum_A coupling_numerator[A]*product_(i in A)s_i/64",
+      "normalization_denominator": 64,
+      "coupling_numerators": [
+        "457611164635720",
+        "554238",
+        "-66808",
+        "-199014",
+        "17716",
+        "66030",
+        "-16680",
+        "65694",
+        "496538",
+        "65840",
+        "48634",
+        "34180",
+        "-14682",
+        "0",
+        "16082",
+        "0",
+        "1841016",
+        "14",
+        "8",
+        "2",
+        "-16",
+        "2",
+        "-4",
+        "2",
+        "-2",
+        "4",
+        "-2",
+        "0",
+        "-2",
+        "0",
+        "2",
+        "0",
+        "8328716",
+        "-22",
+        "20",
+        "14",
+        "32",
+        "10",
+        "-4",
+        "2",
+        "-6",
+        "-8",
+        "-6",
+        "-4",
+        "-10",
+        "0",
+        "2",
+        "0",
+        "-20",
+        "10",
+        "-12",
+        "-10",
+        "-28",
+        "-10",
+        "8",
+        "-2",
+        "22",
+        "4",
+        "6",
+        "0",
+        "-2",
+        "0",
+        "2",
+        "0"
+      ],
+      "energy_numerator_squared_by_order": [
+        "209407977999260034760299918400",
+        "73315357032520",
+        "51160491040",
+        "5742606832",
+        "352",
+        "8",
+        "0"
+      ],
+      "nonzero_couplings": 54,
+      "ground_state_masks": [
+        63
+      ],
+      "walsh_inversion_verified": true,
+      "parseval_verified": true
+    },
+    "temperature_sweep": [
+      {
+        "temperature_units": "4096",
+        "maximum_energy_bucket": 87,
+        "partition_weight": "4702436592500050435547908145094220341837824",
+        "minimum_vertex_weight": "8939029533818880",
+        "maximum_vertex_weight": "1393796574908163946345982392040522594123776",
+        "ground_state_probability": {
+          "numerator": "79228162514264337593543950336",
+          "denominator": "267302572893871140169489316639"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "9180480399871930993449937507729505",
+          "denominator": "2138420583150969121355914533112"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "4072411968653412670227926355391",
+          "denominator": "6415261749452907364067743599336"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "3851950701271608906651623110174985436405819118086930468455533",
+          "denominator": "6859263885665596263048925032591072807223144835976499416606816"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "3553470663728036663418478364202617061370691007983281043671175",
+          "denominator": "28095544875686282293448396933493034218386001248159741610421518336"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "8351942932964826185948473928339884547337495615770622539058949",
+          "denominator": "3429631942832798131524462516295536403611572417988249708303408"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-217410506434538147322380588977",
+            "denominator": "267302572893871140169489316639"
+          },
+          {
+            "numerator": "-96776647167623003710545588949",
+            "denominator": "534605145787742280338978633278"
+          },
+          {
+            "numerator": "7712941232011600167310966947",
+            "denominator": "1069210291575484560677957266556"
+          },
+          {
+            "numerator": "-219658924877024336029979293883",
+            "denominator": "267302572893871140169489316639"
+          },
+          {
+            "numerator": "-267270899682110942261258495201",
+            "denominator": "267302572893871140169489316639"
+          },
+          {
+            "numerator": "-267302572893871140129918158049",
+            "denominator": "267302572893871140169489316639"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "8192",
+        "maximum_energy_bucket": 43,
+        "partition_weight": "15734947087042069538047247028945202972721152",
+        "minimum_vertex_weight": "236485233129735300639323324416",
+        "maximum_vertex_weight": "2787593149816327892691964784081045188247552",
+        "ground_state_probability": {
+          "numerator": "144115188075855872",
+          "denominator": "813477698121808597"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "119778237758113845695",
+          "denominator": "13335699969209977"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "422510431327645843",
+          "denominator": "813477698121808597"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "284518696154289971310509281939841381",
+          "denominator": "661745965341556358183176746303108409"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "299850002386576836478214960202777913",
+          "denominator": "4065767211058522264677437929286298064896"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "3499273895724699647064758361183644474",
+          "denominator": "1985237896024669074549530238909325227"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-458808335332751035",
+            "denominator": "813477698121808597"
+          },
+          {
+            "numerator": "-23782075739845489",
+            "denominator": "813477698121808597"
+          },
+          {
+            "numerator": "932583425797779",
+            "denominator": "813477698121808597"
+          },
+          {
+            "numerator": "-438876388538055555",
+            "denominator": "813477698121808597"
+          },
+          {
+            "numerator": "-801050674103904043",
+            "denominator": "813477698121808597"
+          },
+          {
+            "numerator": "-813477697677116715",
+            "denominator": "813477698121808597"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "16384",
+        "maximum_energy_bucket": 21,
+        "partition_weight": "52590892613506803046950997420912403359465472",
+        "minimum_vertex_weight": "1656504957149439226864619907031498752",
+        "maximum_vertex_weight": "5575186299632655785383929568162090376495104",
+        "ground_state_probability": {
+          "numerator": "68719476736",
+          "denominator": "648232799273"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "11216213528701617",
+          "denominator": "648232799273"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "798288195895",
+          "denominator": "1944698397819"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "398979807611274929394347",
+          "denominator": "1260617286159928527985587"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "27263762119104865368431",
+          "denominator": "645436050513883406328620544"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "568265728990917827308134",
+          "denominator": "420205762053309509328529"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-209910828187",
+            "denominator": "648232799273"
+          },
+          {
+            "numerator": "8178999303",
+            "denominator": "648232799273"
+          },
+          {
+            "numerator": "-5649207325",
+            "denominator": "648232799273"
+          },
+          {
+            "numerator": "-198603020271",
+            "denominator": "648232799273"
+          },
+          {
+            "numerator": "-542380972535",
+            "denominator": "648232799273"
+          },
+          {
+            "numerator": "-648211362775",
+            "denominator": "648232799273"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "32768",
+        "maximum_energy_bucket": 10,
+        "partition_weight": "169108117763662162448364479873138939096203264",
+        "minimum_vertex_weight": "6114781087609559244325738429054655135744",
+        "maximum_vertex_weight": "11150372599265311570767859136324180752990208",
+        "ground_state_probability": {
+          "numerator": "33554432",
+          "denominator": "508891231"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "14993598439841",
+          "denominator": "508891231"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "157104329",
+          "denominator": "508891231"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "57521298841601092",
+          "denominator": "258970284988695361"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "301903159223576231",
+          "denominator": "12728907447764354383872"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "870947645269975582",
+          "denominator": "776910854966086083"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-88162274",
+            "denominator": "508891231"
+          },
+          {
+            "numerator": "387943",
+            "denominator": "26783749"
+          },
+          {
+            "numerator": "-1988940",
+            "denominator": "508891231"
+          },
+          {
+            "numerator": "-78894351",
+            "denominator": "508891231"
+          },
+          {
+            "numerator": "-276173181",
+            "denominator": "508891231"
+          },
+          {
+            "numerator": "-504778145",
+            "denominator": "508891231"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "65536",
+        "maximum_energy_bucket": 5,
+        "partition_weight": "503500048371970652144839275849824256483393536",
+        "minimum_vertex_weight": "544122138530546882404919227739879612874752",
+        "maximum_vertex_weight": "22300745198530623141535718272648361505980416",
+        "ground_state_probability": {
+          "numerator": "2097152",
+          "denominator": "47348917"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "2493334469509",
+          "denominator": "47348917"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "31286614",
+          "denominator": "142046751"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "326880697437020",
+          "denominator": "2241919941072889"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "2875570605610643",
+          "denominator": "220389697887229280256"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "2301059689910994",
+          "denominator": "2241919941072889"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-3714148",
+            "denominator": "47348917"
+          },
+          {
+            "numerator": "361621",
+            "denominator": "47348917"
+          },
+          {
+            "numerator": "-96730",
+            "denominator": "47348917"
+          },
+          {
+            "numerator": "-304207",
+            "denominator": "4304447"
+          },
+          {
+            "numerator": "-1281305",
+            "denominator": "4304447"
+          },
+          {
+            "numerator": "-41683339",
+            "denominator": "47348917"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "131072",
+        "maximum_energy_bucket": 2,
+        "partition_weight": "1466767321164832102093379503763753974982770688",
+        "minimum_vertex_weight": "7140570258060702951931318606000082091245568",
+        "maximum_vertex_weight": "44601490397061246283071436545296723011960832",
+        "ground_state_probability": {
+          "numerator": "524288",
+          "denominator": "17241767"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "1636178148297",
+          "denominator": "17241767"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "13853701",
+          "denominator": "103450602"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "37391884738827",
+          "denominator": "594557058564578"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "1667576332134217",
+          "denominator": "233789348340529102848"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "894132432676321",
+          "denominator": "891835587846867"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-693750",
+            "denominator": "17241767"
+          },
+          {
+            "numerator": "82589",
+            "denominator": "17241767"
+          },
+          {
+            "numerator": "-23057",
+            "denominator": "17241767"
+          },
+          {
+            "numerator": "-621613",
+            "denominator": "17241767"
+          },
+          {
+            "numerator": "-2302221",
+            "denominator": "17241767"
+          },
+          {
+            "numerator": "-10295649",
+            "denominator": "17241767"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "262144",
+        "maximum_energy_bucket": 1,
+        "partition_weight": "3903094044467788828425219545616089047734681600",
+        "minimum_vertex_weight": "36581885714652029045398355484648525688471552",
+        "maximum_vertex_weight": "89202980794122492566142873090593446023921664",
+        "ground_state_probability": {
+          "numerator": "524288",
+          "denominator": "22940325"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "1009001681857",
+          "denominator": "7646775"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "9742303",
+          "denominator": "137641950"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "60069815302541",
+          "denominator": "3157551066633750"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "3097175258177441",
+          "denominator": "827733066811637760000"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "1579049825101889",
+          "denominator": "1578775533316875"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-83324",
+            "denominator": "4588065"
+          },
+          {
+            "numerator": "1967",
+            "denominator": "917613"
+          },
+          {
+            "numerator": "-2843",
+            "denominator": "4588065"
+          },
+          {
+            "numerator": "-124447",
+            "denominator": "7646775"
+          },
+          {
+            "numerator": "-1381703",
+            "denominator": "22940325"
+          },
+          {
+            "numerator": "-7605599",
+            "denominator": "22940325"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      },
+      {
+        "temperature_units": "524288",
+        "maximum_energy_bucket": 0,
+        "partition_weight": "9489052833131244223216240895412950626383953920",
+        "minimum_vertex_weight": "117765261826365304373868147514593774388903936",
+        "maximum_vertex_weight": "178405961588244985132285746181186892047843328",
+        "ground_state_probability": {
+          "numerator": "131072",
+          "denominator": "6971455"
+        },
+        "expected_energy_above_ground": {
+          "numerator": "1091647100384",
+          "denominator": "6971455"
+        },
+        "selected_ground_state_overlap": {
+          "numerator": "1396427",
+          "denominator": "41828730"
+        },
+        "edwards_anderson_replica_overlap": {
+          "numerator": "1832883925813",
+          "denominator": "466571374243440"
+        },
+        "magnetic_susceptibility_per_spin": {
+          "numerator": "96581335564617",
+          "denominator": "50962035970696806400"
+        },
+        "spin_glass_susceptibility": {
+          "numerator": "58321741533499",
+          "denominator": "58321421780430"
+        },
+        "magnetization_by_atom": [
+          {
+            "numerator": "-277119",
+            "denominator": "27885820"
+          },
+          {
+            "numerator": "8351",
+            "denominator": "6971455"
+          },
+          {
+            "numerator": "-4429",
+            "denominator": "13942910"
+          },
+          {
+            "numerator": "-8561",
+            "denominator": "961580"
+          },
+          {
+            "numerator": "-230127",
+            "denominator": "6971455"
+          },
+          {
+            "numerator": "-2082179",
+            "denominator": "13942910"
+          }
+        ],
+        "all_vertex_weights_positive": true
+      }
+    ],
+    "sigma_delta_residual": {
+      "retained_walsh_degree": 3,
+      "residual_characters": 22,
+      "vertex_order": "binary_reflected_gray_code",
+      "quantizer_denominator": 64,
+      "rounding": "nearest_ties_away_from_zero",
+      "trace_columns": [
+        "step",
+        "vertex_mask",
+        "input_residual_numerator",
+        "accumulator_before",
+        "emitted_integer_residual",
+        "accumulator_after"
+      ],
+      "residual_energy_numerator_squared": "360",
+      "residual_oscillation_numerator": "76",
+      "surrogate_minimizers": [
+        63
+      ],
+      "selected_minimizer": 63,
+      "exact_gap": "0",
+      "input_sum_numerator": "0",
+      "emitted_sum": "0",
+      "final_accumulator": "0",
+      "maximum_absolute_accumulator": "32",
+      "conservation_verified": true,
+      "bounded_carry_verified": true,
+      "trace": [
+        [
+          0,
+          0,
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          1,
+          1,
+          "36",
+          "0",
+          "1",
+          "-28"
+        ],
+        [
+          2,
+          3,
+          "-28",
+          "-28",
+          "-1",
+          "8"
+        ],
+        [
+          3,
+          2,
+          "-16",
+          "8",
+          "0",
+          "-8"
+        ],
+        [
+          4,
+          6,
+          "40",
+          "-8",
+          "1",
+          "-32"
+        ],
+        [
+          5,
+          7,
+          "-20",
+          "-32",
+          "-1",
+          "12"
+        ],
+        [
+          6,
+          5,
+          "-4",
+          "12",
+          "0",
+          "8"
+        ],
+        [
+          7,
+          4,
+          "-8",
+          "8",
+          "0",
+          "0"
+        ],
+        [
+          8,
+          12,
+          "-12",
+          "0",
+          "0",
+          "-12"
+        ],
+        [
+          9,
+          13,
+          "-8",
+          "-12",
+          "0",
+          "-20"
+        ],
+        [
+          10,
+          15,
+          "-8",
+          "-20",
+          "0",
+          "-28"
+        ],
+        [
+          11,
+          14,
+          "20",
+          "-28",
+          "0",
+          "-8"
+        ],
+        [
+          12,
+          10,
+          "-4",
+          "-8",
+          "0",
+          "-12"
+        ],
+        [
+          13,
+          11,
+          "16",
+          "-12",
+          "0",
+          "4"
+        ],
+        [
+          14,
+          9,
+          "16",
+          "4",
+          "0",
+          "20"
+        ],
+        [
+          15,
+          8,
+          "-20",
+          "20",
+          "0",
+          "0"
+        ],
+        [
+          16,
+          24,
+          "28",
+          "0",
+          "0",
+          "28"
+        ],
+        [
+          17,
+          25,
+          "-32",
+          "28",
+          "0",
+          "-4"
+        ],
+        [
+          18,
+          27,
+          "0",
+          "-4",
+          "0",
+          "-4"
+        ],
+        [
+          19,
+          26,
+          "-4",
+          "-4",
+          "0",
+          "-8"
+        ],
+        [
+          20,
+          30,
+          "-28",
+          "-8",
+          "-1",
+          "28"
+        ],
+        [
+          21,
+          31,
+          "8",
+          "28",
+          "1",
+          "-28"
+        ],
+        [
+          22,
+          29,
+          "8",
+          "-28",
+          "0",
+          "-20"
+        ],
+        [
+          23,
+          28,
+          "20",
+          "-20",
+          "0",
+          "0"
+        ],
+        [
+          24,
+          20,
+          "-8",
+          "0",
+          "0",
+          "-8"
+        ],
+        [
+          25,
+          21,
+          "12",
+          "-8",
+          "0",
+          "4"
+        ],
+        [
+          26,
+          23,
+          "12",
+          "4",
+          "0",
+          "16"
+        ],
+        [
+          27,
+          22,
+          "-24",
+          "16",
+          "0",
+          "-8"
+        ],
+        [
+          28,
+          18,
+          "16",
+          "-8",
+          "0",
+          "8"
+        ],
+        [
+          29,
+          19,
+          "20",
+          "8",
+          "0",
+          "28"
+        ],
+        [
+          30,
+          17,
+          "-28",
+          "28",
+          "0",
+          "0"
+        ],
+        [
+          31,
+          16,
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          32,
+          48,
+          "-8",
+          "0",
+          "0",
+          "-8"
+        ],
+        [
+          33,
+          49,
+          "28",
+          "-8",
+          "0",
+          "20"
+        ],
+        [
+          34,
+          51,
+          "-20",
+          "20",
+          "0",
+          "0"
+        ],
+        [
+          35,
+          50,
+          "-8",
+          "0",
+          "0",
+          "-8"
+        ],
+        [
+          36,
+          54,
+          "16",
+          "-8",
+          "0",
+          "8"
+        ],
+        [
+          37,
+          55,
+          "-12",
+          "8",
+          "0",
+          "-4"
+        ],
+        [
+          38,
+          53,
+          "-12",
+          "-4",
+          "0",
+          "-16"
+        ],
+        [
+          39,
+          52,
+          "16",
+          "-16",
+          "0",
+          "0"
+        ],
+        [
+          40,
+          60,
+          "-20",
+          "0",
+          "0",
+          "-20"
+        ],
+        [
+          41,
+          61,
+          "-16",
+          "-20",
+          "-1",
+          "28"
+        ],
+        [
+          42,
+          63,
+          "0",
+          "28",
+          "0",
+          "28"
+        ],
+        [
+          43,
+          62,
+          "28",
+          "28",
+          "1",
+          "-8"
+        ],
+        [
+          44,
+          58,
+          "4",
+          "-8",
+          "0",
+          "-4"
+        ],
+        [
+          45,
+          59,
+          "-8",
+          "-4",
+          "0",
+          "-12"
+        ],
+        [
+          46,
+          57,
+          "40",
+          "-12",
+          "0",
+          "28"
+        ],
+        [
+          47,
+          56,
+          "-28",
+          "28",
+          "0",
+          "0"
+        ],
+        [
+          48,
+          40,
+          "20",
+          "0",
+          "0",
+          "20"
+        ],
+        [
+          49,
+          41,
+          "-24",
+          "20",
+          "0",
+          "-4"
+        ],
+        [
+          50,
+          43,
+          "-8",
+          "-4",
+          "0",
+          "-12"
+        ],
+        [
+          51,
+          42,
+          "4",
+          "-12",
+          "0",
+          "-8"
+        ],
+        [
+          52,
+          46,
+          "-20",
+          "-8",
+          "0",
+          "-28"
+        ],
+        [
+          53,
+          47,
+          "0",
+          "-28",
+          "0",
+          "-28"
+        ],
+        [
+          54,
+          45,
+          "16",
+          "-28",
+          "0",
+          "-12"
+        ],
+        [
+          55,
+          44,
+          "12",
+          "-12",
+          "0",
+          "0"
+        ],
+        [
+          56,
+          36,
+          "0",
+          "0",
+          "0",
+          "0"
+        ],
+        [
+          57,
+          37,
+          "4",
+          "0",
+          "0",
+          "4"
+        ],
+        [
+          58,
+          39,
+          "20",
+          "4",
+          "0",
+          "24"
+        ],
+        [
+          59,
+          38,
+          "-32",
+          "24",
+          "0",
+          "-8"
+        ],
+        [
+          60,
+          34,
+          "8",
+          "-8",
+          "0",
+          "0"
+        ],
+        [
+          61,
+          35,
+          "28",
+          "0",
+          "0",
+          "28"
+        ],
+        [
+          62,
+          33,
+          "-36",
+          "28",
+          "0",
+          "-8"
+        ],
+        [
+          63,
+          32,
+          "8",
+          "-8",
+          "0",
+          "0"
+        ]
+      ]
+    }
+  },
+  "gates": {
+    "proposal_only_firewall_verified": true,
+    "integer_walsh_reconstruction_verified": true,
+    "temperature_sweeps_verified": true,
+    "overlap_and_susceptibility_metrics_verified": true,
+    "sigma_delta_conservation_verified": true,
+    "optimizer_control_tuple_matches": true
+  },
+  "decision": {
+    "audit_contract_passed": true,
+    "structure_certificate_selected": false,
+    "default_optimizer": "integer_residual_sgd",
+    "optimizer_change_authorized": false,
+    "paid_scaling_authorized": false
+  }
+}

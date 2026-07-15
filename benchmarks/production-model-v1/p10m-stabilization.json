@@ -1,0 +1,194 @@
+{
+  "schema": "nsrl.production_integer_stabilization_preflight.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_pilot": {
+    "path": "benchmarks/production-model-v1/p10m-pilot.json",
+    "sha256": "324df33e3a69d3ee267f313cb6706ec6dd423094a670b96e631e26601ccd2293",
+    "promotion_eligible": false
+  },
+  "bindings": {
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "initialization": {
+    "seed": 7,
+    "output_init_amplitude": 1,
+    "output_forward_shift": 14,
+    "model_hash": "0x0e808e354809141d"
+  },
+  "schedule": {
+    "context_tokens": 64,
+    "train_windows": 256,
+    "dev_windows": 256,
+    "batch_windows": 4,
+    "optimizer_steps": 64,
+    "learning_rate_shifts": {
+      "embeddings": 15,
+      "attention_rms": 17,
+      "mlp_rms": 11,
+      "final_rms": 17,
+      "q": 27,
+      "k": 33,
+      "v": 31,
+      "o": 23,
+      "up": 23,
+      "gate": 23,
+      "down": 23,
+      "output": 34,
+      "bias": 21
+    },
+    "output_backward_shift": 8,
+    "scaling_rule": "add_log2_window_multiplier_to_each_update_shift",
+    "reference_windows": 32,
+    "reference_to_validation_shift_delta": 3
+  },
+  "training": {
+    "initial_mistakes": 64,
+    "final_mistakes": 45,
+    "moved_parameter_groups": [
+      "output"
+    ],
+    "movement_l1": {
+      "embeddings": 0,
+      "attention_rms": 0,
+      "mlp_rms": 0,
+      "final_rms": 0,
+      "q": 0,
+      "k": 0,
+      "v": 0,
+      "o": 0,
+      "up": 0,
+      "gate": 0,
+      "down": 0,
+      "output": 1050,
+      "bias": 0
+    },
+    "diagnostics": {
+      "gradient_nonzero_count": {
+        "embeddings": 778,
+        "attention_rms": 59768,
+        "mlp_rms": 24000,
+        "final_rms": 36407,
+        "q": 16354272,
+        "k": 16367616,
+        "v": 1195008,
+        "o": 1194002,
+        "up": 61221168,
+        "gate": 61271804,
+        "down": 2751092,
+        "output": 536330240,
+        "bias": 2097152
+      },
+      "residual_carry_count": {
+        "embeddings": 16388,
+        "attention_rms": 50782,
+        "mlp_rms": 45747,
+        "final_rms": 16348,
+        "q": 13206607,
+        "k": 13221888,
+        "v": 3644928,
+        "o": 3643640,
+        "up": 44481827,
+        "gate": 44485029,
+        "down": 9731294,
+        "output": 134216674,
+        "bias": 524288
+      },
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 0,
+        "v": 0,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 1050,
+        "bias": 0
+      },
+      "saturation_by_group": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 0,
+        "v": 0,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      },
+      "backward_ste_rescue_count": 13613261,
+      "backward_quantization_count": 2843803648,
+      "backward_ste_rescue_per_million": 4786
+    },
+    "health": {
+      "gradient_saturation_count": 0,
+      "weight_saturation_count": 0
+    },
+    "hashes": {
+      "initial_model": "0x0e808e354809141d",
+      "final_model": "0x84e4242483edf882",
+      "optimizer_state": "0xa870094855aebc79"
+    }
+  },
+  "evaluation": {
+    "initial": {
+      "context_tokens": 64,
+      "windows": 256,
+      "mistakes": 256,
+      "total_millibits": 3344600,
+      "mean_millibits": 13065
+    },
+    "final": {
+      "context_tokens": 64,
+      "windows": 256,
+      "mistakes": 256,
+      "total_millibits": 3343770,
+      "mean_millibits": 13062
+    },
+    "total_millibits_delta": -830
+  },
+  "artifacts": {
+    "initial_model": {
+      "bytes": 13539906,
+      "sha256": "43df409e725654f51d2f30328ef2723ea141d3cb60465433c254b86180023320"
+    },
+    "trained_model": {
+      "bytes": 13539906,
+      "sha256": "e0f1e1401f3ee18a00ff7c0c457c8b66f29d067b197151eb22ba783b3e785784"
+    },
+    "optimizer": {
+      "bytes": 74541140,
+      "sha256": "08d9c19b3fff25194bf83a8ed01688d35ba52744f58f4639e6188e2dd002b33a"
+    }
+  },
+  "gates": {
+    "bounded_schedule_complete": true,
+    "dev_total_millibits_nonincreasing": true,
+    "fixed_probe_mistakes_nonincreasing": true,
+    "complete_gradient_path": true,
+    "parameter_movement": true,
+    "zero_gradient_saturation": true,
+    "zero_weight_saturation": true,
+    "projection_specific_shift_schedule": true,
+    "output_scale_decoupled": true,
+    "model_hash_changed": true
+  },
+  "preflight_eligible": true,
+  "next_gate": "p10m_stabilized_pilot_replay",
+  "known_non_claims": [
+    "bounded_256_window_preflight_not_full_pilot",
+    "active_output_initialization_changes_failed_pilot_candidate",
+    "gradient_path_activity_does_not_require_every_group_to_move_in_preflight",
+    "not_open_generation_quality"
+  ]
+}

@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 
 pub const SUBWORD_TOKENIZER_SCHEMA: &str = "nsrl.subword_tokenizer.v1";
 pub const SUBWORD_TRAIN_TRACE_SCHEMA: &str = "nsrl.subword_train_trace.v1";
@@ -178,14 +179,11 @@ impl SubwordTokenizer {
     }
 
     pub fn encode(&self, bytes: &[u8]) -> Vec<u32> {
-        let mut tokens = bytes
+        let tokens = bytes
             .iter()
             .map(|&byte| u32::from(byte))
             .collect::<Vec<_>>();
-        for (index, &pair) in self.merges.iter().enumerate() {
-            tokens = merge_pair(&tokens, pair, FIRST_MERGE_TOKEN_ID + index as u32);
-        }
-        tokens
+        apply_ranked_merges(tokens, &self.merges)
     }
 
     pub fn encode_with_trace(&self, bytes: &[u8]) -> (Vec<u32>, SubwordEncodeTrace) {
@@ -374,6 +372,90 @@ impl SubwordTokenizer {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct MergeNode {
+    token: u32,
+    previous: Option<usize>,
+    next: Option<usize>,
+    alive: bool,
+}
+
+fn apply_ranked_merges(tokens: Vec<u32>, merges: &[(u32, u32)]) -> Vec<u32> {
+    if tokens.len() < 2 || merges.is_empty() {
+        return tokens;
+    }
+    let ranks = merges
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(rank, pair)| (pair, rank))
+        .collect::<HashMap<_, _>>();
+    let token_count = tokens.len();
+    let mut nodes = tokens
+        .into_iter()
+        .enumerate()
+        .map(|(index, token)| MergeNode {
+            token,
+            previous: index.checked_sub(1),
+            next: (index + 1 < token_count).then_some(index + 1),
+            alive: true,
+        })
+        .collect::<Vec<_>>();
+    let mut queue = BinaryHeap::<Reverse<(usize, usize, usize)>>::new();
+    for left in 0..nodes.len() - 1 {
+        enqueue_ranked_pair(&nodes, &ranks, &mut queue, left, left + 1);
+    }
+
+    while let Some(Reverse((rank, left, right))) = queue.pop() {
+        if !nodes[left].alive || !nodes[right].alive || nodes[left].next != Some(right) {
+            continue;
+        }
+        let pair = (nodes[left].token, nodes[right].token);
+        if ranks.get(&pair).copied() != Some(rank) {
+            continue;
+        }
+        nodes[left].token = FIRST_MERGE_TOKEN_ID + rank as u32;
+        let next = nodes[right].next;
+        nodes[left].next = next;
+        nodes[right].alive = false;
+        if let Some(next) = next {
+            nodes[next].previous = Some(left);
+        }
+        if let Some(previous) = nodes[left].previous {
+            enqueue_ranked_pair(&nodes, &ranks, &mut queue, previous, left);
+        }
+        if let Some(next) = next {
+            enqueue_ranked_pair(&nodes, &ranks, &mut queue, left, next);
+        }
+    }
+
+    let mut output = Vec::new();
+    let mut current = Some(0);
+    while let Some(index) = current {
+        if nodes[index].alive {
+            output.push(nodes[index].token);
+        }
+        current = nodes[index].next;
+    }
+    output
+}
+
+fn enqueue_ranked_pair(
+    nodes: &[MergeNode],
+    ranks: &HashMap<(u32, u32), usize>,
+    queue: &mut BinaryHeap<Reverse<(usize, usize, usize)>>,
+    left: usize,
+    right: usize,
+) {
+    if nodes[left].alive
+        && nodes[right].alive
+        && nodes[left].next == Some(right)
+        && let Some(&rank) = ranks.get(&(nodes[left].token, nodes[right].token))
+    {
+        queue.push(Reverse((rank, left, right)));
+    }
+}
+
 impl SubwordTrainTrace {
     pub fn to_json_line(self) -> String {
         format!(
@@ -474,6 +556,17 @@ fn hash_tokens(tokens: &[u32]) -> u64 {
 mod tests {
     use super::*;
 
+    fn encode_reference(tokenizer: &SubwordTokenizer, bytes: &[u8]) -> Vec<u32> {
+        let mut tokens = bytes
+            .iter()
+            .map(|&byte| u32::from(byte))
+            .collect::<Vec<_>>();
+        for (index, &pair) in tokenizer.merges.iter().enumerate() {
+            tokens = merge_pair(&tokens, pair, FIRST_MERGE_TOKEN_ID + index as u32);
+        }
+        tokens
+    }
+
     fn fixture() -> (SubwordTokenizer, SubwordTrainTrace) {
         SubwordTokenizer::train(
             b"integer transformers transform repeated integer patterns",
@@ -503,6 +596,36 @@ mod tests {
         let bytes = [0, 1, 2, 127, 128, 254, 255, b'i', b'n', b't'];
         let tokens = tokenizer.encode(&bytes);
         assert_eq!(tokenizer.decode(&tokens).expect("decode bytes"), bytes);
+    }
+
+    #[test]
+    fn ranked_encoder_matches_sequential_merge_replay() {
+        let tokenizer = SubwordTokenizer {
+            target_vocab_size: 266,
+            min_pair_frequency: 2,
+            source_hash: 0,
+            merges: vec![
+                (u32::from(b'a'), u32::from(b'a')),
+                (FIRST_MERGE_TOKEN_ID, u32::from(b'a')),
+                (u32::from(b'b'), u32::from(b'a')),
+                (FIRST_MERGE_TOKEN_ID + 2, u32::from(b'b')),
+                (FIRST_MERGE_TOKEN_ID + 1, FIRST_MERGE_TOKEN_ID + 3),
+            ],
+        };
+        let alphabet = [b'a', b'b', b'c'];
+        for encoded in 0_u32..3_u32.pow(8) {
+            let mut value = encoded;
+            let mut bytes = [0_u8; 8];
+            for byte in &mut bytes {
+                *byte = alphabet[(value % 3) as usize];
+                value /= 3;
+            }
+            assert_eq!(
+                tokenizer.encode(&bytes),
+                encode_reference(&tokenizer, &bytes),
+                "{bytes:?}"
+            );
+        }
     }
 
     #[test]
