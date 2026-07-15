@@ -32,7 +32,8 @@
         "publication_event_id": "4fae8c8319ae18f0d225f33262b7a9431705750fc2e2230798d5cd45d7612cca",
         "compute_escrow_status": null,
         "assigned_stages": 0,
-        "paid_stages": 0
+        "paid_stages": 0,
+        "automation": null
       }
     ],
     "stage_submissions": 3,
@@ -61,6 +62,10 @@
         "nsrl:sponsor:prototype": "6400",
         "nsrl:treasury:public-goods": "3200"
       }
+    },
+    "automation": {
+      "policies": [],
+      "approvals": {}
     },
     "market": {
       "enabled": false,

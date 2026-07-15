@@ -62,6 +62,20 @@ For minimized metrics the signs reverse. All arithmetic is integer arithmetic.
 A metric improvement does not receive the promotion bonus unless every frozen
 guardrail and the promotion checker pass.
 
+### Automated successor bounty
+
+A sponsor may register a signed `nsrl.bounty_automation_policy.v1` after a
+source launch is promoted. The policy fixes one objective, relative improvement,
+per-cycle bounty and compute funding, a lifetime cap, cycle and active-bounty
+limits, cooldown, auction terms, and an optional separate-approval threshold.
+
+The declared keeper can only derive the exact next recipe from accepted source
+evidence. Opening reserves the complete cycle spend once; publication and both
+escrows consume that conserved reserve through linked signed events. An
+interrupted tick resumes only its missing events. The sponsor alone can pause,
+resume, or approve a high-value cycle. See
+[`bounty-automation-v1.md`](bounty-automation-v1.md).
+
 ### Run budget
 
 The run budget pays actual accepted compute independently of model success.
@@ -160,6 +174,7 @@ recipe proposed
   -> bounty settlement
   -> model publication + reward block
   -> compute pool allocated to actual providers
+  -> optional signed policy opens the next bounded successor bounty
 ```
 
 Every step must be idempotent. Re-submitting the same evidence cannot create a
@@ -185,6 +200,10 @@ second stage payment, bounty payout, or reward block.
   signed logical-slot window.
 - Stage payment cannot exceed reserved escrow and requires the assigned
   provider's matching signed meter receipt.
+- Automated targets and funding are deterministic consequences of a signed
+  policy and promoted source; the keeper cannot rewrite them.
+- A cycle reserves its complete spend once, conserves that reserve between
+  events, and resumes without opening or charging a duplicate cycle.
 
 ## Current boundary
 

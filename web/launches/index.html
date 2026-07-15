@@ -45,6 +45,7 @@
         <a href="#ledger">Proof ledger</a>
         <a href="#localnet">Localnet</a>
         <a href="#market">Compute market</a>
+        <a href="#automation">Automation</a>
         <a href="#recipe">Recipe</a>
         <a href="#gaps">Gap map</a>
       </nav>
@@ -462,10 +463,132 @@
         </div>
       </section>
 
+      <section class="content-section automation-section" id="automation" aria-labelledby="automation-title">
+        <div class="section-shell">
+          <div class="section-heading">
+            <div>
+              <p class="kicker"><span>06</span> Bounty keeper</p>
+              <h2 id="automation-title">Promotion can fund the next frontier.</h2>
+            </div>
+            <p>
+              A sponsor signs the limits once. The keeper watches accepted publication
+              evidence and opens the exact successor bounty only when every budget,
+              cooldown, approval, and active-cycle rule permits it.
+            </p>
+          </div>
+
+          <dl class="automation-stats" aria-label="Bounty automation statistics">
+            <div><dt>Trigger</dt><dd id="automationTrigger">Promoted</dd></div>
+            <div><dt>Next improvement</dt><dd id="automationImprovement">10%</dd></div>
+            <div><dt>Cycle</dt><dd id="automationCycle">1 / 3</dd></div>
+            <div><dt>Committed</dt><dd id="automationCommitted">132,000</dd></div>
+          </dl>
+
+          <div class="automation-layout">
+            <article class="keeper-card panel" aria-labelledby="keeper-title">
+              <div class="panel-topline">
+                <span class="micro-label">Signed policy execution</span>
+                <span class="keeper-live"><i></i> active</span>
+              </div>
+              <h3 id="keeper-title">Frontier keeper</h3>
+              <div class="lineage-flow" aria-label="Automated bounty lineage">
+                <div>
+                  <small>Published source</small>
+                  <strong id="automationSource">integer-transformer-proof-v1-market</strong>
+                  <span>260,536,589 error</span>
+                </div>
+                <i aria-hidden="true">→</i>
+                <div class="lineage-next">
+                  <small>Funded successor</small>
+                  <strong id="automationLaunch">integer-transformer-frontier-auto-cycle-1</strong>
+                  <span><b id="automationTarget">234,482,930</b> target</span>
+                </div>
+              </div>
+              <ol class="keeper-events" id="keeperEvents"></ol>
+              <a class="button button-secondary transcript-link" href="./automation.json">
+                Inspect 84 signed events
+              </a>
+            </article>
+
+            <article class="policy-card panel" aria-labelledby="policy-title">
+              <div class="panel-topline">
+                <span class="micro-label">Sponsor safety envelope</span>
+                <span class="policy-hash" id="automationPolicyHash">bb25a091…a7d23</span>
+              </div>
+              <h3 id="policy-title">What the keeper cannot exceed</h3>
+              <dl class="policy-facts">
+                <div><dt>Lifetime budget</dt><dd id="automationMaxSpend">396,000</dd></div>
+                <div><dt>Remaining</dt><dd id="automationRemaining">264,000</dd></div>
+                <div><dt>Active bounties</dt><dd id="automationActiveLimit">1 max</dd></div>
+                <div><dt>Cooldown</dt><dd id="automationCooldown">5 slots</dd></div>
+                <div><dt>Manual approval above</dt><dd id="automationApproval">250,000</dd></div>
+                <div><dt>Keeper state</dt><dd id="automationState">funded</dd></div>
+              </dl>
+              <p>
+                Pause and resume require the sponsor key. A high-value cycle cannot
+                open without a separate signed approval event.
+              </p>
+            </article>
+          </div>
+
+          <div class="automation-lab-layout">
+            <form class="automation-lab panel" id="automationLab" aria-labelledby="automation-lab-title">
+              <div class="panel-topline">
+                <span class="micro-label">Policy lab</span>
+                <span class="draft-mark">Local only</span>
+              </div>
+              <h3 id="automation-lab-title">Price an automated cycle</h3>
+              <label class="field-label" for="automationImprovementRange">
+                <span>Required improvement</span>
+                <output id="automationImprovementOutput" for="automationImprovementRange">10%</output>
+              </label>
+              <input id="automationImprovementRange" type="range" min="1" max="30" step="1" value="10" />
+
+              <label class="field-label" for="automationBountyRange">
+                <span>Bounty escrow</span>
+                <output id="automationBountyOutput" for="automationBountyRange">120,000</output>
+              </label>
+              <input id="automationBountyRange" type="range" min="25000" max="300000" step="5000" value="120000" />
+
+              <label class="field-label" for="automationComputeRange">
+                <span>Compute escrow</span>
+                <output id="automationComputeOutput" for="automationComputeRange">12,000</output>
+              </label>
+              <input id="automationComputeRange" type="range" min="1000" max="50000" step="1000" value="12000" />
+
+              <div class="automation-result" id="automationLabResult" aria-live="polite"></div>
+            </form>
+
+            <article class="keeper-rules panel" aria-labelledby="keeper-rules-title">
+              <div class="panel-topline">
+                <span class="micro-label">Keeper decision loop</span>
+                <span>idempotent</span>
+              </div>
+              <h3 id="keeper-rules-title">One trigger, seven gates</h3>
+              <ol>
+                <li><span>01</span><div><strong>Promotion</strong><small>Accepted model publication exists</small></div></li>
+                <li><span>02</span><div><strong>Policy</strong><small>Sponsor-signed and not paused</small></div></li>
+                <li><span>03</span><div><strong>Cooldown</strong><small>Logical wait has elapsed</small></div></li>
+                <li><span>04</span><div><strong>Concurrency</strong><small>Active bounty cap has room</small></div></li>
+                <li><span>05</span><div><strong>Budget</strong><small>Cycle and lifetime caps hold</small></div></li>
+                <li><span>06</span><div><strong>Approval</strong><small>Extra sponsor signature if required</small></div></li>
+                <li><span>07</span><div><strong>Open</strong><small>Reserve once, then resume linked funding safely</small></div></li>
+              </ol>
+            </article>
+          </div>
+
+          <p class="localnet-boundary">
+            <strong>Boundary:</strong> the keeper automates signed test-credit actions
+            under a revocable policy. It cannot change evaluators, bypass promotion,
+            mint supply, hold a wallet, or authorize real financial transfers.
+          </p>
+        </div>
+      </section>
+
       <section class="content-section section-shell" id="recipe" aria-labelledby="recipe-title">
         <div class="section-heading">
           <div>
-            <p class="kicker"><span>06</span> Model recipe</p>
+            <p class="kicker"><span>07</span> Model recipe</p>
             <h2 id="recipe-title">One hashable contract for the whole attempt.</h2>
           </div>
           <p>
@@ -519,7 +642,7 @@
         <div class="section-shell">
           <div class="section-heading">
             <div>
-              <p class="kicker"><span>07</span> Gap analysis</p>
+              <p class="kicker"><span>08</span> Gap analysis</p>
               <h2 id="gaps-title">The local market works. The network comes next.</h2>
             </div>
             <p>
@@ -552,7 +675,7 @@
       </section>
 
       <section class="design-laws section-shell" aria-labelledby="laws-title">
-        <p class="kicker"><span>08</span> Protocol laws</p>
+        <p class="kicker"><span>09</span> Protocol laws</p>
         <h2 id="laws-title">What the token cannot buy.</h2>
         <div class="law-grid">
           <article><span>01</span><h3>Promotion</h3><p>Only the frozen evaluator can promote a model.</p></article>

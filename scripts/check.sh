@@ -11,6 +11,8 @@ node scripts/check-model-localnet-v1.mjs
 node scripts/build-model-localnet-site.mjs --check
 node scripts/check-model-market-v1.mjs
 node scripts/build-model-market-site.mjs --check
+node scripts/check-bounty-automation-v1.mjs
+node scripts/build-bounty-automation-site.mjs --check
 node scripts/check-integer-transformer-proof-self-test.mjs
 node scripts/check-integer-transformer-candidate-health-self-test.mjs
 node scripts/freeze-integer-transformer-proof-candidate.mjs --check

@@ -98,11 +98,17 @@ jobs:
           node --check scripts/lib/model-localnet-v1.mjs
           node --check scripts/lib/model-localnet-demo-v1.mjs
           node --check scripts/lib/model-market-demo-v1.mjs
+          node --check scripts/lib/bounty-automation-v1.mjs
+          node --check scripts/lib/bounty-keeper-v1.mjs
+          node --check scripts/lib/bounty-automation-demo-v1.mjs
           node --check scripts/nsrl-model-localnet.mjs
+          node --check scripts/nsrl-bounty-keeper.mjs
           node --check scripts/check-model-localnet-v1.mjs
           node --check scripts/build-model-localnet-site.mjs
           node --check scripts/check-model-market-v1.mjs
           node --check scripts/build-model-market-site.mjs
+          node --check scripts/check-bounty-automation-v1.mjs
+          node --check scripts/build-bounty-automation-site.mjs
           node --check web/launches/app.js
           node scripts/check-model-launch-v1.mjs
           node scripts/build-model-launch-site.mjs --check
@@ -110,6 +116,8 @@ jobs:
           node scripts/build-model-localnet-site.mjs --check
           node scripts/check-model-market-v1.mjs
           node scripts/build-model-market-site.mjs --check
+          node scripts/check-bounty-automation-v1.mjs
+          node scripts/build-bounty-automation-site.mjs --check
 
       - name: Check fixed sample gallery
         run: |

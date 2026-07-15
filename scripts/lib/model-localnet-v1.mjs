@@ -10,6 +10,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  automationAuctionDeadlines,
+  automationCycleSpendUnits,
+  buildAutomationCycleOpenPayload,
+  validateAutomatedBountyRecipe,
+  validateBountyAutomationPolicy,
+} from "./bounty-automation-v1.mjs";
+import {
   bountyPayoutUnits,
   canonicalJson,
   createModelPublishReceipt,
@@ -27,6 +34,11 @@ export const LOCALNET_EVENT_TYPES = [
   "network_initialized",
   "account_registered",
   "test_credit_issued",
+  "bounty_automation_policy_registered",
+  "bounty_automation_policy_paused",
+  "bounty_automation_policy_resumed",
+  "bounty_automation_cycle_approved",
+  "bounty_automation_cycle_opened",
   "launch_published",
   "bounty_funded",
   "compute_budget_funded",
@@ -265,6 +277,8 @@ function emptyState() {
     bounty_settlements: {},
     model_balances: {},
     compute_reward_distributions: {},
+    automation_policies: {},
+    automation_approvals: {},
     test_credit_supply_units: "0",
     test_balances: {},
     compute_escrows: {},
@@ -335,7 +349,16 @@ function accountedTestCreditUnits(state) {
     (sum, row) => sum + BigInt(row.locked_units),
     0n,
   );
-  return balances + computeEscrows + bountyEscrows + collateral;
+  const automationReserves = Object.values(state.automation_policies).reduce(
+    (sum, policy) =>
+      sum +
+      Object.values(policy.cycles).reduce(
+        (cycleSum, cycle) => cycleSum + BigInt(cycle.reserve_balance_units ?? "0"),
+        0n,
+      ),
+    0n,
+  );
+  return balances + computeEscrows + bountyEscrows + collateral + automationReserves;
 }
 
 function assertTestCreditConservation(state) {
@@ -364,6 +387,59 @@ function requireComputeEscrow(state, launchId) {
     fail(`launch ${launchId} compute escrow is ${escrow.status}`);
   }
   return escrow;
+}
+
+function requireAutomationPolicy(state, policyId) {
+  const id = asString(policyId, "automation policy id");
+  const record = state.automation_policies[id];
+  if (!record) {
+    fail(`unknown bounty automation policy ${id}`);
+  }
+  return record;
+}
+
+function automationCycleForLaunch(state, launch) {
+  if (!launch.automation) {
+    return null;
+  }
+  const policy = requireAutomationPolicy(state, launch.automation.policy_id);
+  const cycle = policy.cycles[String(launch.automation.cycle_index)];
+  if (!cycle || cycle.launch_id !== launch.id) {
+    fail(`automation state is inconsistent for launch ${launch.id}`);
+  }
+  return { policy, cycle };
+}
+
+function consumeAutomationReserve(state, launch, units, kind, eventId) {
+  const automation = automationCycleForLaunch(state, launch);
+  if (!automation) {
+    return false;
+  }
+  const { policy, cycle } = automation;
+  const expected =
+    kind === "bounty"
+      ? policy.policy.budgets.bounty_units
+      : policy.policy.budgets.compute_budget_units;
+  if (units !== expected) {
+    fail(`automated ${kind} funding must equal its signed policy amount`);
+  }
+  if (cycle[`${kind}_funding_event_id`]) {
+    fail(`automation cycle ${cycle.cycle_index} already recorded ${kind} funding`);
+  }
+  const reserve = BigInt(cycle.reserve_balance_units);
+  if (reserve < BigInt(units)) {
+    fail(`automation cycle ${cycle.cycle_index} has insufficient reserved funding`);
+  }
+  cycle.reserve_balance_units = (reserve - BigInt(units)).toString();
+  cycle.committed_units = (BigInt(cycle.committed_units) + BigInt(units)).toString();
+  cycle[`${kind}_funding_event_id`] = eventId;
+  if (cycle.bounty_funding_event_id && cycle.compute_funding_event_id) {
+    if (cycle.reserve_balance_units !== "0") {
+      fail(`automation cycle ${cycle.cycle_index} retained an unexpected reserve`);
+    }
+    cycle.status = "funded";
+  }
+  return true;
 }
 
 export function createProviderBidCommitment({
@@ -712,6 +788,182 @@ function applyIntent(state, intent, eventId) {
       ).toString();
       break;
     }
+    case "bounty_automation_policy_registered": {
+      requireRegisteredActor(state, intent);
+      requireTestCredits(state);
+      const policy = clone(asObject(payload.policy, "bounty automation policy"));
+      validateBountyAutomationPolicy(policy);
+      if (intent.actor !== policy.sponsor) {
+        fail("only the declared sponsor can register a bounty automation policy");
+      }
+      if (state.automation_policies[policy.id]) {
+        fail(`bounty automation policy ${policy.id} is already registered`);
+      }
+      if (payload.policy_sha256 !== sha256Canonical(policy)) {
+        fail("bounty automation policy SHA-256 does not match its canonical policy");
+      }
+      for (const [role, account] of [
+        ["sponsor", policy.sponsor],
+        ["proposer", policy.proposer],
+        ["keeper", policy.keeper],
+      ]) {
+        if (!state.accounts[account]) {
+          fail(`automation ${role} ${account} is not registered`);
+        }
+      }
+      const source = requireLaunch(state, policy.source_launch_id);
+      if (!state.publications[source.id]) {
+        fail("automation source launch must already be promoted");
+      }
+      if (source.recipe.proposer.account !== policy.proposer) {
+        fail("automation proposer must match the source launch proposer");
+      }
+      if (source.recipe.participants.sponsor !== policy.sponsor) {
+        fail("automation sponsor must match the source launch sponsor");
+      }
+      const sourceBounty = source.recipe.bounties.find(
+        (row) => row.metric === policy.objective.metric,
+      );
+      if (!sourceBounty || sourceBounty.direction !== policy.objective.direction) {
+        fail("automation objective must match a source bounty metric and direction");
+      }
+      state.automation_policies[policy.id] = {
+        policy,
+        policy_sha256: payload.policy_sha256,
+        status: "active",
+        spent_units: "0",
+        last_opened_slot: null,
+        registered_event_id: eventId,
+        cycles: {},
+      };
+      state.automation_approvals[policy.id] = {};
+      break;
+    }
+    case "bounty_automation_policy_paused":
+    case "bounty_automation_policy_resumed": {
+      requireRegisteredActor(state, intent);
+      const record = requireAutomationPolicy(state, payload.policy_id);
+      if (intent.actor !== record.policy.sponsor) {
+        fail("only the automation sponsor can change policy status");
+      }
+      const next = intent.event_type.endsWith("paused") ? "paused" : "active";
+      if (record.status === next) {
+        fail(`bounty automation policy is already ${next}`);
+      }
+      record.status = next;
+      record.status_event_id = eventId;
+      break;
+    }
+    case "bounty_automation_cycle_approved": {
+      requireRegisteredActor(state, intent);
+      const record = requireAutomationPolicy(state, payload.policy_id);
+      if (intent.actor !== record.policy.sponsor) {
+        fail("only the automation sponsor can approve a high-value cycle");
+      }
+      const cycleIndex = asPositiveInteger(payload.cycle_index, "automation cycle_index");
+      const expectedCycle = Object.keys(record.cycles).length + 1;
+      if (cycleIndex !== expectedCycle) {
+        fail(`automation approval must target next cycle ${expectedCycle}`);
+      }
+      const spend = automationCycleSpendUnits(record.policy);
+      if (payload.approved_units !== spend) {
+        fail("automation approval amount must equal the complete cycle spend");
+      }
+      if (BigInt(spend) <= BigInt(record.policy.budgets.manual_approval_above_units)) {
+        fail("automation cycle does not require manual approval");
+      }
+      if (state.automation_approvals[record.policy.id][cycleIndex]) {
+        fail(`automation cycle ${cycleIndex} is already approved`);
+      }
+      state.automation_approvals[record.policy.id][cycleIndex] = {
+        event_id: eventId,
+        cycle_index: cycleIndex,
+        approved_units: spend,
+      };
+      break;
+    }
+    case "bounty_automation_cycle_opened": {
+      requireRegisteredActor(state, intent);
+      const record = requireAutomationPolicy(state, payload.policy_id);
+      const policy = record.policy;
+      if (intent.actor !== policy.keeper) {
+        fail("automation cycle must be signed by the declared keeper");
+      }
+      if (record.status !== "active") {
+        fail(`bounty automation policy is ${record.status}`);
+      }
+      const cycleIndex = asPositiveInteger(payload.cycle_index, "automation cycle_index");
+      const expectedCycle = Object.keys(record.cycles).length + 1;
+      if (cycleIndex !== expectedCycle || cycleIndex > policy.limits.max_cycles) {
+        fail(`automation cycle must be the next allowed cycle ${expectedCycle}`);
+      }
+      const sourceLaunchId =
+        cycleIndex === 1
+          ? policy.source_launch_id
+          : record.cycles[String(cycleIndex - 1)]?.launch_id;
+      if (!sourceLaunchId || payload.source_launch_id !== sourceLaunchId) {
+        fail("automation cycle source must be the previous promoted lineage tip");
+      }
+      const sourcePublication = state.publications[sourceLaunchId];
+      if (!sourcePublication) {
+        fail("automation cycle requires a promoted source launch");
+      }
+      const activeCycles = Object.values(record.cycles).filter((cycle) => {
+        const launch = state.launches[cycle.launch_id];
+        return !launch || !["promoted", "expired"].includes(launch.status);
+      }).length;
+      if (activeCycles >= policy.limits.max_active_bounties) {
+        fail("automation policy reached its active bounty limit");
+      }
+      const cooldownBase = record.last_opened_slot ?? sourcePublication.slot ?? 0;
+      if (state.slot < cooldownBase + policy.limits.cooldown_slots) {
+        fail("automation policy cooldown has not elapsed");
+      }
+      const cycleSpend = automationCycleSpendUnits(policy);
+      if (
+        BigInt(record.spent_units) + BigInt(cycleSpend) >
+        BigInt(policy.budgets.max_total_spend_units)
+      ) {
+        fail("automation cycle exceeds the policy lifetime spend cap");
+      }
+      if (balanceUnits(state, policy.sponsor) < BigInt(cycleSpend)) {
+        fail("automation sponsor balance cannot fund the complete cycle");
+      }
+      if (
+        BigInt(cycleSpend) > BigInt(policy.budgets.manual_approval_above_units) &&
+        !state.automation_approvals[policy.id][cycleIndex]
+      ) {
+        fail("automation cycle requires explicit sponsor approval");
+      }
+      const expected = buildAutomationCycleOpenPayload(
+        state,
+        policy,
+        cycleIndex,
+        sourceLaunchId,
+        payload.published_at,
+      );
+      if (canonicalJson(payload) !== canonicalJson(expected)) {
+        fail("automation cycle does not match its deterministic policy plan");
+      }
+      record.cycles[String(cycleIndex)] = {
+        event_id: eventId,
+        cycle_index: cycleIndex,
+        source_launch_id: sourceLaunchId,
+        launch_id: expected.launch_id,
+        recipe_sha256: expected.recipe_sha256,
+        published_at: expected.published_at,
+        cycle_spend_units: cycleSpend,
+        committed_units: "0",
+        reserve_balance_units: cycleSpend,
+        auction: automationAuctionDeadlines(policy, state.slot),
+        opened_slot: state.slot,
+        status: "opened",
+      };
+      debitBalance(state, policy.sponsor, cycleSpend, "automation cycle reservation");
+      record.spent_units = (BigInt(record.spent_units) + BigInt(cycleSpend)).toString();
+      record.last_opened_slot = state.slot;
+      break;
+    }
     case "launch_published": {
       requireRegisteredActor(state, intent);
       const recipe = clone(asObject(payload.recipe, "launch recipe"));
@@ -729,6 +981,42 @@ function applyIntent(state, intent, eventId) {
       if (state.launches[recipe.launch.id]) {
         fail(`launch ${recipe.launch.id} is already published`);
       }
+      let automation = null;
+      if (payload.automation_cycle_event_id !== undefined) {
+        const cycleEventId = asHash(
+          payload.automation_cycle_event_id,
+          "automation cycle event id",
+        );
+        const record = Object.values(state.automation_policies).find((policy) =>
+          Object.values(policy.cycles).some((cycle) => cycle.event_id === cycleEventId),
+        );
+        const cycle = record
+          ? Object.values(record.cycles).find((row) => row.event_id === cycleEventId)
+          : null;
+        if (!record || !cycle || cycle.status !== "opened") {
+          fail("launch references an unknown or consumed automation cycle");
+        }
+        if (intent.actor !== record.policy.proposer) {
+          fail("automated launch must be signed by the policy proposer");
+        }
+        if (recipeSha256 !== cycle.recipe_sha256 || recipe.launch.id !== cycle.launch_id) {
+          fail("automated launch does not match its keeper-signed cycle commitment");
+        }
+        validateAutomatedBountyRecipe(
+          state,
+          record.policy,
+          cycle.cycle_index,
+          cycle.source_launch_id,
+          recipe,
+        );
+        cycle.status = "published";
+        cycle.launch_event_id = eventId;
+        automation = {
+          policy_id: record.policy.id,
+          cycle_index: cycle.cycle_index,
+          cycle_event_id: cycle.event_id,
+        };
+      }
       state.launches[recipe.launch.id] = {
         id: recipe.launch.id,
         recipe,
@@ -736,6 +1024,7 @@ function applyIntent(state, intent, eventId) {
         published_event_id: eventId,
         funded_bounties: {},
         status: "open",
+        automation,
       };
       break;
     }
@@ -755,8 +1044,12 @@ function applyIntent(state, intent, eventId) {
       if (launch.funded_bounties[bounty.id]) {
         fail(`bounty ${bounty.id} is already funded`);
       }
-      if (state.network.test_credit_enabled) {
+      const automated = automationCycleForLaunch(state, launch);
+      if (state.network.test_credit_enabled && !automated) {
         debitBalance(state, intent.actor, bounty.escrow_units, "bounty funding");
+      }
+      if (automated) {
+        consumeAutomationReserve(state, launch, bounty.escrow_units, "bounty", eventId);
       }
       launch.funded_bounties[bounty.id] = {
         sponsor: intent.actor,
@@ -800,7 +1093,21 @@ function applyIntent(state, intent, eventId) {
         "minimum_collateral_units",
         { positive: true },
       );
-      debitBalance(state, intent.actor, units, "compute budget funding");
+      const automated = automationCycleForLaunch(state, launch);
+      if (!automated) {
+        debitBalance(state, intent.actor, units, "compute budget funding");
+      } else {
+        const expectedAuction = automated.cycle.auction;
+        if (
+          bidDeadline !== expectedAuction.bid_deadline_slot ||
+          revealDeadline !== expectedAuction.reveal_deadline_slot ||
+          executionDeadline !== expectedAuction.execution_deadline_slot ||
+          minimumCollateral !== automated.policy.policy.auction.minimum_collateral_units
+        ) {
+          fail("automated compute funding must match its keeper-bound auction terms");
+        }
+        consumeAutomationReserve(state, launch, units, "compute", eventId);
+      }
       state.compute_escrows[launch.id] = {
         launch_id: launch.id,
         sponsor: intent.actor,
@@ -1410,6 +1717,7 @@ function applyIntent(state, intent, eventId) {
       }
       state.publications[launch.id] = {
         event_id: eventId,
+        slot: state.slot,
         candidate_event_id: candidateId,
         model_hash: candidate.model_hash,
         artifact_sha256: candidate.artifact_sha256,
@@ -1418,6 +1726,11 @@ function applyIntent(state, intent, eventId) {
       };
       launch.status = "promoted";
       launch.published_recipe_sha256 = payload.receipt.recipe_sha256;
+      const automation = automationCycleForLaunch(state, launch);
+      if (automation) {
+        automation.cycle.status = "promoted";
+        automation.cycle.publication_event_id = eventId;
+      }
       break;
     }
     case "compute_reward_distributed": {
@@ -1514,6 +1827,11 @@ function applyIntent(state, intent, eventId) {
         slashed_collateral_units: slashed.toString(),
       };
       launch.status = "expired";
+      const automation = automationCycleForLaunch(state, launch);
+      if (automation) {
+        automation.cycle.status = "expired";
+        automation.cycle.expiry_event_id = eventId;
+      }
       break;
     }
     default:
@@ -1703,6 +2021,7 @@ export function localnetStateSummary(state) {
     paid_stages: Object.values(state.stage_payments).filter(
       (payment) => payment.launch_id === launch.id,
     ).length,
+    automation: clone(launch.automation ?? null),
   }));
   const auctionRows = Object.entries(state.stage_assignments).map(([key, assignment]) => ({
     key,
@@ -1744,6 +2063,30 @@ export function localnetStateSummary(state) {
     publications: Object.keys(state.publications).length,
     bounty_settlements: clone(state.bounty_settlements),
     model_balances: clone(state.model_balances),
+    automation: {
+      policies: Object.values(state.automation_policies).map((record) => {
+        const cycleSpend = automationCycleSpendUnits(record.policy);
+        const nextCycle = Object.keys(record.cycles).length + 1;
+        return {
+          policy: clone(record.policy),
+          policy_sha256: record.policy_sha256,
+          status: record.status,
+          spent_units: record.spent_units,
+          remaining_units: (
+            BigInt(record.policy.budgets.max_total_spend_units) - BigInt(record.spent_units)
+          ).toString(),
+          cycle_spend_units: cycleSpend,
+          next_cycle_index: nextCycle,
+          next_cycle_requires_approval:
+            BigInt(cycleSpend) >
+              BigInt(record.policy.budgets.manual_approval_above_units) &&
+            !state.automation_approvals[record.policy.id]?.[nextCycle],
+          last_opened_slot: record.last_opened_slot,
+          cycles: Object.values(record.cycles).map((cycle) => clone(cycle)),
+        };
+      }),
+      approvals: clone(state.automation_approvals),
+    },
     market: {
       enabled: state.network?.test_credit_enabled === true,
       credit_symbol: state.network?.credit_symbol ?? null,

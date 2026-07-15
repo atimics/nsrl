@@ -1,9 +1,10 @@
 {
   "schema": "nsrl.model_localnet_snapshot.v1",
-  "generated_at": "2026-07-13T00:00:00Z",
-  "notice": "Deterministic public test fixture · Ed25519 signatures · simulated credits · no wallet, custody, or financial value",
-  "launch_event_id": "27d77a2a9f95f50accc4158de2005b12c8d4fa21cdd9c83fd75168416978a1ad",
+  "generated_at": "2026-07-14T17:00:00Z",
+  "notice": "Deterministic public bounty keeper fixture · promotion-triggered successor · bounded test credit · no financial value",
+  "launch_event_id": "bd74f62468117053d1b8298c2c9f19df10d1d3b65d493774d4eade016ff4adf1",
   "candidate_event_id": "0aecbaf20d8f8e127ce7b6d5b24838de4ebb24771e80dde9d6c7702f5f158116",
+  "automation_cycle_event_id": "44580928bb56bf8b920100d8a893f2b8270fbc690f78823444260e9012a9cdaf",
   "summary": {
     "schema": "nsrl.model_localnet_summary.v1",
     "network": {
@@ -16,9 +17,9 @@
       "credit_symbol": "FORGE-TEST",
       "initialized_event_id": "95cfcc7a43dbdb9ea1e26e485e12e97fb5dfbcf26c6d5586862be5bcd56f77c9"
     },
-    "height": 76,
-    "head_sha256": "57ba88775cdb699dec87d229aa5027d22d2dbd32cb60f141a8eb74c744f56270",
-    "accounts": 12,
+    "height": 84,
+    "head_sha256": "a02a547492ed8b0ba77d019976f3bf1d7b24935d0b0a95ed79715940e9fd23f4",
+    "accounts": 13,
     "launches": [
       {
         "id": "integer-transformer-proof-v1-market",
@@ -34,6 +35,25 @@
         "assigned_stages": 3,
         "paid_stages": 3,
         "automation": null
+      },
+      {
+        "id": "integer-transformer-frontier-auto-cycle-1",
+        "status": "open",
+        "recipe_sha256": "a564fd7e12d97bedc5204415b01e0dc9b566a5ce7a70ca42a58871c6d5fe48f6",
+        "funded_bounties": 1,
+        "required_bounties": 1,
+        "accepted_stages": 0,
+        "required_stages": 3,
+        "candidate_event_id": null,
+        "publication_event_id": null,
+        "compute_escrow_status": "open",
+        "assigned_stages": 0,
+        "paid_stages": 0,
+        "automation": {
+          "policy_id": "integer-transformer-frontier-auto",
+          "cycle_index": 1,
+          "cycle_event_id": "44580928bb56bf8b920100d8a893f2b8270fbc690f78823444260e9012a9cdaf"
+        }
       }
     ],
     "stage_submissions": 3,
@@ -66,17 +86,86 @@
       }
     },
     "automation": {
-      "policies": [],
-      "approvals": {}
+      "policies": [
+        {
+          "policy": {
+            "schema": "nsrl.bounty_automation_policy.v1",
+            "id": "integer-transformer-frontier-auto",
+            "sponsor": "nsrl:sponsor:prototype",
+            "proposer": "nsrl:lab:genesis",
+            "keeper": "nsrl:keeper:frontier",
+            "source_launch_id": "integer-transformer-proof-v1-market",
+            "trigger": {
+              "event": "model_promoted"
+            },
+            "objective": {
+              "metric": "probability_error_q15",
+              "direction": "minimize",
+              "relative_improvement_bps": 1000
+            },
+            "budgets": {
+              "bounty_units": "120000",
+              "compute_budget_units": "12000",
+              "max_total_spend_units": "396000",
+              "manual_approval_above_units": "250000"
+            },
+            "limits": {
+              "max_active_bounties": 1,
+              "max_cycles": 3,
+              "cooldown_slots": 5
+            },
+            "auction": {
+              "bid_window_slots": 2,
+              "reveal_window_slots": 2,
+              "execution_window_slots": 10,
+              "minimum_collateral_units": "500"
+            }
+          },
+          "policy_sha256": "bb25a09123be27bfea49bb019af782feb8052a3027638765582c4633412a7d23",
+          "status": "active",
+          "spent_units": "132000",
+          "remaining_units": "264000",
+          "cycle_spend_units": "132000",
+          "next_cycle_index": 2,
+          "next_cycle_requires_approval": false,
+          "last_opened_slot": 10,
+          "cycles": [
+            {
+              "event_id": "44580928bb56bf8b920100d8a893f2b8270fbc690f78823444260e9012a9cdaf",
+              "cycle_index": 1,
+              "source_launch_id": "integer-transformer-proof-v1-market",
+              "launch_id": "integer-transformer-frontier-auto-cycle-1",
+              "recipe_sha256": "a564fd7e12d97bedc5204415b01e0dc9b566a5ce7a70ca42a58871c6d5fe48f6",
+              "published_at": "2026-07-14T17:00:00Z",
+              "cycle_spend_units": "132000",
+              "committed_units": "132000",
+              "reserve_balance_units": "0",
+              "auction": {
+                "bid_deadline_slot": 12,
+                "reveal_deadline_slot": 14,
+                "execution_deadline_slot": 20
+              },
+              "opened_slot": 10,
+              "status": "funded",
+              "launch_event_id": "bd74f62468117053d1b8298c2c9f19df10d1d3b65d493774d4eade016ff4adf1",
+              "bounty_funding_event_id": "c99e3022b50e8ceddecf68a8d11dbad91f0fd289f0d0305590588b402b6acad9",
+              "compute_funding_event_id": "dd63ea14f94f15f9c52a2b5eeb02cd37021e76cf776a875ed0c4022be6abf35e"
+            }
+          ]
+        }
+      ],
+      "approvals": {
+        "integer-transformer-frontier-auto": {}
+      }
     },
     "market": {
       "enabled": true,
       "credit_symbol": "FORGE-TEST",
-      "slot": 5,
-      "issued_supply_units": "146000",
-      "accounted_supply_units": "146000",
+      "slot": 10,
+      "issued_supply_units": "446000",
+      "accounted_supply_units": "446000",
       "balances": {
-        "nsrl:sponsor:prototype": "12832",
+        "nsrl:sponsor:prototype": "180832",
         "nsrl:compute:graviton-pool": "8144",
         "nsrl:compute:copper-grid": "2768",
         "nsrl:compute:glacier-lab": "2256",
@@ -97,6 +186,19 @@
           "status": "settled",
           "refunded_units": "4832",
           "refund_event_id": "82ae07d849451bd07af51a9b087a251e799b3ac8ac03bc46146f019e37fe621b"
+        },
+        "integer-transformer-frontier-auto-cycle-1": {
+          "launch_id": "integer-transformer-frontier-auto-cycle-1",
+          "sponsor": "nsrl:sponsor:prototype",
+          "funded_units": "12000",
+          "balance_units": "12000",
+          "reserved_units": "0",
+          "bid_deadline_slot": 12,
+          "reveal_deadline_slot": 14,
+          "execution_deadline_slot": 20,
+          "minimum_collateral_units": "500",
+          "funded_event_id": "dd63ea14f94f15f9c52a2b5eeb02cd37021e76cf776a875ed0c4022be6abf35e",
+          "status": "open"
         }
       },
       "provider_collateral": {
@@ -291,6 +393,11 @@
     {
       "account": "nsrl:challenger:audit",
       "public_key": "MCowBQYDK2VwAyEAGsoIRnq6/gQS7lJ/SEYs4O7WMWMjShXMBIe2MKnsQtg=",
+      "authority": false
+    },
+    {
+      "account": "nsrl:keeper:frontier",
+      "public_key": "MCowBQYDK2VwAyEAShl0fSI1XyUewKUBNR834mOnl/kDcvCGNLsU4Ig5DKE=",
       "authority": false
     }
   ],
@@ -2157,6 +2264,371 @@
         "signature": "wttPSvyT2SmQdkid0Iip7YRlS2VCnmXeVE4Flp4O5fgTAtQHkVU3vITeGzaYXKZ46Eycl2Fzu2Ty4Bf1TYmTBg=="
       },
       "event_sha256": "57ba88775cdb699dec87d229aa5027d22d2dbd32cb60f141a8eb74c744f56270"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 76,
+      "previous_event_sha256": "57ba88775cdb699dec87d229aa5027d22d2dbd32cb60f141a8eb74c744f56270",
+      "event_id": "21fae5b6a3c982ee32232d179d48d9d9ea7719fb7754be97c93561b08525be61",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "account_registered",
+        "actor": "nsrl:keeper:frontier",
+        "public_key": "MCowBQYDK2VwAyEAShl0fSI1XyUewKUBNR834mOnl/kDcvCGNLsU4Ig5DKE=",
+        "payload": {
+          "account": "nsrl:keeper:frontier",
+          "public_key": "MCowBQYDK2VwAyEAShl0fSI1XyUewKUBNR834mOnl/kDcvCGNLsU4Ig5DKE="
+        },
+        "signature": "gNqeOouZX83Noe/XCx6+3TSc8Of4w7ZCZbydBeKsLKfSkS9nXkZWsLnHAYd1W/S3wGqAGgqapEBcFDDNrGV5CA=="
+      },
+      "event_sha256": "1788ed0243bad19e51a8056a611e726a2eb35be64aa55e198483c04a6cb7a0c1"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 77,
+      "previous_event_sha256": "1788ed0243bad19e51a8056a611e726a2eb35be64aa55e198483c04a6cb7a0c1",
+      "event_id": "2641a0c773cd3331739f79135bf3f8cc5c93988fc9962c07a47144e23772ca5e",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "test_credit_issued",
+        "actor": "nsrl:authority:market",
+        "public_key": "MCowBQYDK2VwAyEACrEVWm0xYEZn81kWBEiKBhfcG6HQ3Hl9K3vYbQ+nSfg=",
+        "payload": {
+          "recipient": "nsrl:sponsor:prototype",
+          "units": "300000"
+        },
+        "signature": "aM5UewyFNaunnIPrXSgsXeU4Z/u0h0q2+nX7zBXulrqu3H3Dr8InxlbHZ92XBS6b4Yc6PzzpPqzd8BbZQaAdBw=="
+      },
+      "event_sha256": "dda991a8b2d7c7f2ca602131d3e73c5bd04b72f5e48d1596e9fd9d1b107323fa"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 78,
+      "previous_event_sha256": "dda991a8b2d7c7f2ca602131d3e73c5bd04b72f5e48d1596e9fd9d1b107323fa",
+      "event_id": "526788e822809c32281b89c23062064ac2f164f1fdbe5dc6f4843158406e0518",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "bounty_automation_policy_registered",
+        "actor": "nsrl:sponsor:prototype",
+        "public_key": "MCowBQYDK2VwAyEAo/RkCK220BeMPBxIfwczo35kJOqmT88I+Tq5Ea0nAxg=",
+        "payload": {
+          "policy_sha256": "bb25a09123be27bfea49bb019af782feb8052a3027638765582c4633412a7d23",
+          "policy": {
+            "schema": "nsrl.bounty_automation_policy.v1",
+            "id": "integer-transformer-frontier-auto",
+            "sponsor": "nsrl:sponsor:prototype",
+            "proposer": "nsrl:lab:genesis",
+            "keeper": "nsrl:keeper:frontier",
+            "source_launch_id": "integer-transformer-proof-v1-market",
+            "trigger": {
+              "event": "model_promoted"
+            },
+            "objective": {
+              "metric": "probability_error_q15",
+              "direction": "minimize",
+              "relative_improvement_bps": 1000
+            },
+            "budgets": {
+              "bounty_units": "120000",
+              "compute_budget_units": "12000",
+              "max_total_spend_units": "396000",
+              "manual_approval_above_units": "250000"
+            },
+            "limits": {
+              "max_active_bounties": 1,
+              "max_cycles": 3,
+              "cooldown_slots": 5
+            },
+            "auction": {
+              "bid_window_slots": 2,
+              "reveal_window_slots": 2,
+              "execution_window_slots": 10,
+              "minimum_collateral_units": "500"
+            }
+          }
+        },
+        "signature": "qltIt0E1R58i6BRplnvmaXfsE3eKTZq2z2bpClmiuMJwf7Gcwv4MTdAY3ShCdGafAlDylEnm7fhMy5OtubGDAg=="
+      },
+      "event_sha256": "afbf4b23c6d51a247ce60223b5613325be787c3301d18cce569360411415f5ae"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 79,
+      "previous_event_sha256": "afbf4b23c6d51a247ce60223b5613325be787c3301d18cce569360411415f5ae",
+      "event_id": "521ba709fe92d0533f8653949ae19f64ba8bc109b1bc5fe5e055cfd77bb6aa5b",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "slot_advanced",
+        "actor": "nsrl:authority:market",
+        "public_key": "MCowBQYDK2VwAyEACrEVWm0xYEZn81kWBEiKBhfcG6HQ3Hl9K3vYbQ+nSfg=",
+        "payload": {
+          "slot": 10
+        },
+        "signature": "fJ0udNwWsetTp5u+LJ5M9ABgv+FETsaivXqzhHSqcG30YqpIBR9t+wwmaB+6HCfPN3IH6lVt3JumeWFUEywxCg=="
+      },
+      "event_sha256": "7c120d7569c152a8f26637338c3fe92196192cc81a2fc90ddf13b97a18b3605a"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 80,
+      "previous_event_sha256": "7c120d7569c152a8f26637338c3fe92196192cc81a2fc90ddf13b97a18b3605a",
+      "event_id": "44580928bb56bf8b920100d8a893f2b8270fbc690f78823444260e9012a9cdaf",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "bounty_automation_cycle_opened",
+        "actor": "nsrl:keeper:frontier",
+        "public_key": "MCowBQYDK2VwAyEAShl0fSI1XyUewKUBNR834mOnl/kDcvCGNLsU4Ig5DKE=",
+        "payload": {
+          "policy_id": "integer-transformer-frontier-auto",
+          "cycle_index": 1,
+          "source_launch_id": "integer-transformer-proof-v1-market",
+          "launch_id": "integer-transformer-frontier-auto-cycle-1",
+          "published_at": "2026-07-14T17:00:00Z",
+          "recipe_sha256": "a564fd7e12d97bedc5204415b01e0dc9b566a5ce7a70ca42a58871c6d5fe48f6",
+          "cycle_spend_units": "132000"
+        },
+        "signature": "eudh1CGVD8i9nvJENOnT/Vu4m/Sxkc64MvDdFilYg5FVozM5637qsc/HvjUEDgK9Idc2CB5Ay7peCRPzDTzcDg=="
+      },
+      "event_sha256": "703c14863c5f7f61868deaa7b4fc2316245cdbe877a2b38b4cdf29de4a0db577"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 81,
+      "previous_event_sha256": "703c14863c5f7f61868deaa7b4fc2316245cdbe877a2b38b4cdf29de4a0db577",
+      "event_id": "bd74f62468117053d1b8298c2c9f19df10d1d3b65d493774d4eade016ff4adf1",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "launch_published",
+        "actor": "nsrl:lab:genesis",
+        "public_key": "MCowBQYDK2VwAyEA1Mr781dq6MZcDLq8wyon7AwWc+Uus8yLVU5Q8Z79zEQ=",
+        "payload": {
+          "recipe_sha256": "a564fd7e12d97bedc5204415b01e0dc9b566a5ce7a70ca42a58871c6d5fe48f6",
+          "recipe": {
+            "schema": "nsrl.model_launch_recipe.v1",
+            "launch": {
+              "id": "integer-transformer-frontier-auto-cycle-1",
+              "title": "Integer Transformer Proof v1 · Forge market · automated frontier 1",
+              "summary": "Automatically require 1000 bps of probability_error_q15 improvement from integer-transformer-proof-v1-market under integer-transformer-frontier-auto.",
+              "network": "nsrl-forge-market-v1",
+              "mode": "test",
+              "status": "open",
+              "published_at": "2026-07-14T17:00:00Z"
+            },
+            "proposer": {
+              "account": "nsrl:lab:genesis",
+              "bond_units": "25000"
+            },
+            "participants": {
+              "builder": "nsrl:builder:integer-core",
+              "compute": "nsrl:compute:graviton-pool",
+              "validator": "nsrl:validator:proof-v1",
+              "sponsor": "nsrl:sponsor:prototype",
+              "treasury": "nsrl:treasury:public-goods"
+            },
+            "model": {
+              "family": "NSRLMT5",
+              "artifact_format": "NSRLMT5",
+              "architecture_profile": "small-h8-d128-ff256",
+              "tokenizer_contract": "byte-v1",
+              "parent_model_hash": "0x6ffd37de48a3121b",
+              "max_artifact_bytes": "600000"
+            },
+            "source": {
+              "repository": "https://github.com/atimics/nsrl",
+              "commit": "745e7750bb4cc3d666f5c749e7465afad11cc664",
+              "evaluator_sha256": "d8e951c9701dd6c331104bcf85a5164502bf721f2d59ed5b4dda03de6bbd1ff0"
+            },
+            "dataset": {
+              "contract": "integer-transformer-proof-v1",
+              "dataset_hash": "0x8fe7b86378f81951",
+              "manifest": "benchmarks/integer-transformer-proof-v1/manifest.tsv",
+              "heldout_targets": 5896
+            },
+            "run": {
+              "max_compute_units": "4096",
+              "compute_unit": "normalized-cpu-unit",
+              "stages": [
+                {
+                  "id": "train-candidate",
+                  "command": "scripts/run-integer-transformer-proof-candidate.sh data/experiments/integer-transformer-proof-v1/candidate-default",
+                  "compute_units": "3072"
+                },
+                {
+                  "id": "evaluate-candidate",
+                  "command": "cargo run -p nsrl-eval -- check --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv --results data/experiments/integer-transformer-proof-v1/candidate-default/proof-results.tsv",
+                  "compute_units": "768"
+                },
+                {
+                  "id": "freeze-publication",
+                  "command": "node scripts/freeze-integer-transformer-proof-candidate.mjs --check",
+                  "compute_units": "256"
+                }
+              ]
+            },
+            "bounties": [
+              {
+                "id": "integer-transformer-frontier-auto-frontier-1",
+                "sponsor": "nsrl:sponsor:prototype",
+                "escrow_units": "120000",
+                "metric": "probability_error_q15",
+                "direction": "minimize",
+                "baseline": "260536589",
+                "target": "234482930",
+                "payout": {
+                  "kind": "linear-with-promotion-bonus",
+                  "promotion_bonus_bps": 2500
+                },
+                "guardrails": [
+                  {
+                    "metric": "mistakes",
+                    "operator": "lte",
+                    "value": "3226"
+                  },
+                  {
+                    "metric": "unique_predicted_tokens",
+                    "operator": "gte",
+                    "value": "8"
+                  },
+                  {
+                    "metric": "rejected_batches",
+                    "operator": "eq",
+                    "value": "0"
+                  }
+                ]
+              }
+            ],
+            "promotion": {
+              "contract": "integer-transformer-proof-v1",
+              "checker_command": "cargo run -p nsrl-eval -- check --manifest benchmarks/integer-transformer-proof-v1/manifest.tsv --results data/experiments/integer-transformer-proof-v1/candidate-default/proof-results.tsv",
+              "checker_sha256": "d8e951c9701dd6c331104bcf85a5164502bf721f2d59ed5b4dda03de6bbd1ff0",
+              "valid_exit_code": 0
+            },
+            "rewards": {
+              "asset": {
+                "symbol": "ITP1",
+                "name": "Integer Transformer Proof Credits",
+                "decimals": 0,
+                "max_supply_units": "1000000",
+                "transferability": "disabled-v1",
+                "utility": [
+                  "sponsor successor model runs",
+                  "redeem prototype inference quotas",
+                  "signal participation without controlling promotion"
+                ]
+              },
+              "emission": {
+                "initial_block_reward_units": "32000",
+                "halving_interval_blocks": 8,
+                "minimum_block_reward_units": "1000",
+                "event_multipliers_bps": {
+                  "launch_published": 2500,
+                  "stage_accepted": 5000,
+                  "candidate_valid": 10000,
+                  "independent_replay": 5000,
+                  "model_promoted": 20000
+                }
+              },
+              "allocation_bps": {
+                "builder": 3000,
+                "compute": 3500,
+                "validator": 2000,
+                "sponsor": 1000,
+                "treasury": 500
+              }
+            },
+            "publication": null
+          },
+          "automation_cycle_event_id": "44580928bb56bf8b920100d8a893f2b8270fbc690f78823444260e9012a9cdaf"
+        },
+        "signature": "6Ma3hGgKTNGWDeBJ8xzAh7QiE7+nj/DfTsbxeGk/DfSVQG11S+ZCz32xs0GkEu56+k1k9ZhGwW9c0vev/SBwAw=="
+      },
+      "event_sha256": "9a5b02e94e559792ded44f263532543e10ac32745898171a1055aa7fb931e497"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 82,
+      "previous_event_sha256": "9a5b02e94e559792ded44f263532543e10ac32745898171a1055aa7fb931e497",
+      "event_id": "c99e3022b50e8ceddecf68a8d11dbad91f0fd289f0d0305590588b402b6acad9",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "bounty_funded",
+        "actor": "nsrl:sponsor:prototype",
+        "public_key": "MCowBQYDK2VwAyEAo/RkCK220BeMPBxIfwczo35kJOqmT88I+Tq5Ea0nAxg=",
+        "payload": {
+          "launch_id": "integer-transformer-frontier-auto-cycle-1",
+          "bounty_id": "integer-transformer-frontier-auto-frontier-1",
+          "escrow_units": "120000"
+        },
+        "signature": "zr1jVoFK5sP57Q+7tT/gHR+42WbKXmbwoNNMfYGu365UYAZFLoN1E8TaoQhQLjELgn0WZcMrub6hr9A3ujW2Dg=="
+      },
+      "event_sha256": "131c96078c755782879433da56e6e5cef2ce7aa42897f6c4d3f63a2ebe82398d"
+    },
+    {
+      "schema": "nsrl.model_localnet_event.v1",
+      "height": 83,
+      "previous_event_sha256": "131c96078c755782879433da56e6e5cef2ce7aa42897f6c4d3f63a2ebe82398d",
+      "event_id": "dd63ea14f94f15f9c52a2b5eeb02cd37021e76cf776a875ed0c4022be6abf35e",
+      "signed_intent": {
+        "schema": "nsrl.model_localnet_intent.v1",
+        "event_type": "compute_budget_funded",
+        "actor": "nsrl:sponsor:prototype",
+        "public_key": "MCowBQYDK2VwAyEAo/RkCK220BeMPBxIfwczo35kJOqmT88I+Tq5Ea0nAxg=",
+        "payload": {
+          "launch_id": "integer-transformer-frontier-auto-cycle-1",
+          "escrow_units": "12000",
+          "bid_deadline_slot": 12,
+          "reveal_deadline_slot": 14,
+          "execution_deadline_slot": 20,
+          "minimum_collateral_units": "500"
+        },
+        "signature": "4EaOwlrNPhMKqF0MzPGANBv/oXlLZG1kFMMbEM/Fh9uCNITuUhnl3WT5LQqzO7mL1d+2BbhELd+B9/3zTE+RAg=="
+      },
+      "event_sha256": "a02a547492ed8b0ba77d019976f3bf1d7b24935d0b0a95ed79715940e9fd23f4"
     }
-  ]
+  ],
+  "waiting_plan": {
+    "schema": "nsrl.bounty_keeper_plan.v1",
+    "policy_id": "integer-transformer-frontier-auto",
+    "status": "waiting",
+    "reason": "cooldown",
+    "detail": "The next cycle becomes eligible at logical slot 10.",
+    "cycle_index": 1,
+    "source_launch_id": "integer-transformer-proof-v1-market",
+    "ready_slot": 10
+  },
+  "keeper_result": {
+    "schema": "nsrl.bounty_keeper_result.v1",
+    "policy_id": "integer-transformer-frontier-auto",
+    "status": "opened",
+    "cycle_index": 1,
+    "source_launch_id": "integer-transformer-proof-v1-market",
+    "launch_id": "integer-transformer-frontier-auto-cycle-1",
+    "target": "234482930",
+    "baseline": "260536589",
+    "metric": "probability_error_q15",
+    "cycle_spend_units": "132000",
+    "events": [
+      {
+        "event_type": "bounty_automation_cycle_opened",
+        "event_id": "44580928bb56bf8b920100d8a893f2b8270fbc690f78823444260e9012a9cdaf",
+        "height": 80
+      },
+      {
+        "event_type": "launch_published",
+        "event_id": "bd74f62468117053d1b8298c2c9f19df10d1d3b65d493774d4eade016ff4adf1",
+        "height": 81
+      },
+      {
+        "event_type": "bounty_funded",
+        "event_id": "c99e3022b50e8ceddecf68a8d11dbad91f0fd289f0d0305590588b402b6acad9",
+        "height": 82
+      },
+      {
+        "event_type": "compute_budget_funded",
+        "event_id": "dd63ea14f94f15f9c52a2b5eeb02cd37021e76cf776a875ed0c4022be6abf35e",
+        "height": 83
+      }
+    ],
+    "ledger_height": 84
+  }
 }
