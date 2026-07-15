@@ -127,6 +127,7 @@ performs well.
 ## Asset inventory
 
 - Campaign landing page: `https://atimics.github.io/nsrl/launches/#experiment`
+- Public audit receipt and replay bundle: `https://atimics.github.io/nsrl/launches/audit/`
 - Social card: [`web/launches/og.png`](../../../web/launches/og.png)
 - Editable social card: [`web/launches/forge-six-atom-social.svg`](../../../web/launches/forge-six-atom-social.svg)
 - Platform copy and reply bank: [social-copy.md](social-copy.md)

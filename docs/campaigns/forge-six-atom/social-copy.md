@@ -97,7 +97,7 @@ Alt text:
 > Keep 200–212 sealed. Move no thresholds. Supported, falsified, or
 > inconclusive all count.
 >
-> https://atimics.github.io/nsrl/launches/#challenge
+> https://atimics.github.io/nsrl/launches/audit/
 
 ## D+1: the receipts post
 
@@ -108,7 +108,7 @@ Alt text:
 > evidence.
 >
 > Receipts:
-> https://github.com/atimics/nsrl/blob/main/research/mathematical-journal/MJ-2026-07-15-13-six-atom-structure-audit.md
+> https://atimics.github.io/nsrl/launches/audit/
 
 ## D+3: what “falsifiable bounty” means
 

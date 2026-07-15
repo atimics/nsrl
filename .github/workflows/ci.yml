@@ -119,6 +119,11 @@ jobs:
           node scripts/check-bounty-automation-v1.mjs
           node scripts/build-bounty-automation-site.mjs --check
 
+      - name: Check public Forge receipts
+        run: |
+          node --check scripts/build-forge-public-receipts.mjs
+          node scripts/build-forge-public-receipts.mjs --out-dir /tmp/nsrl-forge-public-receipts
+
       - name: Check fixed sample gallery
         run: |
           node scripts/generate-solomon-results-samples.mjs

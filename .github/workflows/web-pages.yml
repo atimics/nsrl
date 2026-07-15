@@ -16,6 +16,7 @@ on:
       - "scripts/build-model-localnet-site.mjs"
       - "scripts/build-model-market-site.mjs"
       - "scripts/build-bounty-automation-site.mjs"
+      - "scripts/build-forge-public-receipts.mjs"
       - "scripts/build-pages-results.mjs"
       - "scripts/check-model-launch-v1.mjs"
       - "scripts/check-model-localnet-v1.mjs"
@@ -98,6 +99,9 @@ jobs:
 
       - name: Build published results
         run: node scripts/build-pages-results.mjs --out-dir web/results
+
+      - name: Build public Forge receipts
+        run: node scripts/build-forge-public-receipts.mjs --out-dir web/launches/audit
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
