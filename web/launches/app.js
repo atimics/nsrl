@@ -116,9 +116,13 @@ function hydrate(data) {
   setText(nodes.metricImprovement, `${formatBps(bounty.improvement_bps)}%`);
   setText(nodes.baselineMetric, formatInteger(bounty.baseline));
   setText(nodes.modelHash, shortHash(launch.model_hash));
-  nodes.modelHash.title = launch.model_hash;
+  if (nodes.modelHash) {
+    nodes.modelHash.title = launch.model_hash;
+  }
   setText(nodes.datasetHash, shortHash(launch.dataset_hash));
-  nodes.datasetHash.title = launch.dataset_hash;
+  if (nodes.datasetHash) {
+    nodes.datasetHash.title = launch.dataset_hash;
+  }
   setText(nodes.heldoutTargets, formatInteger(launch.targets));
 
   setText(nodes.settledBaseline, formatInteger(bounty.baseline));
