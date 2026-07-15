@@ -8,6 +8,7 @@
 !/data/processed/key-solomon-goetia-latent-v1/
 /data/processed/key-solomon-goetia-latent-v1/*
 !/data/processed/key-solomon-goetia-latent-v1/prompts.jsonl
+!/data/processed/key-solomon-goetia-latent-v1/prompts-expanded.jsonl
 !/data/processed/key-solomon-goetia-latent-v1/gold.tsv
 !/data/experiments/
 /data/experiments/*
