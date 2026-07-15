@@ -1,0 +1,79 @@
+{
+  "schema": "nsrl.production_stabilized_pilot_contract.v2",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_preflight": {
+    "path": "benchmarks/production-model-v1/p10m-stabilization.json",
+    "sha256": "d1d377248a0238a176897270e6fd87acb57d403edef4af0012eb0d2981e128a8"
+  },
+  "source_attempt": {
+    "path": "benchmarks/production-model-v1/p10m-stabilized-pilot-attempt-1.json",
+    "sha256": "373f120cac7857b9c1db5087c631b756ed3c34d7a64e1483b403387d949e41f8"
+  },
+  "bindings": {
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "initialization": {
+    "seed": 7,
+    "output_init_amplitude": 1,
+    "output_forward_shift": 14
+  },
+  "schedule": {
+    "context_tokens": 64,
+    "train_windows": 1024,
+    "dev_windows": 256,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_optimizer_steps": 128,
+    "durable_optimizer_steps_per_chunk": 64,
+    "integer_evaluation_windows_per_chunk": 64,
+    "float_windows_per_chunk": 256,
+    "float_training_evaluation_windows_per_chunk": 64,
+    "integer_learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 35,
+      "v": 33,
+      "o": 25,
+      "up": 25,
+      "gate": 25,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    },
+    "output_backward_shift": 8,
+    "float_learning_rate_millionths": 1000,
+    "scaling_rule": "add_log2_window_multiplier_to_locked_non_output_groups_and_preserve_proven_output_unlock_shift",
+    "source_preflight_windows": 256,
+    "source_to_pilot_non_output_shift_delta": 2,
+    "source_to_pilot_output_shift_delta": 0
+  },
+  "early_stop_gates": {
+    "evaluate_heldout_after_each_durable_chunk": true,
+    "dev_total_millibits_vs_initial_max_delta": 0,
+    "gradient_saturation_max": 0,
+    "weight_saturation_max": 0,
+    "all_13_gradient_groups_active": true
+  },
+  "completion_gates": {
+    "integer_dev_total_millibits_nonincreasing": true,
+    "float_dev_loss_nonincreasing": true,
+    "integer_dev_regression_vs_float_max_per_mille": 150,
+    "integer_parameter_movement": true,
+    "float_all_parameter_groups_moved": true,
+    "byte_identical_midpoint_restart": true
+  },
+  "known_non_claims": [
+    "bounded_stability_replay_not_scaling_run",
+    "output_unlock_shift_is_not_window_scaled_until_trunk_gradients_are_active",
+    "parameter_movement_does_not_require_every_integer_group_to_cross_an_update_boundary",
+    "token_millibits_not_bits_per_byte",
+    "dev_split_not_hidden_test",
+    "not_open_generation_quality"
+  ]
+}

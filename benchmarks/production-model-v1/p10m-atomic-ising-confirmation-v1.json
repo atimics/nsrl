@@ -1,0 +1,239 @@
+{
+  "schema": "nsrl.production_atomic_ising_confirmation.v1",
+  "analysis_role": "untouched_confirmation",
+  "confirmation_contract_sha256": "57084a50c82883cb7d6c6d449b699cf793d495e293cf33ea1318b04aad71c9ce",
+  "source_result_sha256": "353fff30b136bfbfe68130740a97ed60c89c99c5a71a499b68bb514b23475e7e",
+  "source_structure_manifest_hash": "0xa7789191fefd1838",
+  "implementation": {
+    "structure_checker_sha256": "f9ea5678026dcacc7c074b8ea736dba2a9f778d11f155db414bdfd45cfe70174",
+    "analyzer_sha256": "2dfcce6489f53054194e36dff569654aeae79e31b8b8bab653ce43f4ffddb37e",
+    "checker_sha256": "ee37ac44c8b50f7aa0b5b4e4433931f3021a9db0385801ab0bb9c3a9c62d9e63"
+  },
+  "surface": {
+    "document_start": 136,
+    "documents": 64,
+    "windows_per_document": 2,
+    "hard_stop_before_document": 200,
+    "still_sealed_documents": "200--212",
+    "expected_source_clusters": 1,
+    "cross_source_generalization_identified": false
+  },
+  "candidates": {
+    "pairwise_ising_map_mask": 59,
+    "gibbs_magnetization_mask": 61,
+    "global_directional_control_mask": 47,
+    "cluster_medoid_feature_vectors": [
+      [
+        "0",
+        "0",
+        "0",
+        "0",
+        "1977",
+        "-4068"
+      ],
+      [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-6398",
+        "-4020"
+      ]
+    ],
+    "cluster_candidate_masks": [
+      47,
+      59
+    ],
+    "cluster_distance": "L1",
+    "cluster_tie_break": "cluster_zero",
+    "cluster_features": "six_Q32_singleton_contrasts_against_baseline"
+  },
+  "primary_endpoints": [
+    {
+      "id": "pairwise_ising_map_vs_baseline_q32_document_direction",
+      "favorable": 51,
+      "unfavorable": 13,
+      "ties": 0,
+      "non_ties": 64,
+      "aggregate": "-259574",
+      "one_sided_exact_p": {
+        "numerator": "17348813755993",
+        "denominator": "18446744073709551616"
+      },
+      "holm_rank": 1,
+      "holm_threshold": {
+        "numerator": "1",
+        "denominator": "60"
+      },
+      "holm_adjusted_p": {
+        "numerator": "52046441267979",
+        "denominator": "18446744073709551616"
+      },
+      "holm_rejected": true
+    },
+    {
+      "id": "gibbs_magnetization_vs_baseline_q32_document_direction",
+      "favorable": 50,
+      "unfavorable": 14,
+      "ties": 0,
+      "non_ties": 64,
+      "aggregate": "-257908",
+      "one_sided_exact_p": {
+        "numerator": "65204513714809",
+        "denominator": "18446744073709551616"
+      },
+      "holm_rank": 2,
+      "holm_threshold": {
+        "numerator": "1",
+        "denominator": "40"
+      },
+      "holm_adjusted_p": {
+        "numerator": "65204513714809",
+        "denominator": "9223372036854775808"
+      },
+      "holm_rejected": true
+    },
+    {
+      "id": "cluster_routed_vs_global_directional_q32_document_direction",
+      "favorable": 17,
+      "unfavorable": 0,
+      "ties": 47,
+      "non_ties": 17,
+      "aggregate": "-88447",
+      "one_sided_exact_p": {
+        "numerator": "1",
+        "denominator": "131072"
+      },
+      "holm_rank": 3,
+      "holm_threshold": {
+        "numerator": "1",
+        "denominator": "20"
+      },
+      "holm_adjusted_p": {
+        "numerator": "1",
+        "denominator": "131072"
+      },
+      "holm_rejected": true
+    }
+  ],
+  "descriptive": {
+    "q20": {
+      "pairwise_vs_baseline": {
+        "favorable": 40,
+        "unfavorable": 9,
+        "ties": 15,
+        "non_ties": 49,
+        "aggregate": "-61",
+        "one_sided_exact_p": {
+          "numerator": "1303728255",
+          "denominator": "281474976710656"
+        }
+      },
+      "gibbs_vs_baseline": {
+        "favorable": 41,
+        "unfavorable": 8,
+        "ties": 15,
+        "non_ties": 49,
+        "aggregate": "-64",
+        "one_sided_exact_p": {
+          "numerator": "138250219",
+          "denominator": "140737488355328"
+        }
+      },
+      "cluster_routed_vs_global_directional": {
+        "favorable": 16,
+        "unfavorable": 0,
+        "ties": 48,
+        "non_ties": 16,
+        "aggregate": "-21",
+        "one_sided_exact_p": {
+          "numerator": "1",
+          "denominator": "65536"
+        }
+      }
+    },
+    "cluster_route_counts": [
+      47,
+      17
+    ],
+    "cluster_routed_vs_baseline_q32": {
+      "favorable": 62,
+      "unfavorable": 2,
+      "ties": 0,
+      "non_ties": 64,
+      "aggregate": "-351270",
+      "one_sided_exact_p": {
+        "numerator": "2081",
+        "denominator": "18446744073709551616"
+      }
+    },
+    "stable_field_character": 32,
+    "stable_field_q20": {
+      "negative_documents": 61,
+      "zero_documents": 3,
+      "positive_documents": 0,
+      "aggregate_numerator": "-2036"
+    },
+    "stable_field_q32": {
+      "negative_documents": 64,
+      "zero_documents": 0,
+      "positive_documents": 0,
+      "aggregate_numerator": "-8470084"
+    },
+    "stable_field_replicated": true,
+    "confirmation_quenched_gibbs": [
+      {
+        "fugacity": "1/4",
+        "mean_spin_magnetization_q30": [
+          "47566718",
+          "1132278",
+          "-14190399",
+          "-17016231",
+          "-22443914",
+          "-576306909"
+        ],
+        "selected_mask": 60
+      },
+      {
+        "fugacity": "1/2",
+        "mean_spin_magnetization_q30": [
+          "21208204",
+          "-739162",
+          "-8842052",
+          "-8194858",
+          "-7914490",
+          "-342178910"
+        ],
+        "selected_mask": 62
+      },
+      {
+        "fugacity": "3/4",
+        "mean_spin_magnetization_q30": [
+          "8011366",
+          "-818114",
+          "-4445899",
+          "-3179338",
+          "-2558465",
+          "-150945091"
+        ],
+        "selected_mask": 62
+      }
+    ]
+  },
+  "mechanism_support": {
+    "pairwise_ising_map_vs_baseline_q32_document_direction": true,
+    "gibbs_magnetization_vs_baseline_q32_document_direction": true,
+    "cluster_routed_vs_global_directional_q32_document_direction": true
+  },
+  "limitations": {
+    "source_clusters": 1,
+    "same_source_document_evidence_only": true,
+    "cross_source_generalization_identified": false,
+    "documents_200_212_read": false
+  },
+  "decision": {
+    "optimizer_change_authorized": false,
+    "paid_scaling_authorized": false,
+    "all_three_mechanisms_supported": true
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "schema": "nsrl.production_normalized_wide_gradient_preflight_contract.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_normalization_attribution": {
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-probability-normalization-signal-attribution.json",
+    "checkpoint_sha256": "f6e5830128cc07e0ee7847426679295ce3ee90de1fb37cdda70b277dd4f1fa85",
+    "required_outcome": "newton_normalization_attributed_and_ready",
+    "selected_normalization": "q47_newton1"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "initialization": {
+    "path": "data/experiments/production-model-v1/p10m-up-forward-scale-training/initial.nsrlpm",
+    "sha256": "35f9d96518af70143c46f50f33fb5731831b18a93fce9305eb4bb6315b12c7ca",
+    "model_hash": "0xa3acffd1f55c9094",
+    "up_forward_shift": 7,
+    "output_forward_shift": 14
+  },
+  "q15_control": {
+    "model_sha256": "4f03c1ecef2c8113aecb55bab4e4f57a011d9edc3b0b41eb7e7e10c15b749c11",
+    "dev_total_millibits": 3344185,
+    "dev_mean_millibits": 13063
+  },
+  "schedule": {
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "context_tokens": 64,
+    "train_windows": 1024,
+    "processed_windows": 256,
+    "optimizer_steps": 64,
+    "evaluation_windows": 64,
+    "dev_windows": 256,
+    "epochs": 1,
+    "batch_windows": 4,
+    "output_backward_shift": 8,
+    "learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 22,
+      "gate": 23,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    }
+  },
+  "lanes": [
+    {
+      "id": "normalized_control",
+      "up_learning_rate_shift": 22,
+      "output_learning_rate_shift": 34,
+      "purpose": "isolate_q47_newton1_at_q23"
+    },
+    {
+      "id": "up_boundary",
+      "up_learning_rate_shift": 21,
+      "output_learning_rate_shift": 34,
+      "purpose": "test_first_predicted_trunk_materialization_boundary"
+    },
+    {
+      "id": "output_boundary",
+      "up_learning_rate_shift": 22,
+      "output_learning_rate_shift": 33,
+      "purpose": "test_first_predicted_target_signal_materialization_boundary"
+    }
+  ],
+  "gates": {
+    "normalization_method_bound_to_optimizer_schedule": true,
+    "all_gradient_paths_active": true,
+    "all_saturation_zero": true,
+    "normalized_control_exact_replay_required": true,
+    "up_boundary_must_materialize_up_updates": true,
+    "output_boundary_must_change_target_probability": true,
+    "test_split_access": false,
+    "quality_promotion_requires_dev_improvement": true
+  },
+  "authorization": {
+    "local_execution": true,
+    "paid_cloud_execution": false,
+    "paid_scale_requires_separate_contract": true
+  },
+  "known_non_claims": [
+    "boundary_lanes_are_diagnostics_not_promoted_defaults",
+    "numeric_signal_recovery_is_not_quality_gain",
+    "bounded_256_window_preflight_not_scaling_evidence",
+    "not_open_generation_quality"
+  ]
+}

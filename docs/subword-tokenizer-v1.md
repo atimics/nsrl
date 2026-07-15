@@ -53,6 +53,13 @@ least twice. It is not the future quality tokenizer. The 8K-16K production
 vocabulary must be retrained only after the larger licensed, deduplicated,
 contamination-checked language split is frozen.
 
+That production gate is now represented by `production-corpus-v1`: its
+train-only 1 MiB tokenizer sample reaches all 8,192 tokens and its checked-in
+checkpoint binds the tokenizer plus document-indexed train/dev/test token
+streams. Indexed encoding uses rank-priority merge replay, which is
+semantically locked against sequential replay while avoiding one full corpus
+scan per merge.
+
 Run the end-to-end conformance check with:
 
 ```bash

@@ -1,0 +1,55 @@
+{
+  "schema": "nsrl.integer_transformer_component_ablation.v1",
+  "contract": "integer-transformer-proof-v1",
+  "promotion_evidence": false,
+  "source_model_hash": "0x6ffd37de48a3121b",
+  "data": {
+    "token_count": 5960,
+    "token_hash": "0x2122537bdad2f4eb",
+    "window_hash": "0xa8eb59f92e158e7b",
+    "windows": 5896
+  },
+  "metrics": {
+    "combined": {
+      "evaluated_model_hash": "0x6ffd37de48a3121b",
+      "mistakes": 2482,
+      "accuracy_per_mille": 579,
+      "probability_error_q15": 260536589,
+      "mean_probability_error_q15": 44188,
+      "unique_predicted_tokens": 41,
+      "logits_hash": "0x7eb448f8a275522e"
+    },
+    "transformer-only": {
+      "evaluated_model_hash": "0x391adc5e1d1a8713",
+      "mistakes": 5094,
+      "accuracy_per_mille": 136,
+      "probability_error_q15": 337139495,
+      "mean_probability_error_q15": 57181,
+      "unique_predicted_tokens": 19,
+      "logits_hash": "0x5432731fc7205d96"
+    },
+    "suffix-memory-only": {
+      "evaluated_model_hash": "0xe1a5606291ce1fc9",
+      "mistakes": 2482,
+      "accuracy_per_mille": 579,
+      "probability_error_q15": 384884984,
+      "mean_probability_error_q15": 65279,
+      "unique_predicted_tokens": 41,
+      "logits_hash": "0x21ed52b184b9efad"
+    }
+  },
+  "contrasts": {
+    "suffix_memory_added_to_transformer": {
+      "mistake_reduction": 2612,
+      "accuracy_gain_per_mille": 443,
+      "probability_error_reduction_q15": 76602906,
+      "distinct_logits": true
+    },
+    "transformer_logits_added_to_suffix_memory": {
+      "mistake_reduction": 0,
+      "accuracy_gain_per_mille": 0,
+      "probability_error_reduction_q15": 124348395,
+      "distinct_logits": true
+    }
+  }
+}

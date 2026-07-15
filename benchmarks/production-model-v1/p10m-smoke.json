@@ -1,0 +1,66 @@
+{
+  "schema": "nsrl.production_model_smoke_checkpoint.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "architecture": {
+    "artifact_magic": "NSRLPM1",
+    "vocab_size": 8192,
+    "d_model": 256,
+    "heads": 8,
+    "layers": 6,
+    "hidden_dim": 768,
+    "context_tokens": 256,
+    "attention": "causal_linear_attention"
+  },
+  "bindings": {
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "token_stream_hash": "0x97e5254c31c27bda"
+  },
+  "initialization_seed": 7,
+  "training": {
+    "scope": "output_head_perceptron",
+    "context_tokens": 4,
+    "windows": 8,
+    "epochs": 2,
+    "updates": 8,
+    "initial_mistakes": 8,
+    "final_mistakes": 0
+  },
+  "health": {
+    "weight_saturation_count": 0,
+    "residual_saturation_count": 0
+  },
+  "models": {
+    "initial": {
+      "file": "initial.nsrlpm",
+      "bytes": 13539906,
+      "sha256": "08974cfb660f7a104cd11de6d18cdad20574dab50229c724c1b0ad87878d6e4d",
+      "hash": "0x9f278ab8d99e096c"
+    },
+    "trained": {
+      "file": "trained.nsrlpm",
+      "bytes": 13539906,
+      "sha256": "8596d26bb599f462ccf07d5d6b2dee9f77cfdd6001dcbad9fd9da7ca63c4dc24",
+      "hash": "0xe3344167d5070024"
+    }
+  },
+  "traces": {
+    "init_sha256": "1f79a5592d1874e186f25f695b7eb812a12695114058917fe0de04b7432adb01",
+    "train_sha256": "e474a81911dc030676411d460b734c07cb964d2102d657c14f578896e0ad03b0"
+  },
+  "gates": {
+    "variable_vocab_artifact": true,
+    "tokenizer_bound_u32_stream": true,
+    "deterministic_integer_forward": true,
+    "bounded_output_head_training": true,
+    "model_hash_changed": true,
+    "zero_saturation": true,
+    "full_layer_backward": false,
+    "float_twin": false
+  },
+  "known_non_claims": [
+    "output_head_only_smoke_not_full_layer_training",
+    "not_float_twin",
+    "not_open_generation_quality"
+  ]
+}

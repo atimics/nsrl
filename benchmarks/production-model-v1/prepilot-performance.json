@@ -1,0 +1,53 @@
+{
+  "known_non_claims": [
+    "single_sample_wall_clock_not_capacity_forecast",
+    "includes_process_startup_serialization_and_evaluation",
+    "local_machine_measurement_not_cross_platform_benchmark"
+  ],
+  "measurement": "one_full_forward_backward_optimizer_step",
+  "platform": {
+    "machine": "arm64",
+    "python": "3.14.5",
+    "system": "Darwin"
+  },
+  "profile": "p10m",
+  "results": [
+    {
+      "context_tokens": 4,
+      "float_attention_algorithm": "causal_recurrent_linear",
+      "float_milliseconds": 5329,
+      "integer_gradient_saturation_count": 0,
+      "integer_milliseconds": 709,
+      "integer_optimizer_state_bytes": 74541140,
+      "integer_weight_saturation_count": 0
+    },
+    {
+      "context_tokens": 16,
+      "float_attention_algorithm": "causal_recurrent_linear",
+      "float_milliseconds": 5290,
+      "integer_gradient_saturation_count": 0,
+      "integer_milliseconds": 634,
+      "integer_optimizer_state_bytes": 74541140,
+      "integer_weight_saturation_count": 0
+    },
+    {
+      "context_tokens": 64,
+      "float_attention_algorithm": "causal_recurrent_linear",
+      "float_milliseconds": 5278,
+      "integer_gradient_saturation_count": 0,
+      "integer_milliseconds": 1335,
+      "integer_optimizer_state_bytes": 74541140,
+      "integer_weight_saturation_count": 0
+    },
+    {
+      "context_tokens": 256,
+      "float_attention_algorithm": "causal_recurrent_linear",
+      "float_milliseconds": 5455,
+      "integer_gradient_saturation_count": 0,
+      "integer_milliseconds": 4169,
+      "integer_optimizer_state_bytes": 74541140,
+      "integer_weight_saturation_count": 0
+    }
+  ],
+  "schema": "nsrl.production_preflight_performance.v1"
+}

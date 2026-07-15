@@ -1,0 +1,86 @@
+{
+  "schema": "nsrl.production_atomic_ising_audit_contract.v1",
+  "analysis_role": "proposal_only_calibration",
+  "source": {
+    "schema": "nsrl.production_atomic_structure.v1",
+    "result_sha256": "7d7432057cfa2b86796abdcaf73604541699a9fed1a939a57ad94b42bf9ce7ca",
+    "contract_sha256": "a55fa73adf8c2650e36cc367dcae6aca1fec87a6bb422fa337e0d0b00a306184",
+    "manifest_hash": "0x2ce8888292aa6852",
+    "proposal_document_start": 8,
+    "proposal_documents": 64,
+    "hard_stop_before_document": 72
+  },
+  "implementation": {
+    "kernel_sha256": "e19d478df519ca2cbc0cae16379633c467906671fe6286113574f67deedbe996",
+    "analyzer_sha256": "8a0a3766a94f1519fa072e9168dc43477a58be8feec5da49696190f2ebf3e740",
+    "checker_sha256": "fee46cb8d7c5d57771c688cd2a3d524d93ee5790c1a844218ba3efabe2458ba7"
+  },
+  "arithmetic": {
+    "objective_integer_type": "arbitrary_precision_signed",
+    "objective_floating_point_operations": 0,
+    "walsh_normalization_denominator": 64,
+    "dyadic_weight_shift": 128,
+    "dyadic_weight_formula": "delta=q*T+r; weight=(2*T-r)*2^(127-q); require 0<=q<128",
+    "rational_encoding": "reduced_decimal_numerator_denominator"
+  },
+  "temperature_sweep": {
+    "ensemble": "piecewise_linear_dyadic_boltzmann",
+    "q20_temperature_units": [
+      "1",
+      "2",
+      "4",
+      "8",
+      "16",
+      "32",
+      "64",
+      "128"
+    ],
+    "q32_temperature_units": [
+      "4096",
+      "8192",
+      "16384",
+      "32768",
+      "65536",
+      "131072",
+      "262144",
+      "524288"
+    ],
+    "selected_ground_state_tie_break": "lowest_vertex_mask",
+    "metrics": [
+      "ground_state_probability",
+      "expected_energy_above_ground",
+      "selected_ground_state_overlap",
+      "edwards_anderson_replica_overlap",
+      "magnetic_susceptibility_per_spin",
+      "spin_glass_susceptibility",
+      "magnetization_by_atom"
+    ]
+  },
+  "sigma_delta": {
+    "retained_walsh_degree": 3,
+    "vertex_order": "binary_reflected_gray_code",
+    "quantizer_denominator": 64,
+    "rounding": "nearest_ties_away_from_zero",
+    "conservation_identity": "sum(input_residual_numerator)=64*sum(emitted_integer_residual)+final_accumulator"
+  },
+  "required_gates": [
+    "source_and_implementation_hashes_match",
+    "proposal_only_firewall_verified",
+    "integer_walsh_inversion_and_parseval_verified",
+    "all_temperature_weights_positive",
+    "all_metric_fractions_canonical",
+    "sigma_delta_conservation_and_bounded_carry_verified",
+    "byte_replay_verified",
+    "optimizer_control_tuple_matches"
+  ],
+  "control": {
+    "default_optimizer": "integer_residual_sgd",
+    "optimizer_source_path": "crates/nsrl-train/src/production/training.rs",
+    "optimizer_state_magic_literal": "NSRLPO2\\n",
+    "optimizer_state_version": 2,
+    "optimizer_control_semantic_sha256": "6c6c2e629193a990a48bd973193067eae406223038b57d6341f1c1df83d971a4",
+    "structure_certificate_selected": false,
+    "optimizer_change_authorized": false,
+    "paid_scaling_authorized": false
+  }
+}

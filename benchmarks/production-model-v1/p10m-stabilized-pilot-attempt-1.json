@@ -1,0 +1,68 @@
+{
+  "schema": "nsrl.production_stabilized_pilot_attempt.v1",
+  "attempt": 1,
+  "outcome": "early_stopped",
+  "run_s3_uri": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/runs/production-p10m-stabilized-pilot-20260713T134929Z",
+  "git_commit": "7fd4cd1acd36e2452a1d65451a0d0386a54dfa74",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-stabilized-pilot-contract.json",
+    "sha256": "8b87387d047eb495dbea037e5e3dfe72de5e3ff17e7a0fc2d712cfd68d1f20c4"
+  },
+  "artifact_bundle": {
+    "s3_uri": "s3://nsrl-training-022118847419-us-east-1/production-model-v1/artifacts/stabilized-pilot-v1-20260713T134929Z.tar.gz",
+    "bytes": 24588736,
+    "sha256": "a37ab559da0488a5e05326e871191a47be3ff922892d8de0afecc4bfd04bb8d6"
+  },
+  "runner": {
+    "instance_id": "i-0c4b963cdcfcedef0",
+    "instance_type": "c8g.2xlarge",
+    "architecture": "arm64",
+    "started_at": "2026-07-13T13:51:13Z",
+    "finished_at": "2026-07-13T13:56:53Z",
+    "elapsed_seconds": 340,
+    "exit_status": 1,
+    "terminated": true,
+    "estimated_runtime_cost_usd": 0.0301
+  },
+  "completed_work": {
+    "durable_chunks": 1,
+    "integer_windows": 256,
+    "float_windows": 1024
+  },
+  "integer_chunk_0": {
+    "learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 35,
+      "v": 33,
+      "o": 25,
+      "up": 25,
+      "gate": 25,
+      "down": 25,
+      "output": 36,
+      "bias": 23
+    },
+    "initial_model_hash": "0x0e808e354809141d",
+    "final_model_hash": "0x0e808e354809141d",
+    "moved_parameter_groups": [],
+    "active_gradient_groups": ["bias", "final_rms", "output"],
+    "gradient_saturation_count": 0,
+    "weight_saturation_count": 0,
+    "heldout_initial_total_millibits": 3344600,
+    "heldout_final_total_millibits": 3344600,
+    "heldout_delta": 0
+  },
+  "float_reference": {
+    "all_parameter_groups_moved": true,
+    "initial_mean_millibits": 12993,
+    "final_mean_millibits": 12976,
+    "heldout_loss_nonincreasing": true
+  },
+  "failed_gate": "complete_gradient_path",
+  "finding": "Scaling the output update shift from 34 to 36 delayed the first output update past the 256-window durable boundary, so quantized output-to-trunk gradients remained inactive.",
+  "correction": "Retain output shift 34 for the unlock phase while applying the two-bit window scaling adjustment only to the still-locked trunk and vector parameter groups.",
+  "next_gate": "p10m_stabilized_pilot_replay_v2"
+}
