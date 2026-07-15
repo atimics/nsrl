@@ -176,10 +176,9 @@ Alt text:
 
 ### “What should I try next?”
 
-> First reproduce the frozen audit. Then use multiple independent source
-> clusters—or independently replay the fixed follow-up on documents 136–199.
-> The next open test is whether the conditional-exchange partition survives
-> across source clusters. Publish negative and inconclusive outcomes too.
+> First reproduce the frozen audit. Then replay the fixed follow-up on documents
+> 136–199. The next open test: does the conditional-exchange partition survive
+> across source clusters? Publish negative and inconclusive outcomes too.
 
 ## Hashtags
 
