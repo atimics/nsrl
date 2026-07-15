@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import childProcess from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -271,6 +272,101 @@ function collectGit() {
     untracked_count: changes.filter((line) => line.startsWith("??")).length,
     sample_changes: changes.slice(0, 12),
     status_error: status.ok ? "" : status.stderr || status.error,
+  };
+}
+
+function sha256File(relativePath) {
+  try {
+    return crypto.createHash("sha256").update(fs.readFileSync(resolvePath(relativePath))).digest("hex");
+  } catch {
+    return "";
+  }
+}
+
+function collectIsingEvidence() {
+  const paths = {
+    audit_contract: "benchmarks/production-model-v1/p10m-atomic-ising-audit-v1-contract.json",
+    audit_result: "benchmarks/production-model-v1/p10m-atomic-ising-audit-v1.json",
+    document_ising: "benchmarks/production-model-v1/p10m-atomic-ising-proposal-v1.json",
+    confirmation_contract:
+      "benchmarks/production-model-v1/p10m-atomic-ising-confirmation-v1-contract.json",
+    confirmation_source:
+      "benchmarks/production-model-v1/p10m-atomic-structure-confirmation-v1.json",
+    confirmation_result:
+      "benchmarks/production-model-v1/p10m-atomic-ising-confirmation-v1.json",
+  };
+  const auditContract = maybeReadJson(paths.audit_contract);
+  const auditResult = maybeReadJson(paths.audit_result);
+  const documentIsing = maybeReadJson(paths.document_ising);
+  const confirmationContract = maybeReadJson(paths.confirmation_contract);
+  const confirmationSource = maybeReadJson(paths.confirmation_source);
+  const confirmationResult = maybeReadJson(paths.confirmation_result);
+  const auditContractSha256 = sha256File(paths.audit_contract);
+  const auditResultSha256 = sha256File(paths.audit_result);
+  const confirmationContractSha256 = sha256File(paths.confirmation_contract);
+  const confirmationSourceSha256 = sha256File(paths.confirmation_source);
+  const confirmationResultSha256 = sha256File(paths.confirmation_result);
+  const endpointSupport = confirmationResult?.mechanism_support || {};
+  const endpointValues = Object.values(endpointSupport);
+  const confirmationVerdict = endpointValues.length === 0
+    ? "inconclusive"
+    : endpointValues.every((value) => value === true)
+      ? "supported_within_source"
+      : "falsified_or_partially_supported";
+  const authorizationSafe = auditResult?.decision?.optimizer_change_authorized === false
+    && auditResult?.decision?.paid_scaling_authorized === false
+    && documentIsing?.decision?.optimizer_change_authorized === false
+    && documentIsing?.decision?.paid_scaling_authorized === false
+    && confirmationResult?.decision?.optimizer_change_authorized === false
+    && confirmationResult?.decision?.paid_scaling_authorized === false;
+  const auditOk = auditContract?.schema === "nsrl.production_atomic_ising_audit_contract.v1"
+    && auditResult?.schema === "nsrl.production_atomic_ising_audit.v1"
+    && auditResult.audit_contract_sha256 === auditContractSha256;
+  const documentIsingOk = documentIsing?.schema === "nsrl.production_atomic_ising_proposal.v1"
+    && documentIsing?.analysis_role === "proposal_only_calibration";
+  const confirmationOk = confirmationContract?.schema
+      === "nsrl.production_atomic_ising_confirmation_contract.v1"
+    && confirmationSource?.schema === "nsrl.production_atomic_structure.v1"
+    && confirmationSource?.analysis_role === "untouched_confirmation"
+    && confirmationResult?.schema === "nsrl.production_atomic_ising_confirmation.v1"
+    && confirmationResult.confirmation_contract_sha256 === confirmationContractSha256
+    && confirmationResult.source_result_sha256 === confirmationSourceSha256;
+  return {
+    present: Boolean(auditContract && auditResult && documentIsing
+      && confirmationContract && confirmationSource && confirmationResult),
+    ok: auditOk && documentIsingOk && confirmationOk && authorizationSafe,
+    audit: {
+      state: auditOk ? "replayable" : "missing_or_invalid",
+      contract_path: paths.audit_contract,
+      contract_sha256: auditContractSha256,
+      result_path: paths.audit_result,
+      result_sha256: auditResultSha256,
+      sigma_delta_scope: "Gray-ordered high-order Walsh loss residual; not optimizer time dynamics",
+    },
+    document_ising: {
+      state: documentIsingOk ? "proposal_frozen" : "missing_or_invalid",
+      result_path: paths.document_ising,
+      source_clusters: 1,
+    },
+    confirmation: {
+      state: confirmationOk ? "replayable" : "missing_or_invalid",
+      verdict: confirmationVerdict,
+      contract_path: paths.confirmation_contract,
+      contract_sha256: confirmationContractSha256,
+      result_path: paths.confirmation_result,
+      result_sha256: confirmationResultSha256,
+      endpoints_supported: endpointValues.filter((value) => value === true).length,
+      endpoints_total: endpointValues.length,
+    },
+    boundaries: {
+      default_optimizer: "integer_residual_sgd",
+      optimizer_change_authorized: authorizationSafe ? false : null,
+      paid_scaling_authorized: authorizationSafe ? false : null,
+      same_source_document_evidence_only: true,
+      cross_source_generalization_identified: false,
+      sealed_documents: "200--212",
+      frozen_structure_cube_reexecuted_in_clean_check: false,
+    },
   };
 }
 
@@ -773,6 +869,9 @@ function deriveStatus(report) {
   if (report.git.dirty) {
     warnings.push(`working tree is dirty (${report.git.change_count} changed paths)`);
   }
+  if (!report.ising_evidence.ok) {
+    warnings.push("Ising audit/confirmation evidence is missing or invalid");
+  }
   if (report.hygiene.run && !report.hygiene.ok) {
     blockers.push("hygiene checks are not green");
   }
@@ -832,6 +931,7 @@ function buildReport(config) {
     generated_at: new Date().toISOString(),
     repo_root: repoRoot,
     git: collectGit(),
+    ising_evidence: collectIsingEvidence(),
     hygiene: collectHygiene(config.runHygiene),
     prompts: collectPromptEvidence(),
     artifacts: collectArtifacts(),
@@ -854,6 +954,10 @@ function nextCommands(report) {
   }
   if (!report.diagnostic.path) {
     commands.push("node scripts/nsrl-status.mjs --refresh-fast-diagnostic");
+  }
+  if (!report.ising_evidence.ok) {
+    commands.push("node scripts/check-production-atomic-ising-v1.mjs");
+    commands.push("node scripts/check-production-atomic-ising-confirmation-v1.mjs");
   }
   if (report.diagnostic.failed_checks?.some((check) => check.name === "release-candidate-self-test")) {
     commands.push("node scripts/check-solomon-release-candidate-self-test.mjs");
@@ -884,11 +988,21 @@ function renderMarkdown(report) {
   lines.push(`- Branch: \`${report.git.branch || "unknown"}\``);
   lines.push(`- HEAD: \`${report.git.head || "unknown"}\``);
   lines.push(`- Working tree: ${report.git.dirty ? `${report.git.change_count} changed paths` : "clean"}`);
+  lines.push(`- Ising evidence: ${renderIsingEvidenceOneLine(report.ising_evidence)}`);
   lines.push(`- Hygiene: ${renderHygiene(report.hygiene)}`);
   lines.push(`- Product diagnostic: ${renderDiagnosticOneLine(report.diagnostic)}`);
   lines.push(`- Headline eval: ${renderHeadlineOneLine(report.headline_eval)}`);
   lines.push(`- Product proof files: ${report.product_evidence.files.length} found`);
   lines.push(`- Held-out prompt rows: ${report.prompts.expanded_prompts.rows ?? "missing"} expanded, ${report.prompts.prompts.rows ?? "missing"} base`);
+  lines.push("");
+
+  lines.push("## Ising Evidence");
+  lines.push("");
+  lines.push(`- Audit: **${report.ising_evidence.audit.state}**; contract \`${report.ising_evidence.audit.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.audit.result_sha256 || "missing"}\``);
+  lines.push(`- Document Ising: **${report.ising_evidence.document_ising.state}**; ${report.ising_evidence.document_ising.source_clusters} source cluster`);
+  lines.push(`- Confirmation: **${report.ising_evidence.confirmation.verdict}** (${report.ising_evidence.confirmation.endpoints_supported}/${report.ising_evidence.confirmation.endpoints_total} endpoints); contract \`${report.ising_evidence.confirmation.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.confirmation.result_sha256 || "missing"}\``);
+  lines.push(`- Boundary: default \`${report.ising_evidence.boundaries.default_optimizer}\`; optimizer change ${report.ising_evidence.boundaries.optimizer_change_authorized === false ? "not authorized" : "unknown"}; paid scaling ${report.ising_evidence.boundaries.paid_scaling_authorized === false ? "not authorized" : "unknown"}; cross-source generalization unidentified; documents ${report.ising_evidence.boundaries.sealed_documents} sealed`);
+  lines.push(`- Sigma--delta scope: ${report.ising_evidence.audit.sigma_delta_scope}`);
   lines.push("");
 
   lines.push("## Headline Eval");
@@ -1024,6 +1138,12 @@ function renderHygiene(hygiene) {
   }
   const failed = hygiene.checks.filter((check) => !check.ok).map((check) => check.command).join(", ");
   return `not green (${failed})`;
+}
+
+function renderIsingEvidenceOneLine(evidence) {
+  if (!evidence.present) return "missing";
+  const state = evidence.ok ? "replayable" : "invalid";
+  return `${state}; confirmation ${evidence.confirmation.verdict}; optimizer change not authorized`;
 }
 
 function renderDiagnosticOneLine(diagnostic) {
