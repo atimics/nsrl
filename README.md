@@ -1,5 +1,12 @@
 # NSRL — Deterministic Integer Transformer Research
 
+The manifest-bound `integer-transformer-successor-v2` trial is complete and
+falsified: with suffix memory, retrieval, and routing assistance disabled, the
+frozen integer Transformer loses canonical held-out NLL to uniform, retrieval,
+byte n-gram, and a trained float32 Transformer. The five-system evidence and
+reproduction path are published in
+[`docs/integer-transformer-successor-v2.md`](docs/integer-transformer-successor-v2.md).
+
 NSRL is a pure-Rust integer-only training stack for deterministic CPU and WASM
 models. The active promotion milestone is an executable substrate proof: one
 NSRL-born transformer must beat retrieval, byte n-gram, and independently

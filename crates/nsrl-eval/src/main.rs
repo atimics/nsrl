@@ -10,6 +10,9 @@ use nsrl_eval::contract::{
 use nsrl_eval::open_generation::{
     load_open_generation_manifest, open_generation_contract_json_line,
 };
+use nsrl_eval::successor::{
+    check_successor_results, load_successor_manifest, successor_contract_json_line,
+};
 
 fn main() {
     if let Err(error) = run() {
@@ -26,6 +29,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("contract takes no arguments".into());
             }
             print!("{}", proof_contract_json_line());
+        }
+        Some("successor-contract") => {
+            if args.next().is_some() {
+                return Err("successor-contract takes no arguments".into());
+            }
+            print!("{}", successor_contract_json_line());
+        }
+        Some("successor-manifest") => {
+            let manifest = single_path_option(&mut args, "--manifest")?;
+            print!("{}", load_successor_manifest(&manifest)?.to_json_line());
+        }
+        Some("successor-check") => {
+            let mut manifest = None;
+            let mut results = None;
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--manifest" => {
+                        manifest = Some(PathBuf::from(required(&mut args, "--manifest")?))
+                    }
+                    "--results" => results = Some(PathBuf::from(required(&mut args, "--results")?)),
+                    other => {
+                        return Err(format!("unknown successor-check argument: {other}").into());
+                    }
+                }
+            }
+            let manifest = load_successor_manifest(
+                &manifest.ok_or("successor-check requires --manifest PATH")?,
+            )?;
+            let input =
+                fs::read_to_string(results.ok_or("successor-check requires --results PATH")?)?;
+            let check = check_successor_results(&input, &manifest)?;
+            print!("{}", check.to_json_line());
+            if !check.passed {
+                std::process::exit(1);
+            }
         }
         Some("open-generation-contract") => {
             if args.next().is_some() {
@@ -120,6 +158,6 @@ fn required(
 
 fn print_help() {
     println!(
-        "Usage:\n  nsrl-eval contract\n  nsrl-eval manifest --manifest PATH\n  nsrl-eval check-baselines --manifest PATH --results PATH\n  nsrl-eval check --manifest PATH --results PATH\n  nsrl-eval open-generation-contract\n  nsrl-eval open-generation-manifest --manifest PATH\n\nThe check command exits 0 only when the integer candidate beats retrieval, byte-ngram, and float-reference baselines under the frozen proof contract."
+        "Usage:\n  nsrl-eval contract\n  nsrl-eval manifest --manifest PATH\n  nsrl-eval check-baselines --manifest PATH --results PATH\n  nsrl-eval check --manifest PATH --results PATH\n  nsrl-eval successor-contract\n  nsrl-eval successor-manifest --manifest PATH\n  nsrl-eval successor-check --manifest PATH --results PATH\n  nsrl-eval open-generation-contract\n  nsrl-eval open-generation-manifest --manifest PATH\n\nThe frozen v1 check remains replay-compatible. The successor-v2 check is manifest-bound to the frozen dataset, candidate/model/runner identities, assistance ablations, and a real float-transformer baseline."
     );
 }

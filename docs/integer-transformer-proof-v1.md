@@ -1,5 +1,11 @@
 # Integer Transformer Proof v1
 
+> Successor status (2026-07-15): the manifest-bound unassisted follow-up is
+> validly falsified. The transformer-only model loses canonical NLL to uniform,
+> retrieval, byte n-gram, and a trained float32 Transformer on the same 5,896
+> targets. See `docs/integer-transformer-successor-v2.md`. The v1 result below
+> remains a frozen combined Transformer-plus-suffix-memory system result.
+
 This is NSRL's single promotion milestone. It asks one question:
 
 > Does an NSRL-born deterministic integer transformer learn a frozen next-token

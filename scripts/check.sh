@@ -14,6 +14,7 @@ node scripts/build-model-market-site.mjs --check
 node scripts/check-bounty-automation-v1.mjs
 node scripts/build-bounty-automation-site.mjs --check
 node scripts/check-integer-transformer-proof-self-test.mjs
+node scripts/check-integer-transformer-successor-v2.mjs
 node scripts/check-integer-transformer-candidate-health-self-test.mjs
 node scripts/check-harmonic-structure-theory-v1.mjs
 node scripts/check-document-ising-theory-v1.mjs
