@@ -11,6 +11,15 @@ node scripts/check-model-localnet-v1.mjs
 node scripts/build-model-localnet-site.mjs --check
 node scripts/check-integer-transformer-proof-self-test.mjs
 node scripts/check-integer-transformer-candidate-health-self-test.mjs
+node scripts/check-document-ising-theory-v1.mjs
+node scripts/check-production-atomic-structure-v1.mjs
+node scripts/check-production-atomic-ising-v1.mjs
+node scripts/check-production-document-ising-proposal-v1.mjs
+node scripts/check-production-atomic-structure-v1.mjs \
+  benchmarks/production-model-v1/p10m-atomic-structure-confirmation-v1-contract.json \
+  benchmarks/production-model-v1/p10m-atomic-structure-confirmation-v1.json
+node scripts/check-production-atomic-ising-confirmation-execution-v1.mjs
+node scripts/check-production-atomic-ising-confirmation-v1.mjs
 node scripts/check-production-training-liveness-self-test.mjs
 node scripts/check-production-optimizer-residual-analysis-self-test.mjs
 node scripts/freeze-integer-transformer-proof-candidate.mjs --check

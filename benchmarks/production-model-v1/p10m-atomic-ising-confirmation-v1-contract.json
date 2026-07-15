@@ -1,0 +1,119 @@
+{
+  "schema": "nsrl.production_atomic_ising_confirmation_contract.v1",
+  "analysis_role": "prospective_confirmation_pre_outcome",
+  "proposal_bindings": {
+    "structure_result_sha256": "7d7432057cfa2b86796abdcaf73604541699a9fed1a939a57ad94b42bf9ce7ca",
+    "document_ising_result_sha256": "1cdaf02a387a86ea4df2666ee800d1fb6172e6f3d6941b807b7609a466b6393a",
+    "document_ising_analyzer_sha256": "6f2e04c32019e6ff52e787d082ebcaf3e9b0feee98f501668ebf82b723d67788",
+    "document_ising_checker_sha256": "c42187c171aa52569a0aa230bee28bb943d9e340ab6d1e7b9f3bd84207500b01",
+    "proposal_document_start": 8,
+    "proposal_documents": 64,
+    "proposal_source_clusters": 1,
+    "transfer_documents_72_135_read": false,
+    "reserved_documents_136_212_read": false
+  },
+  "execution": {
+    "structure_contract_sha256": "37951ceda0e6e10015c8de8cbdb10f137354d03ea893f64612ef9ae94262bb73",
+    "structure_manifest_hash": "0xa7789191fefd1838",
+    "source_fnv64": "0x390e886e8440c4f7",
+    "binary_fnv64": "0xd5a6285b883749b8",
+    "model_hash": "0xb10996e0707ab342",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "token_stream_hash": "0xda195778ceb603ab",
+    "source_index_hash": "0x75f51a06dd94fda8",
+    "move_fingerprint": "0x48eccb62ab07b717"
+  },
+  "implementation": {
+    "structure_checker_sha256": "f9ea5678026dcacc7c074b8ea736dba2a9f778d11f155db414bdfd45cfe70174",
+    "analyzer_sha256": "2dfcce6489f53054194e36dff569654aeae79e31b8b8bab653ce43f4ffddb37e",
+    "checker_sha256": "ee37ac44c8b50f7aa0b5b4e4433931f3021a9db0385801ab0bb9c3a9c62d9e63"
+  },
+  "replay_scope": {
+    "frozen_structure_cube_reexecuted": false,
+    "frozen_structure_cube_independently_reconstructed": true,
+    "derived_confirmation_byte_replayed": true,
+    "rationale": "clean checkout verification treats the hash-bound production cube as frozen input; model data are not repository artifacts"
+  },
+  "surface": {
+    "document_start": 136,
+    "documents": 64,
+    "windows_per_document": 2,
+    "hard_stop_before_document": 200,
+    "still_sealed_documents": "200--212",
+    "expected_source_clusters": 1,
+    "cross_source_generalization_identified": false
+  },
+  "candidates": {
+    "pairwise_ising_map_mask": 59,
+    "gibbs_magnetization_mask": 61,
+    "global_directional_control_mask": 47,
+    "cluster_medoid_feature_vectors": [
+      [
+        "0",
+        "0",
+        "0",
+        "0",
+        "1977",
+        "-4068"
+      ],
+      [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-6398",
+        "-4020"
+      ]
+    ],
+    "cluster_candidate_masks": [
+      47,
+      59
+    ],
+    "cluster_distance": "L1",
+    "cluster_tie_break": "cluster_zero",
+    "cluster_features": "six_Q32_singleton_contrasts_against_baseline"
+  },
+  "stable_low_order_rule": {
+    "character": 32,
+    "standard_parameter": "field_h",
+    "expected_direction": "negative",
+    "minimum_visible_documents": 32,
+    "minimum_directional_fraction": "3/4",
+    "aggregate_q20_q32_sign_agreement_required": true,
+    "inferential_role": "descriptive_replication_only"
+  },
+  "gibbs": {
+    "frozen_action_source": "proposal_Q20_quenched_document_average",
+    "frozen_fugacity": "1/2",
+    "descriptive_confirmation_grid": [
+      "1/4",
+      "1/2",
+      "3/4"
+    ],
+    "confirmation_reestimation_may_not_change_frozen_action": true
+  },
+  "inference": {
+    "primary_endpoints": [
+      "pairwise_ising_map_vs_baseline_q32_document_direction",
+      "gibbs_magnetization_vs_baseline_q32_document_direction",
+      "cluster_routed_vs_global_directional_q32_document_direction"
+    ],
+    "direction": "negative_contrast_is_improvement",
+    "per_endpoint_test": "one_sided_exact_binomial_sign_test_conditional_on_non_ties",
+    "multiplicity": "Holm_step_down",
+    "familywise_alpha": "1/20",
+    "support_rule": "Holm_reject_and_aggregate_Q32_contrast_negative",
+    "assumptions": [
+      "document_units_independent_or_exchangeable_for_the_sign_test",
+      "conditional_sign_symmetry_under_each_null",
+      "router_and_candidates_frozen_before_candidate_outcomes"
+    ]
+  },
+  "authorization": {
+    "compute_documents_136_199": true,
+    "compute_document_200_or_later": false,
+    "change_frozen_candidates_after_outcomes": false,
+    "optimizer_change": false,
+    "paid_scaling": false
+  }
+}
