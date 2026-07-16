@@ -1,0 +1,1040 @@
+{
+  "schema": "nsrl.solomonic_judgment_source_frame.v1",
+  "analysis_role": "prospective_pre_outcome_source_frame",
+  "source_selection_seed": "nsrl-m4-solomonic-source-selection-2026-07-15-v1",
+  "passage_sampling_seed": "nsrl-m4-solomonic-quartile-passages-2026-07-15-v1",
+  "parent_acquisition": {
+    "path": "data/raw/production-multifamily-exchange-v1/acquisition.json",
+    "sha256": "5058b0f21bbde1fbcb826d35e4d8e43b4d655a3c74312f0d66fa0943589ce96f"
+  },
+  "excluded_parent_frame": {
+    "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-source-frame.json",
+    "sha256": "21e60c4d47fa91bd458342ce8ebe865950d475c1101f778252153a1bb5781666"
+  },
+  "population": {
+    "families": [
+      "federal_register",
+      "rfc",
+      "science"
+    ],
+    "sources_per_family": {
+      "federal_register": 2,
+      "rfc": 2,
+      "science": 2
+    },
+    "source_unit": "one complete publication absent by source id and independence key from M18",
+    "intended_population": "the cached eligible Federal Register, RFC, and Europe PMC acquisition surfaces only",
+    "independence_design": "distinct most-specific agency, first-listed RFC author, or first-author/journal key"
+  },
+  "panel_sampling": {
+    "passages_per_source": 4,
+    "passage_bytes_before_normalization": 12288,
+    "strata": "four byte quartiles with one hash-selected nonoverlapping passage per quartile",
+    "model_windows_per_passage": 2,
+    "context_tokens": 64
+  },
+  "sources": [
+    {
+      "family": "federal_register",
+      "source_id": "federal-register-2025-21456",
+      "document_number": "2025-21456",
+      "title": "Medicare Program; Contract Year 2027 Policy and Technical Changes to the Medicare Advantage Program, Medicare Prescription Drug Benefit Program, and Medicare Cost Plan Program",
+      "creator": "Centers for Medicare & Medicaid Services",
+      "agency_slug": "centers-for-medicare-medicaid-services",
+      "publication_date": "2025-11-28",
+      "document_type": "Proposed Rule",
+      "page_count": 137,
+      "source_url": "https://www.federalregister.gov/documents/full_text/text/2025/11/28/2025-21456.txt",
+      "path": "data/raw/production-multifamily-exchange-v1/federal-register/2025-21456.txt",
+      "status": "cached",
+      "bytes": 982702,
+      "sha256": "15525a0abc520dd170318036e0a2ece3583c103da35a99aaf9ea877c6261e49b",
+      "cleaned_body_bytes": 970446,
+      "license_id": "LicenseRef-US-Government-Work",
+      "independence_key": "centers for medicare medicaid services",
+      "passages": [
+        {
+          "ordinal": 0,
+          "stratum": 1,
+          "stratum_byte_start": 0,
+          "stratum_byte_end": 242611,
+          "byte_offset": 32730,
+          "bytes": 12288,
+          "sha256": "25f976df2ea134cf292b7a9ff1329993847357c783b3099c30e0ed1531416b14"
+        },
+        {
+          "ordinal": 1,
+          "stratum": 2,
+          "stratum_byte_start": 242611,
+          "stratum_byte_end": 485223,
+          "byte_offset": 415114,
+          "bytes": 12288,
+          "sha256": "16cf53b60ad06fc54d39cd42a030306fb2b7abcdc85011ae110f67c31f73f32a"
+        },
+        {
+          "ordinal": 2,
+          "stratum": 3,
+          "stratum_byte_start": 485223,
+          "stratum_byte_end": 727834,
+          "byte_offset": 584361,
+          "bytes": 12288,
+          "sha256": "82a4ac4b2bdfa882b32eccde4cf7aeb21006c83502ad79a297c80e70f98cd39b"
+        },
+        {
+          "ordinal": 3,
+          "stratum": 4,
+          "stratum_byte_start": 727834,
+          "stratum_byte_end": 970446,
+          "byte_offset": 730423,
+          "bytes": 12288,
+          "sha256": "d313490b71251f2920937dc810a4b53315e6e0492be06a6d4686c40edfcfbfa0"
+        }
+      ]
+    },
+    {
+      "family": "federal_register",
+      "source_id": "federal-register-2025-23547",
+      "document_number": "2025-23547",
+      "title": "Community Reinvestment Act: Simplified Strategic Plan Process for Community Banks",
+      "creator": "Comptroller of the Currency",
+      "agency_slug": "comptroller-of-the-currency",
+      "publication_date": "2025-12-22",
+      "document_type": "Proposed Rule",
+      "page_count": 21,
+      "source_url": "https://www.federalregister.gov/documents/full_text/text/2025/12/22/2025-23547.txt",
+      "path": "data/raw/production-multifamily-exchange-v1/federal-register/2025-23547.txt",
+      "status": "downloaded",
+      "bytes": 171296,
+      "sha256": "31944b9b9ea843a5a509c40dcfbef1fb688987ee5fa356350ddd1907b99cb597",
+      "cleaned_body_bytes": 169314,
+      "license_id": "LicenseRef-US-Government-Work",
+      "independence_key": "comptroller of the currency",
+      "passages": [
+        {
+          "ordinal": 0,
+          "stratum": 1,
+          "stratum_byte_start": 0,
+          "stratum_byte_end": 42328,
+          "byte_offset": 21902,
+          "bytes": 12288,
+          "sha256": "32141f605729ae236f1eeb2b1b5ada9959defd423a23f9a349f8863fa6e23a35"
+        },
+        {
+          "ordinal": 1,
+          "stratum": 2,
+          "stratum_byte_start": 42328,
+          "stratum_byte_end": 84657,
+          "byte_offset": 64202,
+          "bytes": 12288,
+          "sha256": "9d79411643a8b3be61073cf631fb5f4e6a66559707c50509f75ca69d75a17475"
+        },
+        {
+          "ordinal": 2,
+          "stratum": 3,
+          "stratum_byte_start": 84657,
+          "stratum_byte_end": 126985,
+          "byte_offset": 100105,
+          "bytes": 12288,
+          "sha256": "49f6919d1ed57426f7cb7c56c36b7194176bfba5b86ed844d71d082e33cba576"
+        },
+        {
+          "ordinal": 3,
+          "stratum": 4,
+          "stratum_byte_start": 126985,
+          "stratum_byte_end": 169314,
+          "byte_offset": 145910,
+          "bytes": 12288,
+          "sha256": "3c7a33d41c378ef9dd20700b4981e63219cccd4f88b243f70f34c91bff0848ca"
+        }
+      ]
+    },
+    {
+      "family": "rfc",
+      "source_id": "rfc-2381",
+      "rfc_number": 2381,
+      "title": "Interoperation of Controlled-Load Service and Guaranteed Service with ATM",
+      "creator": "M. Garrett",
+      "page_count": 43,
+      "source_url": "https://www.rfc-editor.org/rfc/rfc2381.txt",
+      "path": "data/raw/production-multifamily-exchange-v1/rfc/rfc2381.txt",
+      "status": "cached",
+      "bytes": 107299,
+      "sha256": "dff8d740620cbc760353e4e96d99ca905e8e974680bc4a7b3cb6213dc2b5745d",
+      "cleaned_body_bytes": 107104,
+      "license_id": "LicenseRef-IETF-Trust-Legal-Provisions",
+      "independence_key": "m garrett",
+      "passages": [
+        {
+          "ordinal": 0,
+          "stratum": 1,
+          "stratum_byte_start": 0,
+          "stratum_byte_end": 26776,
+          "byte_offset": 12771,
+          "bytes": 12287,
+          "sha256": "2cc7d4e05d4c2c463d8c6dccbd895a39054b099fcc003ac65a7e2bf1b1fc36a9"
+        },
+        {
+          "ordinal": 1,
+          "stratum": 2,
+          "stratum_byte_start": 26776,
+          "stratum_byte_end": 53552,
+          "byte_offset": 36338,
+          "bytes": 12287,
+          "sha256": "ce10ea1e538961bbbf59806b535d8324ad8af3fbb8ac3abc52a24f36804be15f"
+        },
+        {
+          "ordinal": 2,
+          "stratum": 3,
+          "stratum_byte_start": 53552,
+          "stratum_byte_end": 80328,
+          "byte_offset": 64628,
+          "bytes": 12285,
+          "sha256": "9b28870ea0ca4dd202ed8b0dba2e928022b8a3647c5126089878a42294abe8eb"
+        },
+        {
+          "ordinal": 3,
+          "stratum": 4,
+          "stratum_byte_start": 80328,
+          "stratum_byte_end": 107104,
+          "byte_offset": 88943,
+          "bytes": 12288,
+          "sha256": "c096a8051319055611ba7669a1f82f0ae629a864cf8cbec7e4df1e590ee9ee64"
+        }
+      ]
+    },
+    {
+      "family": "rfc",
+      "source_id": "rfc-6346",
+      "rfc_number": 6346,
+      "title": "The Address plus Port (A+P) Approach to the IPv4 Address Shortage",
+      "creator": "R. Bush",
+      "page_count": 38,
+      "source_url": "https://www.rfc-editor.org/rfc/rfc6346.txt",
+      "path": "data/raw/production-multifamily-exchange-v1/rfc/rfc6346.txt",
+      "status": "cached",
+      "bytes": 89553,
+      "sha256": "0b84502e5a9edb44b7b691a0d349c688bccf25053f0f97ba23b0907b8209ad46",
+      "cleaned_body_bytes": 89329,
+      "license_id": "LicenseRef-IETF-Trust-Legal-Provisions",
+      "independence_key": "r bush",
+      "passages": [
+        {
+          "ordinal": 0,
+          "stratum": 1,
+          "stratum_byte_start": 0,
+          "stratum_byte_end": 22332,
+          "byte_offset": 6854,
+          "bytes": 12288,
+          "sha256": "9b96d02d588dda085cc145f13b01b73e5b0ada184f18af3d0a681221e6a5104e"
+        },
+        {
+          "ordinal": 1,
+          "stratum": 2,
+          "stratum_byte_start": 22332,
+          "stratum_byte_end": 44664,
+          "byte_offset": 25159,
+          "bytes": 12288,
+          "sha256": "3d7a4329a7cb109fa779b1e63d7bba328e4d1309b7102274a9cae530e44f1cd5"
+        },
+        {
+          "ordinal": 2,
+          "stratum": 3,
+          "stratum_byte_start": 44664,
+          "stratum_byte_end": 66996,
+          "byte_offset": 50063,
+          "bytes": 12281,
+          "sha256": "919d410c62d021e364f3b26adb67a1beda3b40ed2ab23bc2afe0ed8b5c762366"
+        },
+        {
+          "ordinal": 3,
+          "stratum": 4,
+          "stratum_byte_start": 66996,
+          "stratum_byte_end": 89329,
+          "byte_offset": 72840,
+          "bytes": 12283,
+          "sha256": "209527a6e12a96eb75a6d2fb7f2db7a0626f2b6086d99fcb22c6068fb30cb728"
+        }
+      ]
+    },
+    {
+      "family": "science",
+      "source_id": "europe-pmc-pmc11721786",
+      "pmcid": "PMC11721786",
+      "title": "Synthetic Approaches Toward Phosphorus-Containing BODIPY and Squaraine Dyes: Enhancing Versatility of Small-Molecule Fluorophores.",
+      "creator": "Favret JM",
+      "journal": "Molecules (Basel, Switzerland)",
+      "publication_date": "2024-12-31",
+      "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC11721786/fullTextXML",
+      "path": "data/raw/production-multifamily-exchange-v1/science/PMC11721786.xml",
+      "status": "cached",
+      "bytes": 308850,
+      "sha256": "19cdb5e1b8a5fe38ef978e152c1f8ef45ccb980741a1a949c186c9227cd552d4",
+      "cleaned_body_bytes": 67364,
+      "license_id": "cc by",
+      "license_excerpt": "Licensee MDPI, Basel, Switzerland. This article is an open access article distributed under the terms and conditions of the Creative Commons Attribution (CC BY) license ( https://creativecommons.org/licenses/by/4.0/ ).",
+      "independence_key": "favret jm molecules basel switzerland",
+      "passages": [
+        {
+          "ordinal": 0,
+          "stratum": 1,
+          "stratum_byte_start": 0,
+          "stratum_byte_end": 16841,
+          "byte_offset": 948,
+          "bytes": 12288,
+          "sha256": "7f2ffd7c7d48ccf8085b0e7b6d5ccf3a6df1e2ff8d4bbb6b1dfea70f2134193c"
+        },
+        {
+          "ordinal": 1,
+          "stratum": 2,
+          "stratum_byte_start": 16841,
+          "stratum_byte_end": 33682,
+          "byte_offset": 20255,
+          "bytes": 12288,
+          "sha256": "de2c3c11aefe2b268b23f6b8be97100fd620a5da1bc1d00a9811b058dd734858"
+        },
+        {
+          "ordinal": 2,
+          "stratum": 3,
+          "stratum_byte_start": 33682,
+          "stratum_byte_end": 50523,
+          "byte_offset": 36819,
+          "bytes": 12288,
+          "sha256": "871391c5a4191b4c3555eb2c55b37764682871fa783959e23a9e6c9f8c6bf018"
+        },
+        {
+          "ordinal": 3,
+          "stratum": 4,
+          "stratum_byte_start": 50523,
+          "stratum_byte_end": 67364,
+          "byte_offset": 50674,
+          "bytes": 12287,
+          "sha256": "b7ac890b99828133833dea544a21f677cd6e33ba93e08eeb8e42f6f16e72832a"
+        }
+      ]
+    },
+    {
+      "family": "science",
+      "source_id": "europe-pmc-pmc11760334",
+      "pmcid": "PMC11760334",
+      "title": "Reprogramming Dysfunctional Dendritic Cells by a Versatile Catalytic Dual Oxide Antigen-Captured Nanosponge for Remotely Enhancing Lung Metastasis Immunotherapy.",
+      "creator": "Chiang MR",
+      "journal": "ACS nano",
+      "publication_date": "2024-12-31",
+      "source_url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC11760334/fullTextXML",
+      "path": "data/raw/production-multifamily-exchange-v1/science/PMC11760334.xml",
+      "status": "cached",
+      "bytes": 185021,
+      "sha256": "faa7a9279c1329dafd2f37e3f14bec6dfa536299b8e747a07b925d07aa0485b4",
+      "cleaned_body_bytes": 68859,
+      "license_id": "cc by",
+      "license_excerpt": "Permits the broadest form of re-use including for commercial purposes, provided that author attribution and integrity are maintained ( https://creativecommons.org/licenses/by/4.0/ ).",
+      "independence_key": "chiang mr acs nano",
+      "passages": [
+        {
+          "ordinal": 0,
+          "stratum": 1,
+          "stratum_byte_start": 0,
+          "stratum_byte_end": 17214,
+          "byte_offset": 4588,
+          "bytes": 12287,
+          "sha256": "545ac07278a7e9db4a506a7293760ffb8cae29c06d294bd8fb4a484f6789bc59"
+        },
+        {
+          "ordinal": 1,
+          "stratum": 2,
+          "stratum_byte_start": 17214,
+          "stratum_byte_end": 34429,
+          "byte_offset": 18341,
+          "bytes": 12288,
+          "sha256": "37efbd25fbda57f8fb5c8764647eb3cc4f6611e21baeb9b004da9b48d8db68d4"
+        },
+        {
+          "ordinal": 2,
+          "stratum": 3,
+          "stratum_byte_start": 34429,
+          "stratum_byte_end": 51644,
+          "byte_offset": 37217,
+          "bytes": 12288,
+          "sha256": "c1a235970084fe3491dd02972eeb2764a1aefb96046f0ed9a97f91934e4e1cb6"
+        },
+        {
+          "ordinal": 3,
+          "stratum": 4,
+          "stratum_byte_start": 51644,
+          "stratum_byte_end": 68859,
+          "byte_offset": 52624,
+          "bytes": 12287,
+          "sha256": "016fd32b31447a415c13f5b2a2135b36b9ae3dff412c8a081fce95940a7bd907"
+        }
+      ]
+    }
+  ],
+  "execution": {
+    "corpus_path": "data/processed/solomonic-judgment-v1/evaluation.txt",
+    "corpus_sha256": "37d0fc98a4645bf8ffe9d46a1cc1f6259bbe056fb5f3db4d614e9236eb15d929",
+    "index_path": "data/processed/solomonic-judgment-v1/evaluation.index.tsv",
+    "index_sha256": "1c4d1f6c7b423f276f2e65065c9602264cbc45df1aafb16300c85148e33171f9",
+    "document_start": 8,
+    "atomic_documents": 64,
+    "evaluation_documents": 24,
+    "excluded_padding_documents": 40,
+    "hard_stop_before_document": 72,
+    "document_bindings": [
+      {
+        "document": 0,
+        "document_id": "federal-register-2025-21456-passage-0:0:25f976df2ea134cf",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 0,
+        "family": "federal_register",
+        "analysis_role": "implementation_prefix_sentinel",
+        "sha256": "25f976df2ea134cf292b7a9ff1329993847357c783b3099c30e0ed1531416b14"
+      },
+      {
+        "document": 1,
+        "document_id": "federal-register-2025-23547-passage-1:1:9d79411643a8b3be",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 1,
+        "family": "federal_register",
+        "analysis_role": "implementation_prefix_sentinel",
+        "sha256": "9d79411643a8b3be61073cf631fb5f4e6a66559707c50509f75ca69d75a17475"
+      },
+      {
+        "document": 2,
+        "document_id": "rfc-2381-passage-2:2:9b28870ea0ca4dd2",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 2,
+        "family": "rfc",
+        "analysis_role": "implementation_prefix_sentinel",
+        "sha256": "9b28870ea0ca4dd202ed8b0dba2e928022b8a3647c5126089878a42294abe8eb"
+      },
+      {
+        "document": 3,
+        "document_id": "rfc-6346-passage-3:3:209527a6e12a96eb",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 3,
+        "family": "rfc",
+        "analysis_role": "implementation_prefix_sentinel",
+        "sha256": "209527a6e12a96eb75a6d2fb7f2db7a0626f2b6086d99fcb22c6068fb30cb728"
+      },
+      {
+        "document": 4,
+        "document_id": "europe-pmc-pmc11721786-passage-0:0:7f2ffd7c7d48ccf8",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 0,
+        "family": "science",
+        "analysis_role": "implementation_prefix_sentinel",
+        "sha256": "7f2ffd7c7d48ccf8085b0e7b6d5ccf3a6df1e2ff8d4bbb6b1dfea70f2134193c"
+      },
+      {
+        "document": 5,
+        "document_id": "europe-pmc-pmc11760334-passage-1:1:37efbd25fbda57f8",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 1,
+        "family": "science",
+        "analysis_role": "implementation_prefix_sentinel",
+        "sha256": "37efbd25fbda57f8fb5c8764647eb3cc4f6611e21baeb9b004da9b48d8db68d4"
+      },
+      {
+        "document": 6,
+        "document_id": "federal-register-2025-21456-passage-2:2:82a4ac4b2bdfa882",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 2,
+        "family": "federal_register",
+        "analysis_role": "implementation_prefix_sentinel",
+        "sha256": "82a4ac4b2bdfa882b32eccde4cf7aeb21006c83502ad79a297c80e70f98cd39b"
+      },
+      {
+        "document": 7,
+        "document_id": "federal-register-2025-23547-passage-3:3:3c7a33d41c378ef9",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 3,
+        "family": "federal_register",
+        "analysis_role": "implementation_prefix_sentinel",
+        "sha256": "3c7a33d41c378ef9dd20700b4981e63219cccd4f88b243f70f34c91bff0848ca"
+      },
+      {
+        "document": 8,
+        "document_id": "federal-register-2025-21456-passage-0:0:25f976df2ea134cf",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 0,
+        "family": "federal_register",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "25f976df2ea134cf292b7a9ff1329993847357c783b3099c30e0ed1531416b14"
+      },
+      {
+        "document": 9,
+        "document_id": "federal-register-2025-21456-passage-1:1:16cf53b60ad06fc5",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 1,
+        "family": "federal_register",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "16cf53b60ad06fc54d39cd42a030306fb2b7abcdc85011ae110f67c31f73f32a"
+      },
+      {
+        "document": 10,
+        "document_id": "federal-register-2025-21456-passage-2:2:82a4ac4b2bdfa882",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 2,
+        "family": "federal_register",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "82a4ac4b2bdfa882b32eccde4cf7aeb21006c83502ad79a297c80e70f98cd39b"
+      },
+      {
+        "document": 11,
+        "document_id": "federal-register-2025-21456-passage-3:3:d313490b71251f29",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 3,
+        "family": "federal_register",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "d313490b71251f2920937dc810a4b53315e6e0492be06a6d4686c40edfcfbfa0"
+      },
+      {
+        "document": 12,
+        "document_id": "federal-register-2025-23547-passage-0:0:32141f605729ae23",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 0,
+        "family": "federal_register",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "32141f605729ae236f1eeb2b1b5ada9959defd423a23f9a349f8863fa6e23a35"
+      },
+      {
+        "document": 13,
+        "document_id": "federal-register-2025-23547-passage-1:1:9d79411643a8b3be",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 1,
+        "family": "federal_register",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "9d79411643a8b3be61073cf631fb5f4e6a66559707c50509f75ca69d75a17475"
+      },
+      {
+        "document": 14,
+        "document_id": "federal-register-2025-23547-passage-2:2:49f6919d1ed57426",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 2,
+        "family": "federal_register",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "49f6919d1ed57426f7cb7c56c36b7194176bfba5b86ed844d71d082e33cba576"
+      },
+      {
+        "document": 15,
+        "document_id": "federal-register-2025-23547-passage-3:3:3c7a33d41c378ef9",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 3,
+        "family": "federal_register",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "3c7a33d41c378ef9dd20700b4981e63219cccd4f88b243f70f34c91bff0848ca"
+      },
+      {
+        "document": 16,
+        "document_id": "rfc-2381-passage-0:0:2cc7d4e05d4c2c46",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 0,
+        "family": "rfc",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "2cc7d4e05d4c2c463d8c6dccbd895a39054b099fcc003ac65a7e2bf1b1fc36a9"
+      },
+      {
+        "document": 17,
+        "document_id": "rfc-2381-passage-1:1:ce10ea1e538961bb",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 1,
+        "family": "rfc",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "ce10ea1e538961bbbf59806b535d8324ad8af3fbb8ac3abc52a24f36804be15f"
+      },
+      {
+        "document": 18,
+        "document_id": "rfc-2381-passage-2:2:9b28870ea0ca4dd2",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 2,
+        "family": "rfc",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "9b28870ea0ca4dd202ed8b0dba2e928022b8a3647c5126089878a42294abe8eb"
+      },
+      {
+        "document": 19,
+        "document_id": "rfc-2381-passage-3:3:c096a80513190556",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 3,
+        "family": "rfc",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "c096a8051319055611ba7669a1f82f0ae629a864cf8cbec7e4df1e590ee9ee64"
+      },
+      {
+        "document": 20,
+        "document_id": "rfc-6346-passage-0:0:9b96d02d588dda08",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 0,
+        "family": "rfc",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "9b96d02d588dda085cc145f13b01b73e5b0ada184f18af3d0a681221e6a5104e"
+      },
+      {
+        "document": 21,
+        "document_id": "rfc-6346-passage-1:1:3d7a4329a7cb109f",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 1,
+        "family": "rfc",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "3d7a4329a7cb109fa779b1e63d7bba328e4d1309b7102274a9cae530e44f1cd5"
+      },
+      {
+        "document": 22,
+        "document_id": "rfc-6346-passage-2:2:919d410c62d021e3",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 2,
+        "family": "rfc",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "919d410c62d021e364f3b26adb67a1beda3b40ed2ab23bc2afe0ed8b5c762366"
+      },
+      {
+        "document": 23,
+        "document_id": "rfc-6346-passage-3:3:209527a6e12a96eb",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 3,
+        "family": "rfc",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "209527a6e12a96eb75a6d2fb7f2db7a0626f2b6086d99fcb22c6068fb30cb728"
+      },
+      {
+        "document": 24,
+        "document_id": "europe-pmc-pmc11721786-passage-0:0:7f2ffd7c7d48ccf8",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 0,
+        "family": "science",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "7f2ffd7c7d48ccf8085b0e7b6d5ccf3a6df1e2ff8d4bbb6b1dfea70f2134193c"
+      },
+      {
+        "document": 25,
+        "document_id": "europe-pmc-pmc11721786-passage-1:1:de2c3c11aefe2b26",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 1,
+        "family": "science",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "de2c3c11aefe2b268b23f6b8be97100fd620a5da1bc1d00a9811b058dd734858"
+      },
+      {
+        "document": 26,
+        "document_id": "europe-pmc-pmc11721786-passage-2:2:871391c5a4191b4c",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 2,
+        "family": "science",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "871391c5a4191b4c3555eb2c55b37764682871fa783959e23a9e6c9f8c6bf018"
+      },
+      {
+        "document": 27,
+        "document_id": "europe-pmc-pmc11721786-passage-3:3:b7ac890b99828133",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 3,
+        "family": "science",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "b7ac890b99828133833dea544a21f677cd6e33ba93e08eeb8e42f6f16e72832a"
+      },
+      {
+        "document": 28,
+        "document_id": "europe-pmc-pmc11760334-passage-0:0:545ac07278a7e9db",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 0,
+        "family": "science",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "545ac07278a7e9db4a506a7293760ffb8cae29c06d294bd8fb4a484f6789bc59"
+      },
+      {
+        "document": 29,
+        "document_id": "europe-pmc-pmc11760334-passage-1:1:37efbd25fbda57f8",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 1,
+        "family": "science",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "37efbd25fbda57f8fb5c8764647eb3cc4f6611e21baeb9b004da9b48d8db68d4"
+      },
+      {
+        "document": 30,
+        "document_id": "europe-pmc-pmc11760334-passage-2:2:c1a235970084fe34",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 2,
+        "family": "science",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "c1a235970084fe3491dd02972eeb2764a1aefb96046f0ed9a97f91934e4e1cb6"
+      },
+      {
+        "document": 31,
+        "document_id": "europe-pmc-pmc11760334-passage-3:3:016fd32b31447a41",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 3,
+        "family": "science",
+        "analysis_role": "untouched_evaluation",
+        "sha256": "016fd32b31447a415c13f5b2a2135b36b9ae3dff412c8a081fce95940a7bd907"
+      },
+      {
+        "document": 32,
+        "document_id": "federal-register-2025-21456-passage-1:1:16cf53b60ad06fc5",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 1,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "16cf53b60ad06fc54d39cd42a030306fb2b7abcdc85011ae110f67c31f73f32a"
+      },
+      {
+        "document": 33,
+        "document_id": "federal-register-2025-23547-passage-2:2:49f6919d1ed57426",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 2,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "49f6919d1ed57426f7cb7c56c36b7194176bfba5b86ed844d71d082e33cba576"
+      },
+      {
+        "document": 34,
+        "document_id": "rfc-2381-passage-3:3:c096a80513190556",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 3,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "c096a8051319055611ba7669a1f82f0ae629a864cf8cbec7e4df1e590ee9ee64"
+      },
+      {
+        "document": 35,
+        "document_id": "rfc-6346-passage-0:0:9b96d02d588dda08",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 0,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "9b96d02d588dda085cc145f13b01b73e5b0ada184f18af3d0a681221e6a5104e"
+      },
+      {
+        "document": 36,
+        "document_id": "europe-pmc-pmc11721786-passage-1:1:de2c3c11aefe2b26",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 1,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "de2c3c11aefe2b268b23f6b8be97100fd620a5da1bc1d00a9811b058dd734858"
+      },
+      {
+        "document": 37,
+        "document_id": "europe-pmc-pmc11760334-passage-2:2:c1a235970084fe34",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 2,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "c1a235970084fe3491dd02972eeb2764a1aefb96046f0ed9a97f91934e4e1cb6"
+      },
+      {
+        "document": 38,
+        "document_id": "federal-register-2025-21456-passage-3:3:d313490b71251f29",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 3,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "d313490b71251f2920937dc810a4b53315e6e0492be06a6d4686c40edfcfbfa0"
+      },
+      {
+        "document": 39,
+        "document_id": "federal-register-2025-23547-passage-0:0:32141f605729ae23",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 0,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "32141f605729ae236f1eeb2b1b5ada9959defd423a23f9a349f8863fa6e23a35"
+      },
+      {
+        "document": 40,
+        "document_id": "rfc-2381-passage-1:1:ce10ea1e538961bb",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 1,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "ce10ea1e538961bbbf59806b535d8324ad8af3fbb8ac3abc52a24f36804be15f"
+      },
+      {
+        "document": 41,
+        "document_id": "rfc-6346-passage-2:2:919d410c62d021e3",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 2,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "919d410c62d021e364f3b26adb67a1beda3b40ed2ab23bc2afe0ed8b5c762366"
+      },
+      {
+        "document": 42,
+        "document_id": "europe-pmc-pmc11721786-passage-3:3:b7ac890b99828133",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 3,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "b7ac890b99828133833dea544a21f677cd6e33ba93e08eeb8e42f6f16e72832a"
+      },
+      {
+        "document": 43,
+        "document_id": "europe-pmc-pmc11760334-passage-0:0:545ac07278a7e9db",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 0,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "545ac07278a7e9db4a506a7293760ffb8cae29c06d294bd8fb4a484f6789bc59"
+      },
+      {
+        "document": 44,
+        "document_id": "federal-register-2025-21456-passage-1:1:16cf53b60ad06fc5",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 1,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "16cf53b60ad06fc54d39cd42a030306fb2b7abcdc85011ae110f67c31f73f32a"
+      },
+      {
+        "document": 45,
+        "document_id": "federal-register-2025-23547-passage-2:2:49f6919d1ed57426",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 2,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "49f6919d1ed57426f7cb7c56c36b7194176bfba5b86ed844d71d082e33cba576"
+      },
+      {
+        "document": 46,
+        "document_id": "rfc-2381-passage-3:3:c096a80513190556",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 3,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "c096a8051319055611ba7669a1f82f0ae629a864cf8cbec7e4df1e590ee9ee64"
+      },
+      {
+        "document": 47,
+        "document_id": "rfc-6346-passage-0:0:9b96d02d588dda08",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 0,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "9b96d02d588dda085cc145f13b01b73e5b0ada184f18af3d0a681221e6a5104e"
+      },
+      {
+        "document": 48,
+        "document_id": "europe-pmc-pmc11721786-passage-1:1:de2c3c11aefe2b26",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 1,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "de2c3c11aefe2b268b23f6b8be97100fd620a5da1bc1d00a9811b058dd734858"
+      },
+      {
+        "document": 49,
+        "document_id": "europe-pmc-pmc11760334-passage-2:2:c1a235970084fe34",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 2,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "c1a235970084fe3491dd02972eeb2764a1aefb96046f0ed9a97f91934e4e1cb6"
+      },
+      {
+        "document": 50,
+        "document_id": "federal-register-2025-21456-passage-3:3:d313490b71251f29",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 3,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "d313490b71251f2920937dc810a4b53315e6e0492be06a6d4686c40edfcfbfa0"
+      },
+      {
+        "document": 51,
+        "document_id": "federal-register-2025-23547-passage-0:0:32141f605729ae23",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 0,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "32141f605729ae236f1eeb2b1b5ada9959defd423a23f9a349f8863fa6e23a35"
+      },
+      {
+        "document": 52,
+        "document_id": "rfc-2381-passage-1:1:ce10ea1e538961bb",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 1,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "ce10ea1e538961bbbf59806b535d8324ad8af3fbb8ac3abc52a24f36804be15f"
+      },
+      {
+        "document": 53,
+        "document_id": "rfc-6346-passage-2:2:919d410c62d021e3",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 2,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "919d410c62d021e364f3b26adb67a1beda3b40ed2ab23bc2afe0ed8b5c762366"
+      },
+      {
+        "document": 54,
+        "document_id": "europe-pmc-pmc11721786-passage-3:3:b7ac890b99828133",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 3,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "b7ac890b99828133833dea544a21f677cd6e33ba93e08eeb8e42f6f16e72832a"
+      },
+      {
+        "document": 55,
+        "document_id": "europe-pmc-pmc11760334-passage-0:0:545ac07278a7e9db",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 0,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "545ac07278a7e9db4a506a7293760ffb8cae29c06d294bd8fb4a484f6789bc59"
+      },
+      {
+        "document": 56,
+        "document_id": "federal-register-2025-21456-passage-1:1:16cf53b60ad06fc5",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 1,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "16cf53b60ad06fc54d39cd42a030306fb2b7abcdc85011ae110f67c31f73f32a"
+      },
+      {
+        "document": 57,
+        "document_id": "federal-register-2025-23547-passage-2:2:49f6919d1ed57426",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 2,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "49f6919d1ed57426f7cb7c56c36b7194176bfba5b86ed844d71d082e33cba576"
+      },
+      {
+        "document": 58,
+        "document_id": "rfc-2381-passage-3:3:c096a80513190556",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 3,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "c096a8051319055611ba7669a1f82f0ae629a864cf8cbec7e4df1e590ee9ee64"
+      },
+      {
+        "document": 59,
+        "document_id": "rfc-6346-passage-0:0:9b96d02d588dda08",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 0,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "9b96d02d588dda085cc145f13b01b73e5b0ada184f18af3d0a681221e6a5104e"
+      },
+      {
+        "document": 60,
+        "document_id": "europe-pmc-pmc11721786-passage-1:1:de2c3c11aefe2b26",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 1,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "de2c3c11aefe2b268b23f6b8be97100fd620a5da1bc1d00a9811b058dd734858"
+      },
+      {
+        "document": 61,
+        "document_id": "europe-pmc-pmc11760334-passage-2:2:c1a235970084fe34",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 2,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "c1a235970084fe3491dd02972eeb2764a1aefb96046f0ed9a97f91934e4e1cb6"
+      },
+      {
+        "document": 62,
+        "document_id": "federal-register-2025-21456-passage-3:3:d313490b71251f29",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 3,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "d313490b71251f2920937dc810a4b53315e6e0492be06a6d4686c40edfcfbfa0"
+      },
+      {
+        "document": 63,
+        "document_id": "federal-register-2025-23547-passage-0:0:32141f605729ae23",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 0,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "32141f605729ae236f1eeb2b1b5ada9959defd423a23f9a349f8863fa6e23a35"
+      },
+      {
+        "document": 64,
+        "document_id": "rfc-2381-passage-1:1:ce10ea1e538961bb",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 1,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "ce10ea1e538961bbbf59806b535d8324ad8af3fbb8ac3abc52a24f36804be15f"
+      },
+      {
+        "document": 65,
+        "document_id": "rfc-6346-passage-2:2:919d410c62d021e3",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 2,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "919d410c62d021e364f3b26adb67a1beda3b40ed2ab23bc2afe0ed8b5c762366"
+      },
+      {
+        "document": 66,
+        "document_id": "europe-pmc-pmc11721786-passage-3:3:b7ac890b99828133",
+        "source_id": "europe-pmc-pmc11721786",
+        "passage_ordinal": 3,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "b7ac890b99828133833dea544a21f677cd6e33ba93e08eeb8e42f6f16e72832a"
+      },
+      {
+        "document": 67,
+        "document_id": "europe-pmc-pmc11760334-passage-0:0:545ac07278a7e9db",
+        "source_id": "europe-pmc-pmc11760334",
+        "passage_ordinal": 0,
+        "family": "science",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "545ac07278a7e9db4a506a7293760ffb8cae29c06d294bd8fb4a484f6789bc59"
+      },
+      {
+        "document": 68,
+        "document_id": "federal-register-2025-21456-passage-1:1:16cf53b60ad06fc5",
+        "source_id": "federal-register-2025-21456",
+        "passage_ordinal": 1,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "16cf53b60ad06fc54d39cd42a030306fb2b7abcdc85011ae110f67c31f73f32a"
+      },
+      {
+        "document": 69,
+        "document_id": "federal-register-2025-23547-passage-2:2:49f6919d1ed57426",
+        "source_id": "federal-register-2025-23547",
+        "passage_ordinal": 2,
+        "family": "federal_register",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "49f6919d1ed57426f7cb7c56c36b7194176bfba5b86ed844d71d082e33cba576"
+      },
+      {
+        "document": 70,
+        "document_id": "rfc-2381-passage-3:3:c096a80513190556",
+        "source_id": "rfc-2381",
+        "passage_ordinal": 3,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "c096a8051319055611ba7669a1f82f0ae629a864cf8cbec7e4df1e590ee9ee64"
+      },
+      {
+        "document": 71,
+        "document_id": "rfc-6346-passage-0:0:9b96d02d588dda08",
+        "source_id": "rfc-6346",
+        "passage_ordinal": 0,
+        "family": "rfc",
+        "analysis_role": "implementation_padding_excluded",
+        "sha256": "9b96d02d588dda085cc145f13b01b73e5b0ada184f18af3d0a681221e6a5104e"
+      }
+    ]
+  },
+  "outcome_firewall": {
+    "action_cube_outcomes_read": false,
+    "selected_sources_have_no_prior_action_cube_outcome_in_m18": true,
+    "original_gutenberg_fitting_frame_used": false,
+    "documents_200_212_read": false
+  },
+  "frame_fingerprint_sha256": "74af79f9b337b36fbcb4bf3b8687a43d9bf94ea24dfaaf80643be5fc33de4ffc"
+}

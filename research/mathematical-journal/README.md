@@ -90,6 +90,11 @@ not turn an empirical conjecture into a theorem.
 | `P_u` | frozen document panel sampled from source unit `u` |
 | `A_u` | simultaneous one-sided conformal score for calibration unit `u` |
 | `Q_alpha` | split-conformal upper correction at marginal error level `alpha` |
+| `J_t` | formal evidence-bound judgment record at sequential invocation `t` |
+| `E_t` | unsafe-action e-process after source-panel round `t` |
+| `S_K` | states reachable after at most `K` accepted persistent physical actions |
+| `epsilon_t` | predeclared marginal error spend for fresh source-panel round `t` |
+| `G_r^+` | cumulative positive exact regret through source-panel prefix `r` |
 | `m_T` | maximum number of residual Walsh characters disagreeing on a vertex pair |
 | `c_q(r)` | integer-valued Ramanujan sum of exact period `q` at phase `r` |
 | `U` | explicitly declared set of admissible control sequences |
@@ -120,6 +125,8 @@ representations only when needed; for example, `p^(23)` is a Q23 probability.
 | [MJ-2026-07-15-16](MJ-2026-07-15-16-conformal-conditional-exchange.md) | Conformal certificates for conditional exchange | Finite-sample unsafe-action theorem established; source-level prospective validation remains open |
 | [MJ-2026-07-15-17](MJ-2026-07-15-17-prospective-cross-source-exchange.md) | Prospective cross-source conditional exchange | Checked verdict supported on frozen 71-source frame with 16/16 coverage, 5/16 firing, 0/16 unsafe action, and negative regret; vacuity is inconclusive |
 | [MJ-2026-07-15-18](MJ-2026-07-15-18-multifamily-multipassage-exchange.md) | Multi-family, multi-passage conditional exchange | Overall coverage inconclusive with 14/16 panels covered; 12/64 passages fire across three families, all favorable; Federal Register and RFC promote locally, Gutenberg is withheld, science abstains |
+| [MJ-2026-07-15-19](MJ-2026-07-15-19-solomonic-judgment-calculus.md) | Solomonic judgment calculus | Exact six-source record has 8/24 favorable firings and negative regret in three families; sequential e-process interpretation is superseded by MJ-20; occult hash parity falsified |
+| [MJ-2026-07-15-20](MJ-2026-07-15-20-exchangeable-adaptive-composition.md) | Exchangeable adaptive composition and its finite-sample price | MJ-19 conditional bridge falsified; bounded six-panel persistent composition theorem established; fresh-source optimizer experiment preregistered, not executed |
 
 ## Entry template
 

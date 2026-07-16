@@ -79,6 +79,11 @@
         "unsafe": {"type": "boolean"}
       }
     },
+    "audit": {
+      "type": "object",
+      "description": "Post-selection replay fields; these are never controller inputs.",
+      "additionalProperties": true
+    },
     "falsifier": {"$ref": "#/$defs/falsifier"},
     "provenance": {
       "type": "array",

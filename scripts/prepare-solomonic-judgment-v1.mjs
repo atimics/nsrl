@@ -16,7 +16,11 @@ const framePath = process.argv[5]
 const FAMILIES = ["federal_register", "rfc", "science"];
 const SOURCE_SELECTION_SEED = "nsrl-m4-solomonic-source-selection-2026-07-15-v1";
 const PASSAGE_SEED = "nsrl-m4-solomonic-quartile-passages-2026-07-15-v1";
-const SOURCES_PER_FAMILY = 4;
+const SOURCES_PER_FAMILY = {
+  federal_register: 2,
+  rfc: 2,
+  science: 2,
+};
 const PASSAGES_PER_SOURCE = 4;
 const PASSAGE_BYTES = 12_288;
 const MINIMUM_CLEANED_BYTES = 65_536;
@@ -115,8 +119,9 @@ for (const family of FAMILIES) {
     }).sort((left, right) => shaKey(
       SOURCE_SELECTION_SEED, family, left.source_id, left.sha256).localeCompare(shaKey(
       SOURCE_SELECTION_SEED, family, right.source_id, right.sha256)));
-  assert(eligible.length >= SOURCES_PER_FAMILY, `${family} has too few untouched sources`);
-  const chosen = eligible.slice(0, SOURCES_PER_FAMILY);
+  const target = SOURCES_PER_FAMILY[family];
+  assert(eligible.length >= target, `${family} has too few untouched sources`);
+  const chosen = eligible.slice(0, target);
   assert(new Set(chosen.map((source) => source.independence_key)).size === chosen.length,
     `${family} selected independence keys repeat`);
   for (const record of chosen) {
@@ -125,7 +130,7 @@ for (const family of FAMILIES) {
     selectedSources.push({...record, passages});
   }
 }
-assert(selectedSources.length === FAMILIES.length * SOURCES_PER_FAMILY,
+assert(selectedSources.length === Object.values(SOURCES_PER_FAMILY).reduce((sum, value) => sum + value, 0),
   "wrong untouched source count");
 
 const orderedSources = selectedSources.sort((left, right) => left.family.localeCompare(right.family)
@@ -165,7 +170,8 @@ for (const document of implementationDocuments) {
   offset += separator.length;
   corpusParts.push(separator, document.content);
   const digest = sha256(document.content);
-  const documentId = `${document.source_id}-passage-${document.passage_ordinal}:${digest.slice(0, 16)}`;
+  const documentId = `${document.source_id}-passage-${document.passage_ordinal}`
+    + `:${document.passage_ordinal}:${digest.slice(0, 16)}`;
   indexRows.push(["nsrl.production_corpus_record.v1", "dev", documentId, offset,
     document.content.length, fnv64(document.content), digest].join("\t"));
   documentBindings.push({

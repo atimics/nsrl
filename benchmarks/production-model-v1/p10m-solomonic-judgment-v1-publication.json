@@ -1,0 +1,71 @@
+{
+  "schema": "nsrl.solomonic_judgment_publication.v1",
+  "publication_contract": {
+    "allowed_statuses": [
+      "supported",
+      "falsified",
+      "inconclusive"
+    ],
+    "fail_closed_on_unknown_status": true
+  },
+  "source_sha256": {
+    "contract": "47c97f43a48f87cdefd2cf68f5cd4e92a5172ac6187f93487f0b7e427095c9b1",
+    "result": "d88e07cd7919c001a551436a95fcf24b70f01ec64746a0338037763b70f49aa0"
+  },
+  "verdict": {
+    "status": "supported",
+    "supported": true,
+    "falsified": false,
+    "inconclusive": false,
+    "pass_conditions": {
+      "controller_fires_nonvacuously": true,
+      "heldout_signed_regret_beats_always_abstain": true,
+      "positive_regret_inside_preregistered_95_bound": true,
+      "transfers_across_more_than_one_source_family": true,
+      "conformal_source_envelope_support": true,
+      "negative_regret_in_every_firing_family": true,
+      "symbolic_features_receive_no_exemption": true
+    },
+    "hard_falsifiers": {
+      "unsafe_e_process_boundary_crossed": false,
+      "positive_regret_boundary_crossed": false,
+      "coverage_rejection_boundary_crossed": false,
+      "nonnegative_signed_regret_after_firing": false,
+      "nonnegative_regret_in_a_firing_family": false,
+      "symbolic_exemption_detected": false
+    }
+  },
+  "claims": [
+    {
+      "id": "sequential_evidence_bound_judgment_on_frozen_frame",
+      "status": "supported",
+      "scope": "three source-specialist faculties plus abstention on six untouched four-passage source panels",
+      "falsifier": "any hard falsifier or failure of the frozen nonvacuity, signed-regret, positive-regret, transfer, coverage, or no-exemption gate"
+    },
+    {
+      "id": "occult_hash_parity_predictive_feature",
+      "status": "falsified",
+      "scope": "frozen SHA-256 parity correspondence only",
+      "falsifier": "failure to compress calibration signs by at least log2(20) bits, or any ordinary held-out safety/value falsifier if activated"
+    }
+  ],
+  "evidence": {
+    "fired_passages": 8,
+    "signed_regret_q32": "-52381",
+    "positive_regret_q32": "0",
+    "positive_regret_95_bound_q32": "4123168604160",
+    "transfer_families": [
+      "federal_register",
+      "rfc",
+      "science"
+    ],
+    "source_envelope_uncovered": 0,
+    "occult_compression_net_gain_bits": "-4.098331500198",
+    "occult_activated": false
+  },
+  "authorization": {
+    "universal_wisdom_claimed": false,
+    "optimizer_promotion_authorized": false,
+    "paid_scaling_authorized": false
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "schema": "nsrl.solomonic_judgment_contract.v1",
+  "analysis_role": "prospective_pre_outcome",
+  "frozen_at": "2026-07-15",
+  "question": "Can an adaptive evidence-bound controller select among three source-specialist faculties or abstain while preserving a 95% unsafe-regret boundary?",
+  "bindings": {
+    "source_frame": {
+      "path": "benchmarks/production-model-v1/p10m-solomonic-judgment-v1-source-frame.json",
+      "sha256": "1b12ab86fffa4457680f75f623f3a13bc7202fd6512d99b0577df62aaeb45c56"
+    },
+    "structure_contract": {
+      "path": "benchmarks/production-model-v1/p10m-solomonic-judgment-v1-structure-contract.json",
+      "sha256": "2dfd600d519a9c9bd27edd9506b9094a00157dab9c92869f9b7fe4b1ded3fa48"
+    },
+    "predictor": {
+      "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-predictor.json",
+      "sha256": "42744fb0a7bbd70b254d385d7717f586905af0a90ae4784b201ce2c6fbcea078"
+    },
+    "parent_result": {
+      "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-result.json",
+      "sha256": "1963d8288fc18624687a239f8f6099576630c2d5ab1ff4543b3f422f3b7095c7"
+    },
+    "judgment_record_schema": {
+      "path": "protocol/judgment-record-v1.schema.json",
+      "sha256": "2157ff8654af04ab456b81912f9b9d98533919e79eb09a8c13f0e081441e8ea6"
+    },
+    "preparer": {
+      "path": "scripts/prepare-solomonic-judgment-v1.mjs",
+      "sha256": "36478e869dd11b939c7d0cea9a3cd1b82e492e95c56bbc5b092dd9322a406f89"
+    },
+    "freezer": {
+      "path": "scripts/freeze-solomonic-judgment-v1.mjs",
+      "sha256": "ae728c72263bbe4f772c9ce5a8be729796aed1ded44db96b8c2fcee6a53642c0"
+    },
+    "analyzer": {
+      "path": "scripts/analyze-solomonic-judgment-v1.mjs",
+      "sha256": "b7d9d3e70b1ba00fced23ae6a32ffabf34497c081570a3f26aebbf48622f97a7"
+    },
+    "checker": {
+      "path": "scripts/check-solomonic-judgment-v1.mjs",
+      "sha256": "4fc881842880dd35ae431977352d9d171685857646a9509a3aca45497afbd426"
+    },
+    "publisher": {
+      "path": "scripts/publish-solomonic-judgment-v1.mjs",
+      "sha256": "e25446200ff0f9e20b2ca1acc22e444642ff40d1228566aeccfff8bda8ab590e"
+    },
+    "publication_checker": {
+      "path": "scripts/check-solomonic-judgment-publication-v1.mjs",
+      "sha256": "dba18bddac785a07a612725fe81cfcc5e4ea172f334e3563d59f45249b09030a"
+    }
+  },
+  "population": {
+    "families": [
+      "federal_register",
+      "rfc",
+      "science"
+    ],
+    "source_panels": 6,
+    "passages_per_source": 4,
+    "sources_per_family": {
+      "federal_register": 2,
+      "rfc": 2,
+      "science": 2
+    },
+    "source_ids": [
+      "federal-register-2025-21456",
+      "federal-register-2025-23547",
+      "rfc-2381",
+      "rfc-6346",
+      "europe-pmc-pmc11721786",
+      "europe-pmc-pmc11760334"
+    ],
+    "original_gutenberg_fitting_frame_excluded": true,
+    "intended_population": "the cached eligible Federal Register, RFC, and Europe PMC acquisition surfaces only",
+    "sequential_assumption": "for the e-process null, each predictably selected source-panel unsafe indicator has conditional mean at most 1/20 given the controller filtration",
+    "conformal_assumption": "each new source panel is exchangeable with the 19 inherited calibration source panels inside its declared family, conditional on fitting"
+  },
+  "panel": {
+    "passages_per_source": 4,
+    "windows_per_passage": 2,
+    "context_tokens": 64
+  },
+  "action": {
+    "exchange_id": "base43_atom2_to_atom4",
+    "control_mask": 47,
+    "candidate_mask": 59,
+    "base_mask": 43,
+    "outgoing_atom": 2,
+    "incoming_atom": 4,
+    "intervention_cost": {
+      "coordinate_writes": 2,
+      "objective_penalty_q32": "0"
+    },
+    "reversibility": {
+      "class": "exact",
+      "inverse_coordinate_writes": 2,
+      "condition": "before any intervening parameter update"
+    }
+  },
+  "faculties": [
+    {
+      "id": "federal_register_faculty",
+      "kind": "domain_exchange",
+      "action_id": "federal_register_base43_atom2_to_atom4",
+      "action_family": "federal_register_exchange",
+      "source_family": "federal_register"
+    },
+    {
+      "id": "rfc_faculty",
+      "kind": "domain_exchange",
+      "action_id": "rfc_base43_atom2_to_atom4",
+      "action_family": "rfc_exchange",
+      "source_family": "rfc"
+    },
+    {
+      "id": "science_faculty",
+      "kind": "domain_exchange",
+      "action_id": "science_base43_atom2_to_atom4",
+      "action_family": "science_exchange",
+      "source_family": "science"
+    },
+    {
+      "id": "occult_hash_parity",
+      "kind": "symbolic_hypothesis",
+      "action_id": "occult_hash_parity_exchange",
+      "action_family": "occult_correspondence",
+      "source_family": "all"
+    },
+    {
+      "id": "abstention",
+      "kind": "abstention",
+      "action_id": "abstain",
+      "action_family": "abstention",
+      "source_family": "all"
+    }
+  ],
+  "conformal": {
+    "alpha": "1/20",
+    "calibration_source_panels_per_family": 19,
+    "simultaneous_scope": "maximum over four passages and the frozen exchange",
+    "corrections_q32": {
+      "federal_register": "2326",
+      "rfc": "4307",
+      "science": "4272"
+    },
+    "strict_action_rule": "lambda + predicted interaction residual + family correction < 0",
+    "abstention_on_equality": true
+  },
+  "controller": {
+    "source_order_seed": "nsrl-m4-solomonic-source-order-2026-07-15-v1",
+    "filtration": "source metadata, singleton probes, frozen predictor/correction, and prior judgment/e-process state; current candidate multi-atom outcome excluded",
+    "adaptive_rule": "after each complete source panel update the unsafe e-process; all later actions abstain once E reaches 20",
+    "e_process": {
+      "null": "Pr(source panel contains a fired non-improving action | prior controller filtration) <= 1/20",
+      "alternative": "1/4",
+      "safe_factor": "15/19",
+      "unsafe_factor": "5",
+      "update": "E_t=E_(t-1)*(5 if unsafe else 15/19)",
+      "ville_threshold": 20,
+      "type_i_error_bound": "1/20 anytime, including predictable action choice and stopping"
+    }
+  },
+  "numeric_contract": {
+    "q32_fractional_bits": 32,
+    "vocab_size": 8192,
+    "windows_per_passage": 2,
+    "q47_weight_max_exponent_bits": 47,
+    "maximum_nll_bits_per_window": 60,
+    "maximum_absolute_contrast_q32": "515396075520",
+    "derivation": "target weight is at least 1 and 8192 Q47 weights sum to at most 2^60; two nonnegative window losses therefore differ by at most 120*2^32"
+  },
+  "occult_feature": {
+    "id": "sha256_parity_correspondence",
+    "seed": "nsrl-m4-occult-hash-parity-2026-07-15-v1",
+    "hypothesis_role": "hypothesis_generation_only_until_compression_gate_passes",
+    "target": "sign of exact candidate-minus-control Q32 contrast",
+    "compression": {
+      "method": "binary empirical codelength reduction minus one-parameter BIC penalty",
+      "untouched_evaluation_outcomes_used": false,
+      "rows": 304,
+      "favorable": 141,
+      "groups": [
+        {
+          "bit": 0,
+          "rows": 147,
+          "favorable": 69,
+          "empirical_code_bits": 146.60227410199653
+        },
+        {
+          "bit": 1,
+          "rows": 157,
+          "favorable": 72,
+          "empirical_code_bits": 156.2226279004343
+        }
+      ],
+      "null_code_bits": "302.850534258954",
+      "split_code_bits": "302.824902002431",
+      "bic_penalty_bits": "4.123963756722",
+      "net_gain_bits": "-4.098331500198",
+      "activation_threshold_bits": "4.321928094887"
+    },
+    "activation": {
+      "activated": false,
+      "rule": "net compression gain must be at least log2(20) bits before untouched evaluation",
+      "status_if_inactive": "falsified",
+      "ordinary_falsifiers_apply_if_active": true
+    }
+  },
+  "pass_conditions": {
+    "minimum_fired_passages": 2,
+    "minimum_transfer_families": 2,
+    "maximum_coverage_failures_for_support": 0,
+    "coverage_rejection_failures": 2,
+    "signed_regret_must_be_strictly_negative": true,
+    "signed_regret_in_every_firing_family_must_be_strictly_negative": true,
+    "positive_regret_must_remain_inside_e_process_95_bound": true,
+    "symbolic_features_receive_no_exemption": true
+  },
+  "publication_contract": {
+    "allowed_statuses": [
+      "supported",
+      "falsified",
+      "inconclusive"
+    ],
+    "supported": "all pass conditions hold and no frozen falsifier fires",
+    "falsified": "the e-process or positive-regret boundary is crossed, two source envelopes fail, signed regret is nonnegative after firing, or a feature-specific falsifier fires",
+    "inconclusive": "neither supported nor falsified; includes insufficient firing or source-family breadth and exactly one envelope failure",
+    "fail_closed_on_unknown_status": true
+  },
+  "authorization": {
+    "execute_frozen_action_cube": true,
+    "alter_sources_features_faculties_thresholds_or_falsifiers_after_outcome": false,
+    "claim_universal_wisdom": false,
+    "promote_optimizer": false,
+    "authorize_paid_scaling": false,
+    "read_documents_200_212": false
+  }
+}

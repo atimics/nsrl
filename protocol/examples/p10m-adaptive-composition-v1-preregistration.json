@@ -1,0 +1,172 @@
+{
+  "schema": "nsrl.adaptive_composition_preregistration.v1",
+  "experiment_id": "p10m-adaptive-composition-v1",
+  "analysis_role": "prospective_pre_source_acquisition",
+  "status": "preregistered_not_execution_ready",
+  "parent": "p10m-solomonic-judgment-v1",
+  "theory": {
+    "path": "research/mathematical-journal/MJ-2026-07-15-20-exchangeable-adaptive-composition.md",
+    "sequential_validity": "finite_horizon_simultaneous_state_action_split_conformal_with_alpha_spending",
+    "forbidden_inference": "marginal_exchangeability_does_not_imply_conditional_unsafe_intensity",
+    "conditional_unsafe_null_assumed": false
+  },
+  "model": {
+    "profile": "p10m",
+    "initial_model_role": "frozen_before_proper_fitting",
+    "persistent_updates": true,
+    "rollback_between_rounds": false,
+    "maximum_accepted_actions": 2
+  },
+  "actions": [
+    {
+      "id": "head_lattice_exit",
+      "kind": "state_specific_physical_move",
+      "allowed_groups": ["output", "bias"],
+      "maximum_coordinate_writes": 2,
+      "manifest_source": "proper_fitting_only"
+    },
+    {
+      "id": "trunk_lattice_exit",
+      "kind": "state_specific_physical_move",
+      "allowed_groups": [
+        "embeddings",
+        "attention_rms",
+        "mlp_rms",
+        "final_rms",
+        "q",
+        "k",
+        "v",
+        "o",
+        "up",
+        "gate",
+        "down"
+      ],
+      "maximum_coordinate_writes": 2,
+      "manifest_source": "proper_fitting_only"
+    },
+    {
+      "id": "abstain",
+      "kind": "abstention",
+      "allowed_groups": [],
+      "maximum_coordinate_writes": 0,
+      "manifest_source": "contract"
+    }
+  ],
+  "distinct_action_gate": {
+    "delta_fingerprints_must_differ": true,
+    "affected_group_sets_must_differ": true,
+    "at_least_one_firing_per_physical_family_for_support": true
+  },
+  "reachable_state_contract": {
+    "path_label_order": "chronological_left_to_right",
+    "labelled_paths": ["empty", "H", "T", "HH", "HT", "TH", "TT"],
+    "maximum_labelled_states": 7,
+    "state_escape_is_hard_falsifier": true,
+    "calibration_score_covers_every_state_action_passage": true
+  },
+  "noncommutativity_gate": {
+    "left_path": "HT",
+    "right_path": "TH",
+    "left_transition": "T_trunk(T_head(theta_0))",
+    "right_transition": "T_head(T_trunk(theta_0))",
+    "model_hashes_must_differ": true,
+    "function_hashes_must_differ": true,
+    "checked_before_calibration_outcomes": true
+  },
+  "controller": {
+    "error_control_unit": "whole_source_panel",
+    "decision_order": "frozen_source_order_then_frozen_passage_order",
+    "source_panel_rounds": 6,
+    "ordered_passage_decisions": 24,
+    "maximum_physical_actions_per_passage": 1,
+    "maximum_accepted_actions_globally": 2,
+    "persist_accepted_action_before_next_passage": true,
+    "after_acceptance_limit": "always_abstain",
+    "current_passage_exact_action_outcomes_are_controller_inputs": false
+  },
+  "source_design": {
+    "families": ["federal_register", "rfc", "science"],
+    "independent_unit": "whole_publication_source_panel",
+    "passages_per_source": 4,
+    "windows_per_passage": 2,
+    "context_tokens": 64,
+    "proper_fitting_sources_per_family": 12,
+    "calibration_sources_per_family": 119,
+    "adaptive_sources_per_family": 2,
+    "sealed_endpoint_sources_per_family": 19,
+    "exclude_all_m18_m19_source_ids_and_independence_keys": true,
+    "source_frame_outcome_independent": true
+  },
+  "error_control": {
+    "global_alpha": "1/20",
+    "adaptive_source_rounds": 6,
+    "per_round_spend": "1/120",
+    "sum_of_spends": "1/20",
+    "calibration_order_statistic_rank": 119,
+    "minimum_calibration_sources_per_family_for_finite_correction": 119,
+    "unsafe_positive_regret_boundary_q32": "0",
+    "scope": "simultaneous_over_all_prefixes_through_round_6",
+    "independence_between_evaluation_rounds_required": false
+  },
+  "selection": {
+    "strict_rule": "predicted_contrast_plus_family_round_correction_lt_zero",
+    "tie_breaks": [
+      "smaller_certified_upper_contrast",
+      "fewer_coordinate_writes",
+      "lexicographically_smaller_action_id"
+    ],
+    "current_candidate_outcomes_forbidden": true,
+    "sealed_endpoint_inputs_forbidden": true,
+    "state_action_manifest_must_be_frozen": true
+  },
+  "objectives": {
+    "certificate_observation": "q47_weight_base2_nll_q32",
+    "primary_retained_model_endpoint": "integer_base2_softmax_nll_millibits",
+    "primary_aggregation": "total_nll_millibits",
+    "canonical_evaluator": "evaluate_production_model_canonical_nll",
+    "canonical_evaluator_path": "crates/nsrl-train/src/production.rs",
+    "normalization_independent": true,
+    "zero_probability_floor_millibits": 32000,
+    "secondary_endpoint": "zero_probability_windows"
+  },
+  "comparators": [
+    "always_abstain",
+    "head_lattice_exit_only_policy",
+    "trunk_lattice_exit_only_policy"
+  ],
+  "support_requires": {
+    "observed_cumulative_positive_regret_q32_equals": "0",
+    "adaptive_endpoint_strictly_beats_always_abstain": true,
+    "adaptive_endpoint_strictly_beats_best_fixed_action_policy": true,
+    "zero_probability_windows_do_not_increase": true,
+    "persistent_final_model_artifact_present": true,
+    "byte_identical_replay": true
+  },
+  "hard_falsifiers": [
+    "physical_action_delta_fingerprints_equal",
+    "physical_action_group_sets_equal",
+    "ht_th_model_hashes_equal",
+    "ht_th_function_hashes_equal",
+    "executed_state_outside_bound_reachable_set",
+    "post_fitting_evidence_used_to_build_action_manifest",
+    "current_candidate_outcome_used_for_selection",
+    "any_fired_exact_contrast_nonnegative",
+    "adaptive_endpoint_not_strictly_better_than_abstain",
+    "adaptive_endpoint_not_strictly_better_than_best_fixed_policy",
+    "zero_probability_windows_increase",
+    "replay_hash_mismatch"
+  ],
+  "inconclusive_conditions": [
+    "fewer_than_119_exchangeable_calibration_sources_in_any_family",
+    "fresh_source_frame_cannot_exclude_m18_m19_independence_keys",
+    "no_action_from_one_physical_family_fires"
+  ],
+  "authorization": {
+    "source_acquisition": true,
+    "local_preflight": true,
+    "evaluation_outcomes": false,
+    "optimizer_promotion": false,
+    "paid_scaling": false,
+    "unlock_condition": "freeze fitting-derived state-action manifests, noncommutativity witness, fresh source frame, calibration cubes, runner, and independent checker before opening adaptive or endpoint outcomes"
+  }
+}
