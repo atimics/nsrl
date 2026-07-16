@@ -49,7 +49,11 @@ exchangeable counterexample to deriving that null from marginal coverage. The
 non-crossing e-process therefore does not establish sequential safety. The
 checked finite-horizon replacement requires 119 calibration source panels per
 family and is not execution-ready. The eight-dimension same-model wisdom
-evaluation also remains unmeasured, so council promotion is not authorized.
+evaluation ceremony now rejects post-hoc aggregate claims: it byte-verifies the
+public casebook, committed hidden gold, both lane bundles, exact same-model
+faculty invocations, deterministic receipt replay, and exact provenance sets.
+No production casebook or paired lane result is frozen yet, so the wisdom
+evaluation remains unmeasured and council promotion is not authorized.
 
 The project headline is `NSRL-MME v0`, a model-native multimodal LLM eval
 defined in `docs/multimodal-llm-eval.md`. The current local score is **371 per

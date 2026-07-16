@@ -440,6 +440,10 @@ function collectCouncilEvidence() {
     receipt_schema: "protocol/wisdom-receipt-v0.schema.json",
     observation_schema: "protocol/wisdom-outcome-observation-v0.schema.json",
     wisdom_eval_schema: "protocol/solomon-wisdom-eval-v0.schema.json",
+    wisdom_casebook_schema: "protocol/solomon-wisdom-casebook-v0.schema.json",
+    wisdom_lane_bundle_schema: "protocol/solomon-wisdom-lane-bundle-v0.schema.json",
+    wisdom_lane_trace_schema: "protocol/solomon-wisdom-lane-trace-v0.schema.json",
+    wisdom_gold_opening_schema: "protocol/solomon-wisdom-gold-opening-v0.schema.json",
     generation_integrity_schema: "protocol/wisdom-generation-integrity-v0.schema.json",
     provenance_gate_schema: "protocol/wisdom-provenance-gate-v0.schema.json",
     request: "benchmarks/solomon-council-v0/fixtures/select-request.json",
@@ -471,9 +475,12 @@ function collectCouncilEvidence() {
   const selfCheck = runCommand(process.execPath, ["scripts/check-solomon-council-v0.mjs"], {
     timeoutMs: 10000,
   });
+  const ceremonyCheck = runCommand(
+    process.execPath, ["scripts/check-solomon-wisdom-ceremony-v0.mjs"], {timeoutMs: 10000});
   const adaptiveCheck = runCommand(
     process.execPath, ["scripts/check-adaptive-composition-theory-v1.mjs"], {timeoutMs: 10000});
   const selfCheckOk = selfCheck.ok;
+  const ceremonyCheckOk = ceremonyCheck.ok;
   const receiptOk = receipt?.schema === "nsrl.wisdom_receipt.v0"
     && receipt.mode === "shadow"
     && receipt.faculty_invocations?.length === 6
@@ -492,7 +499,7 @@ function collectCouncilEvidence() {
     && revisedReceipt.shadow_execution?.action_executed === false;
   const filesPresent = Object.values(files).every((file) => file.present)
     && seals.every((file) => file.present);
-  const councilCoreOk = filesPresent && receiptOk && revisionOk && selfCheckOk;
+  const councilCoreOk = filesPresent && receiptOk && revisionOk && selfCheckOk && ceremonyCheckOk;
   const wisdomGatePassed = wisdomEval?.schema === "nsrl.solomon_wisdom_eval_result.v0"
     && wisdomEval.analysis_role === "frozen_same_model_comparison"
     && wisdomEval.verdict?.all_dimensions_outperform === true
@@ -521,6 +528,8 @@ function collectCouncilEvidence() {
     receipt_sha256: receipt?.identity?.receipt_sha256 ?? "",
     revised_receipt_sha256: revisedReceipt?.identity?.receipt_sha256 ?? "",
     self_check_ok: selfCheckOk,
+    wisdom_ceremony_check_ok: ceremonyCheckOk,
+    wisdom_ceremony_byte_bound: ceremonyCheckOk,
     receipt_ok: receiptOk,
     revision_ok: revisionOk,
     shadow_execution_only: receipt?.shadow_execution?.action_execution_allowed === false
@@ -1431,7 +1440,8 @@ function nextCommands(report) {
     commands.push("node scripts/check-solomon-council-v0.mjs");
   }
   if (report.council.wisdom_evaluation.state === "not_measured") {
-    commands.push("node scripts/evaluate-solomon-wisdom-v0.mjs FROZEN_INPUT.json benchmarks/solomon-council-v0/wisdom-eval-result.json");
+    commands.push("node scripts/compile-solomon-wisdom-eval-v0.mjs CASEBOOK.json SOLO-BUNDLE.json COUNCIL-BUNDLE.json GOLD-OPENING.json GENERATION-INTEGRITY.json PROVENANCE.json FROZEN-SAME-MODEL-INPUT.json");
+    commands.push("node scripts/evaluate-solomon-wisdom-v0.mjs FROZEN-SAME-MODEL-INPUT.json benchmarks/solomon-council-v0/wisdom-eval-result.json");
   }
   if (report.diagnostic.failed_checks?.some((check) => check.name === "release-candidate-self-test")) {
     commands.push("node scripts/check-solomon-release-candidate-self-test.mjs");
@@ -1493,6 +1503,7 @@ function renderMarkdown(report) {
   lines.push(`- Bounded decision-regret experiment: publication **${report.council.bounded_decision_regret_evidence.publication_status}** with ${report.council.bounded_decision_regret_evidence.fired_passages} favorable fired passages and signed regret ${report.council.bounded_decision_regret_evidence.signed_regret_q32 || "missing"} Q32; MJ-20 falsifies the marginal-to-conditional bridge, so the non-crossing e-process does not establish sequential safety`);
   lines.push(`- Adaptive replacement: ${report.council.adaptive_composition.theory_check_ok ? "checked" : "invalid"}; requires ${report.council.adaptive_composition.calibration_sources_per_family} calibration source panels per family; execution and optimizer promotion remain unauthorized`);
   lines.push(`- Same-model wisdom gate: **${report.council.wisdom_evaluation.state}**; promotion ${report.council.wisdom_evaluation.promotion_gate_passed ? "passed" : "not authorized"}`);
+  lines.push(`- Wisdom ceremony: ${report.council.wisdom_ceremony_check_ok ? "byte-bound compiler/replay self-check green" : "invalid"}; no production casebook or paired lanes are inferred from this self-test`);
   for (const blocker of report.status.council_blockers) {
     lines.push(`- Council blocker: ${blocker}`);
   }

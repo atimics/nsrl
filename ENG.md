@@ -53,7 +53,14 @@ information, missing evidence/hard contradiction, and no eligible action route
 to `ask_user`, `request_evidence`, and `abstain`, respectively. Receipts and
 outcome revisions are canonical-JSON hash chains and v0 never grants execution
 authority. `scripts/check-solomon-council-v0.mjs` exercises the four decision
-states and the principal boundary attacks.
+states and the principal boundary attacks. The promotion evaluator uses a
+commitment ceremony rather than trusting post-hoc booleans: a public casebook
+commits hidden gold, separately byte-bound solo and five-faculty council traces
+freeze before opening, and the opening binds both lane hashes. Production
+scoring deterministically recompiles those artifacts, verifies exact same-model
+invocations and receipt/output equality, and rejects hand-authored aggregate
+inputs. The ceremony self-check exercises commitment, model, trace, receipt,
+and provenance tampering.
 
 Prior work already establishes integer and quantized training as a field. The
 engineering contribution pursued here is the auditable combination: no float

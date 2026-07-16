@@ -11,7 +11,10 @@
   "allOf": [
     {
       "if": {"properties": {"analysis_role": {"const": "frozen_same_model_comparison"}}},
-      "then": {"properties": {"minimum_cases_per_dimension": {"minimum": 72}}}
+      "then": {
+        "required": ["ceremony"],
+        "properties": {"minimum_cases_per_dimension": {"minimum": 72}}
+      }
     }
   ],
   "properties": {
@@ -48,10 +51,30 @@
         }
       }
     },
+    "ceremony": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["casebook", "solo_bundle", "council_bundle", "gold_opening"],
+      "properties": {
+        "casebook": {"$ref": "#/$defs/artifact"},
+        "solo_bundle": {"$ref": "#/$defs/artifact"},
+        "council_bundle": {"$ref": "#/$defs/artifact"},
+        "gold_opening": {"$ref": "#/$defs/artifact"}
+      }
+    },
     "episodes": {"type": "array", "items": {"$ref": "#/$defs/episode"}}
   },
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "integrityBinding": {
       "type": "object",
       "additionalProperties": false,

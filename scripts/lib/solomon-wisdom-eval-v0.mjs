@@ -1,20 +1,13 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import {
   sha256Bytes,
   sha256Json,
 } from "./solomon-council-v0.mjs";
-
-export const WISDOM_DIMENSIONS = [
-  "source_grounded_correctness",
-  "calibration",
-  "hard_negative_rejection",
-  "contradiction_detection",
-  "decision_regret",
-  "appropriate_abstention",
-  "cross_modal_agreement",
-  "unfamiliar_source_transfer",
-];
+import {verifyWisdomCeremonyCompilation} from "./solomon-wisdom-ceremony-v0.mjs";
+export {WISDOM_DIMENSIONS} from "./solomon-wisdom-constants-v0.mjs";
+import {WISDOM_DIMENSIONS} from "./solomon-wisdom-constants-v0.mjs";
 
 const shaPattern = /^[0-9a-f]{64}$/;
 
@@ -93,22 +86,33 @@ function validateEpisode(episode, modelHash) {
   }
 }
 
-function validateIntegrityBinding(binding, schema, modelHash, production, label) {
+function validateIntegrityBinding(binding, schema, modelHash, production, label, artifactBase) {
   exactKeys(binding, ["path", "sha256", "schema"], label);
   assert(typeof binding.path === "string" && binding.path.length > 0, `${label} path is empty`);
   hash(binding.sha256, `${label} hash`);
   assert(binding.schema === schema, `${label} schema binding changed`);
   if (!production) return;
-  assert(fs.existsSync(binding.path), `${label} is missing: ${binding.path}`);
-  const bytes = fs.readFileSync(binding.path);
+  const resolved = path.isAbsolute(binding.path) ? binding.path : path.resolve(artifactBase, binding.path);
+  assert(fs.existsSync(resolved), `${label} is missing: ${binding.path}`);
+  const bytes = fs.readFileSync(resolved);
   assert(sha256Bytes(bytes) === binding.sha256, `${label} artifact hash changed`);
   const report = JSON.parse(bytes);
   assert(report.schema === schema && report.ok === true,
     `${label} artifact is not a green ${schema} report`);
   assert(report.model_artifact_sha256 === modelHash, `${label} model binding changed`);
-  assert(report.gates && Object.values(report.gates).length > 0
-    && Object.values(report.gates).every((value) => value === true),
-  `${label} contains a non-green required gate`);
+  const requiredGates = schema === "nsrl.wisdom_provenance_gate.v0"
+    ? [
+      "no_oracle_target_lookup", "no_hidden_memory", "no_retrieval_target_leakage",
+      "gold_sealed_until_both_predictions",
+    ]
+    : [
+      "quality_report_green", "generation_integrity_green", "source_grounding_green",
+      "cross_modal_agreement_green", "same_model_invocation_green", "trace_replay_green",
+      "faculty_output_binding_green",
+    ];
+  exactKeys(report.gates, requiredGates, `${label} gates`);
+  assert(Object.values(report.gates).every((value) => value === true),
+    `${label} contains a non-green required gate`);
   if (schema === "nsrl.wisdom_provenance_gate.v0") {
     assert(Array.isArray(report.source_hashes) && report.source_hashes.length > 0,
       "provenance report has no source hashes");
@@ -116,6 +120,15 @@ function validateIntegrityBinding(binding, schema, modelHash, production, label)
     assert(Array.isArray(report.trace_hashes) && report.trace_hashes.length > 0,
       "provenance report has no trace hashes");
     report.trace_hashes.forEach((value) => hash(value, "provenance trace hash"));
+  } else {
+    exactKeys(report.source_report, ["path", "sha256"], "generation-integrity source report");
+    hash(report.source_report.sha256, "generation-integrity source report hash");
+    const sourcePath = path.isAbsolute(report.source_report.path)
+      ? report.source_report.path : path.resolve(artifactBase, report.source_report.path);
+    assert(fs.existsSync(sourcePath),
+      `generation-integrity source report is missing: ${report.source_report.path}`);
+    assert(sha256Bytes(fs.readFileSync(sourcePath)) === report.source_report.sha256,
+      "generation-integrity source report byte hash changed");
   }
 }
 
@@ -152,11 +165,13 @@ function regret(rows, lane) {
   return {total_regret_milli: total, mean_regret_milli: Math.floor(total / rows.length)};
 }
 
-export function evaluateWisdom(input, {evaluatorSha256 = ""} = {}) {
-  exactKeys(input, [
+export function evaluateWisdom(input, {evaluatorSha256 = "", artifactBase = process.cwd()} = {}) {
+  const inputKeys = [
     "schema", "analysis_role", "frozen_before_outcomes", "minimum_cases_per_dimension",
     "underlying_model", "integrity", "episodes",
-  ], "wisdom evaluation");
+  ];
+  if (Object.hasOwn(input, "ceremony")) inputKeys.push("ceremony");
+  exactKeys(input, inputKeys, "wisdom evaluation");
   assert(input.schema === "nsrl.solomon_wisdom_eval.v0", "wrong wisdom evaluation schema");
   assert(["frozen_same_model_comparison", "self_test_only"].includes(input.analysis_role),
     "unknown wisdom evaluation role");
@@ -184,10 +199,15 @@ export function evaluateWisdom(input, {evaluatorSha256 = ""} = {}) {
   const production = input.analysis_role === "frozen_same_model_comparison";
   validateIntegrityBinding(input.integrity.generation_integrity_report,
     "nsrl.wisdom_generation_integrity.v0", input.underlying_model.artifact_sha256,
-    production, "generation integrity report");
+    production, "generation integrity report", artifactBase);
   validateIntegrityBinding(input.integrity.provenance_report,
     "nsrl.wisdom_provenance_gate.v0", input.underlying_model.artifact_sha256,
-    production, "provenance report");
+    production, "provenance report", artifactBase);
+  if (production) {
+    assert(Object.hasOwn(input, "ceremony"),
+      "production wisdom evaluation requires a byte-bound ceremony");
+    verifyWisdomCeremonyCompilation(input, {baseDir: artifactBase});
+  }
   assert(Array.isArray(input.episodes), "wisdom episodes must be an array");
   input.episodes.forEach((episode) => validateEpisode(
     episode, input.underlying_model.artifact_sha256));

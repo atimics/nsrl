@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.local/protocol/solomon-wisdom-lane-trace-v0.schema.json",
+  "title": "Byte-bound Solomon wisdom lane invocation trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "ceremony_id", "episode_id", "lane", "underlying_model_sha256",
+    "runner", "gold_accessed", "hidden_memory_used", "retrieval_target_accessed",
+    "invocations", "prediction"
+  ],
+  "properties": {
+    "schema": {"const": "nsrl.solomon_wisdom_lane_trace.v0"},
+    "ceremony_id": {"type": "string", "minLength": 1},
+    "episode_id": {"type": "string", "minLength": 1},
+    "lane": {"enum": ["solo", "council"]},
+    "underlying_model_sha256": {"$ref": "#/$defs/sha256"},
+    "runner": {"$ref": "#/$defs/artifact"},
+    "gold_accessed": {"const": false},
+    "hidden_memory_used": {"const": false},
+    "retrieval_target_accessed": {"const": false},
+    "invocations": {"type": "array", "minItems": 1, "maxItems": 5, "items": {"$ref": "#/$defs/invocation"}},
+    "prediction": {"$ref": "#/$defs/prediction"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "prediction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prediction_label", "confidence_milli", "abstained", "decision_id"],
+      "properties": {
+        "prediction_label": {"type": "boolean"},
+        "confidence_milli": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "abstained": {"type": "boolean"},
+        "decision_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invocation_id", "role", "model_sha256", "input", "output"],
+      "properties": {
+        "invocation_id": {"type": "string", "minLength": 1},
+        "role": {
+          "enum": ["solo", "mathematician", "engineer", "historian", "skeptic", "consequence_planner"]
+        },
+        "model_sha256": {"$ref": "#/$defs/sha256"},
+        "input": {"$ref": "#/$defs/artifact"},
+        "output": {"$ref": "#/$defs/artifact"}
+      }
+    }
+  }
+}

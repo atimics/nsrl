@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.local/protocol/solomon-wisdom-gold-opening-v0.schema.json",
+  "title": "Solomon wisdom committed-gold opening",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "ceremony_id", "casebook_sha256", "solo_bundle_sha256",
+    "council_bundle_sha256", "opened_after_both_lane_bundles", "gold"
+  ],
+  "properties": {
+    "schema": {"const": "nsrl.solomon_wisdom_gold_opening.v0"},
+    "ceremony_id": {"type": "string", "minLength": 1},
+    "casebook_sha256": {"$ref": "#/$defs/sha256"},
+    "solo_bundle_sha256": {"$ref": "#/$defs/sha256"},
+    "council_bundle_sha256": {"$ref": "#/$defs/sha256"},
+    "opened_after_both_lane_bundles": {"const": true},
+    "gold": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/opening"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "opening": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["episode_id", "nonce", "gold"],
+      "properties": {
+        "episode_id": {"type": "string", "minLength": 1},
+        "nonce": {"type": "string", "minLength": 1},
+        "gold": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["expected_label", "should_abstain", "decision_costs_milli"],
+          "properties": {
+            "expected_label": {"type": "boolean"},
+            "should_abstain": {"type": "boolean"},
+            "decision_costs_milli": {
+              "type": "object", "minProperties": 1,
+              "additionalProperties": {"type": "integer", "minimum": 0}
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import {sha256Bytes} from "./lib/solomon-council-v0.mjs";
 import {
   evaluateWisdom,
   WISDOM_DIMENSIONS,
@@ -105,6 +110,60 @@ missingIntegrityArtifact.analysis_role = "frozen_same_model_comparison";
 missingIntegrityArtifact.minimum_cases_per_dimension = 72;
 expectFailure(() => evaluateWisdom(missingIntegrityArtifact), /report is missing/);
 
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), "nsrl-wisdom-eval-"));
+try {
+  const writeReport = (name, value) => {
+    const reportPath = path.join(temp, name);
+    fs.writeFileSync(reportPath, `${JSON.stringify(value, null, 2)}\n`);
+    return {path: reportPath, sha256: sha256Bytes(fs.readFileSync(reportPath))};
+  };
+  const sourceReport = writeReport("source-report.json", {schema: "self-test", ok: true});
+  const generationReport = writeReport("generation-integrity.json", {
+    schema: "nsrl.wisdom_generation_integrity.v0",
+    ok: true,
+    model_artifact_sha256: modelHash,
+    source_report: sourceReport,
+    gates: {
+      quality_report_green: true,
+      generation_integrity_green: true,
+      source_grounding_green: true,
+      cross_modal_agreement_green: true,
+      same_model_invocation_green: true,
+      trace_replay_green: true,
+      faculty_output_binding_green: true,
+    },
+  });
+  const provenanceReport = writeReport("provenance.json", {
+    schema: "nsrl.wisdom_provenance_gate.v0",
+    ok: true,
+    model_artifact_sha256: modelHash,
+    source_hashes: [evidenceHash],
+    trace_hashes: [soloTraceHash, councilTraceHash],
+    gates: {
+      no_oracle_target_lookup: true,
+      no_hidden_memory: true,
+      no_retrieval_target_leakage: true,
+      gold_sealed_until_both_predictions: true,
+    },
+  });
+  const noCeremony = structuredClone(input);
+  noCeremony.analysis_role = "frozen_same_model_comparison";
+  noCeremony.minimum_cases_per_dimension = 72;
+  noCeremony.episodes = WISDOM_DIMENSIONS.flatMap((dimension, dimensionIndex) =>
+    Array.from({length: 72}, (_, index) => ({
+      ...episode(dimension, dimensionIndex * 72 + index),
+    })));
+  noCeremony.integrity.generation_integrity_report = {
+    ...generationReport, schema: "nsrl.wisdom_generation_integrity.v0",
+  };
+  noCeremony.integrity.provenance_report = {
+    ...provenanceReport, schema: "nsrl.wisdom_provenance_gate.v0",
+  };
+  expectFailure(() => evaluateWisdom(noCeremony), /byte-bound ceremony/);
+} finally {
+  fs.rmSync(temp, {recursive: true, force: true});
+}
+
 process.stdout.write(`${JSON.stringify({
   schema: "nsrl.solomon_wisdom_eval_self_check.v0",
   dimensions: WISDOM_DIMENSIONS,
@@ -115,5 +174,6 @@ process.stdout.write(`${JSON.stringify({
   missing_dimension_rejected: true,
   undersized_production_eval_rejected: true,
   missing_integrity_artifact_rejected: true,
+  production_ceremony_required: true,
   self_test_cannot_authorize_promotion: true,
 }, null, 2)}\n`);

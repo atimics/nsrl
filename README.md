@@ -24,9 +24,12 @@ sealed faculties deliberate inside explicit permission, evidence, tool, and
 resource circles; a deterministic integer controller can select a recommendation,
 request evidence, ask the user, or abstain, while preserving dissent and never
 executing an action. Initial and revised wisdom receipts replay exactly. The
-council core is ready, but its required same-underlying-model comparison across
-all eight wisdom dimensions is not yet measured, so council promotion remains
-unauthorized. See [`docs/solomon-council-v0.md`](docs/solomon-council-v0.md).
+council core and its commitment-based evaluation ceremony are ready: production
+scoring requires byte-bound casebook, solo lane, five-faculty council lane,
+committed-gold opening, invocation traces, receipts, and exact provenance sets.
+Its required same-underlying-model comparison across all eight wisdom dimensions
+is not yet measured, so council promotion remains unauthorized. See
+[`docs/solomon-council-v0.md`](docs/solomon-council-v0.md).
 
 Solomon multimodal generation and literary expert routing are experiment suites
 that exercise the shared substrate. Their results inform candidate design, but

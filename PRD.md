@@ -71,8 +71,12 @@ dissent and can select only a mathematical-controller-allowed recommendation,
 request evidence, ask the user, or abstain. Hash-bound wisdom receipts include
 model/source identity, evidence, confidence/calibration, predicted consequences,
 permissions/budgets, outcome, and append-only revision history. The core and its
-adversarial replay checks pass. Promotion does not: the frozen same-model wisdom
-evaluation across all eight required dimensions has not yet been produced.
+adversarial replay checks pass. Its production scorer now requires a pre-lane
+public casebook with hidden-gold commitments, byte-bound solo and five-faculty
+council traces, a post-lane gold opening bound to both bundles, exact receipt
+replay, and exact provenance sets; self-test or hand-authored aggregates cannot
+promote. Promotion does not: the frozen same-model wisdom evaluation across all
+eight required dimensions has not yet been produced.
 
 The p10m training roadmap has completed its local scaling-readiness review. A
 contracted 2,048-window run bound the K/V schedule to the same initialization,

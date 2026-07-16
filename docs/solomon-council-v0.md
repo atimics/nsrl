@@ -148,21 +148,51 @@ underlying model and scores eight dimensions:
 - cross-modal agreement; and
 - unfamiliar-source transfer.
 
-Every episode binds both trace hashes, the council receipt hash, source hashes,
-and a gold record opened only after both predictions. The integrity contract
-requires no oracle target lookup, hidden memory, retrieval target leakage, or
-generation-integrity failure. Production evaluation also byte-verifies green
+Production input cannot be assembled as one self-attested JSON file. It must be
+compiled from a four-stage ceremony:
+
+1. Freeze and publish a public casebook before either lane runs. Each case binds
+   its evidence bytes, allowed decision IDs, and a salted canonical-JSON
+   commitment to still-hidden gold.
+2. Seal the solo and council lane bundles while gold remains closed. Every lane
+   trace byte-binds its runner, inputs, outputs, model artifact, and leakage
+   flags. Solo has exactly one model invocation. Council has exactly one
+   invocation for each of the five recommending faculties, all using the same
+   model hash; the deterministic judge is not a sixth model call.
+3. Publish the gold opening only after both lane bundle hashes exist. Each
+   revealed gold row must match its casebook commitment, and the opening binds
+   both complete lane bundles.
+4. Compile the evaluator input. The compiler replays every council receipt,
+   requires faculty model outputs to equal the recommendations in that receipt,
+   verifies that receipt evidence exactly equals case evidence, and requires
+   exact provenance source and trace sets.
+
+The production evaluator deterministically recompiles those byte-bound ceremony
+artifacts before scoring; a hand-written production input is rejected. The
+integrity contract requires no oracle target lookup, hidden memory, retrieval
+target leakage, or generation-integrity failure. It also byte-verifies green
 `nsrl.wisdom_generation_integrity.v0` and `nsrl.wisdom_provenance_gate.v0`
-reports bound to the identical underlying model artifact. Council promotion requires strict improvement on
-every dimension across at least 72 frozen cases per dimension; ties do not
-pass. Self-test data can exercise the scorer but can never authorize promotion.
+reports bound to the identical underlying model artifact and requires explicit
+same-model invocation, trace replay, and faculty-output-binding gates. Council
+promotion requires strict improvement on every dimension across at least 72
+frozen cases per dimension; ties do not pass. Self-test data can exercise the
+ceremony and scorer but can never authorize promotion.
 
 ```bash
 node scripts/check-solomon-wisdom-eval-v0.mjs
+node scripts/check-solomon-wisdom-ceremony-v0.mjs
+node scripts/compile-solomon-wisdom-eval-v0.mjs \
+  CASEBOOK.json SOLO-BUNDLE.json COUNCIL-BUNDLE.json GOLD-OPENING.json \
+  GENERATION-INTEGRITY.json PROVENANCE.json FROZEN-SAME-MODEL-INPUT.json
 node scripts/evaluate-solomon-wisdom-v0.mjs \
-  FROZEN_SAME_MODEL_INPUT.json \
+  FROZEN-SAME-MODEL-INPUT.json \
   benchmarks/solomon-council-v0/wisdom-eval-result.json
 ```
+
+The compiler proves artifact consistency, not public chronology by itself. A
+production run must publish or commit the casebook before lane generation and
+both lane bundles before publishing the opening; those publication identities
+belong in the wisdom receipt set.
 
 No production same-model wisdom result is currently frozen. The canonical
 status therefore reports the council core as `shadow_ready` and the wisdom gate

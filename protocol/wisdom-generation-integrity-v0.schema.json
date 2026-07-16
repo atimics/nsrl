@@ -23,13 +23,17 @@
       "additionalProperties": false,
       "required": [
         "quality_report_green", "generation_integrity_green", "source_grounding_green",
-        "cross_modal_agreement_green"
+        "cross_modal_agreement_green", "same_model_invocation_green",
+        "trace_replay_green", "faculty_output_binding_green"
       ],
       "properties": {
         "quality_report_green": {"const": true},
         "generation_integrity_green": {"const": true},
         "source_grounding_green": {"const": true},
-        "cross_modal_agreement_green": {"const": true}
+        "cross_modal_agreement_green": {"const": true},
+        "same_model_invocation_green": {"const": true},
+        "trace_replay_green": {"const": true},
+        "faculty_output_binding_green": {"const": true}
       }
     }
   }
