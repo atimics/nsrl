@@ -11,6 +11,8 @@ use crate::rms_norm::rms_norm_i16_q15_checked;
 pub const LOGIT_FRAC_BITS: u8 = 8;
 pub const MASKED_LOGIT: i32 = i32::MIN;
 pub const Q15_SHIFT: u8 = 15;
+pub const DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS: u64 = 32_000;
+const NLL_LOG2_FRACTIONAL_BITS: u32 = 20;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SelfAttentionI16Params<'a> {
@@ -155,6 +157,27 @@ pub fn base2_exp_neg_q15(delta_logit_q8: i32) -> i16 {
     EXP2_NEG_FRAC_LUT_8BIT[frac] >> integer_shift
 }
 
+/// Q47 counterpart of [`base2_exp_neg_q15`] for objective evaluation and
+/// fixed-mass proposal construction. This preserves the committed Q15
+/// fractional table while retaining another 32 exponent bits, so logit gaps
+/// below 47 bits remain observable without changing the deployed softmax.
+pub fn base2_exp_neg_q47(delta_logit_q8: i32) -> u64 {
+    debug_assert!(delta_logit_q8 <= 0);
+
+    if delta_logit_q8 >= 0 {
+        return (i16::MAX as u64) << 32;
+    }
+
+    let magnitude = -(i64::from(delta_logit_q8));
+    let integer_shift = magnitude >> LOGIT_FRAC_BITS;
+    if integer_shift >= 47 {
+        return 0;
+    }
+
+    let frac = (magnitude & ((1_i64 << LOGIT_FRAC_BITS) - 1)) as usize;
+    (u64::from(EXP2_NEG_FRAC_LUT_8BIT[frac] as u16) << 32) >> integer_shift
+}
+
 pub fn reciprocal_sum_q31(sum: u64) -> Option<u32> {
     let normalized = normalize_u64_to_lut_index(sum)?;
     let base = u64::from(recip_lut_8bit_q31(normalized.mantissa));
@@ -167,6 +190,72 @@ pub fn reciprocal_sum_q31(sum: u64) -> Option<u32> {
     };
 
     Some(reciprocal.min(u64::from(u32::MAX)) as u32)
+}
+
+/// Reciprocal implementation used when retaining normalized probabilities in
+/// Q31. The legacy variant reproduces the frozen Q31 path exactly. The Q47
+/// variants retain sixteen more reciprocal bits before the probability product
+/// is requantized to Q31.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SoftmaxNormalization {
+    LegacyQ31Lut,
+    Q47Lut,
+    Q47Newton1,
+    Q47Exact,
+}
+
+impl SoftmaxNormalization {
+    /// Stable artifact/CLI identifier for the normalization contract.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::LegacyQ31Lut => "legacy_q31_lut",
+            Self::Q47Lut => "q47_lut",
+            Self::Q47Newton1 => "q47_newton1",
+            Self::Q47Exact => "q47_exact_division",
+        }
+    }
+}
+
+/// Return the established 8-bit-LUT reciprocal in Q47 without first discarding
+/// the low sixteen bits needed by a Q31 probability product.
+pub fn reciprocal_sum_q47_lut(sum: u64) -> Option<u64> {
+    let normalized = normalize_u64_to_lut_index(sum)?;
+    let base = u64::from(recip_lut_8bit_q31(normalized.mantissa)).checked_shl(16)?;
+    if normalized.exponent >= 0 {
+        let shift = u32::from(normalized.exponent as u16);
+        Some(if shift >= 64 { 0 } else { base >> shift })
+    } else {
+        let shift = u32::from((-normalized.exponent) as u16);
+        base.checked_shl(shift)
+    }
+}
+
+/// Apply one integer Newton-Raphson refinement to the Q47 LUT reciprocal.
+///
+/// For `r ~= 1 / sum`, the update is `r * (2 - sum * r)`. Every intermediate
+/// is represented in Q47 and evaluated in `u128` so the result is deterministic
+/// and does not depend on floating-point support.
+pub fn reciprocal_sum_q47_newton1(sum: u64) -> Option<u64> {
+    let reciprocal = u128::from(reciprocal_sum_q47_lut(sum)?);
+    let scale = 1_u128 << 47;
+    let sum_times_reciprocal = u128::from(sum).checked_mul(reciprocal)?;
+    let correction = scale.checked_mul(2)?.checked_sub(sum_times_reciprocal)?;
+    let refined = reciprocal
+        .checked_mul(correction)?
+        .checked_add(1_u128 << 46)?
+        >> 47;
+    u64::try_from(refined).ok()
+}
+
+/// Return the rounded exact integer reciprocal in Q47. This is an audit ceiling
+/// rather than the default implementation: it establishes how much error is
+/// caused by reciprocal approximation versus per-probability rounding.
+pub fn reciprocal_sum_q47_exact(sum: u64) -> Option<u64> {
+    if sum == 0 {
+        return None;
+    }
+    let numerator = (1_u128 << 47).checked_add(u128::from(sum >> 1))?;
+    u64::try_from(numerator / u128::from(sum)).ok()
 }
 
 pub fn base2_softmax_i32_q15(logits_q8: &[i32], output_q15: &mut [i16]) -> Option<u64> {
@@ -201,6 +290,307 @@ pub fn base2_softmax_i32_q15(logits_q8: &[i32], output_q15: &mut [i16]) -> Optio
     }
 
     Some(sum)
+}
+
+/// Evaluate the same integer base-2 softmax as [`base2_softmax_i32_q15`], but
+/// retain its normalized probability product in Q31. This is primarily useful
+/// for resolution audits and wider-gradient experiments; attention kernels
+/// continue to consume the established Q15 representation.
+pub fn base2_softmax_i32_q31(logits_q8: &[i32], output_q31: &mut [u32]) -> Option<u64> {
+    base2_softmax_i32_q31_with_normalization(
+        logits_q8,
+        output_q31,
+        SoftmaxNormalization::LegacyQ31Lut,
+    )
+}
+
+/// Evaluate integer base-2 softmax in Q31 with an explicitly selected
+/// normalization implementation.
+pub fn base2_softmax_i32_q31_with_normalization(
+    logits_q8: &[i32],
+    output_q31: &mut [u32],
+    normalization: SoftmaxNormalization,
+) -> Option<u64> {
+    if logits_q8.is_empty() || logits_q8.len() != output_q31.len() {
+        return None;
+    }
+
+    let max_logit = logits_q8
+        .iter()
+        .copied()
+        .filter(|&logit| logit != MASKED_LOGIT)
+        .max()?;
+
+    let mut sum = 0_u64;
+    for (&logit, out) in logits_q8.iter().zip(output_q31.iter_mut()) {
+        if logit == MASKED_LOGIT {
+            *out = 0;
+            continue;
+        }
+
+        let delta = logit.saturating_sub(max_logit);
+        let weight = base2_exp_neg_q15(delta);
+        *out = u32::from(weight as u16);
+        sum = sum.checked_add(u64::from(weight as u16))?;
+    }
+
+    match normalization {
+        SoftmaxNormalization::LegacyQ31Lut => {
+            let inv_sum = u64::from(reciprocal_sum_q31(sum)?);
+            for out in output_q31.iter_mut() {
+                let product = u64::from(*out).checked_mul(inv_sum)?;
+                *out = product.min(i32::MAX as u64) as u32;
+            }
+        }
+        SoftmaxNormalization::Q47Lut
+        | SoftmaxNormalization::Q47Newton1
+        | SoftmaxNormalization::Q47Exact => {
+            let inv_sum = match normalization {
+                SoftmaxNormalization::Q47Lut => reciprocal_sum_q47_lut(sum)?,
+                SoftmaxNormalization::Q47Newton1 => reciprocal_sum_q47_newton1(sum)?,
+                SoftmaxNormalization::Q47Exact => reciprocal_sum_q47_exact(sum)?,
+                SoftmaxNormalization::LegacyQ31Lut => unreachable!(),
+            };
+            for out in output_q31.iter_mut() {
+                let product = u128::from(*out).checked_mul(u128::from(inv_sum))?;
+                let rounded = product.checked_add(1_u128 << 15)? >> 16;
+                *out = rounded.min(i32::MAX as u128) as u32;
+            }
+        }
+    }
+
+    Some(sum)
+}
+
+/// Evaluate the negative log-likelihood of `target` under the same base-2
+/// exponent approximation used by the integer softmax, without first rounding
+/// the normalized target probability to Q15 or Q31.
+///
+/// The declared integer objective is
+/// `log2(sum_i weight_i) - log2(weight_target)`, rounded to millibits. A target
+/// whose exponent approximation annihilates to zero receives the caller-bound
+/// zero-probability floor. Because the reciprocal is not part of this
+/// calculation, the result is shift-invariant and independent of probability
+/// normalization error.
+pub fn base2_softmax_nll_millibits(
+    logits_q8: &[i32],
+    target: usize,
+    zero_probability_floor_millibits: u64,
+) -> Option<u64> {
+    let zero_floor_q20 = zero_probability_floor_millibits
+        .checked_mul(1_u64 << NLL_LOG2_FRACTIONAL_BITS)?
+        .checked_add(500)?
+        / 1_000;
+    let loss_q20 = base2_softmax_nll_q20(logits_q8, target, zero_floor_q20)?;
+    loss_q20
+        .checked_mul(1_000)?
+        .checked_add(1_u64 << (NLL_LOG2_FRACTIONAL_BITS - 1))
+        .map(|rounded| rounded >> NLL_LOG2_FRACTIONAL_BITS)
+}
+
+/// Q20-bit counterpart of [`base2_softmax_nll_millibits`] for exact lattice
+/// comparisons that would be hidden by millibit reporting resolution.
+pub fn base2_softmax_nll_q20(
+    logits_q8: &[i32],
+    target: usize,
+    zero_probability_floor_q20: u64,
+) -> Option<u64> {
+    if logits_q8.is_empty() || target >= logits_q8.len() {
+        return None;
+    }
+    let max_logit = logits_q8
+        .iter()
+        .copied()
+        .filter(|&logit| logit != MASKED_LOGIT)
+        .max()?;
+    if logits_q8[target] == MASKED_LOGIT {
+        return Some(zero_probability_floor_q20);
+    }
+
+    let mut weight_sum = 0_u64;
+    let mut target_weight = 0_u64;
+    for (index, &logit) in logits_q8.iter().enumerate() {
+        if logit == MASKED_LOGIT {
+            continue;
+        }
+        let weight = u64::from(base2_exp_neg_q15(logit.saturating_sub(max_logit)) as u16);
+        weight_sum = weight_sum.checked_add(weight)?;
+        if index == target {
+            target_weight = weight;
+        }
+    }
+    if target_weight == 0 {
+        return Some(zero_probability_floor_q20);
+    }
+
+    let denominator_log2_q20 = log2_u64_q20(weight_sum)?;
+    let numerator_log2_q20 = log2_u64_q20(target_weight)?;
+    denominator_log2_q20.checked_sub(numerator_log2_q20)
+}
+
+/// Wide Q47 logit-anchored NLL from MJ-05. This is a separately versioned
+/// observation objective; it does not replace the deployed Q15 softmax path.
+pub fn base2_softmax_nll_q47_q20(
+    logits_q8: &[i32],
+    target: usize,
+    zero_probability_floor_q20: u64,
+) -> Option<u64> {
+    if logits_q8.is_empty() || target >= logits_q8.len() {
+        return None;
+    }
+    let max_logit = logits_q8
+        .iter()
+        .copied()
+        .filter(|&logit| logit != MASKED_LOGIT)
+        .max()?;
+    if logits_q8[target] == MASKED_LOGIT {
+        return Some(zero_probability_floor_q20);
+    }
+
+    let mut weight_sum = 0_u64;
+    let mut target_weight = 0_u64;
+    for (index, &logit) in logits_q8.iter().enumerate() {
+        if logit == MASKED_LOGIT {
+            continue;
+        }
+        let weight = base2_exp_neg_q47(logit.saturating_sub(max_logit));
+        weight_sum = weight_sum.checked_add(weight)?;
+        if index == target {
+            target_weight = weight;
+        }
+    }
+    if target_weight == 0 {
+        return Some(zero_probability_floor_q20);
+    }
+
+    log2_u64_q20(weight_sum)?.checked_sub(log2_u64_q20(target_weight)?)
+}
+
+/// Q32 observation counterpart of [`base2_softmax_nll_q47_q20`]. The deployed
+/// logits and Q47 exponential weights are identical; only the final logarithm
+/// retains another twelve fractional bits. This is an audit objective, not a
+/// training-objective or forward-path change.
+pub fn base2_softmax_nll_q47_q32(
+    logits_q8: &[i32],
+    target: usize,
+    zero_probability_floor_q32: u64,
+) -> Option<u64> {
+    if logits_q8.is_empty() || target >= logits_q8.len() {
+        return None;
+    }
+    let max_logit = logits_q8
+        .iter()
+        .copied()
+        .filter(|&logit| logit != MASKED_LOGIT)
+        .max()?;
+    if logits_q8[target] == MASKED_LOGIT {
+        return Some(zero_probability_floor_q32);
+    }
+
+    let mut weight_sum = 0_u64;
+    let mut target_weight = 0_u64;
+    for (index, &logit) in logits_q8.iter().enumerate() {
+        if logit == MASKED_LOGIT {
+            continue;
+        }
+        let weight = base2_exp_neg_q47(logit.saturating_sub(max_logit));
+        weight_sum = weight_sum.checked_add(weight)?;
+        if index == target {
+            target_weight = weight;
+        }
+    }
+    if target_weight == 0 {
+        return Some(zero_probability_floor_q32);
+    }
+
+    log2_u64_fixed(weight_sum, 32)?.checked_sub(log2_u64_fixed(target_weight, 32)?)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Base2SoftmaxNllQ47Components {
+    pub weight_sum: u64,
+    pub target_weight: u64,
+    pub denominator_log2_q20: u64,
+    pub target_log2_q20: u64,
+    pub denominator_log2_q32: u64,
+    pub target_log2_q32: u64,
+}
+
+/// Returns the exact Q47-weight denominator/target logarithm components at the
+/// Q20 and Q32 observation grids. The Q20 components are required to equal the
+/// Q32 prefixes, making boundary crossings and cancellation auditable without
+/// changing the softmax used by inference.
+pub fn base2_softmax_nll_q47_components(
+    logits_q8: &[i32],
+    target: usize,
+) -> Option<Base2SoftmaxNllQ47Components> {
+    if logits_q8.is_empty() || target >= logits_q8.len() {
+        return None;
+    }
+    let max_logit = logits_q8
+        .iter()
+        .copied()
+        .filter(|&logit| logit != MASKED_LOGIT)
+        .max()?;
+    if logits_q8[target] == MASKED_LOGIT {
+        return None;
+    }
+    let mut weight_sum = 0_u64;
+    let mut target_weight = 0_u64;
+    for (index, &logit) in logits_q8.iter().enumerate() {
+        if logit == MASKED_LOGIT {
+            continue;
+        }
+        let weight = base2_exp_neg_q47(logit.saturating_sub(max_logit));
+        weight_sum = weight_sum.checked_add(weight)?;
+        if index == target {
+            target_weight = weight;
+        }
+    }
+    if target_weight == 0 {
+        return None;
+    }
+    let denominator_log2_q20 = log2_u64_fixed(weight_sum, 20)?;
+    let target_log2_q20 = log2_u64_fixed(target_weight, 20)?;
+    let denominator_log2_q32 = log2_u64_fixed(weight_sum, 32)?;
+    let target_log2_q32 = log2_u64_fixed(target_weight, 32)?;
+    if denominator_log2_q32 >> 12 != denominator_log2_q20
+        || target_log2_q32 >> 12 != target_log2_q20
+    {
+        return None;
+    }
+    Some(Base2SoftmaxNllQ47Components {
+        weight_sum,
+        target_weight,
+        denominator_log2_q20,
+        target_log2_q20,
+        denominator_log2_q32,
+        target_log2_q32,
+    })
+}
+
+fn log2_u64_q20(value: u64) -> Option<u64> {
+    log2_u64_fixed(value, NLL_LOG2_FRACTIONAL_BITS)
+}
+
+fn log2_u64_fixed(value: u64, fractional_bits: u32) -> Option<u64> {
+    if value == 0 {
+        return None;
+    }
+    if fractional_bits > 40 {
+        return None;
+    }
+    let integer_log2 = u64::BITS - 1 - value.leading_zeros();
+    let mut normalized_q63 = u128::from(value) << (63 - integer_log2);
+    let mut fractional = 0_u64;
+    for bit in (0..fractional_bits).rev() {
+        normalized_q63 = normalized_q63.checked_mul(normalized_q63)? >> 63;
+        if normalized_q63 >= (1_u128 << 64) {
+            normalized_q63 >>= 1;
+            fractional |= 1_u64 << bit;
+        }
+    }
+    Some((u64::from(integer_log2) << fractional_bits) | fractional)
 }
 
 pub fn attention_weight_v_i16_q15_checked(
@@ -1472,6 +1862,34 @@ mod tests {
     }
 
     #[test]
+    fn q47_reciprocals_track_power_of_two_cases() {
+        assert_eq!(reciprocal_sum_q47_lut(1), Some(1_u64 << 47));
+        assert_eq!(reciprocal_sum_q47_newton1(2), Some(1_u64 << 46));
+        assert_eq!(reciprocal_sum_q47_exact(128), Some(1_u64 << 40));
+        assert_eq!(reciprocal_sum_q47_lut(0), None);
+        assert_eq!(reciprocal_sum_q47_newton1(0), None);
+        assert_eq!(reciprocal_sum_q47_exact(0), None);
+    }
+
+    #[test]
+    fn q47_newton_refinement_reduces_lut_reciprocal_error() {
+        let sum = 8_192_u64 * 32_767;
+        let scale = 1_u128 << 47;
+        let lut = u128::from(reciprocal_sum_q47_lut(sum).expect("nonzero reciprocal"));
+        let newton = u128::from(reciprocal_sum_q47_newton1(sum).expect("nonzero reciprocal"));
+        let exact = u128::from(reciprocal_sum_q47_exact(sum).expect("nonzero reciprocal"));
+        let mass_error = |reciprocal: u128| {
+            u128::from(sum)
+                .checked_mul(reciprocal)
+                .expect("representative product fits")
+                .abs_diff(scale)
+        };
+
+        assert!(mass_error(newton) < mass_error(lut));
+        assert!(mass_error(exact) <= u128::from(sum / 2));
+    }
+
+    #[test]
     fn base2_softmax_masks_by_annihilation() {
         let logits = [0_i32, MASKED_LOGIT, 0];
         let mut output = [0_i16; 3];
@@ -1489,6 +1907,168 @@ mod tests {
         let mut output = [0_i16; 2];
 
         assert_eq!(base2_softmax_i32_q15(&logits, &mut output), None);
+    }
+
+    #[test]
+    fn q31_softmax_requantizes_to_the_frozen_q15_result() {
+        let logits = [0_i32, -1, -64, -256, MASKED_LOGIT, 19];
+        let mut q15 = [0_i16; 6];
+        let mut q31 = [0_u32; 6];
+
+        assert_eq!(
+            base2_softmax_i32_q15(&logits, &mut q15),
+            base2_softmax_i32_q31(&logits, &mut q31)
+        );
+        for (wide, narrow) in q31.into_iter().zip(q15) {
+            assert_eq!(
+                saturate_i16(round_shift_rhu_i64(i64::from(wide), 16)),
+                narrow
+            );
+        }
+    }
+
+    #[test]
+    fn q47_normalization_recovers_uniform_probability_mass() {
+        let logits = [0_i32; 8_192];
+        let mut legacy = [0_u32; 8_192];
+        let mut lut_q47 = [0_u32; 8_192];
+        let mut newton_q47 = [0_u32; 8_192];
+        let mut exact_q47 = [0_u32; 8_192];
+
+        base2_softmax_i32_q31_with_normalization(
+            &logits,
+            &mut legacy,
+            SoftmaxNormalization::LegacyQ31Lut,
+        )
+        .expect("legacy softmax");
+        base2_softmax_i32_q31_with_normalization(
+            &logits,
+            &mut lut_q47,
+            SoftmaxNormalization::Q47Lut,
+        )
+        .expect("Q47 LUT softmax");
+        base2_softmax_i32_q31_with_normalization(
+            &logits,
+            &mut newton_q47,
+            SoftmaxNormalization::Q47Newton1,
+        )
+        .expect("Q47 Newton softmax");
+        base2_softmax_i32_q31_with_normalization(
+            &logits,
+            &mut exact_q47,
+            SoftmaxNormalization::Q47Exact,
+        )
+        .expect("Q47 exact softmax");
+
+        let scale = 1_u64 << 31;
+        let mass_error = |probabilities: &[u32]| {
+            probabilities
+                .iter()
+                .map(|&value| u64::from(value))
+                .sum::<u64>()
+                .abs_diff(scale)
+        };
+        assert!(mass_error(&newton_q47) < mass_error(&lut_q47));
+        assert!(mass_error(&newton_q47) < mass_error(&legacy));
+        assert_eq!(mass_error(&exact_q47), 0);
+    }
+
+    #[test]
+    fn canonical_integer_nll_is_exact_for_uniform_power_of_two_vocabulary() {
+        let logits = [0_i32; 8_192];
+        assert_eq!(
+            base2_softmax_nll_millibits(&logits, 17, DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS,),
+            Some(13_000)
+        );
+    }
+
+    #[test]
+    fn q47_objective_preserves_small_weights_and_is_target_monotone() {
+        assert_eq!(base2_exp_neg_q15(-(16 << 8)), 0);
+        assert!(base2_exp_neg_q47(-(16 << 8)) > 0);
+        let before = [0_i32, -(20 << 8), -(2 << 8)];
+        let mut after = before;
+        after[1] += 1;
+        let floor = 32_u64 << 20;
+        let before_loss = base2_softmax_nll_q47_q20(&before, 1, floor).expect("wide NLL");
+        let after_loss = base2_softmax_nll_q47_q20(&after, 1, floor).expect("wide NLL");
+        assert!(after_loss <= before_loss);
+        let before_q32 = base2_softmax_nll_q47_q32(&before, 1, 32_u64 << 32).expect("wide Q32 NLL");
+        let after_q32 = base2_softmax_nll_q47_q32(&after, 1, 32_u64 << 32).expect("wide Q32 NLL");
+        assert!(after_q32 < before_q32);
+        assert!((before_q32 >> 12).abs_diff(before_loss) <= 1);
+        let components = base2_softmax_nll_q47_components(&before, 1).expect("Q47 components");
+        assert_eq!(
+            components.denominator_log2_q32 >> 12,
+            components.denominator_log2_q20
+        );
+        assert_eq!(components.target_log2_q32 >> 12, components.target_log2_q20);
+        assert_eq!(
+            components.denominator_log2_q20 - components.target_log2_q20,
+            before_loss
+        );
+        assert_eq!(
+            components.denominator_log2_q32 - components.target_log2_q32,
+            before_q32
+        );
+    }
+
+    #[test]
+    fn canonical_integer_nll_is_shift_invariant_and_ignores_normalizer_choice() {
+        let logits = [512_i32, 128, -64, -512];
+        let shifted = [1_536_i32, 1_152, 960, 512];
+        let source =
+            base2_softmax_nll_millibits(&logits, 2, DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS);
+        let candidate =
+            base2_softmax_nll_millibits(&shifted, 2, DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS);
+        assert_eq!(source, candidate);
+
+        let mut legacy = [0_u32; 4];
+        let mut exact = [0_u32; 4];
+        base2_softmax_i32_q31_with_normalization(
+            &logits,
+            &mut legacy,
+            SoftmaxNormalization::LegacyQ31Lut,
+        )
+        .expect("legacy");
+        base2_softmax_i32_q31_with_normalization(
+            &logits,
+            &mut exact,
+            SoftmaxNormalization::Q47Exact,
+        )
+        .expect("exact");
+        assert_ne!(legacy, exact);
+        assert_eq!(source, Some(2_952));
+    }
+
+    #[test]
+    fn canonical_integer_nll_uses_declared_floor_for_annihilated_target() {
+        let logits = [0_i32, -100_000];
+        assert_eq!(
+            base2_softmax_nll_millibits(&logits, 1, 29_000),
+            Some(29_000)
+        );
+    }
+
+    #[test]
+    fn canonical_integer_log2_q20_matches_frozen_exact_vectors() {
+        // Generated once with 120-decimal-digit arithmetic and frozen here so
+        // the integer-only repository check never depends on a float oracle.
+        for (value, expected_q20) in [
+            (1_u64, 0_u64),
+            (2, 1_048_576),
+            (3, 1_661_953),
+            (7, 2_943_724),
+            (31, 5_194_851),
+            (32_767, 15_728_593),
+            (32_768, 15_728_640),
+            (268_427_264, 29_360_081),
+            (u32::MAX as u64, 33_554_431),
+            (u64::MAX, 67_108_863),
+        ] {
+            let actual = log2_u64_q20(value).expect("positive integer log2");
+            assert_eq!(actual, expected_q20, "value={value}");
+        }
     }
 
     #[test]

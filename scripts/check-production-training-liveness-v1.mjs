@@ -18,6 +18,7 @@ let eventPath = "";
 let interval = -1;
 let expectDead = false;
 let requireTrunkUpdateBy = null;
+const requiredTrunkGroups = [];
 let outputUnlockDeadlineIntervals = 1;
 let trunkActivationDeadlineIntervals = 1;
 for (let index = 2; index < process.argv.length; index += 1) {
@@ -33,6 +34,9 @@ for (let index = 2; index < process.argv.length; index += 1) {
   else if (arg === "--require-trunk-update-by-interval") {
     requireTrunkUpdateBy = Number(process.argv[++index]);
   }
+  else if (arg === "--required-trunk-group") {
+    requiredTrunkGroups.push(process.argv[++index]);
+  }
   else if (arg === "--output-unlock-deadline-intervals") {
     outputUnlockDeadlineIntervals = Number(process.argv[++index]);
   }
@@ -47,7 +51,9 @@ if (!tracePath || !stateOutPath || !eventPath || interval < 0) {
 if (!Number.isInteger(outputUnlockDeadlineIntervals) || outputUnlockDeadlineIntervals < 1
   || !Number.isInteger(trunkActivationDeadlineIntervals) || trunkActivationDeadlineIntervals < 1
   || (requireTrunkUpdateBy !== null
-    && (!Number.isInteger(requireTrunkUpdateBy) || requireTrunkUpdateBy < 0))) {
+    && (!Number.isInteger(requireTrunkUpdateBy) || requireTrunkUpdateBy < 0))
+  || requiredTrunkGroups.length !== new Set(requiredTrunkGroups).size
+  || requiredTrunkGroups.some((group) => !trunkGroups.includes(group))) {
   throw new Error("liveness deadlines must be bounded integer intervals");
 }
 
@@ -58,6 +64,8 @@ const policy = {
   trunk_activation_deadline_intervals: trunkActivationDeadlineIntervals,
   require_trunk_update_by_interval: requireTrunkUpdateBy,
 };
+if (requiredTrunkGroups.length === 1) policy.required_trunk_group = requiredTrunkGroups[0];
+else if (requiredTrunkGroups.length > 1) policy.required_trunk_groups = requiredTrunkGroups;
 const previous = stateInPath
   ? await readJson(stateInPath)
   : {
@@ -83,11 +91,17 @@ if ((!stateInPath && interval !== 0)
 const devInitial = devInitialPath ? await readJson(devInitialPath) : null;
 const devCurrent = devCurrentPath ? await readJson(devCurrentPath) : null;
 const gradientCounts = trace.diagnostics.gradient_nonzero_count;
+const residualCarryCounts = trace.diagnostics.residual_carry_count;
+const updateCounts = trace.diagnostics.update_nonzero_count;
+const movementL1 = trace.movement_l1;
 const exactGroupKeys = (value) => value && JSON.stringify(Object.keys(value).sort())
   === JSON.stringify([...requiredGroups].sort());
 const validCounts = (value) => Object.values(value)
   .every((count) => Number.isSafeInteger(count) && count >= 0);
 if (!exactGroupKeys(gradientCounts) || !validCounts(gradientCounts)
+  || !exactGroupKeys(residualCarryCounts) || !validCounts(residualCarryCounts)
+  || !exactGroupKeys(updateCounts) || !validCounts(updateCounts)
+  || !exactGroupKeys(movementL1) || !validCounts(movementL1)
   || !exactGroupKeys(trace.diagnostics.saturation_by_group)
   || !validCounts(trace.diagnostics.saturation_by_group)
   || !exactGroupKeys(trace.diagnostics.residual_saturation_by_group)
@@ -95,11 +109,31 @@ if (!exactGroupKeys(gradientCounts) || !validCounts(gradientCounts)
   || !trace.moved_parameter_groups.every((group) => requiredGroups.includes(group))) {
   throw new Error("training trace does not contain the exact production parameter groups");
 }
+const reachableUpdateGroups = requiredGroups
+  .filter((group) => updateCounts[group] > 0).sort();
+const movedGroupsByL1 = requiredGroups.filter((group) => movementL1[group] > 0).sort();
+const declaredMovedGroups = [...trace.moved_parameter_groups].sort();
+const modelHashChanged = trace.hashes.initial_model !== trace.hashes.final_model;
+if (JSON.stringify(reachableUpdateGroups) !== JSON.stringify(movedGroupsByL1)
+  || JSON.stringify(reachableUpdateGroups) !== JSON.stringify(declaredMovedGroups)
+  || modelHashChanged !== (reachableUpdateGroups.length > 0)) {
+  throw new Error("parameter movement is inconsistent with exact reachable updates");
+}
 const activeGroups = requiredGroups.filter((group) => gradientCounts[group] > 0).sort();
 const outputMoved = trace.movement_l1.output > 0;
 const movedTrunkGroups = trace.moved_parameter_groups.filter((group) => trunkGroups.includes(group));
 const trunkMoved = movedTrunkGroups.length > 0;
 const trunkUpdateObserved = (previous.trunk_update_observed ?? false) || trunkMoved;
+const requiredTrunkGroupObservations = Object.fromEntries(requiredTrunkGroups.map((group) => [
+  group,
+  (previous.required_trunk_group_observations?.[group]
+    ?? (requiredTrunkGroups.length === 1 && previous.required_trunk_group_observed)
+    ?? false)
+    || movedTrunkGroups.includes(group),
+]));
+const requiredTrunkGroupObserved = requiredTrunkGroups.length === 0
+  ? trunkUpdateObserved
+  : Object.values(requiredTrunkGroupObservations).every(Boolean);
 const outputUnlocked = previous.output_unlocked || outputMoved;
 const fullGradientPath = activeGroups.length === 13;
 const residualSaturationCount = trace.health.residual_saturation_count ?? 0;
@@ -128,7 +162,9 @@ else if (!outputUnlocked && phaseAgeIntervals >= outputUnlockDeadlineIntervals) 
 } else if (previous.phase === "trunk_live" && !fullGradientPath) {
   classification = "post_unlock_gradient_path_loss";
 } else if (requireTrunkUpdateBy !== null && interval >= requireTrunkUpdateBy
-  && !trunkUpdateObserved) classification = "trunk_update_timeout";
+  && !requiredTrunkGroupObserved) classification = requiredTrunkGroups.length === 0
+    ? "trunk_update_timeout"
+    : "required_trunk_group_update_timeout";
 else if (!heldoutNonincreasing) classification = "heldout_regression";
 const dead = classification !== "live";
 const state = {
@@ -137,6 +173,8 @@ const state = {
   phase,
   output_unlocked: outputUnlocked,
   trunk_update_observed: trunkUpdateObserved,
+  required_trunk_group_observed: requiredTrunkGroupObserved,
+  required_trunk_group_observations: requiredTrunkGroupObservations,
   phase_age_intervals: phaseAgeIntervals,
   consecutive_dead_intervals: dead ? previous.consecutive_dead_intervals + 1 : 0,
   model_hash: trace.hashes.final_model,
@@ -155,8 +193,20 @@ const event = {
   output_unlocked: outputUnlocked,
   trunk_moved: trunkMoved,
   moved_trunk_groups: movedTrunkGroups,
+  reachable_update_groups: reachableUpdateGroups,
+  model_hash_changed: modelHashChanged,
   trunk_update_observed: trunkUpdateObserved,
+  required_trunk_group: requiredTrunkGroups.length === 1 ? requiredTrunkGroups[0] : null,
+  required_trunk_groups: requiredTrunkGroups,
+  required_trunk_group_observed: requiredTrunkGroupObserved,
+  required_trunk_group_observations: requiredTrunkGroupObservations,
   active_gradient_groups: activeGroups,
+  group_reachability: Object.fromEntries(requiredGroups.map((group) => [group, {
+    gradient_nonzero_count: gradientCounts[group],
+    residual_carry_count: residualCarryCounts[group],
+    update_nonzero_count: updateCounts[group],
+    movement_l1: movementL1[group],
+  }])),
   full_gradient_path: fullGradientPath,
   gradient_saturation_count: trace.health.gradient_saturation_count,
   residual_saturation_count: residualSaturationCount,

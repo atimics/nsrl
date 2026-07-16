@@ -27,14 +27,94 @@ that validates the numeric foundation: quantized QK attention, base-2 softmax,
 static residual scales, integer RMSNorm, gated nonlinear blocks, integer
 training, and exhaustive tests for fixed-point behavior.
 
+Integer training itself is not the novelty claim. Earlier work already covers
+integer or heavily quantized training and integer transformer components. NSRL
+is testing the stricter conjunction of native-integer updates, deterministic
+replay, checked health, and local Rust/WASM deployment. Its further claim that
+rank can exceed the number of optimizer updates reachable at a given scale is
+explicitly a falsifiable research hypothesis; see `research/README.md`,
+`research/paper-catalog.md`, and `research/quantized-optimization.md`.
+
 ## Active Promotion Milestone
 
-The only headline promotion milestone is `integer-transformer-proof-v1`,
-defined in `docs/integer-transformer-proof-v1.md` and enforced by `nsrl-eval`.
-One NSRL-born integer transformer must beat retrieval, byte n-gram, and an
-independently produced floating-point reference on the same frozen evaluation
-partition. It must win aggregate Q15 probability error strictly and cannot
-regress mistake count against any required baseline.
+`integer-transformer-proof-v1`, defined in
+`docs/integer-transformer-proof-v1.md` and enforced by `nsrl-eval`, remains a
+frozen system-level result. A matched component ablation found that its fitted
+suffix memory supplies every top-1 improvement; transformer logits improve
+probability error but change no predicted tokens. The active headline gate is
+therefore an unassisted transformer-only successor on the same frozen
+partition. A 16-cell suffix-free successor sweep varied update scale, duration,
+batch geometry, balancing, coverage, attention, and position policy; no row
+passed, and the best remained at 5,094 mistakes versus the 2,510 gate. Further
+work must change the learning architecture or objective rather than promote a
+hyperparameter variant. Until an unassisted row passes, the v1 artifact must be
+described as a transformer-plus-suffix-memory system rather than proof that the
+parametric transformer learned the task by itself.
+
+The first successor-v2 trial is complete and frozen as a falsification. Under
+canonical integer base-2 NLL, the physically unassisted candidate scores
+115,010,055 millibits versus 47,168,000 uniform, 38,271,425 retrieval,
+38,025,720 byte n-gram, and 40,847,697 for a genuine trained float32
+transformer. It loses every comparison. Paid scaling remains unauthorized;
+future authorization requires a new transformer-only candidate to beat all
+four rows strictly on the same bound NLL objective.
+
+The p10m training roadmap has completed its local scaling-readiness review. A
+contracted 2,048-window run bound the K/V schedule to the same initialization,
+data order, context, batch geometry, budget, and held-out split as a float32 SGD
+reference. Integer K, V, and output moved in every chunk with all 13 gradient
+paths active and zero saturation; the integer lane finished 5,209 total
+millibits below initialization while the float lane finished 98 mean millibits
+below its initialization. Midpoint replay was byte-identical for the integer
+model and optimizer and tensor-identical for all 13 float arrays. The result
+does not authorize a paid scale run: optimizer families remain intentionally
+different, validation quality was non-monotone across integer chunks, and the
+remaining trunk groups still need safe boundaries. The isolated
+gate-projection preflight at shift 23 is now complete: `gate` first moved at
+window 768 and made 26 exact updates, only K/V/gate/output moved, all saturation
+remained zero, held-out finished 5,209 total millibits below initialization,
+and midpoint replay was byte-identical. Two source-relative `up` gates then
+showed why safe movement is insufficient: shift 23 made 26 exact updates with
+no dev gain, while shift 22 made 101,543 with zero saturation but still only
+tied the source on selected dev and regressed the one-shot test by 1,245 total
+millibits. A matched-horizon comparison found every final feature, logit,
+probability, and per-window loss identical between shift 22 and shift 23 on all
+256 dev windows. A predeclared forward-scale sweep then found shift 7 as the
+first safe functional boundary: 250 feature/logit vectors and 124 probability
+vectors changed, but no target probability changed. Fresh 1,024-window training
+at that scale made 50,568 `up` updates with zero saturation and exact replay,
+yet still tied source dev. The product roadmap now targets Q15 target-
+probability resolution for the 8,192-token output, not another trunk shift. The
+completed audit confirms the resolution loss: Q15 has only three observed
+target values and hides every target delta, Q19 exposes one, and Q23 exposes
+all 13 target-delta windows visible at Q31. However, scale-compensated Q19 and
+Q23 training preflights produce the exact Q15 model and dev result after 256
+windows; only optimizer residual bytes differ. The completed normalization
+gate finds that one Q47 integer Newton refinement cuts worst-case mass error
+from roughly 98,900 ppm to 98/83 ppm, close to the 73/74 ppm exact-division
+ceiling. It also reduces observed target-change windows from 13 to 5, versus 4
+under exact division. Because the predeclared selection rule required retaining
+all 13 legacy target changes, that gate promoted no normalization. The completed
+window-level attribution shows Newton contains all four exact target-change
+windows, has one additional one-unit denominator-boundary change, and remains
+within one Q23 unit of exact division across both complete probability vectors.
+All nine legacy-only target changes have unchanged target logits and zero exact
+Q23 delta. The bounded normalized wide-gradient preflight then proves the
+selected Q23/`q47_newton1` signal reaches optimizer state exactly, reaches
+features and logits after 155 `up` boundary crossings, and reaches three target
+probabilities after an isolated output boundary crossing, all without
+saturation. Neither materialization lane improves dev; the output boundary is
+415 total millibits worse. The product roadmap therefore moves to a
+target-aligned integer-objective review rather than more fractional bits or
+paid scaling; paid scale remains unauthorized.
+
+Reachable-update fingerprints are now an evidence-backed prioritization signal.
+In a predeclared 30-cell longitudinal matrix, early functional movement
+predicted later disjoint held-out gain with zero false positives, MCC 0.645,
+and Spearman ρ 0.828. It missed six candidates that activated only later, and
+all 16 early-reachable long runs saturated. The product implication is to use
+early reachability to prioritize candidates while retaining delayed-activation
+checks and adding saturation-aware control before longer expert runs.
 
 Literary routing and Solomon multimodal generation are experiment suites. They
 may produce candidate architectures and product evidence, but they do not
@@ -432,6 +512,28 @@ Milestone 6: Graph And WASM Product Surface is successful when:
   deterministic trace.
 - WASM bundle size, startup latency, and route-to-first-output latency are
   measured in CI or release traces.
+
+Milestone 7: Decentralized Model Launch Coordination is successful when:
+
+- Sponsors can publish immutable metric bounties with escrow amounts, baselines,
+  targets, non-regression guardrails, and frozen evaluator hashes.
+- Builders can publish a versioned model/run recipe that binds source, dataset,
+  architecture, stages, compute ceilings, promotion, and artifact outputs.
+- Accepted stage, candidate, replay, and promotion evidence can append one
+  idempotent, hash-linked reward block with exact capped integer allocation.
+- Compute providers and validators sign receipts that can be independently
+  replayed and challenged.
+- Model publication binds its artifact and metric proof without allowing token
+  balances or market prices to redefine promotion.
+
+Status: signed localnet prototype. `nsrl.model_launch_recipe.v1` packages the
+existing promoted integer-Transformer proof as a checked specimen. Ed25519
+actors replay 31 hash-linked events through sponsor funding, bounded compute,
+independent stage/candidate quorums, challenge resolution, model publication,
+deterministic bounty settlement, and a capped model-local reward block. Forge
+exposes the public transcript and gap map. Wallets, custody, transferable
+assets, provider auctions, Sybil resistance, multi-writer consensus, and
+external settlement remain unimplemented.
 
 ## Locked Decisions
 

@@ -1,0 +1,266 @@
+{
+  "schema": "nsrl.production_cross_source_exchange_publication.v1",
+  "analysis_role": "deterministic_post_outcome_reporting_of_frozen_prospective_experiment",
+  "source_sha256": {
+    "frozen_prospective_contract": "cfb7e59dafd49bb9a643210cf3a97e6dbd0ecd0b923b95e78af2c7abb67ac443",
+    "checked_prospective_result": "69557a15d19df703a27858072c3444d1b8a5b6b98ccf92897e0d12e129191425",
+    "publisher": "eb97aeb294f9291bb24dccd4b184ba8a9706578c80c343cba0ff8b045ba5d596"
+  },
+  "prospective_integrity": {
+    "reporting_only": true,
+    "exchange_features_predictor_abstention_alpha_and_falsifiers_changed": false,
+    "calibration_or_evaluation_outcomes_used_to_tune_rule": false,
+    "source_roles_changed": false
+  },
+  "independent_source_panel": {
+    "experimental_unit": "one Project Gutenberg ebook from one distinct normalized author",
+    "required_distinctness": "unique Gutenberg ebook ID, raw SHA-256, panel SHA-256, and normalized author key across all fitting, calibration, and evaluation roles",
+    "role_rule": "the complete ebook source is assigned to exactly one role",
+    "panel_contents": {
+      "seed": "nsrl-m3-source-panel-passage-2026-07-15-v1",
+      "panel_documents_per_source": 1,
+      "sampled_utf8_bytes_before_normalization": 16384,
+      "model_windows_per_panel_document": 2,
+      "model_context_tokens": 64,
+      "byte_offset_algorithm": "SHA256(seed, ebook_id, raw_sha256, ordinal) modulo available cleaned body bytes, advanced to UTF-8 and whitespace boundary",
+      "missing_source_policy": "abort before outcome evaluation; no source replacement after freeze",
+      "score_scope": "maximum over every frozen exchange and panel document",
+      "source_failure_policy": "abort; do not replace or drop a frozen source after this contract"
+    },
+    "stochastic_independence_claimed": false,
+    "exchangeability_assumption": "calibration and evaluation panels are exchangeable within the frozen distinct-author English Project Gutenberg frame conditional on the fitting sources",
+    "documents_200_212_excluded_as_same_source_documents": true
+  },
+  "frozen_design": {
+    "fitting_source_panels": 16,
+    "calibration_source_panels": 39,
+    "evaluation_source_panels": 16,
+    "exchange_set": [
+      {
+        "id": "base43_atom2_to_atom4",
+        "base_mask": 43,
+        "outgoing_atom": 2,
+        "incoming_atom": 4,
+        "control_mask": 47,
+        "candidate_mask": 59,
+        "singleton_margin_q32": "loss(mask16)-loss(mask0) minus loss(mask4)-loss(mask0)",
+        "exact_contrast_q32": "loss(mask59)-loss(mask47)",
+        "interaction_residual_q32": "exact_contrast minus singleton_margin"
+      }
+    ],
+    "probe_features": {
+      "ordered_features": [
+        "singleton_effect_atom_0_loss_mask_1_minus_mask_0",
+        "singleton_effect_atom_1_loss_mask_2_minus_mask_0",
+        "singleton_effect_atom_2_loss_mask_4_minus_mask_0",
+        "singleton_effect_atom_3_loss_mask_8_minus_mask_0",
+        "singleton_effect_atom_4_loss_mask_16_minus_mask_0",
+        "singleton_effect_atom_5_loss_mask_32_minus_mask_0"
+      ],
+      "representation": "Q32 signed integers",
+      "candidate_multi_atom_outcomes_excluded": true,
+      "allowed_router_inputs": [
+        "six Q32 singleton effects",
+        "frozen fitted predictor",
+        "frozen conformal correction"
+      ]
+    },
+    "residual_predictor": {
+      "name": "three_nearest_fitting_source_median_residual_v1",
+      "fitting_source_panels": 16,
+      "neighbors": 3,
+      "distance": "sum over six features of floor(abs(x_j-train_j)*2^20/max(1,fitting_MAD_j))",
+      "tie_break": "ascending source_id",
+      "output": "lower median Q32 interaction residual of the three nearest fitting sources",
+      "q32_conversion": "already exact Q32 integer; no floating-point conversion",
+      "fitted_parameters_sha256": "07712a0a5071e89dc217aa0c00de63beda27e058c9da3ce68d5a553485eddfac"
+    },
+    "abstention_rule": "retain control mask 47 on equality or positive certified upper contrast",
+    "strict_firing_rule": "lambda_e+q_e(phi)+Q_alpha < 0",
+    "error_level": "1/20",
+    "falsifiers": {
+      "coverage": {
+        "test": "one-sided exact binomial test of source-panel failure probability greater than 1/20",
+        "evaluation_source_panels": 16,
+        "exact_binomial_rejection_failures": 3,
+        "exact_binomial_alpha": "1/20",
+        "maximum_failures_for_support": 1,
+        "two_failures_decision": "inconclusive_no_promotion"
+      },
+      "unsafe_action": {
+        "falsifier": "one or more fired evaluation source panels with nonnegative exact exchange contrast",
+        "maximum_unsafe_firings_for_support": 0
+      },
+      "nonvacuity": {
+        "falsifier": "no evaluation source panel fires",
+        "minimum_fired_source_panels": 1
+      },
+      "incremental_value": {
+        "falsifier": "aggregate Q32 contrast over fired evaluation source panels is nonnegative",
+        "strict_negative_aggregate_required": true
+      }
+    }
+  },
+  "conformal_envelope": {
+    "status": "finite",
+    "calibration_source_panels": 39,
+    "order_statistic_rank": 38,
+    "correction_q32": "4326",
+    "minimum_calibration_source_panels_for_finite_95_percent_envelope": 19
+  },
+  "untouched_evaluation_metrics": {
+    "evaluation_source_panels": 16,
+    "unsafe_action_rate": {
+      "numerator": 0,
+      "denominator": 16,
+      "exact": "0/16"
+    },
+    "unsafe_given_firing_diagnostic": {
+      "numerator": 0,
+      "denominator": 5,
+      "exact": "0/5"
+    },
+    "firing_rate": {
+      "numerator": 5,
+      "denominator": 16,
+      "exact": "5/16"
+    },
+    "source_panel_coverage": {
+      "numerator": 16,
+      "denominator": 16,
+      "exact": "16/16"
+    },
+    "regret_relative_to_abstention": {
+      "definition": "candidate loss minus control loss when the router fires; zero when it abstains",
+      "comparator": "always retain control mask 47",
+      "sign": "negative is improvement; positive is harm relative to abstention",
+      "aggregate_signed_q32": "-40769",
+      "mean_signed_q32": {
+        "numerator": "-40769",
+        "denominator": 16
+      },
+      "aggregate_positive_part_q32": "0",
+      "mean_positive_part_q32": {
+        "numerator": "0",
+        "denominator": 16
+      },
+      "per_source_panel_q32": [
+        {
+          "source_id": "gutenberg-1245",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-1260",
+          "action": "fire",
+          "signed_regret_q32": "-8132",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-2701",
+          "action": "fire",
+          "signed_regret_q32": "-8024",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-215",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-32449",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-1232",
+          "action": "fire",
+          "signed_regret_q32": "-8289",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-394",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-98",
+          "action": "fire",
+          "signed_regret_q32": "-7939",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-41",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-1228",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-3600",
+          "action": "fire",
+          "signed_regret_q32": "-8385",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-7370",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-11",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-1292",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-2542",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        },
+        {
+          "source_id": "gutenberg-140",
+          "action": "abstain",
+          "signed_regret_q32": "0",
+          "positive_part_q32": "0"
+        }
+      ]
+    }
+  },
+  "verdict": {
+    "status": "supported",
+    "reason": "all_preregistered_support_gates_pass",
+    "allowed_statuses": [
+      "supported",
+      "falsified",
+      "inconclusive"
+    ],
+    "vacuous_envelope_status": "inconclusive",
+    "scope": "bounded prospective source-transfer evidence on the frozen distinct-author English Project Gutenberg frame",
+    "optimizer_change_authorized": false,
+    "paid_scaling_authorized": false
+  },
+  "sealed_material": {
+    "documents": "200--212",
+    "read": false,
+    "independent_source_panels": false,
+    "cross_source_transfer_evidence": false
+  }
+}

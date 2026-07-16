@@ -1,0 +1,293 @@
+{
+  "schema": "nsrl.production_cross_source_exchange_predictor.v1",
+  "analysis_role": "fitting_only_frozen_before_calibration_evaluation",
+  "source_sha256": {
+    "source_frame": "3cf38860568320257a7af77fb615054925fb816ba98adc016ab60ddbeae01738",
+    "fitting_structure_contract": "41af4bf1658bfe10796e80f64177135bf947b752f16a9b9a7d4b3dc2dcde2327",
+    "fitting_structure": "f9de9d67fe73da7b9338987f97578f24e1a6094b774477209990920b75577da9",
+    "fitter": "2ef25a8a75350945b9dc6f9856cac6d6d4924ccfbe0b9ab2672c1526fb78d473"
+  },
+  "training_population": {
+    "independent_source_panels": 16,
+    "source_ids": [
+      "gutenberg-408",
+      "gutenberg-131",
+      "gutenberg-3300",
+      "gutenberg-1998",
+      "gutenberg-27827",
+      "gutenberg-236",
+      "gutenberg-64317",
+      "gutenberg-132",
+      "gutenberg-161",
+      "gutenberg-74",
+      "gutenberg-311",
+      "gutenberg-244",
+      "gutenberg-880",
+      "gutenberg-205",
+      "gutenberg-863",
+      "gutenberg-1322"
+    ],
+    "documents_per_panel": 1
+  },
+  "exchange": {
+    "id": "base43_atom2_to_atom4",
+    "base_mask": 43,
+    "outgoing_atom": 2,
+    "incoming_atom": 4,
+    "control_mask": 47,
+    "candidate_mask": 59
+  },
+  "probe_features": {
+    "representation": "Q32 signed integers",
+    "ordered_features": [
+      "singleton_effect_atom_0_loss_mask_1_minus_mask_0",
+      "singleton_effect_atom_1_loss_mask_2_minus_mask_0",
+      "singleton_effect_atom_2_loss_mask_4_minus_mask_0",
+      "singleton_effect_atom_3_loss_mask_8_minus_mask_0",
+      "singleton_effect_atom_4_loss_mask_16_minus_mask_0",
+      "singleton_effect_atom_5_loss_mask_32_minus_mask_0"
+    ],
+    "available_before_candidate_multi_atom_outcome": true,
+    "medians_q32": [
+      "0",
+      "0",
+      "0",
+      "0",
+      "-1996",
+      "-4003"
+    ],
+    "median_absolute_deviation_scales_q32": [
+      "1",
+      "1",
+      "1",
+      "1",
+      "2112",
+      "116"
+    ]
+  },
+  "algorithm": {
+    "name": "three_nearest_fitting_source_median_residual_v1",
+    "neighbors": 3,
+    "distance": "sum over six features of floor(abs(x_j-train_j)*2^20/max(1,fitting_MAD_j))",
+    "distance_tie_break": "ascending source_id",
+    "prediction": "lower median Q32 interaction residual of the three nearest fitting sources",
+    "internal_fractional_bits": 20,
+    "output_conversion": "already exact Q32 integer; no floating-point conversion",
+    "hyperparameters_selected_before_fitting_outcomes": true
+  },
+  "fitted_rows": [
+    {
+      "source_id": "gutenberg-408",
+      "singleton_features_q32": [
+        "0",
+        "114",
+        "-1925",
+        "0",
+        "-2173",
+        "-3946"
+      ],
+      "lambda_q32": "-248",
+      "interaction_residual_q32": "114"
+    },
+    {
+      "source_id": "gutenberg-131",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-2132",
+        "-3993"
+      ],
+      "lambda_q32": "-2132",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-3300",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "-2199",
+        "0",
+        "-4199",
+        "-3940"
+      ],
+      "lambda_q32": "-2000",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-1998",
+      "singleton_features_q32": [
+        "0",
+        "-3877",
+        "-85",
+        "0",
+        "2122",
+        "-4262"
+      ],
+      "lambda_q32": "2207",
+      "interaction_residual_q32": "-85"
+    },
+    {
+      "source_id": "gutenberg-27827",
+      "singleton_features_q32": [
+        "0",
+        "2155",
+        "0",
+        "0",
+        "492",
+        "-3981"
+      ],
+      "lambda_q32": "492",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-236",
+      "singleton_features_q32": [
+        "0",
+        "2160",
+        "226",
+        "-2051",
+        "-8012",
+        "-4210"
+      ],
+      "lambda_q32": "-8238",
+      "interaction_residual_q32": "-8"
+    },
+    {
+      "source_id": "gutenberg-64317",
+      "singleton_features_q32": [
+        "0",
+        "2049",
+        "0",
+        "-2036",
+        "-272",
+        "-4277"
+      ],
+      "lambda_q32": "-272",
+      "interaction_residual_q32": "-2058"
+    },
+    {
+      "source_id": "gutenberg-132",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "4036",
+        "-4003"
+      ],
+      "lambda_q32": "4036",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-161",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "1710",
+        "-3662"
+      ],
+      "lambda_q32": "1710",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-74",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-3951",
+        "-4119"
+      ],
+      "lambda_q32": "-3951",
+      "interaction_residual_q32": "1"
+    },
+    {
+      "source_id": "gutenberg-311",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-3899",
+        "-4374"
+      ],
+      "lambda_q32": "-3899",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-244",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-144",
+        "-3756"
+      ],
+      "lambda_q32": "-144",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-880",
+      "singleton_features_q32": [
+        "0",
+        "-2008",
+        "0",
+        "0",
+        "-7887",
+        "-3929"
+      ],
+      "lambda_q32": "-7887",
+      "interaction_residual_q32": "-1"
+    },
+    {
+      "source_id": "gutenberg-205",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-1996",
+        "-4172"
+      ],
+      "lambda_q32": "-1996",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-863",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "4276",
+        "-4434"
+      ],
+      "lambda_q32": "4276",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-1322",
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "116",
+        "-3929"
+      ],
+      "lambda_q32": "116",
+      "interaction_residual_q32": "0"
+    }
+  ],
+  "firewall": {
+    "calibration_outcomes_read": false,
+    "evaluation_outcomes_read": false,
+    "documents_200_212_read": false
+  }
+}

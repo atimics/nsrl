@@ -1,6 +1,6 @@
 # Integer Transformer Proof v1
 
-This is NSRL's single promotion milestone. It asks one question:
+This was NSRL's first system-level promotion milestone. It asked one question:
 
 > Does an NSRL-born deterministic integer transformer learn a frozen next-token
 > task better than retrieval, byte n-gram, and independently produced
@@ -8,6 +8,127 @@ This is NSRL's single promotion milestone. It asks one question:
 
 Solomon and literary routing remain valuable experiment suites, but neither is
 the project headline until the substrate passes this proof.
+
+## Post-freeze component attribution
+
+The promoted `calibrated-v2-suffix-memory` checkpoint is not a transformer-only
+system. A matched ablation now evaluates the same checkpoint, token bytes,
+window geometry, and logits path in three modes:
+
+| Mode | Mistakes | Accuracy | Probability error Q15 |
+|---|---:|---:|---:|
+| Combined | 2,482 | 579‰ | 260,536,589 |
+| Transformer only | 5,094 | 136‰ | 337,139,495 |
+| Suffix memory only | 2,482 | 579‰ | 384,884,984 |
+
+Suffix memory therefore accounts for all 2,612 top-1 mistakes avoided by the
+combined system. Transformer logits reduce probability error by 124,348,395
+relative to suffix memory alone, but change zero predicted tokens. The frozen
+v1 comparison remains valid for the combined system under its original
+contract; it no longer supports the broader statement that the transformer
+component itself beat the baselines.
+
+Reproduce the attribution report with:
+
+```bash
+scripts/run-integer-transformer-proof-ablation.sh
+```
+
+The detailed run result is written under
+`data/experiments/integer-transformer-proof-v1/component-ablation/`; its frozen
+checkpoint is `benchmarks/integer-transformer-proof-v1/component-ablation.json`
+and is explicitly tagged `promotion_evidence: false`. A successor headline gate
+must either pass with `transformer-only` or name the candidate as an assisted
+memory system.
+
+## Suffix-free successor sweep
+
+The first successor attempt serialized every evaluated model without the
+suffix-memory header and replayed that physical artifact. Sixteen variants
+covered Adam update shifts, one to four epochs, batch geometry, argmax margin,
+target-frequency balancing, 512 to 2,048 training windows, linear versus
+base-2-softmax attention, and no-position versus learned-position policy.
+
+No variant passed. The best row was the original shift-5, one-epoch neural
+path: probability error 337,139,495 clears the 363,650,570 primary gate, but
+5,094 mistakes exceed the 2,510 secondary gate by 2,584. More training and
+wider coverage increased prediction diversity but did not solve top-1
+generalization. The frozen sweep is
+`benchmarks/integer-transformer-proof-v1/transformer-successor-sweep.json`;
+reproduce it with:
+
+```bash
+scripts/run-integer-transformer-successor-sweep.sh
+```
+
+The next successor should change the parametric learning architecture or
+objective. Repeating the bounded hyperparameter family is not a promotion gate.
+
+## Successor-v2 objective contract
+
+The frozen v1 checker remains unchanged for exact replay. New promotion work is
+bound to `integer-transformer-successor-v2`, inspectable with:
+
+```bash
+cargo run -p nsrl-eval -- successor-contract
+```
+
+V2 requires a physically transformer-only candidate and uses aggregate integer
+base-2 softmax NLL as its sole promotion metric. Mistakes remain a secondary
+diagnostic rather than a hard gate because top-1 accuracy is not a proper
+distributional score. Required baselines are uniform, retrieval, byte n-gram,
+and an actual float transformer. The v1 `float-reference` row is a floating
+mixture of smoothed n-gram distributions and cannot fill the v2 float-transformer
+slot. Suffix memory, retrieval assistance, and routing oracles are explicitly
+forbidden in the candidate row.
+
+Validate a successor result table with:
+
+```bash
+cargo run -p nsrl-eval -- successor-check --results PATH
+```
+
+This contract migration removes the improper probability-error objective from
+future headline promotion without rewriting the historical v1 result.
+
+### First successor-v2 comparison
+
+The first complete matrix is published in
+`benchmarks/integer-transformer-proof-v1/successor-v2-matrix.tsv`. Every row is
+scored by the same normalization-independent integer base-2 NLL evaluator on
+the identical 5,896-target partition:
+
+| System | Mistakes | Total NLL millibits | Zero-probability windows |
+|---|---:|---:|---:|
+| Transformer only | 5,094 | 115,010,055 | 2,916 |
+| Uniform | 5,896 | 47,168,000 | 0 |
+| Retrieval | 2,510 | 38,271,425 | 0 |
+| Byte n-gram | 2,551 | 38,025,720 | 0 |
+| Float transformer | 4,993 | 40,847,697 | 0 |
+
+The float row is produced by a trained float32 causal transformer with learned
+embeddings, Q/K/V/O projections, recurrent causal attention, gated MLP,
+residual connections, and output head. It is not the historical floating
+n-gram mixture. The integer candidate artifact has model hash
+`0xeb39de58e94e0007`; its full position-storage tensor is zero, so neither an
+active header nor dormant suffix corpus remains. Independent suffix-memory,
+retrieval-assistance, and routing-oracle ablations reproduce replay hash
+`0xe0c0848da2d833b9` exactly.
+
+The transformer loses canonical NLL to all four baselines, including uniform.
+This is a valid frozen falsification and does not authorize paid scaling.
+Regenerate the float model, all logits, the matrix, and the evidence bundle,
+then byte-compare them with the publication using:
+
+```bash
+node scripts/run-integer-transformer-successor-v2.mjs --check
+```
+
+The candidate-specific manifest binds the frozen corpus and target count,
+tokenizer, candidate model and artifact, evaluator source set, runner, exact
+matrix/evidence bytes, and each system replay hash. `successor-check` rejects
+row edits even when they remain syntactically valid; repository checks perform
+the stronger end-to-end regeneration.
 
 ## Frozen contract
 

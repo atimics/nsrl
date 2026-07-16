@@ -75,7 +75,13 @@ for (const [group, length] of Object.entries(groupLengths)) {
     if (magnitude !== 0n) nonzero += 1;
     if (magnitude > maximum) maximum = magnitude;
   }
-  const currentShift = trace.training.learning_rate_shifts[group];
+  const currentShift = group === "output"
+    ? trace.training.effective_output_learning_rate_shift
+      ?? trace.training.learning_rate_shifts[group]
+    : group === "bias"
+      ? trace.training.effective_bias_learning_rate_shift
+        ?? trace.training.learning_rate_shifts[group]
+      : trace.training.learning_rate_shifts[group];
   const boundaryShift = maximum === 0n ? null : maximum.toString(2).length;
   const threshold = boundaryShift === null ? null : 1n << BigInt(boundaryShift - 1);
   let predictedCrossings = 0;

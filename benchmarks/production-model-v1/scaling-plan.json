@@ -74,6 +74,131 @@
     "sha256": "3378c769f88e91a9f8337cd33d5c1a0146dd2b6c54b66cf465a57b195cb49c2b",
     "source_run": "data/experiments/production-model-v1/p10m-trunk-unlock-v-boundary"
   },
+  "k_stabilization_contract": {
+    "path": "benchmarks/production-model-v1/p10m-k-stabilization-contract.json",
+    "sha256": "a101de1d73d6fbaaf78ccdc3f186217b5964e62d4f3797408be5eb74a3e83905"
+  },
+  "k_stabilization_preflight_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-k-stabilization-preflight.json",
+    "sha256": "0c6ddb26588b188a5e2dbe3afda36dfcb24eb0728dcea455899d5b0e60a38b7e",
+    "source_run": "data/experiments/production-model-v1/p10m-k-stabilization-preflight"
+  },
+  "kv_boundary_pilot_contract": {
+    "path": "benchmarks/production-model-v1/p10m-kv-boundary-pilot-contract.json",
+    "sha256": "c708e71de982386f3b3ab8bb774f4f1a635f54f875eadbbaad9ade38a9e2084d"
+  },
+  "kv_boundary_pilot_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-kv-boundary-pilot.json",
+    "sha256": "26211428eed36265c7d720b227aae30eda2f29bcbb491a41af29ba8aabdb92c3",
+    "source_run": "data/experiments/production-model-v1/p10m-kv-boundary-pilot"
+  },
+  "kv_scaling_readiness_contract": {
+    "path": "benchmarks/production-model-v1/p10m-kv-scaling-readiness-contract.json",
+    "sha256": "61489de13af8c26c126a3de8c446d4c0055bd16545b30691ebd284687feb2418"
+  },
+  "kv_scaling_readiness_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-kv-scaling-readiness.json",
+    "sha256": "31ae8a0a160afe5811a8ab69bceeb7f27f6bb7f3220250ba15b688d77aad903f",
+    "source_run": "data/experiments/production-model-v1/p10m-kv-scaling-readiness"
+  },
+  "gate_boundary_preflight_contract": {
+    "path": "benchmarks/production-model-v1/p10m-gate-boundary-preflight-contract.json",
+    "sha256": "3d209ec7f9643cf2027a2ba3b8f07ba45b15321c8eaa94d905718a421dbffb05"
+  },
+  "gate_boundary_preflight_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-gate-boundary-preflight.json",
+    "sha256": "3e4e4464128321e81d34c553f07e8fbd8710ad2c627ee248c11d868a11f77ab2",
+    "source_run": "data/experiments/production-model-v1/p10m-gate-boundary-preflight"
+  },
+  "up_useful_update_contract": {
+    "path": "benchmarks/production-model-v1/p10m-up-useful-update-contract.json",
+    "sha256": "0d2b406a18b5d0281b62e63dbaadea1f810a8e12fc314921dab9be5a65c0c9d5"
+  },
+  "up_useful_update_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-up-useful-update.json",
+    "sha256": "35a8b0a605ccf33880575d1414f7b01e5f4e6985013395ef6f1c96c4ae382a84",
+    "source_run": "data/experiments/production-model-v1/p10m-up-useful-update"
+  },
+  "up_shift22_breakthrough_contract": {
+    "path": "benchmarks/production-model-v1/p10m-up-shift22-breakthrough-contract.json",
+    "sha256": "4fad00d6549f1b7357eb520a9009c85f03acdc4f7ec40382528fe476d897a108"
+  },
+  "up_shift22_breakthrough_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-up-shift22-breakthrough.json",
+    "sha256": "88f145660f026b20a2d962f3fe605a07f758e4ac9fd09375e7b9fb90667bb835",
+    "source_run": "data/experiments/production-model-v1/p10m-up-shift22-breakthrough"
+  },
+  "up_functional_comparison_contract": {
+    "path": "benchmarks/production-model-v1/p10m-up-functional-comparison-contract.json",
+    "sha256": "d5f37e81c597599bd0236ca5ee3cb4e48d125d18c8f8c274843d40f0d8f13e2e"
+  },
+  "up_functional_comparison_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-up-functional-comparison.json",
+    "sha256": "de894f7819ca660fe3461d7ee06f1110caa857e1581b071fe7865e27667f144f"
+  },
+  "up_forward_scale_sensitivity_contract": {
+    "path": "benchmarks/production-model-v1/p10m-up-forward-scale-sensitivity-contract.json",
+    "sha256": "61772bfd933fbaa1cbcb28507e1bd54e36fea0a0b7c6cacc55346178c7b13b72"
+  },
+  "up_forward_scale_sensitivity_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-up-forward-scale-sensitivity.json",
+    "sha256": "19230dc443b3d02e8ab15f43f48de3d741e74bab858f524fd2434f8d91d6570b",
+    "source_run": "data/experiments/production-model-v1/p10m-up-forward-scale-sensitivity"
+  },
+  "up_forward_scale_training_contract": {
+    "path": "benchmarks/production-model-v1/p10m-up-forward-scale-training-contract.json",
+    "sha256": "0cce8ea099f49cca86b4231979683b14e9a1c5593055ad9d13de83e35c3ddb42"
+  },
+  "up_forward_scale_training_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-up-forward-scale-training.json",
+    "sha256": "1b83f2ecb18d2aae86ff2341d7513e8d3d7fbf7d54ef34ed4ec8d771afec037f",
+    "source_run": "data/experiments/production-model-v1/p10m-up-forward-scale-training"
+  },
+  "target_probability_resolution_contract": {
+    "path": "benchmarks/production-model-v1/p10m-target-probability-resolution-contract.json",
+    "sha256": "1ddfa4a3625be7d05d6ca20498eb098ba29e91235c85bbe9dd686f2d41655686"
+  },
+  "target_probability_resolution_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-target-probability-resolution.json",
+    "sha256": "04f5be4f9942eb79e6d7d1911f5c5feaa3660dbcc71c236096adb10c06e7b407",
+    "source_run": "data/experiments/production-model-v1/p10m-target-probability-resolution"
+  },
+  "wide_probability_gradient_preflight_contract": {
+    "path": "benchmarks/production-model-v1/p10m-wide-probability-gradient-preflight-contract.json",
+    "sha256": "921aebf3bf24ceb525ddb073579512abfdda27959bad282216e0ec782b01ad9a"
+  },
+  "wide_probability_gradient_preflight_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-wide-probability-gradient-preflight.json",
+    "sha256": "0f15922c15cdc7c4f427cb7e99ee0f48d5e29dd26053b089570820ff6af41fd9",
+    "source_run": "data/experiments/production-model-v1/p10m-wide-probability-gradient-preflight"
+  },
+  "probability_normalization_accuracy_contract": {
+    "path": "benchmarks/production-model-v1/p10m-probability-normalization-accuracy-contract.json",
+    "sha256": "e5d0b76911717c56ca8611a498259a1005c4924b79e3eebac0218c07c1cffa8c"
+  },
+  "probability_normalization_accuracy_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-probability-normalization-accuracy.json",
+    "sha256": "8968c9ccbb1c58ae91ff26f382d0fb2c47804fbba54db7e978c6c7a9a9d937dd",
+    "source_run": "data/experiments/production-model-v1/p10m-probability-normalization-accuracy"
+  },
+  "probability_normalization_signal_attribution_contract": {
+    "path": "benchmarks/production-model-v1/p10m-probability-normalization-signal-attribution-contract.json",
+    "sha256": "af0778ae9339b93d4a8cf31b435e7f1159bf0632b77f29e5e15c0a3cd7c517c9"
+  },
+  "probability_normalization_signal_attribution_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-probability-normalization-signal-attribution.json",
+    "sha256": "f6e5830128cc07e0ee7847426679295ce3ee90de1fb37cdda70b277dd4f1fa85",
+    "source_run": "data/experiments/production-model-v1/p10m-probability-normalization-signal-attribution"
+  },
+  "normalized_wide_gradient_preflight_contract": {
+    "path": "benchmarks/production-model-v1/p10m-normalized-wide-gradient-preflight-contract.json",
+    "sha256": "3dcb53ac99d29628289ac281ca2aead915067b9e0675d416a11432bc707cbcc5"
+  },
+  "normalized_wide_gradient_preflight_checkpoint": {
+    "path": "benchmarks/production-model-v1/p10m-normalized-wide-gradient-preflight.json",
+    "sha256": "e42b261fa3e8b476a206a379b6a7882ec446728e7891686c23f0c08e1bcd0653",
+    "source_run": "data/experiments/production-model-v1/p10m-normalized-wide-gradient-preflight"
+  },
   "architecture": {
     "family": "causal_decoder_rmsnorm_gated_mlp",
     "attention": "causal_linear_attention",
@@ -157,7 +282,63 @@
     "residual_boundary_policy_ready": true,
     "trunk_unlock_preflight_completed": true,
     "trunk_unlock_preflight_eligible": true,
+    "k_stabilization_preflight_completed": true,
+    "k_stabilization_preflight_eligible": true,
+    "kv_boundary_pilot_completed": true,
+    "kv_boundary_pilot_eligible": true,
+    "kv_scaling_readiness_completed": true,
+    "kv_scaling_readiness_eligible": true,
+    "matched_integer_float_2048_ready": true,
+    "paid_scale_authorized": false,
+    "gate_boundary_preflight_completed": true,
+    "gate_boundary_preflight_eligible": true,
+    "up_useful_update_completed": true,
+    "up_useful_update_safety_eligible": true,
+    "up_useful_update_quality_breakthrough": false,
+    "up_shift22_breakthrough_completed": true,
+    "up_shift22_breakthrough_safety_eligible": true,
+    "up_shift22_dev_discovery_passed": false,
+    "up_shift22_test_confirmation_passed": false,
+    "up_functional_comparison_completed": true,
+    "up_functional_comparison_eligible": true,
+    "up_forward_masking_localized": true,
+    "up_forward_scale_sensitivity_completed": true,
+    "up_forward_scale_sensitivity_eligible": true,
+    "up_safe_functional_boundary_found": true,
+    "up_selected_forward_shift": 7,
+    "up_forward_scale_training_completed": true,
+    "up_forward_scale_training_safety_eligible": true,
+    "up_forward_scale_training_quality_discovery": false,
+    "target_probability_resolution_review_completed": true,
+    "target_probability_resolution_review_eligible": true,
+    "target_probability_minimum_detectable_fractional_bits": 19,
+    "target_probability_full_q31_coverage_fractional_bits": 23,
+    "wide_probability_gradient_preflight_completed": true,
+    "wide_probability_gradient_preflight_safety_eligible": true,
+    "wide_probability_gradient_preflight_quality_gain": false,
+    "wide_probability_information_residual_only_at_256_windows": true,
+    "probability_normalization_accuracy_review_completed": true,
+    "probability_normalization_accuracy_review_eligible": true,
+    "probability_normalization_mass_accuracy_recovered": true,
+    "probability_normalization_candidate_selected": false,
+    "probability_normalization_legacy_signal_requires_attribution": true,
+    "probability_normalization_signal_attribution_completed": true,
+    "probability_normalization_signal_attribution_eligible": true,
+    "probability_normalization_selected_method": "q47_newton1",
+    "probability_normalization_exact_signal_preserved": true,
+    "probability_normalization_max_exact_error_q23_units": 1,
+    "probability_normalization_legacy_only_windows_attributed": 9,
+    "normalized_wide_gradient_preflight_ready": true,
+    "normalized_wide_gradient_preflight_completed": true,
+    "normalized_wide_gradient_preflight_safety_eligible": true,
+    "normalized_wide_gradient_exact_replay": true,
+    "normalized_integer_precision_bottleneck_resolved": true,
+    "normalized_up_boundary_materialized_updates": 155,
+    "normalized_up_boundary_feature_changed_windows": 84,
+    "normalized_output_boundary_target_probability_changed_windows": 3,
+    "normalized_wide_gradient_dev_quality_gain": false,
+    "exact_reachable_update_gate_ready": true,
     "training_started": true,
-    "next_gate": "p10m_trunk_unlock_pilot_contract"
+    "next_gate": "p10m_target_aligned_integer_objective_review"
   }
 }

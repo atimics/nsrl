@@ -76,6 +76,7 @@ run_float_lane() {
   for index in 0 1 2 3; do
     start_window=$((index * 256))
     args=(
+      --math-contract legacy-v1
       --model "$out_dir/initial.nsrlpm" --tokens "$train_tokens"
       --out "$out_dir/float-$index.npz" --trace "$out_dir/float-$index.json"
       --context-tokens 64 --start-window "$start_window" --max-windows 256

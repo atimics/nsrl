@@ -1,0 +1,114 @@
+{
+  "schema": "nsrl.production_gate_boundary_preflight_contract.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_readiness": {
+    "contract_path": "benchmarks/production-model-v1/p10m-kv-scaling-readiness-contract.json",
+    "contract_sha256": "61489de13af8c26c126a3de8c446d4c0055bd16545b30691ebd284687feb2418",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-kv-scaling-readiness.json",
+    "checkpoint_sha256": "31ae8a0a160afe5811a8ab69bceeb7f27f6bb7f3220250ba15b688d77aad903f"
+  },
+  "source_optimizer": {
+    "sha256": "e9fbda9a04bf14d896e3f7cf2330d8c0ca4624cbd582a63c3f18da360e791a01",
+    "optimizer_state_hash": "0xf6e80848a3e3045a",
+    "optimizer_step": 512
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "initialization": {
+    "seed": 7,
+    "output_init_amplitude": 1,
+    "output_forward_shift": 14,
+    "model_hash": "0x0e808e354809141d",
+    "artifact_sha256": "43df409e725654f51d2f30328ef2723ea141d3cb60465433c254b86180023320"
+  },
+  "residual_policy": {
+    "id": "minimum_single_group_boundary_reduction_v1",
+    "exclude_head_groups": [
+      "output",
+      "bias"
+    ],
+    "require_nonzero_gradient_path": true,
+    "require_zero_prior_updates": true,
+    "change_one_group_only": true
+  },
+  "schedule": {
+    "context_tokens": 64,
+    "interval_windows": 256,
+    "interval_optimizer_steps": 64,
+    "intervals": 8,
+    "train_windows": 2048,
+    "dev_windows": 256,
+    "integer_evaluation_windows_per_interval": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_window": 1024,
+    "replay_optimizer_steps": 256,
+    "output_backward_shift": 8,
+    "base_learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 25,
+      "gate": 25,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    }
+  },
+  "candidate": {
+    "id": "gate_boundary_23",
+    "group": "gate",
+    "source_shift": 25,
+    "candidate_shift": 23,
+    "shift_reduction": 2,
+    "predicted_parameter_crossings": 12
+  },
+  "liveness_policy": {
+    "output_unlock_deadline_intervals": 1,
+    "trunk_activation_deadline_intervals": 1,
+    "require_gate_update_by_interval": 7,
+    "post_activation_gradient_path_loss_is_fatal": true,
+    "heldout_regression_vs_lane_initial_is_fatal": true,
+    "any_gradient_residual_or_weight_saturation_is_fatal": true
+  },
+  "promotion_gates": {
+    "source_readiness_eligible": true,
+    "candidate_matches_source_residual_recommendation": true,
+    "gate_is_only_modified_shift": true,
+    "gate_crosses_an_exact_integer_update_boundary_by_window_2048": true,
+    "k_and_v_remain_reachable": true,
+    "only_k_v_gate_and_output_move": true,
+    "all_13_gradient_paths_active": true,
+    "all_saturation_zero": true,
+    "heldout_total_millibits_nonincreasing_vs_lane_initial": true,
+    "midpoint_restart_byte_identical": true,
+    "final_residual_analysis_complete": true
+  },
+  "authorization": {
+    "local_execution": true,
+    "paid_cloud_execution": false,
+    "paid_scale_requires_separate_contract": true
+  },
+  "known_non_claims": [
+    "bounded_gate_projection_preflight_not_p20m_scaling_evidence",
+    "residual_boundary_prediction_not_a_loss_optimizer",
+    "gate_projection_movement_not_full_trunk_training",
+    "dev_split_not_hidden_test",
+    "not_open_generation_quality"
+  ]
+}

@@ -106,11 +106,24 @@ When adding a paper:
 
 ## Open questions after the review
 
-- Can a hierarchical, phase-aware Boolean proposal concentrate negative
-  document-level conditional effects without exponential cube enumeration?
-  The first frozen trunk/head candidate failed prospective transfer despite its
-  post-hoc one-Q20 advantage; the next proposal must predict fine-log boundary
-  exposure, component cancellation, document visibility, and transfer direction.
+- The exact six-atom proposal cube and the preregistered confirmation on
+  documents `136--199` are complete. Frozen masks `59` and `61` beat baseline
+  after Holm correction, and a singleton-probe router improves over global mask
+  `47` on all 17 rerouted documents. Only atom 5's one-body field is stable;
+  no pair coupling is. Pairwise and Gibbs masks re-estimated on confirmation do
+  not match proposal. The replicated mechanism is instead a conditional
+  exchange: atom 4's Q32 singleton effect predicts when mask `59` should replace
+  mask `47`, while always using `59` is worse than `47` in aggregate. That
+  mechanism now has a prospective source-level test on a frozen 71-source,
+  distinct-author English Project Gutenberg frame: 16 fitting panels, 39
+  calibration panels, and 16 untouched evaluation panels. The 95% conformal
+  correction is `4,326` Q32; all 16 evaluation panels are covered, 5 fire, all
+  5 fired exchanges are favorable, and their aggregate contrast is `-40,769`
+  Q32. This supports bounded transfer on the frozen Gutenberg frame, not
+  arbitrary web or SimpleWiki transfer. The nearest-source residual predictor
+  contributes little on the fired panels; the replicated mechanism remains a
+  large singleton-visible margin plus calibrated interaction uncertainty.
+  Documents `200--212` remain sealed and do not count as sources.
 - Can deterministic error feedback match the directional fidelity of seeded
   stochastic rounding while retaining exact replay for a fixed contract?
 - Can the observed high-precision reachable-update signal replicate across

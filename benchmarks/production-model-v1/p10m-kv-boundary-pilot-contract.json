@@ -1,0 +1,96 @@
+{
+  "schema": "nsrl.production_kv_boundary_pilot_contract.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_preflights": {
+    "k": {
+      "path": "benchmarks/production-model-v1/p10m-k-stabilization-preflight.json",
+      "sha256": "0c6ddb26588b188a5e2dbe3afda36dfcb24eb0728dcea455899d5b0e60a38b7e"
+    },
+    "v": {
+      "path": "benchmarks/production-model-v1/p10m-trunk-unlock-preflight.json",
+      "sha256": "3378c769f88e91a9f8337cd33d5c1a0146dd2b6c54b66cf465a57b195cb49c2b"
+    }
+  },
+  "schedule": {
+    "context_tokens": 64,
+    "interval_windows": 128,
+    "interval_optimizer_steps": 32,
+    "intervals": 8,
+    "train_windows": 1024,
+    "dev_windows": 256,
+    "epochs": 1,
+    "batch_windows": 4,
+    "output_backward_shift": 8,
+    "base_learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 35,
+      "v": 33,
+      "o": 25,
+      "up": 25,
+      "gate": 25,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    },
+    "candidate_learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 25,
+      "gate": 25,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    }
+  },
+  "candidates": {
+    "k": {
+      "source_shift": 35,
+      "candidate_shift": 26,
+      "preflight_first_update_window": 256
+    },
+    "v": {
+      "source_shift": 33,
+      "candidate_shift": 30,
+      "preflight_first_update_window": 256
+    }
+  },
+  "liveness_policy": {
+    "output_unlock_deadline_intervals": 1,
+    "trunk_activation_deadline_intervals": 1,
+    "require_k_and_v_update_by_interval": 1,
+    "post_activation_gradient_path_loss_is_fatal": true,
+    "heldout_regression_is_fatal": true,
+    "uncontracted_parameter_movement_is_fatal": true,
+    "any_gradient_residual_or_weight_saturation_is_fatal": true
+  },
+  "promotion_gates": {
+    "k_and_v_are_the_only_modified_shifts": true,
+    "k_and_v_move_by_window_256": true,
+    "k_and_v_move_again_after_midpoint": true,
+    "only_k_v_and_output_parameters_move": true,
+    "exact_reachable_update_consistency": true,
+    "all_13_gradient_paths_active_after_unlock": true,
+    "all_saturation_zero": true,
+    "heldout_total_millibits_nonincreasing_at_every_interval": true,
+    "heldout_total_millibits_improves_at_completion": true,
+    "window_512_restart_byte_identical": true
+  },
+  "known_non_claims": [
+    "bounded_1024_window_boundary_pilot_not_scaling_run",
+    "two_reachable_trunk_groups_not_full_trunk_training",
+    "dev_split_not_hidden_test",
+    "not_open_generation_quality",
+    "boundary_schedule_not_a_learned_optimizer"
+  ]
+}

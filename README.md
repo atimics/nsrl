@@ -1,14 +1,175 @@
 # NSRL — Deterministic Integer Transformer Research
 
 NSRL is a pure-Rust integer-only training stack for deterministic CPU and WASM
-models. The active promotion milestone is an executable substrate proof: one
-NSRL-born transformer must beat retrieval, byte n-gram, and independently
-produced floating-point reference baselines on a frozen next-token task.
+models. The frozen `integer-transformer-proof-v1` result is a system-level
+proof for a transformer plus fitted suffix memory. The active follow-up gate is
+an architecture-level unassisted successor: a 16-cell suffix-free optimizer,
+duration, balancing, attention, and position sweep produced no passing row. The
+best transformer-only candidate still made 5,094 mistakes against the 2,510
+gate, so the repository does not claim that the transformer itself beat
+retrieval, byte n-gram, and the independently produced floating-point reference.
+
+The first successor-v2 comparison is now fully executed under canonical integer
+base-2 NLL. The physically stripped candidate (model
+`0xeb39de58e94e0007`) scores 115,010,055 total millibits, worse than uniform
+(47,168,000), retrieval (38,271,425), byte n-gram (38,025,720), and a genuine
+trained float32 transformer (40,847,697). This is a frozen falsification: the
+trial is valid, promotion is false, and paid scaling remains unauthorized.
+Replay the bound matrix with
+`node scripts/run-integer-transformer-successor-v2.mjs --check`.
 
 Solomon multimodal generation and literary expert routing are experiment suites
 that exercise the shared substrate. Their results inform candidate design, but
 they do not replace the frozen proof contract in
 [`docs/integer-transformer-proof-v1.md`](docs/integer-transformer-proof-v1.md).
+
+Integer and quantized training, including transformer training, have substantial
+prior art. NSRL's research claim is narrower: combine native-integer weights and
+updates with exact replay, checked numeric health, and deployable Rust/WASM
+artifacts, then measure which updates remain reachable under discrete optimizer
+arithmetic. The evidence catalog and claim boundaries live in
+[`research/README.md`](research/README.md) and
+[`research/paper-catalog.md`](research/paper-catalog.md); reachable update
+capacity is a testable hypothesis. A first 30-cell longitudinal result now
+supports its use as a conservative preflight signal, not as a capacity law.
+
+The matched post-freeze ablation is decisive: suffix memory accounts for all
+of the combined candidate's top-1 gain, while transformer logits improve its
+probability error without changing a prediction. See
+[`docs/integer-transformer-proof-v1.md`](docs/integer-transformer-proof-v1.md)
+for the exact boundary and replay command.
+
+Two roadmap gates also completed locally. A contracted 2,048-window p10m
+readiness run extended the stable K/V schedule against a matched float32 SGD
+reference. Integer K, V, and output moved in every chunk with zero saturation,
+the integer lane ended 5,209 total millibits below initialization, and the
+float lane ended 98 mean millibits below its initialization. Midpoint replay
+was byte-identical for the integer model and optimizer and tensor-identical for
+all 13 float arrays. The follow-up isolated `gate`-projection preflight changed
+only its shift from 25 to 23. `gate` first moved at window 768 and made 26 exact
+updates over the full horizon; only K, V, `gate`, and output moved, saturation
+remained zero, held-out ended 5,209 total millibits below initialization, and
+midpoint replay was byte-identical. The follow-up `up` experiments separate
+reachability from usefulness: shift 23 made 26 safe exact updates with no
+source-relative dev gain, while shift 22 made 101,543 safe updates and still
+failed discovery; its selected checkpoint tied dev and was 1,245 total
+millibits worse on the one-shot test comparison. A matched-horizon functional
+comparison localized the cause: shift-22 and shift-23 models produced identical
+final features, logits, probabilities, and per-window losses on all 256 dev
+windows. A forward-scale sweep found shift 7 safely exposes the difference in
+250 feature/logit vectors and 124 probability vectors, but zero target
+probabilities; fresh training at that scale remained safe, exact, and tied dev.
+The target-resolution audit then showed exactly three source target-probability
+values in Q15 and no changed targets, versus 20 values and one changed target
+at Q19 and 115 values and 13 changed targets at Q23; Q23 matches Q31 target-
+change coverage. Scale-compensated Q19 and Q23 gradient preflights remained
+safe, but both produced the exact Q15 model bytes and dev loss after 256
+windows while retaining distinct optimizer states. The normalization audit now
+localizes the next bottleneck: the legacy Q31-LUT reciprocal produces about
+98,900 ppm worst-case Q23 mass error, while retaining the reciprocal in Q47 and
+applying one integer Newton step cuts that to 98/83 ppm for the source/candidate,
+near exact division at 73/74 ppm. But target changes fall from 13 under the
+legacy normalization to 5 under Newton and 4 under exact division. The frozen
+accuracy gate therefore selected no training default. The completed per-window
+attribution now resolves that ambiguity: Newton preserves all four exact-change
+windows, while all nine legacy-only changes have unchanged target logits and
+zero exact Q23 delta. Newton adds one denominator-rounding boundary window and
+never differs from exact division by more than one Q23 unit anywhere in either
+probability vector. The bounded normalized wide-gradient preflight is now
+complete. Q23 plus `q47_newton1` is exactly replayable and changes the optimizer
+state without changing the Q15-control model. Lowering only the `up` update
+shift from 22 to 21 then materializes 155 `up` updates and changes 84 feature
+and logit windows plus 29 probability windows, all with zero saturation, but no
+target probability or dev loss changes. Lowering only the output update shift
+from 34 to 33 recovers three changed target-probability windows, proving the
+integer precision signal reaches the loss boundary, but regresses dev by 415
+total millibits. The numeric bottleneck is therefore resolved without a quality
+gain; the next local gate is a target-aligned integer-objective review rather
+than more precision or paid scaling. Paid p20m remains unauthorized.
+That objective-review infrastructure is now executable: production exposes
+machine-checked forward/backward scale and accumulator contracts, a canonical
+normalization-independent integer NLL evaluator, a faithful base-2 float
+relaxation, and exact stored-parameter `-1`/`+1` gradient-alignment audits on
+separate proposal and document-separated (or full-context-gap) transfer
+surfaces with a deterministic random control. The
+successor-v2 promotion contract requires a
+transformer-only candidate and a real float-transformer baseline. These are
+now exercised measurement tools, not a positive quality result. The first
+matrix binds the dataset, exact target count, byte tokenizer, physically clean
+candidate model, evaluator source set, runner, evidence, and all five replay
+hashes. Candidate ablations prove that suffix-memory removal, retrieval
+disablement, and routing-oracle disablement leave the same replay; the
+candidate loses canonical NLL to every baseline. The rescue-stratified p10m v2
+audit is complete over four proposal and four separate transfer documents. Its
+primary rescue-exposed trunk proposal agreed on only `1/3` comparable
+coordinates versus paired random `3/3`, and produced zero exact descents versus
+random one. Output-head coordinates remained aligned on both surfaces.
+The frozen v3 causal replay removed all 222 nonzero rescues while holding the
+source and v2 coordinates fixed. It changed each of the four exposed aggregate
+magnitudes by one count, changed no signs, and left alignment/descent identical.
+Global rescue removal is therefore not a repair. Optimizer refinement, paid
+scaling, and a quality claim remain unauthorized. The subsequent exact
+rank-two Boolean-jet audit found the trunk block harmful alone on both surfaces,
+the head block improving on both, and a post-hoc transfer interaction that made
+the joint block one Q20 unit better than the head alone. A frozen confirmation
+on 64 unused transfer documents falsified that candidate: head-only won 11
+non-tied document contrasts versus 7 for the joint move, 46 documents tied, and
+the aggregate conditional effect reversed to `+6` Q20. Optimizer refinement and
+paid scaling remain unauthorized. The next mathematical target is a
+stability-aware proposal operator, not another adjustment to this move family.
+The audit substrate now binds ordered move atoms, complete
+model/tokenizer/stream manifest hashes, explicit Q15 or MJ-05 Q47 objective
+specifications, document-level losses, vertex model/function hashes, and exact
+Möbius reconstruction. Calibration cannot authorize optimization, boundary
+atoms reject the family, and audit-only systematic fixed-mass
+`K={2^15,2^16,2^18}` lanes plus matched-block control freezing are implemented
+for the next prospectively declared candidate.
+The complete proposal-only six-atom cube is also measured. Its Q32 field has
+only 16 units of absolute mass above order three out of 409,784 nonconstant
+units, and the cubic truncation selects the exact aggregate minimizer. That is
+not a promotion result: Q20 retains a materially larger relative tail, exact
+support has maximal induced width five under all 720 elimination orders, and
+the 64 proposal documents contain only one source cluster. The all-atom
+minimizer is the already-falsified trunk-plus-head contrast. An exact derived
+Walsh analysis finds a cubic surrogate with zero aggregate and per-document
+gap in both grids, making cross-source replication of that compressed structure
+the next lead. The next proposal work therefore needs multiple source clusters
+and a genuinely new move generator; optimizer changes and paid scaling remain
+unauthorized.
+The preregistered Ising follow-up has now evaluated documents 136--199 without
+changing its three masks, router, or Holm family. Frozen masks `59` and `61`
+beat baseline on 51/64 and 50/64 documents respectively, and the singleton-
+probe router improved over global mask `47` on all 17 documents it rerouted.
+The stronger parameter claims did not replicate: no pair coupling is stable,
+the confirmation pairwise MAP is `46`, and the Gibbs magnetization mask changes
+from `61` to `62` at the central temperature. The replicated mechanism is a
+conditional exchange—use atom 4's Q32 singleton effect to decide when it should
+replace atom 2 inside the shared base mask `43`. Because both surfaces contain
+only one SimpleWiki source cluster, that confirmation remains within-source
+document evidence. A later prospective M3 experiment freezes a distinct-author
+English Project Gutenberg frame with 16 fitting, 39 calibration, and 16
+untouched evaluation source panels. Its 95% source-level correction is `4,326`
+Q32; coverage is `16/16`, firing is `5/16`, and marginal unsafe-action rate is
+`0/16`. Signed regret relative to always abstaining is `-40,769` Q32 in
+aggregate (`-40,769/16` Q32 per evaluation panel), with zero positive regret.
+The checked publication verdict is `supported`; the same publication protocol
+maps preregistered falsifiers to `falsified` and a gray-zone or vacuous envelope
+to `inconclusive`. This supports the conditional-exchange certificate on that
+frozen frame, not arbitrary-source deployment. No optimizer change or paid
+scaling is authorized, and documents `200--212` remain sealed.
+Separately, all 16 configurations with an early reachable
+functional update later improved on a disjoint holdout; the
+predeclared matrix measured MCC 0.645 and Spearman ρ 0.828. Six early no-ops
+later woke up, so the screen has high precision but cannot safely prune
+slow-to-activate candidates. Long low-rank runs also saturated in all 16
+early-reachable cells, making saturation-aware control the next optimization
+gate.
+
+NSRL Forge packages that proof substrate as a model-launch recipe, measurable
+sponsor bounty, capped model-local reward, and 31-event signed localnet run.
+See [`docs/decentralized-model-launches.md`](docs/decentralized-model-launches.md)
+for the protocol and [`docs/model-localnet-v1.md`](docs/model-localnet-v1.md) for
+the Ed25519 ledger, CLI, validator quorum, and explicit non-financial boundary.
 
 ![72 text-conditioned seals sampled from the integer denoiser](docs/assets/solomon-text-conditioned-seals.png)
 
@@ -74,6 +235,26 @@ cargo build --release -p nsrl-train \
 
 ./scripts/check.sh
 ```
+
+## Agentic Research Harness
+
+`scripts/research-harness.mjs` turns experiment proposals, frozen contracts,
+allowlisted runners, independent checkers, and scientific decisions into one
+hash-chained lifecycle. It enforces role separation and blocks execution when a
+bound input or runner policy changes after freeze.
+
+```bash
+node scripts/research-harness.mjs init
+node scripts/research-harness.mjs import-golden
+node scripts/research-harness.mjs status
+node scripts/research-harness.mjs verify
+```
+
+The first golden workflow imports the completed p10m Boolean-jet confirmation
+and records its checked outcome as `falsified`. See
+[`docs/agentic-research-harness.md`](docs/agentic-research-harness.md) for the
+experiment schema, agent roles, lifecycle commands, runner-policy extension,
+and the remaining OS-level data-firewall boundary.
 
 ## Pipeline
 

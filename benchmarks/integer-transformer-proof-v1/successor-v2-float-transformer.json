@@ -1,0 +1,69 @@
+{
+  "architecture": {
+    "attention": "causal_recurrent_linear_qkvo",
+    "context": 64,
+    "d_model": 32,
+    "dtype": "float32",
+    "heads": 4,
+    "hidden_dim": 64,
+    "kind": "genuine_float_transformer",
+    "layers": 1,
+    "mlp": "gated_hard_silu",
+    "residual_connections": 2,
+    "vocab": 256
+  },
+  "assistance": {
+    "retrieval_assistance": false,
+    "routing_oracle": false,
+    "suffix_memory": false
+  },
+  "bindings": {
+    "dataset_hash": "0x8fe7b86378f81951",
+    "targets": 5896,
+    "tokenizer": "byte_identity_u8_v1",
+    "tokenizer_hash": "0xdb333d315a3385de"
+  },
+  "contract": "integer-transformer-successor-v2",
+  "evaluation": {
+    "mean_float_nll_millibits": 6928,
+    "mistakes": 4993,
+    "partition": "eval",
+    "q8_logits_artifact_hash": "0xfb54801b75a0beec",
+    "stride": 1,
+    "total_float_nll_millibits": 40848222,
+    "windows": 5896
+  },
+  "model": {
+    "final_hash": "0x502a5868d0f28be7",
+    "final_sha256": "af89a4d46d18db34373ea2aa040ed77f97d6f669fef4c01e85704ba7841c20f8",
+    "initial_hash": "0x7b0ed63f1cb853a9",
+    "initial_sha256": "0e995ec94de38687ea9ef54d3ea6467aee6954b971fdf3fc49616e70fe6d6067",
+    "parameters": 26976
+  },
+  "schema": "nsrl.float_transformer_successor.v2",
+  "training": {
+    "batch_windows": 16,
+    "epochs": 8,
+    "learning_rate_millionths": 3000,
+    "mean_training_nll_bits": 7.54535916307948,
+    "optimizer": "float32_sgd",
+    "optimizer_steps": 248,
+    "train_stride": 19,
+    "trained_parameter_groups": [
+      "attention_rms",
+      "bias",
+      "down",
+      "embeddings",
+      "final_rms",
+      "gate",
+      "k",
+      "mlp_rms",
+      "o",
+      "output",
+      "q",
+      "up",
+      "v"
+    ],
+    "windows": 491
+  }
+}

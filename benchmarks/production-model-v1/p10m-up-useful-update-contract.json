@@ -1,0 +1,133 @@
+{
+  "schema": "nsrl.production_up_useful_update_contract.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_gate_preflight": {
+    "contract_path": "benchmarks/production-model-v1/p10m-gate-boundary-preflight-contract.json",
+    "contract_sha256": "3d209ec7f9643cf2027a2ba3b8f07ba45b15321c8eaa94d905718a421dbffb05",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-gate-boundary-preflight.json",
+    "checkpoint_sha256": "3e4e4464128321e81d34c553f07e8fbd8710ad2c627ee248c11d868a11f77ab2"
+  },
+  "source_optimizer": {
+    "sha256": "eec2bd3f0efe39dfc772785b93955fecbd65a8b2937d1cfde4b11a1d2a8c2091",
+    "optimizer_state_hash": "0xaf64fa31f4867f3a",
+    "optimizer_step": 512
+  },
+  "source_heldout": {
+    "context_tokens": 64,
+    "windows": 256,
+    "mistakes": 256,
+    "total_millibits": 3339391,
+    "mean_millibits": 13044
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "initialization": {
+    "seed": 7,
+    "output_init_amplitude": 1,
+    "output_forward_shift": 14,
+    "model_hash": "0x0e808e354809141d",
+    "artifact_sha256": "43df409e725654f51d2f30328ef2723ea141d3cb60465433c254b86180023320"
+  },
+  "residual_policy": {
+    "id": "minimum_single_group_boundary_reduction_v1",
+    "exclude_head_groups": [
+      "output",
+      "bias"
+    ],
+    "require_nonzero_gradient_path": true,
+    "require_zero_prior_updates": true,
+    "change_one_group_only": true
+  },
+  "schedule": {
+    "context_tokens": 64,
+    "interval_windows": 256,
+    "interval_optimizer_steps": 64,
+    "intervals": 8,
+    "train_windows": 2048,
+    "dev_windows": 256,
+    "integer_evaluation_windows_per_interval": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_window": 1024,
+    "replay_optimizer_steps": 256,
+    "output_backward_shift": 8,
+    "base_learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 25,
+      "gate": 23,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    }
+  },
+  "candidate": {
+    "id": "up_boundary_23_useful_update",
+    "group": "up",
+    "source_shift": 25,
+    "candidate_shift": 23,
+    "shift_reduction": 2,
+    "predicted_parameter_crossings": 6
+  },
+  "liveness_policy": {
+    "output_unlock_deadline_intervals": 1,
+    "trunk_activation_deadline_intervals": 1,
+    "require_up_update_by_interval": 7,
+    "post_activation_gradient_path_loss_is_fatal": true,
+    "heldout_regression_vs_lane_initial_is_fatal": true,
+    "any_gradient_residual_or_weight_saturation_is_fatal": true
+  },
+  "safety_gates": {
+    "source_gate_preflight_eligible": true,
+    "candidate_matches_source_residual_recommendation": true,
+    "up_is_only_modified_shift": true,
+    "up_crosses_an_exact_integer_update_boundary_by_window_2048": true,
+    "k_v_and_gate_remain_reachable": true,
+    "only_k_v_up_gate_and_output_move": true,
+    "all_13_gradient_paths_active": true,
+    "all_saturation_zero": true,
+    "heldout_total_millibits_nonincreasing_vs_lane_initial": true,
+    "midpoint_restart_byte_identical": true,
+    "final_residual_analysis_complete": true
+  },
+  "quality_gates": {
+    "candidate_final_total_millibits_max": 3339135,
+    "candidate_final_mean_millibits_max": 13043,
+    "minimum_mean_millibit_improvement_vs_source": 1,
+    "source_relative_improvement_required": true
+  },
+  "outcome_policy": {
+    "quality_breakthrough": "all_safety_and_quality_gates_pass",
+    "safe_reachability_without_source_gain": "all_safety_gates_pass_but_any_quality_gate_fails",
+    "failed_safety": "any_safety_gate_fails"
+  },
+  "authorization": {
+    "local_execution": true,
+    "paid_cloud_execution": false,
+    "paid_scale_requires_separate_contract": true
+  },
+  "known_non_claims": [
+    "one_mean_millibit_gain_not_open_generation_quality",
+    "bounded_up_projection_experiment_not_p20m_scaling_evidence",
+    "residual_boundary_prediction_not_a_loss_optimizer",
+    "dev_split_not_hidden_test",
+    "negative_quality_outcome_is_valid_evidence",
+    "not_open_generation_quality"
+  ]
+}

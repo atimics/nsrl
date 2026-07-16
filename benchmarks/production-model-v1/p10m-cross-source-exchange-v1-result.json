@@ -1,0 +1,2190 @@
+{
+  "schema": "nsrl.production_cross_source_exchange_result.v1",
+  "analysis_role": "prospective_untouched_evaluation",
+  "source_sha256": {
+    "contract": "cfb7e59dafd49bb9a643210cf3a97e6dbd0ecd0b923b95e78af2c7abb67ac443",
+    "source_frame": "3cf38860568320257a7af77fb615054925fb816ba98adc016ab60ddbeae01738",
+    "predictor": "07712a0a5071e89dc217aa0c00de63beda27e058c9da3ce68d5a553485eddfac",
+    "raw_structure_contract": "568cf3ad5bf7873fb7df452c9d262d7b66aa6eb29c5412d7e0dc5f782569d6b7",
+    "raw_structure_result": "094d0641b843ffc322bf232605a038c690f0cd12cc757d712e6255cd87d1fa23",
+    "analyzer": "3a9e35aa35eb0d0be87722418079e4fe8e44c74bb965a7b9a44253e4166031a1"
+  },
+  "population": {
+    "source_unit": "one Project Gutenberg ebook from one distinct normalized author",
+    "intended_population": "the frozen distinct-author English Project Gutenberg acquisition frame; no claim to arbitrary web or SimpleWiki sources",
+    "independence_design": "one ebook per distinct normalized author; entire sources assigned to exactly one role",
+    "exchangeability_assumption": "calibration and evaluation panels are exchangeable within the frozen distinct-author English Project Gutenberg frame conditional on the fitting sources",
+    "fitting_source_panels": 16,
+    "calibration_source_panels": 39,
+    "evaluation_source_panels": 16,
+    "fitting_source_ids": [
+      "gutenberg-408",
+      "gutenberg-131",
+      "gutenberg-3300",
+      "gutenberg-1998",
+      "gutenberg-27827",
+      "gutenberg-236",
+      "gutenberg-64317",
+      "gutenberg-132",
+      "gutenberg-161",
+      "gutenberg-74",
+      "gutenberg-311",
+      "gutenberg-244",
+      "gutenberg-880",
+      "gutenberg-205",
+      "gutenberg-863",
+      "gutenberg-1322"
+    ],
+    "calibration_source_ids": [
+      "gutenberg-110",
+      "gutenberg-2680",
+      "gutenberg-19810",
+      "gutenberg-160",
+      "gutenberg-996",
+      "gutenberg-7178",
+      "gutenberg-2084",
+      "gutenberg-769",
+      "gutenberg-33",
+      "gutenberg-28054",
+      "gutenberg-1399",
+      "gutenberg-2775",
+      "gutenberg-209",
+      "gutenberg-2147",
+      "gutenberg-155",
+      "gutenberg-55",
+      "gutenberg-16",
+      "gutenberg-829",
+      "gutenberg-45",
+      "gutenberg-5200",
+      "gutenberg-514",
+      "gutenberg-2527",
+      "gutenberg-2892",
+      "gutenberg-6761",
+      "gutenberg-10007",
+      "gutenberg-2500",
+      "gutenberg-768",
+      "gutenberg-20203",
+      "gutenberg-8800",
+      "gutenberg-120",
+      "gutenberg-3207",
+      "gutenberg-145",
+      "gutenberg-61",
+      "gutenberg-1497",
+      "gutenberg-174",
+      "gutenberg-1184",
+      "gutenberg-3825",
+      "gutenberg-4705",
+      "gutenberg-23"
+    ],
+    "evaluation_source_ids": [
+      "gutenberg-1245",
+      "gutenberg-1260",
+      "gutenberg-2701",
+      "gutenberg-215",
+      "gutenberg-32449",
+      "gutenberg-1232",
+      "gutenberg-394",
+      "gutenberg-98",
+      "gutenberg-41",
+      "gutenberg-1228",
+      "gutenberg-3600",
+      "gutenberg-7370",
+      "gutenberg-11",
+      "gutenberg-1292",
+      "gutenberg-2542",
+      "gutenberg-140"
+    ],
+    "documents_200_212_are_not_sources": true
+  },
+  "exchange": {
+    "id": "base43_atom2_to_atom4",
+    "base_mask": 43,
+    "outgoing_atom": 2,
+    "incoming_atom": 4,
+    "control_mask": 47,
+    "candidate_mask": 59,
+    "singleton_margin_q32": "loss(mask16)-loss(mask0) minus loss(mask4)-loss(mask0)",
+    "exact_contrast_q32": "loss(mask59)-loss(mask47)",
+    "interaction_residual_q32": "exact_contrast minus singleton_margin"
+  },
+  "conformal": {
+    "alpha": "1/20",
+    "calibration_source_panels": 39,
+    "order_statistic_rank": 38,
+    "simultaneous_score": "A_u=max over panel documents d and frozen exchanges e of rho_d(e)-q_e(phi_d)",
+    "correction_q32": "4326",
+    "calibration_score_minimum_q32": "-2",
+    "calibration_score_maximum_q32": "6272"
+  },
+  "calibration": {
+    "source_panels": 39,
+    "rows": [
+      {
+        "source_id": "gutenberg-110",
+        "singleton_features_q32": [
+          "0",
+          "2257",
+          "0",
+          "0",
+          "-6013",
+          "-4097"
+        ],
+        "lambda_q32": "-6013",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-6012",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-27827",
+            "normalized_l1_q20": "111232961",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-64317",
+            "normalized_l1_q20": "2357481963",
+            "interaction_residual_q32": "-2058"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "2367858650",
+            "interaction_residual_q32": "1"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2680",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "1949",
+          "-4022"
+        ],
+        "lambda_q32": "1949",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "1949",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "1207912",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "1750724",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2288298",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-19810",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-8202",
+          "-4074"
+        ],
+        "lambda_q32": "-8202",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-8202",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "2517332",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "3745858",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "3967049",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-160",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "2035",
+          "0",
+          "-4377"
+        ],
+        "lambda_q32": "0",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "0",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-311",
+            "normalized_l1_q20": "2135815072",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2136490377",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "2136696229",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-996",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-2073",
+          "-3971"
+        ],
+        "lambda_q32": "-2073",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-2073",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "228159",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "1466461",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "1855158",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-7178",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "-1949",
+          "2116",
+          "-4380"
+        ],
+        "lambda_q32": "2116",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "2116",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2045235161",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-311",
+            "normalized_l1_q20": "2046715216",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "2047596374",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2084",
+        "singleton_features_q32": [
+          "0",
+          "-2049",
+          "4268",
+          "0",
+          "2192",
+          "-3960"
+        ],
+        "lambda_q32": "-2076",
+        "predicted_interaction_residual_q32": "-1",
+        "interaction_residual_q32": "4325",
+        "simultaneous_score_q32": "4326",
+        "upper_interaction_residual_q32": "4325",
+        "exchange_contrast_q32": "2249",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-880",
+            "normalized_l1_q20": "4523598276",
+            "interaction_residual_q32": "-1"
+          },
+          {
+            "source_id": "gutenberg-1998",
+            "normalized_l1_q20": "6484012922",
+            "interaction_residual_q32": "-85"
+          },
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "6625158806",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-769",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "4259",
+          "-4073"
+        ],
+        "lambda_q32": "4259",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "4259",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "743477",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "3271680",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "3358616",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-33",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-1939",
+          "-4027"
+        ],
+        "lambda_q32": "-1939",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-1938",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "403162",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "1339019",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "1830556",
+            "interaction_residual_q32": "1"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-28054",
+        "singleton_features_q32": [
+          "-2165",
+          "0",
+          "0",
+          "0",
+          "-5941",
+          "-4125"
+        ],
+        "lambda_q32": "-5941",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-5941",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "2271209280",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "2272550526",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2273251357",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-1399",
+        "singleton_features_q32": [
+          "0",
+          "1926",
+          "0",
+          "0",
+          "-283",
+          "-3935"
+        ],
+        "lambda_q32": "-283",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-283",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-27827",
+            "normalized_l1_q20": "240924493",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "2019809709",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2020999664",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2775",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "2047",
+          "-4000"
+        ],
+        "lambda_q32": "2047",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "2047",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "1014626",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "1600512",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2138086",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-209",
+        "singleton_features_q32": [
+          "0",
+          "2093",
+          "0",
+          "0",
+          "8349",
+          "-4362"
+        ],
+        "lambda_q32": "8349",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "2",
+        "simultaneous_score_q32": "2",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "8351",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-27827",
+            "normalized_l1_q20": "72356622",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-64317",
+            "normalized_l1_q20": "2186086628",
+            "interaction_residual_q32": "-2058"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2197342590",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2147",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-182",
+          "-3818"
+        ],
+        "lambda_q32": "-182",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-181",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-244",
+            "normalized_l1_q20": "579311",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "1151330",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-161",
+            "normalized_l1_q20": "2349502",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-155",
+        "singleton_features_q32": [
+          "0",
+          "-2018",
+          "0",
+          "0",
+          "4017",
+          "-4182"
+        ],
+        "lambda_q32": "4017",
+        "predicted_interaction_residual_q32": "-1",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4325",
+        "exchange_contrast_q32": "4017",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-880",
+            "normalized_l1_q20": "18682895",
+            "interaction_residual_q32": "-1"
+          },
+          {
+            "source_id": "gutenberg-1998",
+            "normalized_l1_q20": "2040095737",
+            "interaction_residual_q32": "-85"
+          },
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "2117653862",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-55",
+        "singleton_features_q32": [
+          "0",
+          "-2059",
+          "0",
+          "0",
+          "2527",
+          "-4036"
+        ],
+        "lambda_q32": "2527",
+        "predicted_interaction_residual_q32": "-1",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4325",
+        "exchange_contrast_q32": "2527",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-880",
+            "normalized_l1_q20": "59614989",
+            "interaction_residual_q32": "-1"
+          },
+          {
+            "source_id": "gutenberg-1998",
+            "normalized_l1_q20": "1997684119",
+            "interaction_residual_q32": "-85"
+          },
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "2160065480",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-16",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "-4410",
+          "0",
+          "-3961",
+          "-3933"
+        ],
+        "lambda_q32": "449",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "449",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-3300",
+            "normalized_l1_q20": "2318582975",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-408",
+            "normalized_l1_q20": "2726254250",
+            "interaction_residual_q32": "114"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "4625670596",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-829",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-4006",
+          "-3920"
+        ],
+        "lambda_q32": "-4006",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-4006",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "1590291",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "1826156",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "2127865",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-45",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-1774",
+          "-4141"
+        ],
+        "lambda_q32": "-1774",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-1774",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "390441",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "1279714",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "1515579",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-5200",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-290",
+          "-4483"
+        ],
+        "lambda_q32": "-290",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-290",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2709881",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-311",
+            "normalized_l1_q20": "2777112",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "3658271",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-514",
+        "singleton_features_q32": [
+          "0",
+          "2475",
+          "0",
+          "0",
+          "-2249",
+          "-4354"
+        ],
+        "lambda_q32": "-2249",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-1",
+        "simultaneous_score_q32": "-1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-2250",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-27827",
+            "normalized_l1_q20": "340276898",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-64317",
+            "normalized_l1_q20": "2583271699",
+            "interaction_residual_q32": "-2058"
+          },
+          {
+            "source_id": "gutenberg-311",
+            "normalized_l1_q20": "2596225588",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2527",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "-4414"
+        ],
+        "lambda_q32": "0",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "0",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-311",
+            "normalized_l1_q20": "2297371",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2303757",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "3178529",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2892",
+        "singleton_features_q32": [
+          "0",
+          "2154",
+          "-2326",
+          "-2207",
+          "2014",
+          "-4140"
+        ],
+        "lambda_q32": "4340",
+        "predicted_interaction_residual_q32": "-8",
+        "interaction_residual_q32": "6264",
+        "simultaneous_score_q32": "6272",
+        "upper_interaction_residual_q32": "4318",
+        "exchange_contrast_q32": "10604",
+        "covered": false,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-64317",
+            "normalized_l1_q20": "2730768120",
+            "interaction_residual_q32": "-2058"
+          },
+          {
+            "source_id": "gutenberg-236",
+            "normalized_l1_q20": "2851445782",
+            "interaction_residual_q32": "-8"
+          },
+          {
+            "source_id": "gutenberg-3300",
+            "normalized_l1_q20": "4710901637",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-6761",
+        "singleton_features_q32": [
+          "0",
+          "4177",
+          "0",
+          "4344",
+          "-7851",
+          "-4082"
+        ],
+        "lambda_q32": "-7851",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-2",
+        "simultaneous_score_q32": "-2",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-7853",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-27827",
+            "normalized_l1_q20": "6680289973",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-64317",
+            "normalized_l1_q20": "8926810158",
+            "interaction_residual_q32": "-2058"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "8937186845",
+            "interaction_residual_q32": "1"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-10007",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "6133",
+          "-3877"
+        ],
+        "lambda_q32": "6133",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "6133",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "2180098",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "3457400",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-161",
+            "normalized_l1_q20": "4139433",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2500",
+        "singleton_features_q32": [
+          "-2066",
+          "0",
+          "0",
+          "0",
+          "-202",
+          "-4101"
+        ],
+        "lambda_q32": "-202",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-201",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "2167890509",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "2168070683",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2168292491",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-768",
+        "singleton_features_q32": [
+          "4378",
+          "4180",
+          "-2035",
+          "198",
+          "-4154",
+          "-4211"
+        ],
+        "lambda_q32": "-2119",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "55",
+        "simultaneous_score_q32": "55",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-2064",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-27827",
+            "normalized_l1_q20": "9059888077",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-408",
+            "normalized_l1_q20": "9180516141",
+            "interaction_residual_q32": "114"
+          },
+          {
+            "source_id": "gutenberg-3300",
+            "normalized_l1_q20": "9355769951",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-20203",
+        "singleton_features_q32": [
+          "-2240",
+          "0",
+          "0",
+          "0",
+          "218",
+          "-3781"
+        ],
+        "lambda_q32": "218",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "219",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-244",
+            "normalized_l1_q20": "2349215953",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "2350198719",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-161",
+            "normalized_l1_q20": "2350626689",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-8800",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-3998",
+          "-4131"
+        ],
+        "lambda_q32": "-3998",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-1",
+        "simultaneous_score_q32": "-1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-3999",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "131807",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "1364579",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2173883",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-120",
+        "singleton_features_q32": [
+          "0",
+          "-1980",
+          "0",
+          "0",
+          "8103",
+          "-4160"
+        ],
+        "lambda_q32": "8103",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "8103",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-880",
+            "normalized_l1_q20": "39387032",
+            "interaction_residual_q32": "-1"
+          },
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "2079618876",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2080557335",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-3207",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "2011",
+          "2067",
+          "-3941"
+        ],
+        "lambda_q32": "2067",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "2067",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "2109763450",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "2110224359",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2111241126",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-145",
+        "singleton_features_q32": [
+          "0",
+          "-2242",
+          "0",
+          "0",
+          "-1",
+          "-3818"
+        ],
+        "lambda_q32": "-1",
+        "predicted_interaction_residual_q32": "-1",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4325",
+        "exchange_contrast_q32": "-1",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-880",
+            "normalized_l1_q20": "250285441",
+            "interaction_residual_q32": "-1"
+          },
+          {
+            "source_id": "gutenberg-1998",
+            "normalized_l1_q20": "1808618272",
+            "interaction_residual_q32": "-85"
+          },
+          {
+            "source_id": "gutenberg-244",
+            "normalized_l1_q20": "2351538834",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-61",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-8281",
+          "-3933"
+        ],
+        "lambda_q32": "-8281",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-1",
+        "simultaneous_score_q32": "-1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-8282",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "3595251",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "3831116",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "4205140",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-1497",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-171",
+          "-3735"
+        ],
+        "lambda_q32": "-171",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-1",
+        "simultaneous_score_q32": "-1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-172",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-244",
+            "normalized_l1_q20": "203233",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-161",
+            "normalized_l1_q20": "1593767",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "1896143",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-174",
+        "singleton_features_q32": [
+          "4149",
+          "0",
+          "0",
+          "0",
+          "4032",
+          "-4195"
+        ],
+        "lambda_q32": "4032",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-1",
+        "simultaneous_score_q32": "-1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "4031",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "4352279383",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "4352823394",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "4353742541",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-1184",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-5889",
+          "-3922"
+        ],
+        "lambda_q32": "-5889",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-5889",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2507093",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "2742958",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "3044667",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-3825",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "-1864",
+          "-5860",
+          "-4110"
+        ],
+        "lambda_q32": "-5860",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-5859",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "1955574808",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "1957024526",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "1957454174",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-4705",
+        "singleton_features_q32": [
+          "0",
+          "2113",
+          "-2047",
+          "-2140",
+          "8333",
+          "-3964"
+        ],
+        "lambda_q32": "10380",
+        "predicted_interaction_residual_q32": "-8",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "8",
+        "upper_interaction_residual_q32": "4318",
+        "exchange_contrast_q32": "10380",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-64317",
+            "normalized_l1_q20": "2329697439",
+            "interaction_residual_q32": "-2058"
+          },
+          {
+            "source_id": "gutenberg-236",
+            "normalized_l1_q20": "2536358332",
+            "interaction_residual_q32": "-8"
+          },
+          {
+            "source_id": "gutenberg-27827",
+            "normalized_l1_q20": "4438474511",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-23",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "2046",
+          "0",
+          "4008",
+          "-4209"
+        ],
+        "lambda_q32": "1962",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "1962",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "2147262523",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2147553428",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "2148701850",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      }
+    ]
+  },
+  "untouched_evaluation": {
+    "source_panels": 16,
+    "envelope_covered": 16,
+    "envelope_uncovered": 0,
+    "uncovered_source_ids": [],
+    "fired_source_panels": 5,
+    "firing_rate": "5/16",
+    "favorable_firings": 5,
+    "tied_firings": 0,
+    "unfavorable_firings": 0,
+    "unsafe_firings": 0,
+    "aggregate_fired_exchange_contrast_q32": "-40769",
+    "rows": [
+      {
+        "source_id": "gutenberg-1245",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "168",
+          "-4196"
+        ],
+        "lambda_q32": "168",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "169",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "1291339",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "2439349",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "2741058",
+            "interaction_residual_q32": "1"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-1260",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-8131",
+          "-4094"
+        ],
+        "lambda_q32": "-8131",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-1",
+        "simultaneous_score_q32": "-1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-8132",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "2301292",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "3751010",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "3891396",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2701",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "-2063",
+          "0",
+          "-8023",
+          "-4096"
+        ],
+        "lambda_q32": "-5960",
+        "predicted_interaction_residual_q32": "1",
+        "interaction_residual_q32": "-2064",
+        "simultaneous_score_q32": "-2065",
+        "upper_interaction_residual_q32": "4327",
+        "exchange_contrast_q32": "-8024",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-3300",
+            "normalized_l1_q20": "145915047",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-408",
+            "normalized_l1_q20": "268501505",
+            "interaction_residual_q32": "114"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "2165441881",
+            "interaction_residual_q32": "1"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-215",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "89",
+          "0",
+          "4000",
+          "-3879"
+        ],
+        "lambda_q32": "3911",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "88",
+        "simultaneous_score_q32": "88",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "3999",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "94462028",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "95703583",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-161",
+            "normalized_l1_q20": "96421774",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-32449",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-428",
+          "-4167"
+        ],
+        "lambda_q32": "-428",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-428",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "823685",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "2183009",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2418874",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-1232",
+        "singleton_features_q32": [
+          "-1999",
+          "0",
+          "2143",
+          "0",
+          "-6030",
+          "-4260"
+        ],
+        "lambda_q32": "-8173",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-116",
+        "simultaneous_score_q32": "-116",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-8289",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-311",
+            "normalized_l1_q20": "4345290298",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "4345508546",
+            "interaction_residual_q32": "1"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "4346000082",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-394",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "4228",
+          "-4080"
+        ],
+        "lambda_q32": "4228",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "4228",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "791362",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "3223795",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "3406501",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-98",
+        "singleton_features_q32": [
+          "0",
+          "-2124",
+          "0",
+          "0",
+          "-7969",
+          "-3954"
+        ],
+        "lambda_q32": "-7969",
+        "predicted_interaction_residual_q32": "-1",
+        "interaction_residual_q32": "30",
+        "simultaneous_score_q32": "31",
+        "upper_interaction_residual_q32": "4325",
+        "exchange_contrast_q32": "-7939",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-880",
+            "normalized_l1_q20": "121901513",
+            "interaction_residual_q32": "-1"
+          },
+          {
+            "source_id": "gutenberg-1998",
+            "normalized_l1_q20": "1935076866",
+            "interaction_residual_q32": "-85"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2230425944",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-41",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-2232",
+          "-3889"
+        ],
+        "lambda_q32": "-2232",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-1906",
+        "simultaneous_score_q32": "-1906",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-4138",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "989750",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "1527323",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-244",
+            "normalized_l1_q20": "2238906",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-1228",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "4365",
+          "-4170"
+        ],
+        "lambda_q32": "4365",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "4366",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "1672930",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2430601",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "3176218",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-3600",
+        "singleton_features_q32": [
+          "0",
+          "4123",
+          "0",
+          "0",
+          "-8385",
+          "-4148"
+        ],
+        "lambda_q32": "-8385",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-8385",
+        "covered": true,
+        "fires": true,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-27827",
+            "normalized_l1_q20": "2069514451",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-64317",
+            "normalized_l1_q20": "4314841429",
+            "interaction_residual_q32": "-2058"
+          },
+          {
+            "source_id": "gutenberg-74",
+            "normalized_l1_q20": "4325742405",
+            "interaction_residual_q32": "1"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-7370",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "126",
+          "-4049"
+        ],
+        "lambda_q32": "126",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "127",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "1089697",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "1627271",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "2165392",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-11",
+        "singleton_features_q32": [
+          "0",
+          "-2131",
+          "-2018",
+          "2246",
+          "8127",
+          "-3751"
+        ],
+        "lambda_q32": "10145",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "-4148",
+        "simultaneous_score_q32": "-4148",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "5997",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-880",
+            "normalized_l1_q20": "4609662641",
+            "interaction_residual_q32": "-1"
+          },
+          {
+            "source_id": "gutenberg-3300",
+            "normalized_l1_q20": "4787237535",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-408",
+            "normalized_l1_q20": "4813548869",
+            "interaction_residual_q32": "114"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-1292",
+        "singleton_features_q32": [
+          "-2007",
+          "0",
+          "0",
+          "0",
+          "6399",
+          "-4147"
+        ],
+        "lambda_q32": "6399",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "2178",
+        "simultaneous_score_q32": "2178",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "8577",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "2106966905",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-863",
+            "normalized_l1_q20": "2108140390",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-205",
+            "normalized_l1_q20": "2108886008",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-2542",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "-143",
+          "-3691"
+        ],
+        "lambda_q32": "-143",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "0",
+        "simultaneous_score_q32": "0",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "-143",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-244",
+            "normalized_l1_q20": "588060",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-161",
+            "normalized_l1_q20": "1182130",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "2279977",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      },
+      {
+        "source_id": "gutenberg-140",
+        "singleton_features_q32": [
+          "0",
+          "0",
+          "0",
+          "0",
+          "1980",
+          "-4073"
+        ],
+        "lambda_q32": "1980",
+        "predicted_interaction_residual_q32": "0",
+        "interaction_residual_q32": "1",
+        "simultaneous_score_q32": "1",
+        "upper_interaction_residual_q32": "4326",
+        "exchange_contrast_q32": "1981",
+        "covered": true,
+        "fires": false,
+        "unsafe": false,
+        "neighbors": [
+          {
+            "source_id": "gutenberg-132",
+            "normalized_l1_q20": "1653533",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-1322",
+            "normalized_l1_q20": "2227127",
+            "interaction_residual_q32": "0"
+          },
+          {
+            "source_id": "gutenberg-131",
+            "normalized_l1_q20": "2764700",
+            "interaction_residual_q32": "0"
+          }
+        ]
+      }
+    ]
+  },
+  "falsifier_gates": {
+    "source_envelope_not_rejected": true,
+    "source_envelope_promotion_gate": true,
+    "unsafe_action_gate": true,
+    "nonvacuity_gate": true,
+    "incremental_value_gate": true
+  },
+  "decision": {
+    "status": "supported_on_frozen_distinct_author_gutenberg_frame",
+    "all_preregistered_support_gates_pass": true,
+    "claim_scope": "marginal source-panel safety and nonvacuity on the frozen distinct-author English Project Gutenberg frame only",
+    "arbitrary_web_or_simplewiki_transfer_claimed": false,
+    "optimizer_change_authorized": false,
+    "paid_scaling_authorized": false,
+    "documents_200_212_read": false
+  }
+}

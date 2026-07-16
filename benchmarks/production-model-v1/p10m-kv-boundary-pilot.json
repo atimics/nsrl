@@ -1,0 +1,1664 @@
+{
+  "schema": "nsrl.production_kv_boundary_pilot_checkpoint.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-kv-boundary-pilot-contract.json",
+    "sha256": "c708e71de982386f3b3ab8bb774f4f1a635f54f875eadbbaad9ade38a9e2084d"
+  },
+  "source_preflights": {
+    "k": {
+      "path": "benchmarks/production-model-v1/p10m-k-stabilization-preflight.json",
+      "sha256": "0c6ddb26588b188a5e2dbe3afda36dfcb24eb0728dcea455899d5b0e60a38b7e"
+    },
+    "v": {
+      "path": "benchmarks/production-model-v1/p10m-trunk-unlock-preflight.json",
+      "sha256": "3378c769f88e91a9f8337cd33d5c1a0146dd2b6c54b66cf465a57b195cb49c2b"
+    }
+  },
+  "initialization": {
+    "schema": "nsrl.production_model_init.v1",
+    "profile": "p10m",
+    "parameter_count": 9317632,
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "initialization_seed": 7,
+    "model_hash": "0x0e808e354809141d",
+    "artifact_bytes": 13539906,
+    "output_init_amplitude": 1,
+    "output_forward_shift": 14,
+    "full_layer_backward_ready": true,
+    "output_head_smoke_ready": true
+  },
+  "candidate": {
+    "groups": [
+      "k",
+      "v"
+    ],
+    "learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 25,
+      "gate": 25,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    }
+  },
+  "intervals": [
+    {
+      "interval": 0,
+      "start_window": 0,
+      "next_window": 128,
+      "moved_parameter_groups": [
+        "output"
+      ],
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 0,
+        "v": 0,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 79,
+        "bias": 0
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 0,
+        "v": 0,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 79,
+        "bias": 0
+      },
+      "k_residual_carry_count": 1130496,
+      "v_residual_carry_count": 56832,
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3344600,
+        "mean_millibits": 13065
+      },
+      "liveness": {
+        "schema": "nsrl.production_training_liveness_event.v1",
+        "interval": 0,
+        "optimizer_steps": 32,
+        "start_window": 0,
+        "next_window": 128,
+        "previous_phase": "output_unlock",
+        "phase": "trunk_live",
+        "phase_age_intervals": 0,
+        "output_moved": true,
+        "output_unlocked": true,
+        "trunk_moved": false,
+        "moved_trunk_groups": [],
+        "reachable_update_groups": [
+          "output"
+        ],
+        "model_hash_changed": true,
+        "trunk_update_observed": false,
+        "required_trunk_group": null,
+        "required_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "required_trunk_group_observed": false,
+        "required_trunk_group_observations": {
+          "k": false,
+          "v": false
+        },
+        "active_gradient_groups": [
+          "attention_rms",
+          "bias",
+          "down",
+          "embeddings",
+          "final_rms",
+          "gate",
+          "k",
+          "mlp_rms",
+          "o",
+          "output",
+          "q",
+          "up",
+          "v"
+        ],
+        "group_reachability": {
+          "embeddings": {
+            "gradient_nonzero_count": 16,
+            "residual_carry_count": 80,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "attention_rms": {
+            "gradient_nonzero_count": 1969,
+            "residual_carry_count": 4154,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "mlp_rms": {
+            "gradient_nonzero_count": 1483,
+            "residual_carry_count": 3876,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "final_rms": {
+            "gradient_nonzero_count": 18164,
+            "residual_carry_count": 8158,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "q": {
+            "gradient_nonzero_count": 540320,
+            "residual_carry_count": 1125797,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "k": {
+            "gradient_nonzero_count": 540672,
+            "residual_carry_count": 1130496,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "v": {
+            "gradient_nonzero_count": 24576,
+            "residual_carry_count": 56832,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "o": {
+            "gradient_nonzero_count": 24559,
+            "residual_carry_count": 56785,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "up": {
+            "gradient_nonzero_count": 3481630,
+            "residual_carry_count": 6782939,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "gate": {
+            "gradient_nonzero_count": 3484444,
+            "residual_carry_count": 6786572,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "down": {
+            "gradient_nonzero_count": 56904,
+            "residual_carry_count": 135213,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "output": {
+            "gradient_nonzero_count": 268189696,
+            "residual_carry_count": 67108782,
+            "update_nonzero_count": 79,
+            "movement_l1": 79
+          },
+          "bias": {
+            "gradient_nonzero_count": 1048576,
+            "residual_carry_count": 262144,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          }
+        },
+        "full_gradient_path": true,
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0,
+        "heldout_total_millibits_delta": 0,
+        "classification": "live",
+        "dead": false,
+        "policy": {
+          "output_unlock_deadline_intervals": 1,
+          "trunk_activation_deadline_intervals": 1,
+          "require_trunk_update_by_interval": 1,
+          "required_trunk_groups": [
+            "k",
+            "v"
+          ]
+        },
+        "history_hash": "69f0ab58837d6e9abbd2caf34bb9cffa581523126d5075d1d1fb05a73c0244f1"
+      }
+    },
+    {
+      "interval": 1,
+      "start_window": 128,
+      "next_window": 256,
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "output"
+      ],
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 4992,
+        "v": 269,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 973,
+        "bias": 0
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 4992,
+        "v": 269,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 973,
+        "bias": 0
+      },
+      "k_residual_carry_count": 12086400,
+      "v_residual_carry_count": 3587827,
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3344185,
+        "mean_millibits": 13063
+      },
+      "liveness": {
+        "schema": "nsrl.production_training_liveness_event.v1",
+        "interval": 1,
+        "optimizer_steps": 32,
+        "start_window": 128,
+        "next_window": 256,
+        "previous_phase": "trunk_live",
+        "phase": "trunk_live",
+        "phase_age_intervals": 1,
+        "output_moved": true,
+        "output_unlocked": true,
+        "trunk_moved": true,
+        "moved_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "reachable_update_groups": [
+          "k",
+          "output",
+          "v"
+        ],
+        "model_hash_changed": true,
+        "trunk_update_observed": true,
+        "required_trunk_group": null,
+        "required_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "required_trunk_group_observed": true,
+        "required_trunk_group_observations": {
+          "k": true,
+          "v": true
+        },
+        "active_gradient_groups": [
+          "attention_rms",
+          "bias",
+          "down",
+          "embeddings",
+          "final_rms",
+          "gate",
+          "k",
+          "mlp_rms",
+          "o",
+          "output",
+          "q",
+          "up",
+          "v"
+        ],
+        "group_reachability": {
+          "embeddings": {
+            "gradient_nonzero_count": 761,
+            "residual_carry_count": 16300,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "attention_rms": {
+            "gradient_nonzero_count": 57647,
+            "residual_carry_count": 46628,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "mlp_rms": {
+            "gradient_nonzero_count": 22497,
+            "residual_carry_count": 41888,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "final_rms": {
+            "gradient_nonzero_count": 18248,
+            "residual_carry_count": 8189,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "q": {
+            "gradient_nonzero_count": 15715712,
+            "residual_carry_count": 12080810,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "k": {
+            "gradient_nonzero_count": 15728640,
+            "residual_carry_count": 12086400,
+            "update_nonzero_count": 4992,
+            "movement_l1": 4992
+          },
+          "v": {
+            "gradient_nonzero_count": 1168896,
+            "residual_carry_count": 3587827,
+            "update_nonzero_count": 269,
+            "movement_l1": 269
+          },
+          "o": {
+            "gradient_nonzero_count": 1167805,
+            "residual_carry_count": 3586854,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "up": {
+            "gradient_nonzero_count": 57763207,
+            "residual_carry_count": 37698887,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "gate": {
+            "gradient_nonzero_count": 57816912,
+            "residual_carry_count": 37698449,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "down": {
+            "gradient_nonzero_count": 2689967,
+            "residual_carry_count": 9594433,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "output": {
+            "gradient_nonzero_count": 268148736,
+            "residual_carry_count": 67107889,
+            "update_nonzero_count": 973,
+            "movement_l1": 973
+          },
+          "bias": {
+            "gradient_nonzero_count": 1048576,
+            "residual_carry_count": 262144,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          }
+        },
+        "full_gradient_path": true,
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0,
+        "heldout_total_millibits_delta": -415,
+        "classification": "live",
+        "dead": false,
+        "policy": {
+          "output_unlock_deadline_intervals": 1,
+          "trunk_activation_deadline_intervals": 1,
+          "require_trunk_update_by_interval": 1,
+          "required_trunk_groups": [
+            "k",
+            "v"
+          ]
+        },
+        "history_hash": "ac7d453c6cefc28efc63114f09adb98d2b467d9bb6d75edd809be90f0da7a5a6"
+      }
+    },
+    {
+      "interval": 2,
+      "start_window": 256,
+      "next_window": 384,
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "output"
+      ],
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 64736,
+        "v": 2923,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 657,
+        "bias": 0
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 64736,
+        "v": 2923,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 657,
+        "bias": 0
+      },
+      "k_residual_carry_count": 12518176,
+      "v_residual_carry_count": 8406677,
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3343355,
+        "mean_millibits": 13060
+      },
+      "liveness": {
+        "schema": "nsrl.production_training_liveness_event.v1",
+        "interval": 2,
+        "optimizer_steps": 32,
+        "start_window": 256,
+        "next_window": 384,
+        "previous_phase": "trunk_live",
+        "phase": "trunk_live",
+        "phase_age_intervals": 2,
+        "output_moved": true,
+        "output_unlocked": true,
+        "trunk_moved": true,
+        "moved_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "reachable_update_groups": [
+          "k",
+          "output",
+          "v"
+        ],
+        "model_hash_changed": true,
+        "trunk_update_observed": true,
+        "required_trunk_group": null,
+        "required_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "required_trunk_group_observed": true,
+        "required_trunk_group_observations": {
+          "k": true,
+          "v": true
+        },
+        "active_gradient_groups": [
+          "attention_rms",
+          "bias",
+          "down",
+          "embeddings",
+          "final_rms",
+          "gate",
+          "k",
+          "mlp_rms",
+          "o",
+          "output",
+          "q",
+          "up",
+          "v"
+        ],
+        "group_reachability": {
+          "embeddings": {
+            "gradient_nonzero_count": 1145,
+            "residual_carry_count": 42769,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "attention_rms": {
+            "gradient_nonzero_count": 78959,
+            "residual_carry_count": 49036,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "mlp_rms": {
+            "gradient_nonzero_count": 25132,
+            "residual_carry_count": 47050,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "final_rms": {
+            "gradient_nonzero_count": 18388,
+            "residual_carry_count": 8192,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "q": {
+            "gradient_nonzero_count": 20476000,
+            "residual_carry_count": 12582899,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "k": {
+            "gradient_nonzero_count": 20488160,
+            "residual_carry_count": 12518176,
+            "update_nonzero_count": 64736,
+            "movement_l1": 64736
+          },
+          "v": {
+            "gradient_nonzero_count": 1758720,
+            "residual_carry_count": 8406677,
+            "update_nonzero_count": 2923,
+            "movement_l1": 2923
+          },
+          "o": {
+            "gradient_nonzero_count": 1757413,
+            "residual_carry_count": 8407174,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "up": {
+            "gradient_nonzero_count": 66610975,
+            "residual_carry_count": 37748701,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "gate": {
+            "gradient_nonzero_count": 66651882,
+            "residual_carry_count": 37748701,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "down": {
+            "gradient_nonzero_count": 4040958,
+            "residual_carry_count": 23395635,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "output": {
+            "gradient_nonzero_count": 268189696,
+            "residual_carry_count": 67108206,
+            "update_nonzero_count": 657,
+            "movement_l1": 657
+          },
+          "bias": {
+            "gradient_nonzero_count": 1048576,
+            "residual_carry_count": 262144,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          }
+        },
+        "full_gradient_path": true,
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0,
+        "heldout_total_millibits_delta": -1245,
+        "classification": "live",
+        "dead": false,
+        "policy": {
+          "output_unlock_deadline_intervals": 1,
+          "trunk_activation_deadline_intervals": 1,
+          "require_trunk_update_by_interval": 1,
+          "required_trunk_groups": [
+            "k",
+            "v"
+          ]
+        },
+        "history_hash": "55d199db02bf7d27636e0098bbc909dc2cdea466aa7fe50eec06bf9388b7a523"
+      }
+    },
+    {
+      "interval": 3,
+      "start_window": 384,
+      "next_window": 512,
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "output"
+      ],
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 119360,
+        "v": 8561,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 815,
+        "bias": 0
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 119360,
+        "v": 8561,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 815,
+        "bias": 0
+      },
+      "k_residual_carry_count": 12463552,
+      "v_residual_carry_count": 10528399,
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3343770,
+        "mean_millibits": 13062
+      },
+      "liveness": {
+        "schema": "nsrl.production_training_liveness_event.v1",
+        "interval": 3,
+        "optimizer_steps": 32,
+        "start_window": 384,
+        "next_window": 512,
+        "previous_phase": "trunk_live",
+        "phase": "trunk_live",
+        "phase_age_intervals": 3,
+        "output_moved": true,
+        "output_unlocked": true,
+        "trunk_moved": true,
+        "moved_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "reachable_update_groups": [
+          "k",
+          "output",
+          "v"
+        ],
+        "model_hash_changed": true,
+        "trunk_update_observed": true,
+        "required_trunk_group": null,
+        "required_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "required_trunk_group_observed": true,
+        "required_trunk_group_observations": {
+          "k": true,
+          "v": true
+        },
+        "active_gradient_groups": [
+          "attention_rms",
+          "bias",
+          "down",
+          "embeddings",
+          "final_rms",
+          "gate",
+          "k",
+          "mlp_rms",
+          "o",
+          "output",
+          "q",
+          "up",
+          "v"
+        ],
+        "group_reachability": {
+          "embeddings": {
+            "gradient_nonzero_count": 1764,
+            "residual_carry_count": 64950,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "attention_rms": {
+            "gradient_nonzero_count": 93422,
+            "residual_carry_count": 49056,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "mlp_rms": {
+            "gradient_nonzero_count": 25848,
+            "residual_carry_count": 47854,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "final_rms": {
+            "gradient_nonzero_count": 18873,
+            "residual_carry_count": 8192,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "q": {
+            "gradient_nonzero_count": 24058240,
+            "residual_carry_count": 12582908,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "k": {
+            "gradient_nonzero_count": 24076288,
+            "residual_carry_count": 12463552,
+            "update_nonzero_count": 119360,
+            "movement_l1": 119360
+          },
+          "v": {
+            "gradient_nonzero_count": 2709504,
+            "residual_carry_count": 10528399,
+            "update_nonzero_count": 8561,
+            "movement_l1": 8561
+          },
+          "o": {
+            "gradient_nonzero_count": 2706760,
+            "residual_carry_count": 10534872,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "up": {
+            "gradient_nonzero_count": 70631677,
+            "residual_carry_count": 37748710,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "gate": {
+            "gradient_nonzero_count": 70679252,
+            "residual_carry_count": 37748709,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "down": {
+            "gradient_nonzero_count": 6222976,
+            "residual_carry_count": 30102846,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "output": {
+            "gradient_nonzero_count": 268230656,
+            "residual_carry_count": 67108049,
+            "update_nonzero_count": 815,
+            "movement_l1": 815
+          },
+          "bias": {
+            "gradient_nonzero_count": 1048576,
+            "residual_carry_count": 262144,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          }
+        },
+        "full_gradient_path": true,
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0,
+        "heldout_total_millibits_delta": -830,
+        "classification": "live",
+        "dead": false,
+        "policy": {
+          "output_unlock_deadline_intervals": 1,
+          "trunk_activation_deadline_intervals": 1,
+          "require_trunk_update_by_interval": 1,
+          "required_trunk_groups": [
+            "k",
+            "v"
+          ]
+        },
+        "history_hash": "302f69cd14dcc5ea7f2653b82ba66c193b2929edd079977c7e1367cca68920dd"
+      }
+    },
+    {
+      "interval": 4,
+      "start_window": 512,
+      "next_window": 640,
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "output"
+      ],
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 136032,
+        "v": 13025,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 844,
+        "bias": 0
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 136032,
+        "v": 13025,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 844,
+        "bias": 0
+      },
+      "k_residual_carry_count": 12446880,
+      "v_residual_carry_count": 11602207,
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3343355,
+        "mean_millibits": 13060
+      },
+      "liveness": {
+        "schema": "nsrl.production_training_liveness_event.v1",
+        "interval": 4,
+        "optimizer_steps": 32,
+        "start_window": 512,
+        "next_window": 640,
+        "previous_phase": "trunk_live",
+        "phase": "trunk_live",
+        "phase_age_intervals": 4,
+        "output_moved": true,
+        "output_unlocked": true,
+        "trunk_moved": true,
+        "moved_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "reachable_update_groups": [
+          "k",
+          "output",
+          "v"
+        ],
+        "model_hash_changed": true,
+        "trunk_update_observed": true,
+        "required_trunk_group": null,
+        "required_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "required_trunk_group_observed": true,
+        "required_trunk_group_observations": {
+          "k": true,
+          "v": true
+        },
+        "active_gradient_groups": [
+          "attention_rms",
+          "bias",
+          "down",
+          "embeddings",
+          "final_rms",
+          "gate",
+          "k",
+          "mlp_rms",
+          "o",
+          "output",
+          "q",
+          "up",
+          "v"
+        ],
+        "group_reachability": {
+          "embeddings": {
+            "gradient_nonzero_count": 1528,
+            "residual_carry_count": 110513,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "attention_rms": {
+            "gradient_nonzero_count": 93552,
+            "residual_carry_count": 49085,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "mlp_rms": {
+            "gradient_nonzero_count": 27311,
+            "residual_carry_count": 48168,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "final_rms": {
+            "gradient_nonzero_count": 20109,
+            "residual_carry_count": 8191,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "q": {
+            "gradient_nonzero_count": 22783072,
+            "residual_carry_count": 12582908,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "k": {
+            "gradient_nonzero_count": 22683584,
+            "residual_carry_count": 12446880,
+            "update_nonzero_count": 136032,
+            "movement_l1": 136032
+          },
+          "v": {
+            "gradient_nonzero_count": 2347008,
+            "residual_carry_count": 11602207,
+            "update_nonzero_count": 13025,
+            "movement_l1": 13025
+          },
+          "o": {
+            "gradient_nonzero_count": 2345573,
+            "residual_carry_count": 11613859,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "up": {
+            "gradient_nonzero_count": 71428203,
+            "residual_carry_count": 37748718,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "gate": {
+            "gradient_nonzero_count": 71483958,
+            "residual_carry_count": 37748709,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "down": {
+            "gradient_nonzero_count": 5358163,
+            "residual_carry_count": 33740121,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "output": {
+            "gradient_nonzero_count": 268165120,
+            "residual_carry_count": 67108020,
+            "update_nonzero_count": 844,
+            "movement_l1": 844
+          },
+          "bias": {
+            "gradient_nonzero_count": 1048576,
+            "residual_carry_count": 262144,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          }
+        },
+        "full_gradient_path": true,
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0,
+        "heldout_total_millibits_delta": -1245,
+        "classification": "live",
+        "dead": false,
+        "policy": {
+          "output_unlock_deadline_intervals": 1,
+          "trunk_activation_deadline_intervals": 1,
+          "require_trunk_update_by_interval": 1,
+          "required_trunk_groups": [
+            "k",
+            "v"
+          ]
+        },
+        "history_hash": "1ce62ed81bc0b32975462978cc2193fc6bf712857077453a8d3f3d13a526ab86"
+      }
+    },
+    {
+      "interval": 5,
+      "start_window": 640,
+      "next_window": 768,
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "output"
+      ],
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 123776,
+        "v": 13936,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 738,
+        "bias": 0
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 123776,
+        "v": 13936,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 738,
+        "bias": 0
+      },
+      "k_residual_carry_count": 12459136,
+      "v_residual_carry_count": 12066704,
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3340035,
+        "mean_millibits": 13047
+      },
+      "liveness": {
+        "schema": "nsrl.production_training_liveness_event.v1",
+        "interval": 5,
+        "optimizer_steps": 32,
+        "start_window": 640,
+        "next_window": 768,
+        "previous_phase": "trunk_live",
+        "phase": "trunk_live",
+        "phase_age_intervals": 5,
+        "output_moved": true,
+        "output_unlocked": true,
+        "trunk_moved": true,
+        "moved_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "reachable_update_groups": [
+          "k",
+          "output",
+          "v"
+        ],
+        "model_hash_changed": true,
+        "trunk_update_observed": true,
+        "required_trunk_group": null,
+        "required_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "required_trunk_group_observed": true,
+        "required_trunk_group_observations": {
+          "k": true,
+          "v": true
+        },
+        "active_gradient_groups": [
+          "attention_rms",
+          "bias",
+          "down",
+          "embeddings",
+          "final_rms",
+          "gate",
+          "k",
+          "mlp_rms",
+          "o",
+          "output",
+          "q",
+          "up",
+          "v"
+        ],
+        "group_reachability": {
+          "embeddings": {
+            "gradient_nonzero_count": 1338,
+            "residual_carry_count": 110613,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "attention_rms": {
+            "gradient_nonzero_count": 88092,
+            "residual_carry_count": 49110,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "mlp_rms": {
+            "gradient_nonzero_count": 26301,
+            "residual_carry_count": 48241,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "final_rms": {
+            "gradient_nonzero_count": 19997,
+            "residual_carry_count": 8192,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "q": {
+            "gradient_nonzero_count": 19392928,
+            "residual_carry_count": 12582904,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "k": {
+            "gradient_nonzero_count": 19160864,
+            "residual_carry_count": 12459136,
+            "update_nonzero_count": 123776,
+            "movement_l1": 123776
+          },
+          "v": {
+            "gradient_nonzero_count": 2055168,
+            "residual_carry_count": 12066704,
+            "update_nonzero_count": 13936,
+            "movement_l1": 13936
+          },
+          "o": {
+            "gradient_nonzero_count": 2053854,
+            "residual_carry_count": 12079454,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "up": {
+            "gradient_nonzero_count": 66979142,
+            "residual_carry_count": 37748712,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "gate": {
+            "gradient_nonzero_count": 67022356,
+            "residual_carry_count": 37748727,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "down": {
+            "gradient_nonzero_count": 4700259,
+            "residual_carry_count": 35303640,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "output": {
+            "gradient_nonzero_count": 268197888,
+            "residual_carry_count": 67108125,
+            "update_nonzero_count": 738,
+            "movement_l1": 738
+          },
+          "bias": {
+            "gradient_nonzero_count": 1048576,
+            "residual_carry_count": 262144,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          }
+        },
+        "full_gradient_path": true,
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0,
+        "heldout_total_millibits_delta": -4565,
+        "classification": "live",
+        "dead": false,
+        "policy": {
+          "output_unlock_deadline_intervals": 1,
+          "trunk_activation_deadline_intervals": 1,
+          "require_trunk_update_by_interval": 1,
+          "required_trunk_groups": [
+            "k",
+            "v"
+          ]
+        },
+        "history_hash": "fbfbb5c72885e1eb35512da69f6c18eafa4e4834eca431ab6e6126d66b634520"
+      }
+    },
+    {
+      "interval": 6,
+      "start_window": 768,
+      "next_window": 896,
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "output"
+      ],
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 14272,
+        "v": 1669,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 64,
+        "bias": 0
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 14272,
+        "v": 1669,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 64,
+        "bias": 0
+      },
+      "k_residual_carry_count": 12568640,
+      "v_residual_carry_count": 12320123,
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3340128,
+        "mean_millibits": 13047
+      },
+      "liveness": {
+        "schema": "nsrl.production_training_liveness_event.v1",
+        "interval": 6,
+        "optimizer_steps": 32,
+        "start_window": 768,
+        "next_window": 896,
+        "previous_phase": "trunk_live",
+        "phase": "trunk_live",
+        "phase_age_intervals": 6,
+        "output_moved": true,
+        "output_unlocked": true,
+        "trunk_moved": true,
+        "moved_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "reachable_update_groups": [
+          "k",
+          "output",
+          "v"
+        ],
+        "model_hash_changed": true,
+        "trunk_update_observed": true,
+        "required_trunk_group": null,
+        "required_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "required_trunk_group_observed": true,
+        "required_trunk_group_observations": {
+          "k": true,
+          "v": true
+        },
+        "active_gradient_groups": [
+          "attention_rms",
+          "bias",
+          "down",
+          "embeddings",
+          "final_rms",
+          "gate",
+          "k",
+          "mlp_rms",
+          "o",
+          "output",
+          "q",
+          "up",
+          "v"
+        ],
+        "group_reachability": {
+          "embeddings": {
+            "gradient_nonzero_count": 149,
+            "residual_carry_count": 48039,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "attention_rms": {
+            "gradient_nonzero_count": 6540,
+            "residual_carry_count": 49104,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "mlp_rms": {
+            "gradient_nonzero_count": 1928,
+            "residual_carry_count": 48251,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "final_rms": {
+            "gradient_nonzero_count": 19356,
+            "residual_carry_count": 8192,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "q": {
+            "gradient_nonzero_count": 1473152,
+            "residual_carry_count": 12582912,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "k": {
+            "gradient_nonzero_count": 1474560,
+            "residual_carry_count": 12568640,
+            "update_nonzero_count": 14272,
+            "movement_l1": 14272
+          },
+          "v": {
+            "gradient_nonzero_count": 228864,
+            "residual_carry_count": 12320123,
+            "update_nonzero_count": 1669,
+            "movement_l1": 1669
+          },
+          "o": {
+            "gradient_nonzero_count": 228500,
+            "residual_carry_count": 12320537,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "up": {
+            "gradient_nonzero_count": 5089100,
+            "residual_carry_count": 37748708,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "gate": {
+            "gradient_nonzero_count": 5094217,
+            "residual_carry_count": 37748722,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "down": {
+            "gradient_nonzero_count": 522024,
+            "residual_carry_count": 36056566,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "output": {
+            "gradient_nonzero_count": 268181504,
+            "residual_carry_count": 67108799,
+            "update_nonzero_count": 64,
+            "movement_l1": 64
+          },
+          "bias": {
+            "gradient_nonzero_count": 1048576,
+            "residual_carry_count": 262144,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          }
+        },
+        "full_gradient_path": true,
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0,
+        "heldout_total_millibits_delta": -4472,
+        "classification": "live",
+        "dead": false,
+        "policy": {
+          "output_unlock_deadline_intervals": 1,
+          "trunk_activation_deadline_intervals": 1,
+          "require_trunk_update_by_interval": 1,
+          "required_trunk_groups": [
+            "k",
+            "v"
+          ]
+        },
+        "history_hash": "6c1a5c202636e4f4463f45f3bafe8c30830a409da951282ce329c6aea33b8be6"
+      }
+    },
+    {
+      "interval": 7,
+      "start_window": 896,
+      "next_window": 0,
+      "moved_parameter_groups": [
+        "k",
+        "v",
+        "output"
+      ],
+      "update_nonzero_count": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 5568,
+        "v": 728,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 42,
+        "bias": 0
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 5568,
+        "v": 728,
+        "o": 0,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 42,
+        "bias": 0
+      },
+      "k_residual_carry_count": 12577344,
+      "v_residual_carry_count": 12359464,
+      "dev": {
+        "context_tokens": 64,
+        "windows": 256,
+        "mistakes": 256,
+        "total_millibits": 3339391,
+        "mean_millibits": 13044
+      },
+      "liveness": {
+        "schema": "nsrl.production_training_liveness_event.v1",
+        "interval": 7,
+        "optimizer_steps": 32,
+        "start_window": 896,
+        "next_window": 0,
+        "previous_phase": "trunk_live",
+        "phase": "trunk_live",
+        "phase_age_intervals": 7,
+        "output_moved": true,
+        "output_unlocked": true,
+        "trunk_moved": true,
+        "moved_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "reachable_update_groups": [
+          "k",
+          "output",
+          "v"
+        ],
+        "model_hash_changed": true,
+        "trunk_update_observed": true,
+        "required_trunk_group": null,
+        "required_trunk_groups": [
+          "k",
+          "v"
+        ],
+        "required_trunk_group_observed": true,
+        "required_trunk_group_observations": {
+          "k": true,
+          "v": true
+        },
+        "active_gradient_groups": [
+          "attention_rms",
+          "bias",
+          "down",
+          "embeddings",
+          "final_rms",
+          "gate",
+          "k",
+          "mlp_rms",
+          "o",
+          "output",
+          "q",
+          "up",
+          "v"
+        ],
+        "group_reachability": {
+          "embeddings": {
+            "gradient_nonzero_count": 143,
+            "residual_carry_count": 7553,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "attention_rms": {
+            "gradient_nonzero_count": 4259,
+            "residual_carry_count": 49100,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "mlp_rms": {
+            "gradient_nonzero_count": 1078,
+            "residual_carry_count": 48212,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "final_rms": {
+            "gradient_nonzero_count": 17943,
+            "residual_carry_count": 8192,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "q": {
+            "gradient_nonzero_count": 1031104,
+            "residual_carry_count": 12582897,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "k": {
+            "gradient_nonzero_count": 1032192,
+            "residual_carry_count": 12577344,
+            "update_nonzero_count": 5568,
+            "movement_l1": 5568
+          },
+          "v": {
+            "gradient_nonzero_count": 219648,
+            "residual_carry_count": 12359464,
+            "update_nonzero_count": 728,
+            "movement_l1": 728
+          },
+          "o": {
+            "gradient_nonzero_count": 219205,
+            "residual_carry_count": 12358978,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "up": {
+            "gradient_nonzero_count": 3208517,
+            "residual_carry_count": 37748716,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "gate": {
+            "gradient_nonzero_count": 3211843,
+            "residual_carry_count": 37748726,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "down": {
+            "gradient_nonzero_count": 504567,
+            "residual_carry_count": 36216131,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          },
+          "output": {
+            "gradient_nonzero_count": 268099584,
+            "residual_carry_count": 67108822,
+            "update_nonzero_count": 42,
+            "movement_l1": 42
+          },
+          "bias": {
+            "gradient_nonzero_count": 1048576,
+            "residual_carry_count": 262144,
+            "update_nonzero_count": 0,
+            "movement_l1": 0
+          }
+        },
+        "full_gradient_path": true,
+        "gradient_saturation_count": 0,
+        "residual_saturation_count": 0,
+        "weight_saturation_count": 0,
+        "heldout_total_millibits_delta": -5209,
+        "classification": "live",
+        "dead": false,
+        "policy": {
+          "output_unlock_deadline_intervals": 1,
+          "trunk_activation_deadline_intervals": 1,
+          "require_trunk_update_by_interval": 1,
+          "required_trunk_groups": [
+            "k",
+            "v"
+          ]
+        },
+        "history_hash": "f5e1b45752914e25cb20fb650b193833d86eeb1602a63ee24078e1ddb9c695af"
+      }
+    }
+  ],
+  "heldout": {
+    "initial": {
+      "context_tokens": 64,
+      "windows": 256,
+      "mistakes": 256,
+      "total_millibits": 3344600,
+      "mean_millibits": 13065
+    },
+    "final": {
+      "context_tokens": 64,
+      "windows": 256,
+      "mistakes": 256,
+      "total_millibits": 3339391,
+      "mean_millibits": 13044
+    },
+    "total_millibits_delta": -5209
+  },
+  "restart": {
+    "midpoint_window": 512,
+    "final_model_sha256": "a5c54414446949a25485e3c920e41ce2f94a1ebf5a2df8f949e98cb7e419986c",
+    "replay_model_sha256": "a5c54414446949a25485e3c920e41ce2f94a1ebf5a2df8f949e98cb7e419986c",
+    "final_optimizer_sha256": "212ccb52f3ed7288234d4b54bdbc7cd248139abe18b5fa649ae028251372e6a8",
+    "replay_optimizer_sha256": "212ccb52f3ed7288234d4b54bdbc7cd248139abe18b5fa649ae028251372e6a8"
+  },
+  "artifacts": {
+    "model": {
+      "bytes": 13539906,
+      "sha256": "a5c54414446949a25485e3c920e41ce2f94a1ebf5a2df8f949e98cb7e419986c"
+    },
+    "optimizer": {
+      "bytes": 74541140,
+      "sha256": "212ccb52f3ed7288234d4b54bdbc7cd248139abe18b5fa649ae028251372e6a8"
+    }
+  },
+  "gates": {
+    "source_preflight_hashes_match": true,
+    "source_preflights_eligible": true,
+    "candidate_schedule_exact": true,
+    "only_k_and_v_shifts_changed": true,
+    "both_move_by_window_256": true,
+    "both_move_again_after_midpoint": true,
+    "only_k_v_and_output_move": true,
+    "exact_reachable_update_consistency": true,
+    "all_intervals_live": true,
+    "full_gradient_path_after_unlock": true,
+    "k_v_gradient_and_carry_present": true,
+    "all_saturation_zero": true,
+    "heldout_nonincreasing_at_every_interval": true,
+    "heldout_improves_at_completion": true,
+    "schedule_complete": true,
+    "midpoint_restart_model_byte_identical": true,
+    "midpoint_restart_optimizer_byte_identical": true,
+    "replay_schedule_complete_and_healthy": true
+  },
+  "pilot_eligible": true,
+  "next_gate": "p10m_kv_scaling_readiness_review"
+}

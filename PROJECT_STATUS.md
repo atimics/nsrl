@@ -21,18 +21,21 @@ node scripts/nsrl-status.mjs --refresh-fast-diagnostic
 
 ## Current Read
 
-As of 2026-07-10, NSRL is not release-ready. The integer runtime and research
+As of 2026-07-15, NSRL is not release-ready. The integer runtime and research
 artifacts exist, but the Solomon product proof is incomplete.
 
-The repository now has one substrate promotion contract:
-`integer-transformer-proof-v1`. Run `cargo run -p nsrl-eval -- contract` to
-inspect it and `cargo run -p nsrl-eval -- check --manifest MANIFEST --results
-PATH` to validate a candidate/baseline matrix. The frozen manifest contains 5,896 held-out targets
-with dataset hash `0x8fe7b86378f81951`; deterministic retrieval, byte n-gram,
-and offline floating-point reference rows are checked in. No candidate row or
-passing full matrix is checked in yet, so the substrate milestone remains open.
-Solomon and literary results are experiment evidence rather than alternate
-headline criteria.
+The active substrate promotion contract is
+`integer-transformer-successor-v2`. Its first complete replay is checked in and
+is a frozen falsification, not a promotion. On the same 5,896 targets and
+dataset hash `0x8fe7b86378f81951`, the physically unassisted transformer scores
+115,010,055 canonical NLL millibits versus 47,168,000 uniform, 38,271,425
+retrieval, 38,025,720 byte n-gram, and 40,847,697 for the genuine trained float
+transformer. The candidate loses to every baseline, including uniform, so paid
+scaling is unauthorized. `node scripts/run-integer-transformer-successor-v2.mjs
+--check` regenerates and byte-compares the complete matrix; the frozen v1
+transformer-plus-suffix-memory result remains separately replayable. Solomon
+and literary results are experiment evidence rather than alternate headline
+criteria.
 
 The project headline is `NSRL-MME v0`, a model-native multimodal LLM eval
 defined in `docs/multimodal-llm-eval.md`. The current local score is **371 per
@@ -43,6 +46,47 @@ headline result.
 Known facts from the status command:
 
 - the working tree is dirty,
+- the production Q23/Q47-Newton path now carries exact-replayable integer signal
+  through target probabilities, but its first materialized output boundary
+  regresses dev; the document-blocked rescue-stratified alignment audit fails
+  on the proposal surface while its output-head sample aligns, and the v3
+  source-matched control shows that removing all nonzero rescue changes sampled
+  trunk magnitudes but no signs or descent decisions; the exact rank-two cube
+  then found a post-hoc transfer-only trunk/head synergy, but a frozen
+  64-document confirmation reversed the aggregate conditional sign and favored
+  head-only on 11 non-tied documents versus 7 for the joint move, with 46 ties.
+  That move-family repair is rejected; the next gate is a new prospectively
+  defined, stability-aware proposal rule rather than rescue removal, more bits,
+  fixed-mass tuning, or shift search,
+- the complete proposal-only six-atom cube is now measured. Its Q32 cubic tail
+  is tiny and selects the exact aggregate minimizer, but exact support has
+  maximal induced width, Q20/Q32 coefficient support and signs disagree
+  materially, and the proposal block contains only one source cluster. A
+  derived cubic Walsh surrogate has zero canonical gap on the aggregate and all
+  document cubes in both grids, but still selects the falsified all-atom move.
+  This is descriptive structure discovery, not optimizer or scaling
+  authorization,
+- the frozen Ising confirmation on documents 136--199 passes all three
+  within-source document endpoints after exact Holm correction: masks `59` and
+  `61` beat baseline, and the probe router improves over mask `47` on all 17
+  rerouted documents. Only atom 5's one-body field replicates as a stable
+  low-order parameter; no pair coupling does, and the pairwise/Gibbs masks
+  re-estimated on confirmation change. The leading mechanism is therefore a
+  probe-routed conditional exchange of atom 4 for atom 2, not a global Ising
+  MAP. That confirmation alone does not identify cross-source transfer;
+  documents 200--212 remain sealed,
+- the prospective M3 source-panel experiment now supports that conditional
+  exchange on its frozen 71-source distinct-author English Project Gutenberg
+  frame. The disjoint split uses 16 fitting, 39 calibration, and 16 untouched
+  evaluation sources. Its 95% correction is 4,326 Q32; all 16 evaluation panels
+  are covered, 5 fire, and none is unsafe: coverage is 16/16, firing is 5/16,
+  and marginal unsafe-action rate is 0/16. Signed regret relative to always
+  abstaining is -40,769 Q32 in aggregate (-40,769/16 Q32 per evaluation panel),
+  with zero positive regret. A checked publication layer reports only
+  `supported`, `falsified`, or `inconclusive` and maps a vacuous envelope to
+  `inconclusive`; this result is `supported`. It is bounded to one sampled
+  passage and two adjacent targets per source and does not authorize an
+  optimizer change or paid scaling,
 - the headline multimodal LLM eval is measured but failing at 371 per mille,
 - the checked-in attention artifacts are smoke-scale, not promoted-profile,
 - local quality-report and objective-coverage artifacts exist,

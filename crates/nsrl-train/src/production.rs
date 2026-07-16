@@ -3,19 +3,70 @@
 //! This module is separate from MT5/MT6 so their byte-vocabulary artifacts and
 //! frozen proof semantics remain unchanged.
 
+use std::collections::BTreeSet;
+use std::fmt::Write;
+
 use nsrl_core::{
-    FixedScale, GatedMlpI16Params, GatedMlpWorkspace, LinearAttentionWorkspace, LinearI16I8Params,
-    SelfAttentionI16Params, base2_softmax_i32_q15, gated_mlp_i16_q15_checked,
-    linear_attention_i16_q15_checked, rms_norm_i16_q15_checked, saturate_i16,
+    DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS, FixedScale, GatedMlpI16Params, GatedMlpWorkspace,
+    LinearAttentionWorkspace, LinearI16I8Params, MASKED_LOGIT, SelfAttentionI16Params,
+    SoftmaxNormalization, base2_exp_neg_q15, base2_softmax_i32_q15, base2_softmax_i32_q31,
+    base2_softmax_i32_q31_with_normalization, base2_softmax_nll_millibits,
+    gated_mlp_i16_q15_checked, linear_attention_i16_q15_checked, rms_norm_i16_q15_checked,
+    round_shift_rhu_i64, saturate_i16,
 };
 use nsrl_corpus::subword::{BOS_TOKEN_ID, EOS_TOKEN_ID};
 
 use crate::{PRODUCTION_MODEL_V1_MAGIC, TrainError};
 
+mod alignment;
+mod boolean_jet;
+mod numeric_contract;
+mod structure_audit;
 mod training;
+pub use alignment::{
+    ProductionGradientAlignmentConfig, ProductionGradientAlignmentGate,
+    ProductionGradientAlignmentSample, ProductionGradientAlignmentSummary,
+    ProductionGradientAlignmentTrace, ProductionGradientLaneHealth, ProductionGradientLaneSample,
+    ProductionGradientLaneTrace, ProductionGradientSurfaceDelta, ProductionGradientWindowBinding,
+    audit_production_gradient_alignment,
+};
+pub use boolean_jet::{
+    PRODUCTION_BOOLEAN_JET_RESERVED_DOCUMENT_START, ProductionBooleanJetAggregationRule,
+    ProductionBooleanJetAnalysisRole, ProductionBooleanJetBranchSurfaceTrace,
+    ProductionBooleanJetBranchVertexTrace, ProductionBooleanJetConfirmationConfig,
+    ProductionBooleanJetConfirmationSurfaceTrace, ProductionBooleanJetConfirmationTrace,
+    ProductionBooleanJetConfirmationV2Config, ProductionBooleanJetConfirmationV2Trace,
+    ProductionBooleanJetDecisionGates, ProductionBooleanJetDocumentTrace,
+    ProductionBooleanJetMatchedControlDocumentTrace, ProductionBooleanJetMatchedControlManifest,
+    ProductionBooleanJetMatchedControlSurfaceTrace, ProductionBooleanJetMatchedControlV2Config,
+    ProductionBooleanJetMove, ProductionBooleanJetMoveContract,
+    ProductionBooleanJetObjectiveAlgorithm, ProductionBooleanJetObjectiveRobustnessTrace,
+    ProductionBooleanJetObjectiveSpec, ProductionBooleanJetProtocolBindings,
+    ProductionBooleanJetProtocolVersion, ProductionBooleanJetRankTwoConfig,
+    ProductionBooleanJetRankTwoTrace, ProductionBooleanJetSignTest,
+    ProductionBooleanJetSurfaceTrace, ProductionBooleanJetVertex,
+    audit_production_boolean_jet_confirmation, audit_production_boolean_jet_confirmation_v2,
+    audit_production_boolean_jet_rank_two, freeze_production_boolean_jet_matched_control,
+    production_boolean_jet_binary_fnv64, production_boolean_jet_source_fnv64,
+};
+pub use numeric_contract::{
+    PRODUCTION_ACTIVATION_FRACTIONAL_BITS, PRODUCTION_LOGIT_FRACTIONAL_BITS,
+    PRODUCTION_RMS_SQUARE_FRACTIONAL_BITS, ProductionAttentionBounds,
+    ProductionBackwardEdgeContract, ProductionNumericContract, ProductionParameterUpdateContract,
+    ProductionProjectionContract, ProductionRoundingRule, ProductionTrainingNumericContract,
+};
+pub use structure_audit::{
+    ProductionAtomicDocumentCoefficients, ProductionAtomicObjectiveTrace,
+    ProductionAtomicSourceBinding, ProductionAtomicStructureContract,
+    ProductionAtomicStructureRole, ProductionAtomicStructureTrace, ProductionBoundaryTaxonomy,
+    ProductionDocumentRepresentationDiscrepancy, ProductionExchangeTrace,
+    ProductionInteractionTailTrace, ProductionInteractionWidthTrace,
+    ProductionRepresentationConcordance, ProductionRepresentationDiscrepancy,
+    audit_production_atomic_structure, freeze_production_atomic_structure_contract,
+};
 pub use training::{
-    ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionOptimizerStateV2,
-    train_production_full_smoke,
+    ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionGradientProposalLane,
+    ProductionOptimizerStateV2, train_production_full_smoke,
 };
 
 pub const PRODUCTION_MODEL_V1_SCHEMA: &str = "nsrl.production_model.v1";
@@ -76,7 +127,6 @@ impl ProductionModelConfig {
             || self.d_model == 0
             || self.heads == 0
             || !self.d_model.is_multiple_of(self.heads)
-            || !((self.d_model / self.heads).is_power_of_two())
             || self.layers == 0
             || self.hidden_dim == 0
             || self.context_tokens == 0
@@ -93,6 +143,8 @@ impl ProductionModelConfig {
         {
             return Err(TrainError::InvalidConfig);
         }
+        numeric_contract::validate_config_numeric_bounds(self)
+            .map_err(|_| TrainError::InvalidConfig)?;
         self.parameter_count().ok_or(TrainError::InvalidConfig)?;
         Ok(())
     }
@@ -165,6 +217,21 @@ pub struct ProductionForward {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionLayerBoundaryHashes {
+    pub layer: usize,
+    pub attention_residual_hash: u64,
+    pub layer_output_hash: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductionForwardBranchHashes {
+    pub embedding_hash: u64,
+    pub layers: Vec<ProductionLayerBoundaryHashes>,
+    pub final_features_hash: u64,
+    pub logits_hash: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductionEvalTrace {
     pub profile: &'static str,
     pub parameter_count: usize,
@@ -177,6 +244,193 @@ pub struct ProductionEvalTrace {
     pub mean_millibits: u64,
     pub residual_saturation_count: usize,
     pub model_hash: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionCanonicalEvalTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub windows: usize,
+    pub mistakes: usize,
+    pub total_nll_millibits: u64,
+    pub mean_nll_millibits: u64,
+    pub zero_probability_floor_millibits: u64,
+    pub zero_probability_windows: usize,
+    pub residual_saturation_count: usize,
+    pub model_hash: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionComparisonTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub windows: usize,
+    pub forward_scales: ProductionProjectionScales,
+    pub source_model_hash: u64,
+    pub candidate_model_hash: u64,
+    pub source_mistakes: usize,
+    pub candidate_mistakes: usize,
+    pub source_total_millibits: u64,
+    pub candidate_total_millibits: u64,
+    pub total_millibits_delta: i64,
+    pub feature_changed_windows: usize,
+    pub feature_delta_l1: u64,
+    pub logits_changed_windows: usize,
+    pub logit_changed_values: usize,
+    pub logit_delta_l1: u64,
+    pub target_logit_changed_windows: usize,
+    pub probabilities_changed_windows: usize,
+    pub probability_changed_values: usize,
+    pub probability_delta_l1: u64,
+    pub target_probability_changed_windows: usize,
+    pub prediction_changed_windows: usize,
+    pub improved_loss_windows: usize,
+    pub worsened_loss_windows: usize,
+    pub equal_loss_windows: usize,
+    pub source_residual_saturation_count: usize,
+    pub candidate_residual_saturation_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionProbabilityPrecisionRow {
+    pub fractional_bits: u8,
+    pub uniform_probability_floor: u32,
+    pub source_target_probability_min: u32,
+    pub source_target_probability_max: u32,
+    pub source_target_unique_values: usize,
+    pub source_target_zero_windows: usize,
+    pub candidate_target_probability_min: u32,
+    pub candidate_target_probability_max: u32,
+    pub candidate_target_unique_values: usize,
+    pub candidate_target_zero_windows: usize,
+    pub source_zero_probability_values: usize,
+    pub candidate_zero_probability_values: usize,
+    pub source_probability_mass_error_l1: u64,
+    pub source_probability_mass_error_max: u64,
+    pub candidate_probability_mass_error_l1: u64,
+    pub candidate_probability_mass_error_max: u64,
+    pub probability_changed_windows: usize,
+    pub probability_changed_values: usize,
+    pub probability_delta_l1: u64,
+    pub target_probability_changed_windows: usize,
+    pub target_probability_delta_l1: u64,
+    pub source_total_microbits: u64,
+    pub candidate_total_microbits: u64,
+    pub total_microbits_delta: i64,
+    pub improved_loss_windows: usize,
+    pub worsened_loss_windows: usize,
+    pub equal_loss_windows: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductionProbabilityResolutionTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub windows: usize,
+    pub forward_scales: ProductionProjectionScales,
+    pub source_model_hash: u64,
+    pub candidate_model_hash: u64,
+    pub logit_changed_windows: usize,
+    pub target_logit_changed_windows: usize,
+    pub q15_requantization_exact: bool,
+    pub source_residual_saturation_count: usize,
+    pub candidate_residual_saturation_count: usize,
+    pub precision_rows: Vec<ProductionProbabilityPrecisionRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductionProbabilityNormalizationRow {
+    pub normalization: &'static str,
+    pub reciprocal_fractional_bits: u8,
+    pub probability: ProductionProbabilityPrecisionRow,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductionProbabilityNormalizationTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub windows: usize,
+    pub probability_fractional_bits: u8,
+    pub forward_scales: ProductionProjectionScales,
+    pub source_model_hash: u64,
+    pub candidate_model_hash: u64,
+    pub logit_changed_windows: usize,
+    pub target_logit_changed_windows: usize,
+    pub source_residual_saturation_count: usize,
+    pub candidate_residual_saturation_count: usize,
+    pub normalization_rows: Vec<ProductionProbabilityNormalizationRow>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ProductionNormalizationErrorTrace {
+    pub probability_changed_values: usize,
+    pub probability_error_l1: u64,
+    pub probability_error_max: u32,
+    pub target_error_windows: usize,
+    pub target_error_l1: u64,
+    pub target_error_max: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductionNormalizationSignalMethodTrace {
+    pub normalization: &'static str,
+    pub reciprocal_fractional_bits: u8,
+    pub target_changed_window_indices: Vec<usize>,
+    pub source_error_vs_exact: ProductionNormalizationErrorTrace,
+    pub candidate_error_vs_exact: ProductionNormalizationErrorTrace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionNormalizationTargetPair {
+    pub normalization: &'static str,
+    pub source_probability_q23: u32,
+    pub candidate_probability_q23: u32,
+    pub delta_q23: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductionNormalizationSignalWindow {
+    pub window_index: usize,
+    pub target_token: u32,
+    pub source_target_logit_q8: i32,
+    pub candidate_target_logit_q8: i32,
+    pub source_target_weight_q15: u16,
+    pub candidate_target_weight_q15: u16,
+    pub source_normalization_sum: u64,
+    pub candidate_normalization_sum: u64,
+    pub target_probabilities: Vec<ProductionNormalizationTargetPair>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProductionNormalizationSignalAttributionTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub windows: usize,
+    pub probability_fractional_bits: u8,
+    pub forward_scales: ProductionProjectionScales,
+    pub source_model_hash: u64,
+    pub candidate_model_hash: u64,
+    pub logit_changed_windows: usize,
+    pub target_logit_changed_windows: usize,
+    pub source_residual_saturation_count: usize,
+    pub candidate_residual_saturation_count: usize,
+    pub methods: Vec<ProductionNormalizationSignalMethodTrace>,
+    pub window_attributions: Vec<ProductionNormalizationSignalWindow>,
 }
 
 impl ProductionEvalTrace {
@@ -203,6 +457,431 @@ impl ProductionEvalTrace {
             self.residual_saturation_count,
             self.model_hash,
         )
+    }
+}
+
+impl ProductionCanonicalEvalTrace {
+    pub fn to_json_line(self) -> String {
+        format!(
+            concat!(
+                "{{\"schema\":\"nsrl.production_model_canonical_eval.v2\",",
+                "\"objective\":\"integer_base2_softmax_nll_millibits\",",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"evaluation\":{{\"context_tokens\":{},\"windows\":{},\"mistakes\":{},",
+                "\"total_nll_millibits\":{},\"mean_nll_millibits\":{},",
+                "\"zero_probability_floor_millibits\":{},\"zero_probability_windows\":{}}},",
+                "\"invariants\":{{\"normalization_independent\":true,\"logit_shift_invariant\":true}},",
+                "\"health\":{{\"residual_saturation_count\":{}}},",
+                "\"model_hash\":\"0x{:016x}\"}}\n"
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.windows,
+            self.mistakes,
+            self.total_nll_millibits,
+            self.mean_nll_millibits,
+            self.zero_probability_floor_millibits,
+            self.zero_probability_windows,
+            self.residual_saturation_count,
+            self.model_hash,
+        )
+    }
+}
+
+impl ProductionComparisonTrace {
+    pub fn to_json_line(self) -> String {
+        format!(
+            concat!(
+                "{{\"schema\":\"nsrl.production_model_functional_comparison.v1\",",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"evaluation\":{{\"context_tokens\":{},\"windows\":{}}},",
+                "\"forward_shifts\":{{\"qkv\":{},\"o\":{},\"up\":{},\"gate\":{},",
+                "\"down\":{},\"output\":{}}},",
+                "\"models\":{{\"source_hash\":\"0x{:016x}\",\"candidate_hash\":\"0x{:016x}\"}},",
+                "\"quality\":{{\"source_mistakes\":{},\"candidate_mistakes\":{},",
+                "\"source_total_millibits\":{},\"candidate_total_millibits\":{},",
+                "\"total_millibits_delta\":{},\"improved_loss_windows\":{},",
+                "\"worsened_loss_windows\":{},\"equal_loss_windows\":{}}},",
+                "\"functional_delta\":{{\"feature_changed_windows\":{},\"feature_delta_l1\":{},",
+                "\"logits_changed_windows\":{},\"logit_changed_values\":{},\"logit_delta_l1\":{},",
+                "\"target_logit_changed_windows\":{},\"probabilities_changed_windows\":{},",
+                "\"probability_changed_values\":{},\"probability_delta_l1\":{},",
+                "\"target_probability_changed_windows\":{},\"prediction_changed_windows\":{}}},",
+                "\"health\":{{\"source_residual_saturation_count\":{},",
+                "\"candidate_residual_saturation_count\":{}}}}}\n"
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.windows,
+            self.forward_scales.qkv_shift,
+            self.forward_scales.o_shift,
+            self.forward_scales.up_shift,
+            self.forward_scales.gate_shift,
+            self.forward_scales.down_shift,
+            self.forward_scales.output_shift,
+            self.source_model_hash,
+            self.candidate_model_hash,
+            self.source_mistakes,
+            self.candidate_mistakes,
+            self.source_total_millibits,
+            self.candidate_total_millibits,
+            self.total_millibits_delta,
+            self.improved_loss_windows,
+            self.worsened_loss_windows,
+            self.equal_loss_windows,
+            self.feature_changed_windows,
+            self.feature_delta_l1,
+            self.logits_changed_windows,
+            self.logit_changed_values,
+            self.logit_delta_l1,
+            self.target_logit_changed_windows,
+            self.probabilities_changed_windows,
+            self.probability_changed_values,
+            self.probability_delta_l1,
+            self.target_probability_changed_windows,
+            self.prediction_changed_windows,
+            self.source_residual_saturation_count,
+            self.candidate_residual_saturation_count,
+        )
+    }
+}
+
+impl ProductionProbabilityResolutionTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut output = format!(
+            concat!(
+                "{{\"schema\":\"nsrl.production_probability_resolution_audit.v1\",",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",",
+                "\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"evaluation\":{{\"context_tokens\":{},\"windows\":{}}},",
+                "\"forward_shifts\":{{\"qkv\":{},\"o\":{},\"up\":{},\"gate\":{},",
+                "\"down\":{},\"output\":{}}},",
+                "\"models\":{{\"source_hash\":\"0x{:016x}\",",
+                "\"candidate_hash\":\"0x{:016x}\"}},",
+                "\"logit_signal\":{{\"changed_windows\":{},",
+                "\"target_changed_windows\":{}}},",
+                "\"compatibility\":{{\"q15_requantization_exact\":{}}},",
+                "\"health\":{{\"source_residual_saturation_count\":{},",
+                "\"candidate_residual_saturation_count\":{}}},\"precisions\":["
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.windows,
+            self.forward_scales.qkv_shift,
+            self.forward_scales.o_shift,
+            self.forward_scales.up_shift,
+            self.forward_scales.gate_shift,
+            self.forward_scales.down_shift,
+            self.forward_scales.output_shift,
+            self.source_model_hash,
+            self.candidate_model_hash,
+            self.logit_changed_windows,
+            self.target_logit_changed_windows,
+            self.q15_requantization_exact,
+            self.source_residual_saturation_count,
+            self.candidate_residual_saturation_count,
+        );
+        for (index, row) in self.precision_rows.iter().enumerate() {
+            if index > 0 {
+                output.push(',');
+            }
+            write!(
+                output,
+                concat!(
+                    "{{\"fractional_bits\":{},\"uniform_probability_floor\":{},",
+                    "\"source_target\":{{\"min\":{},\"max\":{},\"unique_values\":{},",
+                    "\"zero_windows\":{}}},",
+                    "\"candidate_target\":{{\"min\":{},\"max\":{},\"unique_values\":{},",
+                    "\"zero_windows\":{}}},",
+                    "\"mass\":{{\"source_zero_values\":{},\"candidate_zero_values\":{},",
+                    "\"source_error_l1\":{},\"source_error_max\":{},",
+                    "\"candidate_error_l1\":{},\"candidate_error_max\":{}}},",
+                    "\"delta\":{{\"probability_changed_windows\":{},",
+                    "\"probability_changed_values\":{},\"probability_delta_l1\":{},",
+                    "\"target_probability_changed_windows\":{},",
+                    "\"target_probability_delta_l1\":{}}},",
+                    "\"quality\":{{\"source_total_microbits\":{},",
+                    "\"candidate_total_microbits\":{},\"total_microbits_delta\":{},",
+                    "\"improved_loss_windows\":{},\"worsened_loss_windows\":{},",
+                    "\"equal_loss_windows\":{}}}}}"
+                ),
+                row.fractional_bits,
+                row.uniform_probability_floor,
+                row.source_target_probability_min,
+                row.source_target_probability_max,
+                row.source_target_unique_values,
+                row.source_target_zero_windows,
+                row.candidate_target_probability_min,
+                row.candidate_target_probability_max,
+                row.candidate_target_unique_values,
+                row.candidate_target_zero_windows,
+                row.source_zero_probability_values,
+                row.candidate_zero_probability_values,
+                row.source_probability_mass_error_l1,
+                row.source_probability_mass_error_max,
+                row.candidate_probability_mass_error_l1,
+                row.candidate_probability_mass_error_max,
+                row.probability_changed_windows,
+                row.probability_changed_values,
+                row.probability_delta_l1,
+                row.target_probability_changed_windows,
+                row.target_probability_delta_l1,
+                row.source_total_microbits,
+                row.candidate_total_microbits,
+                row.total_microbits_delta,
+                row.improved_loss_windows,
+                row.worsened_loss_windows,
+                row.equal_loss_windows,
+            )
+            .expect("writing JSON to String cannot fail");
+        }
+        output.push_str("]}\n");
+        output
+    }
+}
+
+impl ProductionProbabilityNormalizationTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut output = format!(
+            concat!(
+                "{{\"schema\":\"nsrl.production_probability_normalization_audit.v1\",",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",",
+                "\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"evaluation\":{{\"context_tokens\":{},\"windows\":{},",
+                "\"probability_fractional_bits\":{}}},",
+                "\"forward_shifts\":{{\"qkv\":{},\"o\":{},\"up\":{},\"gate\":{},",
+                "\"down\":{},\"output\":{}}},",
+                "\"models\":{{\"source_hash\":\"0x{:016x}\",",
+                "\"candidate_hash\":\"0x{:016x}\"}},",
+                "\"logit_signal\":{{\"changed_windows\":{},",
+                "\"target_changed_windows\":{}}},",
+                "\"health\":{{\"source_residual_saturation_count\":{},",
+                "\"candidate_residual_saturation_count\":{}}},\"normalizations\":["
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.windows,
+            self.probability_fractional_bits,
+            self.forward_scales.qkv_shift,
+            self.forward_scales.o_shift,
+            self.forward_scales.up_shift,
+            self.forward_scales.gate_shift,
+            self.forward_scales.down_shift,
+            self.forward_scales.output_shift,
+            self.source_model_hash,
+            self.candidate_model_hash,
+            self.logit_changed_windows,
+            self.target_logit_changed_windows,
+            self.source_residual_saturation_count,
+            self.candidate_residual_saturation_count,
+        );
+        for (index, row) in self.normalization_rows.iter().enumerate() {
+            if index > 0 {
+                output.push(',');
+            }
+            let probability = row.probability;
+            write!(
+                output,
+                concat!(
+                    "{{\"normalization\":\"{}\",\"reciprocal_fractional_bits\":{},",
+                    "\"uniform_probability_floor\":{},",
+                    "\"source_target\":{{\"min\":{},\"max\":{},\"unique_values\":{},",
+                    "\"zero_windows\":{}}},",
+                    "\"candidate_target\":{{\"min\":{},\"max\":{},\"unique_values\":{},",
+                    "\"zero_windows\":{}}},",
+                    "\"mass\":{{\"source_zero_values\":{},\"candidate_zero_values\":{},",
+                    "\"source_error_l1\":{},\"source_error_max\":{},",
+                    "\"candidate_error_l1\":{},\"candidate_error_max\":{}}},",
+                    "\"delta\":{{\"probability_changed_windows\":{},",
+                    "\"probability_changed_values\":{},\"probability_delta_l1\":{},",
+                    "\"target_probability_changed_windows\":{},",
+                    "\"target_probability_delta_l1\":{}}},",
+                    "\"quality\":{{\"source_total_microbits\":{},",
+                    "\"candidate_total_microbits\":{},\"total_microbits_delta\":{},",
+                    "\"improved_loss_windows\":{},\"worsened_loss_windows\":{},",
+                    "\"equal_loss_windows\":{}}}}}"
+                ),
+                row.normalization,
+                row.reciprocal_fractional_bits,
+                probability.uniform_probability_floor,
+                probability.source_target_probability_min,
+                probability.source_target_probability_max,
+                probability.source_target_unique_values,
+                probability.source_target_zero_windows,
+                probability.candidate_target_probability_min,
+                probability.candidate_target_probability_max,
+                probability.candidate_target_unique_values,
+                probability.candidate_target_zero_windows,
+                probability.source_zero_probability_values,
+                probability.candidate_zero_probability_values,
+                probability.source_probability_mass_error_l1,
+                probability.source_probability_mass_error_max,
+                probability.candidate_probability_mass_error_l1,
+                probability.candidate_probability_mass_error_max,
+                probability.probability_changed_windows,
+                probability.probability_changed_values,
+                probability.probability_delta_l1,
+                probability.target_probability_changed_windows,
+                probability.target_probability_delta_l1,
+                probability.source_total_microbits,
+                probability.candidate_total_microbits,
+                probability.total_microbits_delta,
+                probability.improved_loss_windows,
+                probability.worsened_loss_windows,
+                probability.equal_loss_windows,
+            )
+            .expect("writing JSON to String cannot fail");
+        }
+        output.push_str("]}\n");
+        output
+    }
+}
+
+fn write_normalization_error_json(output: &mut String, error: ProductionNormalizationErrorTrace) {
+    write!(
+        output,
+        concat!(
+            "{{\"probability_changed_values\":{},\"probability_error_l1\":{},",
+            "\"probability_error_max\":{},\"target_error_windows\":{},",
+            "\"target_error_l1\":{},\"target_error_max\":{}}}"
+        ),
+        error.probability_changed_values,
+        error.probability_error_l1,
+        error.probability_error_max,
+        error.target_error_windows,
+        error.target_error_l1,
+        error.target_error_max,
+    )
+    .expect("writing JSON to String cannot fail");
+}
+
+impl ProductionNormalizationSignalAttributionTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut output = format!(
+            concat!(
+                "{{\"schema\":\"nsrl.production_probability_normalization_signal_attribution.v1\",",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",",
+                "\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"evaluation\":{{\"context_tokens\":{},\"windows\":{},",
+                "\"probability_fractional_bits\":{}}},",
+                "\"forward_shifts\":{{\"qkv\":{},\"o\":{},\"up\":{},\"gate\":{},",
+                "\"down\":{},\"output\":{}}},",
+                "\"models\":{{\"source_hash\":\"0x{:016x}\",",
+                "\"candidate_hash\":\"0x{:016x}\"}},",
+                "\"logit_signal\":{{\"changed_windows\":{},",
+                "\"target_changed_windows\":{}}},",
+                "\"health\":{{\"source_residual_saturation_count\":{},",
+                "\"candidate_residual_saturation_count\":{}}},\"methods\":["
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.windows,
+            self.probability_fractional_bits,
+            self.forward_scales.qkv_shift,
+            self.forward_scales.o_shift,
+            self.forward_scales.up_shift,
+            self.forward_scales.gate_shift,
+            self.forward_scales.down_shift,
+            self.forward_scales.output_shift,
+            self.source_model_hash,
+            self.candidate_model_hash,
+            self.logit_changed_windows,
+            self.target_logit_changed_windows,
+            self.source_residual_saturation_count,
+            self.candidate_residual_saturation_count,
+        );
+        for (index, method) in self.methods.iter().enumerate() {
+            if index > 0 {
+                output.push(',');
+            }
+            write!(
+                output,
+                "{{\"normalization\":\"{}\",\"reciprocal_fractional_bits\":{},\"target_changed_window_indices\":[",
+                method.normalization, method.reciprocal_fractional_bits,
+            )
+            .expect("writing JSON to String cannot fail");
+            for (window_index, changed_window) in
+                method.target_changed_window_indices.iter().enumerate()
+            {
+                if window_index > 0 {
+                    output.push(',');
+                }
+                write!(output, "{changed_window}").expect("writing JSON to String cannot fail");
+            }
+            output.push_str("],\"source_error_vs_exact\":");
+            write_normalization_error_json(&mut output, method.source_error_vs_exact);
+            output.push_str(",\"candidate_error_vs_exact\":");
+            write_normalization_error_json(&mut output, method.candidate_error_vs_exact);
+            output.push('}');
+        }
+        output.push_str("],\"window_attributions\":[");
+        for (index, window) in self.window_attributions.iter().enumerate() {
+            if index > 0 {
+                output.push(',');
+            }
+            write!(
+                output,
+                concat!(
+                    "{{\"window_index\":{},\"target_token\":{},",
+                    "\"target_logit_q8\":{{\"source\":{},\"candidate\":{},\"changed\":{}}},",
+                    "\"target_weight_q15\":{{\"source\":{},\"candidate\":{},\"changed\":{}}},",
+                    "\"normalization_sum\":{{\"source\":{},\"candidate\":{},\"changed\":{}}},",
+                    "\"target_probabilities_q23\":["
+                ),
+                window.window_index,
+                window.target_token,
+                window.source_target_logit_q8,
+                window.candidate_target_logit_q8,
+                window.source_target_logit_q8 != window.candidate_target_logit_q8,
+                window.source_target_weight_q15,
+                window.candidate_target_weight_q15,
+                window.source_target_weight_q15 != window.candidate_target_weight_q15,
+                window.source_normalization_sum,
+                window.candidate_normalization_sum,
+                window.source_normalization_sum != window.candidate_normalization_sum,
+            )
+            .expect("writing JSON to String cannot fail");
+            for (pair_index, pair) in window.target_probabilities.iter().enumerate() {
+                if pair_index > 0 {
+                    output.push(',');
+                }
+                write!(
+                    output,
+                    concat!(
+                        "{{\"normalization\":\"{}\",\"source\":{},",
+                        "\"candidate\":{},\"delta\":{}}}"
+                    ),
+                    pair.normalization,
+                    pair.source_probability_q23,
+                    pair.candidate_probability_q23,
+                    pair.delta_q23,
+                )
+                .expect("writing JSON to String cannot fail");
+            }
+            output.push_str("]}");
+        }
+        output.push_str("]}\n");
+        output
     }
 }
 
@@ -351,6 +1030,8 @@ impl ProductionModelV1 {
                 "invalid production model metadata",
             ));
         }
+        ProductionNumericContract::derive(self.config, self.scales)
+            .map_err(TrainError::InvalidModel)?;
         let config = self.config;
         let matrix = checked_product(config.d_model, config.d_model)?;
         let rms = checked_product(config.layers, config.d_model)?;
@@ -406,6 +1087,11 @@ impl ProductionModelV1 {
 
     pub fn parameter_count(&self) -> usize {
         self.config.parameter_count().unwrap_or(usize::MAX)
+    }
+
+    pub fn numeric_contract(&self) -> Result<ProductionNumericContract, TrainError> {
+        ProductionNumericContract::derive(self.config, self.scales)
+            .map_err(TrainError::InvalidModel)
     }
 
     pub fn model_hash(&self) -> u64 {
@@ -554,6 +1240,26 @@ pub fn forward_production_model(
     })
 }
 
+/// Executes the exact production forward path while recording hashes at the
+/// residual branch boundaries. The returned hashes are diagnostic only and do
+/// not participate in arithmetic or alter the deployed forward result.
+pub fn forward_production_model_branch_hashes(
+    model: &ProductionModelV1,
+    context: &[u32],
+) -> Result<ProductionForwardBranchHashes, TrainError> {
+    let mut embedding_hash = 0_u64;
+    let mut layers = Vec::with_capacity(model.config.layers);
+    let (features, _) =
+        production_features_observed(model, context, Some((&mut embedding_hash, &mut layers)))?;
+    let logits = output_logits(model, &features)?;
+    Ok(ProductionForwardBranchHashes {
+        embedding_hash,
+        layers,
+        final_features_hash: hash_i16_slice(&features),
+        logits_hash: hash_i32_slice(&logits),
+    })
+}
+
 pub fn evaluate_production_model(
     model: &ProductionModelV1,
     tokens: &[u32],
@@ -602,6 +1308,927 @@ pub fn evaluate_production_model(
         residual_saturation_count,
         model_hash: model.model_hash(),
     })
+}
+
+pub fn evaluate_production_model_canonical_nll(
+    model: &ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    context_tokens: usize,
+    max_windows: usize,
+    zero_probability_floor_millibits: u64,
+) -> Result<ProductionCanonicalEvalTrace, TrainError> {
+    model.validate()?;
+    if context_tokens == 0
+        || context_tokens > model.config.context_tokens
+        || max_windows == 0
+        || tokens
+            .iter()
+            .any(|&token| token as usize >= model.config.vocab_size)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let windows = document_windows(tokens, context_tokens, max_windows);
+    if windows.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut mistakes = 0_usize;
+    let mut total_nll_millibits = 0_u64;
+    let mut zero_probability_windows = 0_usize;
+    let mut residual_saturation_count = 0_usize;
+    for (context, target) in &windows {
+        let output = forward_production_model(model, context)?;
+        let target = *target as usize;
+        let predicted = argmax(&output.logits_q8);
+        mistakes = mistakes.saturating_add(usize::from(predicted != target));
+        let max_logit = output
+            .logits_q8
+            .iter()
+            .copied()
+            .max()
+            .ok_or(TrainError::CoreRejected("production_canonical_nll"))?;
+        let target_weight = base2_exp_neg_q15(output.logits_q8[target].saturating_sub(max_logit));
+        zero_probability_windows = zero_probability_windows
+            .checked_add(usize::from(target_weight == 0))
+            .ok_or(TrainError::CoreRejected(
+                "production_canonical_eval_counter_overflow",
+            ))?;
+        let window_nll_millibits = base2_softmax_nll_millibits(
+            &output.logits_q8,
+            target,
+            zero_probability_floor_millibits,
+        )
+        .ok_or(TrainError::CoreRejected("production_canonical_nll"))?;
+        total_nll_millibits = total_nll_millibits
+            .checked_add(window_nll_millibits)
+            .ok_or(TrainError::CoreRejected(
+                "production_canonical_eval_nll_overflow",
+            ))?;
+        residual_saturation_count = residual_saturation_count
+            .checked_add(output.residual_saturation_count)
+            .ok_or(TrainError::CoreRejected(
+                "production_canonical_eval_counter_overflow",
+            ))?;
+    }
+    let count = windows.len() as u64;
+    Ok(ProductionCanonicalEvalTrace {
+        profile: model.config.profile_id().unwrap_or("custom"),
+        parameter_count: model.parameter_count(),
+        tokenizer_hash: model.tokenizer_hash,
+        token_stream_hash,
+        context_tokens,
+        windows: windows.len(),
+        mistakes,
+        total_nll_millibits,
+        mean_nll_millibits: total_nll_millibits.checked_add(count / 2).ok_or(
+            TrainError::CoreRejected("production_canonical_eval_nll_overflow"),
+        )? / count,
+        zero_probability_floor_millibits,
+        zero_probability_windows,
+        residual_saturation_count,
+        model_hash: model.model_hash(),
+    })
+}
+
+pub fn evaluate_production_model_canonical_nll_default_floor(
+    model: &ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    context_tokens: usize,
+    max_windows: usize,
+) -> Result<ProductionCanonicalEvalTrace, TrainError> {
+    evaluate_production_model_canonical_nll(
+        model,
+        tokens,
+        token_stream_hash,
+        context_tokens,
+        max_windows,
+        DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS,
+    )
+}
+
+pub fn compare_production_models(
+    source: &ProductionModelV1,
+    candidate: &ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    context_tokens: usize,
+    max_windows: usize,
+) -> Result<ProductionComparisonTrace, TrainError> {
+    source.validate()?;
+    candidate.validate()?;
+    if source.config != candidate.config
+        || source.scales != candidate.scales
+        || source.tokenizer_hash != candidate.tokenizer_hash
+        || context_tokens == 0
+        || context_tokens > source.config.context_tokens
+        || max_windows == 0
+        || tokens
+            .iter()
+            .any(|&token| token as usize >= source.config.vocab_size)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let windows = document_windows(tokens, context_tokens, max_windows);
+    if windows.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut trace = ProductionComparisonTrace {
+        profile: source.config.profile_id().unwrap_or("custom"),
+        parameter_count: source.parameter_count(),
+        tokenizer_hash: source.tokenizer_hash,
+        token_stream_hash,
+        context_tokens,
+        windows: windows.len(),
+        forward_scales: source.scales,
+        source_model_hash: source.model_hash(),
+        candidate_model_hash: candidate.model_hash(),
+        source_mistakes: 0,
+        candidate_mistakes: 0,
+        source_total_millibits: 0,
+        candidate_total_millibits: 0,
+        total_millibits_delta: 0,
+        feature_changed_windows: 0,
+        feature_delta_l1: 0,
+        logits_changed_windows: 0,
+        logit_changed_values: 0,
+        logit_delta_l1: 0,
+        target_logit_changed_windows: 0,
+        probabilities_changed_windows: 0,
+        probability_changed_values: 0,
+        probability_delta_l1: 0,
+        target_probability_changed_windows: 0,
+        prediction_changed_windows: 0,
+        improved_loss_windows: 0,
+        worsened_loss_windows: 0,
+        equal_loss_windows: 0,
+        source_residual_saturation_count: 0,
+        candidate_residual_saturation_count: 0,
+    };
+    for (context, target) in &windows {
+        let source_output = forward_production_model(source, context)?;
+        let candidate_output = forward_production_model(candidate, context)?;
+        let target = *target as usize;
+        let source_prediction = argmax(&source_output.logits_q8);
+        let candidate_prediction = argmax(&candidate_output.logits_q8);
+        trace.source_mistakes = trace
+            .source_mistakes
+            .saturating_add(usize::from(source_prediction != target));
+        trace.candidate_mistakes = trace
+            .candidate_mistakes
+            .saturating_add(usize::from(candidate_prediction != target));
+        trace.prediction_changed_windows = trace
+            .prediction_changed_windows
+            .saturating_add(usize::from(source_prediction != candidate_prediction));
+
+        let source_loss = q15_negative_log2_millibits(source_output.probabilities_q15[target]);
+        let candidate_loss =
+            q15_negative_log2_millibits(candidate_output.probabilities_q15[target]);
+        trace.source_total_millibits = trace.source_total_millibits.saturating_add(source_loss);
+        trace.candidate_total_millibits = trace
+            .candidate_total_millibits
+            .saturating_add(candidate_loss);
+        if candidate_loss < source_loss {
+            trace.improved_loss_windows = trace.improved_loss_windows.saturating_add(1);
+        } else if candidate_loss > source_loss {
+            trace.worsened_loss_windows = trace.worsened_loss_windows.saturating_add(1);
+        } else {
+            trace.equal_loss_windows = trace.equal_loss_windows.saturating_add(1);
+        }
+
+        if source_output.features_q15 != candidate_output.features_q15 {
+            trace.feature_changed_windows = trace.feature_changed_windows.saturating_add(1);
+        }
+        for (&left, &right) in source_output
+            .features_q15
+            .iter()
+            .zip(&candidate_output.features_q15)
+        {
+            trace.feature_delta_l1 = trace
+                .feature_delta_l1
+                .saturating_add(u64::from(left.abs_diff(right)));
+        }
+        if source_output.logits_q8 != candidate_output.logits_q8 {
+            trace.logits_changed_windows = trace.logits_changed_windows.saturating_add(1);
+        }
+        for (&left, &right) in source_output
+            .logits_q8
+            .iter()
+            .zip(&candidate_output.logits_q8)
+        {
+            if left != right {
+                trace.logit_changed_values = trace.logit_changed_values.saturating_add(1);
+                trace.logit_delta_l1 = trace
+                    .logit_delta_l1
+                    .saturating_add(u64::from(left.abs_diff(right)));
+            }
+        }
+        trace.target_logit_changed_windows =
+            trace
+                .target_logit_changed_windows
+                .saturating_add(usize::from(
+                    source_output.logits_q8[target] != candidate_output.logits_q8[target],
+                ));
+        if source_output.probabilities_q15 != candidate_output.probabilities_q15 {
+            trace.probabilities_changed_windows =
+                trace.probabilities_changed_windows.saturating_add(1);
+        }
+        for (&left, &right) in source_output
+            .probabilities_q15
+            .iter()
+            .zip(&candidate_output.probabilities_q15)
+        {
+            if left != right {
+                trace.probability_changed_values =
+                    trace.probability_changed_values.saturating_add(1);
+                trace.probability_delta_l1 = trace
+                    .probability_delta_l1
+                    .saturating_add(u64::from(left.abs_diff(right)));
+            }
+        }
+        trace.target_probability_changed_windows = trace
+            .target_probability_changed_windows
+            .saturating_add(usize::from(
+                source_output.probabilities_q15[target]
+                    != candidate_output.probabilities_q15[target],
+            ));
+        trace.source_residual_saturation_count = trace
+            .source_residual_saturation_count
+            .saturating_add(source_output.residual_saturation_count);
+        trace.candidate_residual_saturation_count = trace
+            .candidate_residual_saturation_count
+            .saturating_add(candidate_output.residual_saturation_count);
+    }
+    trace.total_millibits_delta = if trace.candidate_total_millibits >= trace.source_total_millibits
+    {
+        i64::try_from(trace.candidate_total_millibits - trace.source_total_millibits)
+            .unwrap_or(i64::MAX)
+    } else {
+        -i64::try_from(trace.source_total_millibits - trace.candidate_total_millibits)
+            .unwrap_or(i64::MAX)
+    };
+    Ok(trace)
+}
+
+#[derive(Debug)]
+struct ProbabilityPrecisionAccumulator {
+    fractional_bits: u8,
+    source_target_values: BTreeSet<u32>,
+    candidate_target_values: BTreeSet<u32>,
+    source_target_probability_min: u32,
+    source_target_probability_max: u32,
+    source_target_zero_windows: usize,
+    candidate_target_probability_min: u32,
+    candidate_target_probability_max: u32,
+    candidate_target_zero_windows: usize,
+    source_zero_probability_values: usize,
+    candidate_zero_probability_values: usize,
+    source_probability_mass_error_l1: u64,
+    source_probability_mass_error_max: u64,
+    candidate_probability_mass_error_l1: u64,
+    candidate_probability_mass_error_max: u64,
+    probability_changed_windows: usize,
+    probability_changed_values: usize,
+    probability_delta_l1: u64,
+    target_probability_changed_windows: usize,
+    target_probability_delta_l1: u64,
+    source_total_microbits: u64,
+    candidate_total_microbits: u64,
+    improved_loss_windows: usize,
+    worsened_loss_windows: usize,
+    equal_loss_windows: usize,
+}
+
+impl ProbabilityPrecisionAccumulator {
+    fn new(fractional_bits: u8) -> Self {
+        Self {
+            fractional_bits,
+            source_target_values: BTreeSet::new(),
+            candidate_target_values: BTreeSet::new(),
+            source_target_probability_min: u32::MAX,
+            source_target_probability_max: 0,
+            source_target_zero_windows: 0,
+            candidate_target_probability_min: u32::MAX,
+            candidate_target_probability_max: 0,
+            candidate_target_zero_windows: 0,
+            source_zero_probability_values: 0,
+            candidate_zero_probability_values: 0,
+            source_probability_mass_error_l1: 0,
+            source_probability_mass_error_max: 0,
+            candidate_probability_mass_error_l1: 0,
+            candidate_probability_mass_error_max: 0,
+            probability_changed_windows: 0,
+            probability_changed_values: 0,
+            probability_delta_l1: 0,
+            target_probability_changed_windows: 0,
+            target_probability_delta_l1: 0,
+            source_total_microbits: 0,
+            candidate_total_microbits: 0,
+            improved_loss_windows: 0,
+            worsened_loss_windows: 0,
+            equal_loss_windows: 0,
+        }
+    }
+
+    fn finish(self, vocab_size: usize) -> ProductionProbabilityPrecisionRow {
+        ProductionProbabilityPrecisionRow {
+            fractional_bits: self.fractional_bits,
+            uniform_probability_floor: ((1_u64 << self.fractional_bits) / vocab_size as u64) as u32,
+            source_target_probability_min: self.source_target_probability_min,
+            source_target_probability_max: self.source_target_probability_max,
+            source_target_unique_values: self.source_target_values.len(),
+            source_target_zero_windows: self.source_target_zero_windows,
+            candidate_target_probability_min: self.candidate_target_probability_min,
+            candidate_target_probability_max: self.candidate_target_probability_max,
+            candidate_target_unique_values: self.candidate_target_values.len(),
+            candidate_target_zero_windows: self.candidate_target_zero_windows,
+            source_zero_probability_values: self.source_zero_probability_values,
+            candidate_zero_probability_values: self.candidate_zero_probability_values,
+            source_probability_mass_error_l1: self.source_probability_mass_error_l1,
+            source_probability_mass_error_max: self.source_probability_mass_error_max,
+            candidate_probability_mass_error_l1: self.candidate_probability_mass_error_l1,
+            candidate_probability_mass_error_max: self.candidate_probability_mass_error_max,
+            probability_changed_windows: self.probability_changed_windows,
+            probability_changed_values: self.probability_changed_values,
+            probability_delta_l1: self.probability_delta_l1,
+            target_probability_changed_windows: self.target_probability_changed_windows,
+            target_probability_delta_l1: self.target_probability_delta_l1,
+            source_total_microbits: self.source_total_microbits,
+            candidate_total_microbits: self.candidate_total_microbits,
+            total_microbits_delta: signed_delta(
+                self.candidate_total_microbits,
+                self.source_total_microbits,
+            ),
+            improved_loss_windows: self.improved_loss_windows,
+            worsened_loss_windows: self.worsened_loss_windows,
+            equal_loss_windows: self.equal_loss_windows,
+        }
+    }
+
+    fn observe(&mut self, source_q31: &[u32], candidate_q31: &[u32], target: usize) {
+        debug_assert_eq!(source_q31.len(), candidate_q31.len());
+        debug_assert!(target < source_q31.len());
+        let bits = self.fractional_bits;
+        let scale = 1_u64 << bits;
+        let mut source_mass = 0_u64;
+        let mut candidate_mass = 0_u64;
+        let mut vector_changed = false;
+        for (&source_wide, &candidate_wide) in source_q31.iter().zip(candidate_q31) {
+            let source_probability = quantize_probability_q31(source_wide, bits);
+            let candidate_probability = quantize_probability_q31(candidate_wide, bits);
+            source_mass = source_mass.saturating_add(u64::from(source_probability));
+            candidate_mass = candidate_mass.saturating_add(u64::from(candidate_probability));
+            self.source_zero_probability_values = self
+                .source_zero_probability_values
+                .saturating_add(usize::from(source_probability == 0));
+            self.candidate_zero_probability_values = self
+                .candidate_zero_probability_values
+                .saturating_add(usize::from(candidate_probability == 0));
+            if source_probability != candidate_probability {
+                vector_changed = true;
+                self.probability_changed_values = self.probability_changed_values.saturating_add(1);
+                self.probability_delta_l1 = self.probability_delta_l1.saturating_add(u64::from(
+                    source_probability.abs_diff(candidate_probability),
+                ));
+            }
+        }
+        self.probability_changed_windows = self
+            .probability_changed_windows
+            .saturating_add(usize::from(vector_changed));
+        let source_mass_error = source_mass.abs_diff(scale);
+        let candidate_mass_error = candidate_mass.abs_diff(scale);
+        self.source_probability_mass_error_l1 = self
+            .source_probability_mass_error_l1
+            .saturating_add(source_mass_error);
+        self.source_probability_mass_error_max = self
+            .source_probability_mass_error_max
+            .max(source_mass_error);
+        self.candidate_probability_mass_error_l1 = self
+            .candidate_probability_mass_error_l1
+            .saturating_add(candidate_mass_error);
+        self.candidate_probability_mass_error_max = self
+            .candidate_probability_mass_error_max
+            .max(candidate_mass_error);
+
+        let source_target = quantize_probability_q31(source_q31[target], bits);
+        let candidate_target = quantize_probability_q31(candidate_q31[target], bits);
+        self.source_target_values.insert(source_target);
+        self.candidate_target_values.insert(candidate_target);
+        self.source_target_probability_min = self.source_target_probability_min.min(source_target);
+        self.source_target_probability_max = self.source_target_probability_max.max(source_target);
+        self.candidate_target_probability_min =
+            self.candidate_target_probability_min.min(candidate_target);
+        self.candidate_target_probability_max =
+            self.candidate_target_probability_max.max(candidate_target);
+        self.source_target_zero_windows = self
+            .source_target_zero_windows
+            .saturating_add(usize::from(source_target == 0));
+        self.candidate_target_zero_windows = self
+            .candidate_target_zero_windows
+            .saturating_add(usize::from(candidate_target == 0));
+        self.target_probability_changed_windows = self
+            .target_probability_changed_windows
+            .saturating_add(usize::from(source_target != candidate_target));
+        self.target_probability_delta_l1 = self
+            .target_probability_delta_l1
+            .saturating_add(u64::from(source_target.abs_diff(candidate_target)));
+
+        let source_loss = negative_log2_microbits(source_target, bits);
+        let candidate_loss = negative_log2_microbits(candidate_target, bits);
+        self.source_total_microbits = self.source_total_microbits.saturating_add(source_loss);
+        self.candidate_total_microbits = self
+            .candidate_total_microbits
+            .saturating_add(candidate_loss);
+        if candidate_loss < source_loss {
+            self.improved_loss_windows = self.improved_loss_windows.saturating_add(1);
+        } else if candidate_loss > source_loss {
+            self.worsened_loss_windows = self.worsened_loss_windows.saturating_add(1);
+        } else {
+            self.equal_loss_windows = self.equal_loss_windows.saturating_add(1);
+        }
+    }
+}
+
+/// Compare the frozen Q15 objective surface with wider views of the exact same
+/// integer logits. No model arithmetic, weights, data order, or logits change;
+/// only the retained fractional probability bits differ.
+pub fn audit_production_probability_resolution(
+    source: &ProductionModelV1,
+    candidate: &ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    context_tokens: usize,
+    max_windows: usize,
+) -> Result<ProductionProbabilityResolutionTrace, TrainError> {
+    const PRECISION_BITS: [u8; 5] = [15, 19, 23, 27, 31];
+
+    source.validate()?;
+    candidate.validate()?;
+    if source.config != candidate.config
+        || source.scales != candidate.scales
+        || source.tokenizer_hash != candidate.tokenizer_hash
+        || context_tokens == 0
+        || context_tokens > source.config.context_tokens
+        || max_windows == 0
+        || tokens
+            .iter()
+            .any(|&token| token as usize >= source.config.vocab_size)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let windows = document_windows(tokens, context_tokens, max_windows);
+    if windows.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut accumulators = PRECISION_BITS
+        .into_iter()
+        .map(ProbabilityPrecisionAccumulator::new)
+        .collect::<Vec<_>>();
+    let mut logit_changed_windows = 0_usize;
+    let mut target_logit_changed_windows = 0_usize;
+    let mut q15_requantization_exact = true;
+    let mut source_residual_saturation_count = 0_usize;
+    let mut candidate_residual_saturation_count = 0_usize;
+    let mut source_q31 = vec![0_u32; source.config.vocab_size];
+    let mut candidate_q31 = vec![0_u32; source.config.vocab_size];
+
+    for (context, target) in &windows {
+        let source_output = forward_production_model(source, context)?;
+        let candidate_output = forward_production_model(candidate, context)?;
+        let target = *target as usize;
+        base2_softmax_i32_q31(&source_output.logits_q8, &mut source_q31).ok_or(
+            TrainError::CoreRejected("production_probability_audit_source"),
+        )?;
+        base2_softmax_i32_q31(&candidate_output.logits_q8, &mut candidate_q31).ok_or(
+            TrainError::CoreRejected("production_probability_audit_candidate"),
+        )?;
+
+        logit_changed_windows = logit_changed_windows.saturating_add(usize::from(
+            source_output.logits_q8 != candidate_output.logits_q8,
+        ));
+        target_logit_changed_windows = target_logit_changed_windows.saturating_add(usize::from(
+            source_output.logits_q8[target] != candidate_output.logits_q8[target],
+        ));
+        source_residual_saturation_count = source_residual_saturation_count
+            .saturating_add(source_output.residual_saturation_count);
+        candidate_residual_saturation_count = candidate_residual_saturation_count
+            .saturating_add(candidate_output.residual_saturation_count);
+
+        for (index, &wide) in source_q31.iter().enumerate() {
+            q15_requantization_exact &= quantize_probability_q31(wide, 15)
+                == u32::try_from(source_output.probabilities_q15[index]).unwrap_or(0);
+        }
+        for (index, &wide) in candidate_q31.iter().enumerate() {
+            q15_requantization_exact &= quantize_probability_q31(wide, 15)
+                == u32::try_from(candidate_output.probabilities_q15[index]).unwrap_or(0);
+        }
+
+        for accumulator in &mut accumulators {
+            accumulator.observe(&source_q31, &candidate_q31, target);
+        }
+    }
+
+    Ok(ProductionProbabilityResolutionTrace {
+        profile: source.config.profile_id().unwrap_or("custom"),
+        parameter_count: source.parameter_count(),
+        tokenizer_hash: source.tokenizer_hash,
+        token_stream_hash,
+        context_tokens,
+        windows: windows.len(),
+        forward_scales: source.scales,
+        source_model_hash: source.model_hash(),
+        candidate_model_hash: candidate.model_hash(),
+        logit_changed_windows,
+        target_logit_changed_windows,
+        q15_requantization_exact,
+        source_residual_saturation_count,
+        candidate_residual_saturation_count,
+        precision_rows: accumulators
+            .into_iter()
+            .map(|row| row.finish(source.config.vocab_size))
+            .collect(),
+    })
+}
+
+/// Compare reciprocal normalization implementations on the exact same frozen
+/// logits. All rows retain Q23 probabilities; only the reciprocal path changes.
+pub fn audit_production_probability_normalization(
+    source: &ProductionModelV1,
+    candidate: &ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    context_tokens: usize,
+    max_windows: usize,
+) -> Result<ProductionProbabilityNormalizationTrace, TrainError> {
+    const PROBABILITY_FRACTIONAL_BITS: u8 = 23;
+    const NORMALIZATIONS: [(&str, SoftmaxNormalization, u8); 4] = [
+        ("legacy_q31_lut", SoftmaxNormalization::LegacyQ31Lut, 31),
+        ("q47_lut", SoftmaxNormalization::Q47Lut, 47),
+        ("q47_newton1", SoftmaxNormalization::Q47Newton1, 47),
+        ("q47_exact_division", SoftmaxNormalization::Q47Exact, 47),
+    ];
+
+    source.validate()?;
+    candidate.validate()?;
+    if source.config != candidate.config
+        || source.scales != candidate.scales
+        || source.tokenizer_hash != candidate.tokenizer_hash
+        || context_tokens == 0
+        || context_tokens > source.config.context_tokens
+        || max_windows == 0
+        || tokens
+            .iter()
+            .any(|&token| token as usize >= source.config.vocab_size)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let windows = document_windows(tokens, context_tokens, max_windows);
+    if windows.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut accumulators = NORMALIZATIONS
+        .iter()
+        .map(|_| ProbabilityPrecisionAccumulator::new(PROBABILITY_FRACTIONAL_BITS))
+        .collect::<Vec<_>>();
+    let mut logit_changed_windows = 0_usize;
+    let mut target_logit_changed_windows = 0_usize;
+    let mut source_residual_saturation_count = 0_usize;
+    let mut candidate_residual_saturation_count = 0_usize;
+    let mut source_q31 = vec![0_u32; source.config.vocab_size];
+    let mut candidate_q31 = vec![0_u32; source.config.vocab_size];
+
+    for (context, target) in &windows {
+        let source_output = forward_production_model(source, context)?;
+        let candidate_output = forward_production_model(candidate, context)?;
+        let target = *target as usize;
+
+        logit_changed_windows = logit_changed_windows.saturating_add(usize::from(
+            source_output.logits_q8 != candidate_output.logits_q8,
+        ));
+        target_logit_changed_windows = target_logit_changed_windows.saturating_add(usize::from(
+            source_output.logits_q8[target] != candidate_output.logits_q8[target],
+        ));
+        source_residual_saturation_count = source_residual_saturation_count
+            .saturating_add(source_output.residual_saturation_count);
+        candidate_residual_saturation_count = candidate_residual_saturation_count
+            .saturating_add(candidate_output.residual_saturation_count);
+
+        for ((_, normalization, _), accumulator) in NORMALIZATIONS.iter().zip(&mut accumulators) {
+            base2_softmax_i32_q31_with_normalization(
+                &source_output.logits_q8,
+                &mut source_q31,
+                *normalization,
+            )
+            .ok_or(TrainError::CoreRejected(
+                "production_probability_normalization_audit_source",
+            ))?;
+            base2_softmax_i32_q31_with_normalization(
+                &candidate_output.logits_q8,
+                &mut candidate_q31,
+                *normalization,
+            )
+            .ok_or(TrainError::CoreRejected(
+                "production_probability_normalization_audit_candidate",
+            ))?;
+            accumulator.observe(&source_q31, &candidate_q31, target);
+        }
+    }
+
+    Ok(ProductionProbabilityNormalizationTrace {
+        profile: source.config.profile_id().unwrap_or("custom"),
+        parameter_count: source.parameter_count(),
+        tokenizer_hash: source.tokenizer_hash,
+        token_stream_hash,
+        context_tokens,
+        windows: windows.len(),
+        probability_fractional_bits: PROBABILITY_FRACTIONAL_BITS,
+        forward_scales: source.scales,
+        source_model_hash: source.model_hash(),
+        candidate_model_hash: candidate.model_hash(),
+        logit_changed_windows,
+        target_logit_changed_windows,
+        source_residual_saturation_count,
+        candidate_residual_saturation_count,
+        normalization_rows: NORMALIZATIONS
+            .into_iter()
+            .zip(accumulators)
+            .map(
+                |((normalization, _, reciprocal_fractional_bits), accumulator)| {
+                    ProductionProbabilityNormalizationRow {
+                        normalization,
+                        reciprocal_fractional_bits,
+                        probability: accumulator.finish(source.config.vocab_size),
+                    }
+                },
+            )
+            .collect(),
+    })
+}
+
+fn observe_normalization_error(
+    error: &mut ProductionNormalizationErrorTrace,
+    probabilities_q31: &[u32],
+    exact_q31: &[u32],
+    target: usize,
+    fractional_bits: u8,
+) {
+    debug_assert_eq!(probabilities_q31.len(), exact_q31.len());
+    for (&probability, &exact) in probabilities_q31.iter().zip(exact_q31) {
+        let probability = quantize_probability_q31(probability, fractional_bits);
+        let exact = quantize_probability_q31(exact, fractional_bits);
+        let difference = probability.abs_diff(exact);
+        error.probability_changed_values = error
+            .probability_changed_values
+            .saturating_add(usize::from(difference > 0));
+        error.probability_error_l1 = error
+            .probability_error_l1
+            .saturating_add(u64::from(difference));
+        error.probability_error_max = error.probability_error_max.max(difference);
+    }
+    let target_probability = quantize_probability_q31(probabilities_q31[target], fractional_bits);
+    let exact_target = quantize_probability_q31(exact_q31[target], fractional_bits);
+    let target_difference = target_probability.abs_diff(exact_target);
+    error.target_error_windows = error
+        .target_error_windows
+        .saturating_add(usize::from(target_difference > 0));
+    error.target_error_l1 = error
+        .target_error_l1
+        .saturating_add(u64::from(target_difference));
+    error.target_error_max = error.target_error_max.max(target_difference);
+}
+
+fn target_softmax_weight_q15(logits_q8: &[i32], target: usize) -> Option<u16> {
+    let target_logit = *logits_q8.get(target)?;
+    if target_logit == MASKED_LOGIT {
+        return None;
+    }
+    let max_logit = logits_q8
+        .iter()
+        .copied()
+        .filter(|&logit| logit != MASKED_LOGIT)
+        .max()?;
+    Some(base2_exp_neg_q15(target_logit.saturating_sub(max_logit)) as u16)
+}
+
+/// Attribute the target-probability changes produced by the legacy and Newton
+/// reciprocal paths against rounded exact Q47 division on the same frozen
+/// logits. Only Q23 observation changes; model arithmetic and artifacts remain
+/// read-only.
+pub fn audit_production_probability_normalization_signal_attribution(
+    source: &ProductionModelV1,
+    candidate: &ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    context_tokens: usize,
+    max_windows: usize,
+) -> Result<ProductionNormalizationSignalAttributionTrace, TrainError> {
+    const PROBABILITY_FRACTIONAL_BITS: u8 = 23;
+    const METHODS: [(&str, SoftmaxNormalization, u8); 3] = [
+        ("legacy_q31_lut", SoftmaxNormalization::LegacyQ31Lut, 31),
+        ("q47_newton1", SoftmaxNormalization::Q47Newton1, 47),
+        ("q47_exact_division", SoftmaxNormalization::Q47Exact, 47),
+    ];
+
+    source.validate()?;
+    candidate.validate()?;
+    if source.config != candidate.config
+        || source.scales != candidate.scales
+        || source.tokenizer_hash != candidate.tokenizer_hash
+        || context_tokens == 0
+        || context_tokens > source.config.context_tokens
+        || max_windows == 0
+        || tokens
+            .iter()
+            .any(|&token| token as usize >= source.config.vocab_size)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let windows = document_windows(tokens, context_tokens, max_windows);
+    if windows.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+
+    let mut methods = METHODS
+        .into_iter()
+        .map(|(normalization, _, reciprocal_fractional_bits)| {
+            ProductionNormalizationSignalMethodTrace {
+                normalization,
+                reciprocal_fractional_bits,
+                target_changed_window_indices: Vec::new(),
+                source_error_vs_exact: ProductionNormalizationErrorTrace::default(),
+                candidate_error_vs_exact: ProductionNormalizationErrorTrace::default(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut window_attributions = Vec::new();
+    let mut logit_changed_windows = 0_usize;
+    let mut target_logit_changed_windows = 0_usize;
+    let mut source_residual_saturation_count = 0_usize;
+    let mut candidate_residual_saturation_count = 0_usize;
+    let mut source_exact = vec![0_u32; source.config.vocab_size];
+    let mut candidate_exact = vec![0_u32; source.config.vocab_size];
+    let mut source_work = vec![0_u32; source.config.vocab_size];
+    let mut candidate_work = vec![0_u32; source.config.vocab_size];
+
+    for (window_index, (context, target_token)) in windows.iter().enumerate() {
+        let source_output = forward_production_model(source, context)?;
+        let candidate_output = forward_production_model(candidate, context)?;
+        let target = *target_token as usize;
+        let source_sum = base2_softmax_i32_q31_with_normalization(
+            &source_output.logits_q8,
+            &mut source_exact,
+            SoftmaxNormalization::Q47Exact,
+        )
+        .ok_or(TrainError::CoreRejected(
+            "production_normalization_attribution_exact_source",
+        ))?;
+        let candidate_sum = base2_softmax_i32_q31_with_normalization(
+            &candidate_output.logits_q8,
+            &mut candidate_exact,
+            SoftmaxNormalization::Q47Exact,
+        )
+        .ok_or(TrainError::CoreRejected(
+            "production_normalization_attribution_exact_candidate",
+        ))?;
+        let source_target_weight = target_softmax_weight_q15(&source_output.logits_q8, target)
+            .ok_or(TrainError::CoreRejected(
+                "production_normalization_attribution_source_weight",
+            ))?;
+        let candidate_target_weight =
+            target_softmax_weight_q15(&candidate_output.logits_q8, target).ok_or(
+                TrainError::CoreRejected("production_normalization_attribution_candidate_weight"),
+            )?;
+
+        logit_changed_windows = logit_changed_windows.saturating_add(usize::from(
+            source_output.logits_q8 != candidate_output.logits_q8,
+        ));
+        target_logit_changed_windows = target_logit_changed_windows.saturating_add(usize::from(
+            source_output.logits_q8[target] != candidate_output.logits_q8[target],
+        ));
+        source_residual_saturation_count = source_residual_saturation_count
+            .saturating_add(source_output.residual_saturation_count);
+        candidate_residual_saturation_count = candidate_residual_saturation_count
+            .saturating_add(candidate_output.residual_saturation_count);
+
+        let mut target_probabilities = Vec::with_capacity(METHODS.len());
+        let mut any_target_changed = false;
+        for ((normalization_name, normalization, _), method) in METHODS.iter().zip(&mut methods) {
+            base2_softmax_i32_q31_with_normalization(
+                &source_output.logits_q8,
+                &mut source_work,
+                *normalization,
+            )
+            .ok_or(TrainError::CoreRejected(
+                "production_normalization_attribution_source",
+            ))?;
+            base2_softmax_i32_q31_with_normalization(
+                &candidate_output.logits_q8,
+                &mut candidate_work,
+                *normalization,
+            )
+            .ok_or(TrainError::CoreRejected(
+                "production_normalization_attribution_candidate",
+            ))?;
+            observe_normalization_error(
+                &mut method.source_error_vs_exact,
+                &source_work,
+                &source_exact,
+                target,
+                PROBABILITY_FRACTIONAL_BITS,
+            );
+            observe_normalization_error(
+                &mut method.candidate_error_vs_exact,
+                &candidate_work,
+                &candidate_exact,
+                target,
+                PROBABILITY_FRACTIONAL_BITS,
+            );
+            let source_target =
+                quantize_probability_q31(source_work[target], PROBABILITY_FRACTIONAL_BITS);
+            let candidate_target =
+                quantize_probability_q31(candidate_work[target], PROBABILITY_FRACTIONAL_BITS);
+            let changed = source_target != candidate_target;
+            any_target_changed |= changed;
+            if changed {
+                method.target_changed_window_indices.push(window_index);
+            }
+            target_probabilities.push(ProductionNormalizationTargetPair {
+                normalization: normalization_name,
+                source_probability_q23: source_target,
+                candidate_probability_q23: candidate_target,
+                delta_q23: i64::from(candidate_target) - i64::from(source_target),
+            });
+        }
+        if any_target_changed {
+            window_attributions.push(ProductionNormalizationSignalWindow {
+                window_index,
+                target_token: *target_token,
+                source_target_logit_q8: source_output.logits_q8[target],
+                candidate_target_logit_q8: candidate_output.logits_q8[target],
+                source_target_weight_q15: source_target_weight,
+                candidate_target_weight_q15: candidate_target_weight,
+                source_normalization_sum: source_sum,
+                candidate_normalization_sum: candidate_sum,
+                target_probabilities,
+            });
+        }
+    }
+
+    Ok(ProductionNormalizationSignalAttributionTrace {
+        profile: source.config.profile_id().unwrap_or("custom"),
+        parameter_count: source.parameter_count(),
+        tokenizer_hash: source.tokenizer_hash,
+        token_stream_hash,
+        context_tokens,
+        windows: windows.len(),
+        probability_fractional_bits: PROBABILITY_FRACTIONAL_BITS,
+        forward_scales: source.scales,
+        source_model_hash: source.model_hash(),
+        candidate_model_hash: candidate.model_hash(),
+        logit_changed_windows,
+        target_logit_changed_windows,
+        source_residual_saturation_count,
+        candidate_residual_saturation_count,
+        methods,
+        window_attributions,
+    })
+}
+
+fn quantize_probability_q31(probability_q31: u32, fractional_bits: u8) -> u32 {
+    debug_assert!((1..=31).contains(&fractional_bits));
+    let shift = 31_u8.saturating_sub(fractional_bits);
+    let rounded = round_shift_rhu_i64(i64::from(probability_q31), shift);
+    let maximum = (1_u64 << fractional_bits) - 1;
+    u64::try_from(rounded).unwrap_or(0).min(maximum) as u32
+}
+
+fn negative_log2_microbits(probability: u32, fractional_bits: u8) -> u64 {
+    if probability == 0 {
+        return 64_000_000;
+    }
+    let integer_log2 = 31_u32.saturating_sub(probability.leading_zeros());
+    let mut normalized = u64::from(probability) << (31 - integer_log2);
+    let mut fractional_q24 = 0_u64;
+    for bit in (0..24).rev() {
+        normalized = ((u128::from(normalized) * u128::from(normalized)) >> 31) as u64;
+        if normalized >= (2_u64 << 31) {
+            normalized >>= 1;
+            fractional_q24 |= 1_u64 << bit;
+        }
+    }
+    let loss_q24 = (u64::from(fractional_bits.saturating_sub(integer_log2 as u8)) << 24)
+        .saturating_sub(fractional_q24);
+    loss_q24.saturating_mul(1_000_000).saturating_add(1 << 23) >> 24
+}
+
+fn signed_delta(candidate: u64, source: u64) -> i64 {
+    if candidate >= source {
+        i64::try_from(candidate - source).unwrap_or(i64::MAX)
+    } else {
+        -i64::try_from(source - candidate).unwrap_or(i64::MAX)
+    }
 }
 
 fn q15_negative_log2_millibits(probability: i16) -> u64 {
@@ -760,6 +2387,14 @@ fn production_features(
     model: &ProductionModelV1,
     context: &[u32],
 ) -> Result<(Vec<i16>, usize), TrainError> {
+    production_features_observed(model, context, None)
+}
+
+fn production_features_observed(
+    model: &ProductionModelV1,
+    context: &[u32],
+    mut observer: Option<(&mut u64, &mut Vec<ProductionLayerBoundaryHashes>)>,
+) -> Result<(Vec<i16>, usize), TrainError> {
     model.validate()?;
     let config = model.config;
     if context.is_empty()
@@ -774,6 +2409,9 @@ fn production_features(
     for &token in context {
         let start = token as usize * config.d_model;
         hidden.extend_from_slice(&model.embeddings[start..start + config.d_model]);
+    }
+    if let Some((embedding_hash, _)) = observer.as_mut() {
+        **embedding_hash = hash_i16_slice(&hidden);
     }
     let seq_len = context.len();
     let total = checked_product(seq_len, config.d_model)?;
@@ -852,6 +2490,9 @@ fn production_features(
             &attention_output,
             &mut attention_residual,
         ));
+        let attention_residual_hash = observer
+            .as_ref()
+            .map_or(0, |_| hash_i16_slice(&attention_residual));
         let mlp_input = rms_rows(
             &attention_residual,
             &model.mlp_rms_weights[rms],
@@ -902,6 +2543,13 @@ fn production_features(
             &mlp_output,
             &mut hidden,
         ));
+        if let Some((_, layers)) = observer.as_mut() {
+            layers.push(ProductionLayerBoundaryHashes {
+                layer,
+                attention_residual_hash,
+                layer_output_hash: hash_i16_slice(&hidden),
+            });
+        }
     }
     let start = (seq_len - 1) * config.d_model;
     let mut features = vec![0_i16; config.d_model];
@@ -913,6 +2561,24 @@ fn production_features(
     )
     .ok_or(TrainError::CoreRejected("production_final_rms"))?;
     Ok((features, residual_saturation_count))
+}
+
+fn hash_i16_slice(values: &[i16]) -> u64 {
+    values.iter().fold(FNV_OFFSET, |mut hash, value| {
+        for byte in value.to_le_bytes() {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME);
+        }
+        hash
+    })
+}
+
+fn hash_i32_slice(values: &[i32]) -> u64 {
+    values.iter().fold(FNV_OFFSET, |mut hash, value| {
+        for byte in value.to_le_bytes() {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME);
+        }
+        hash
+    })
 }
 
 fn output_logits(model: &ProductionModelV1, features: &[i16]) -> Result<Vec<i32>, TrainError> {
@@ -1206,24 +2872,15 @@ mod tests {
 
     #[test]
     fn frozen_profiles_match_scaling_plan_parameter_counts() {
-        assert_eq!(
-            ProductionModelConfig::profile("p10m")
-                .unwrap()
-                .parameter_count(),
-            Some(9_317_632)
-        );
-        assert_eq!(
-            ProductionModelConfig::profile("p20m")
-                .unwrap()
-                .parameter_count(),
-            Some(21_641_600)
-        );
-        assert_eq!(
-            ProductionModelConfig::profile("p30m")
-                .unwrap()
-                .parameter_count(),
-            Some(28_229_056)
-        );
+        for (profile, expected_parameters) in [
+            ("p10m", 9_317_632),
+            ("p20m", 21_641_600),
+            ("p30m", 28_229_056),
+        ] {
+            let config = ProductionModelConfig::profile(profile).unwrap();
+            assert_eq!(config.parameter_count(), Some(expected_parameters));
+            config.validate().expect("advertised profile must validate");
+        }
     }
 
     #[test]
@@ -1288,6 +2945,145 @@ mod tests {
         assert_eq!(left.windows, 2);
         assert!(left.total_millibits > 0);
         assert!(left.to_json_line().contains("mean_millibits"));
+    }
+
+    #[test]
+    fn canonical_production_eval_uses_normalization_independent_nll() {
+        let model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
+        let tokens = [BOS_TOKEN_ID, 300, 301, 302, 303, 304, 305, EOS_TOKEN_ID];
+        let left =
+            evaluate_production_model_canonical_nll_default_floor(&model, &tokens, 0x5678, 4, 2)
+                .expect("canonical eval");
+        let right =
+            evaluate_production_model_canonical_nll_default_floor(&model, &tokens, 0x5678, 4, 2)
+                .expect("canonical eval replay");
+        assert_eq!(left, right);
+        assert_eq!(left.mean_nll_millibits, 8_322);
+        assert_eq!(left.zero_probability_windows, 0);
+        let json = left.to_json_line();
+        assert!(json.contains("nsrl.production_model_canonical_eval.v2"));
+        assert!(json.contains("\"normalization_independent\":true"));
+    }
+
+    #[test]
+    fn production_comparison_reports_functional_equality_exactly() {
+        let model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
+        let tokens = [BOS_TOKEN_ID, 300, 301, 302, 303, 304, 305, EOS_TOKEN_ID];
+        let trace =
+            compare_production_models(&model, &model, &tokens, 0x5678, 4, 2).expect("compare");
+        assert_eq!(trace.windows, 2);
+        assert_eq!(trace.total_millibits_delta, 0);
+        assert_eq!(trace.feature_changed_windows, 0);
+        assert_eq!(trace.logits_changed_windows, 0);
+        assert_eq!(trace.probabilities_changed_windows, 0);
+        assert_eq!(trace.equal_loss_windows, 2);
+        assert!(trace.to_json_line().contains("functional_delta"));
+    }
+
+    #[test]
+    fn probability_resolution_audit_preserves_q15_and_orders_precisions() {
+        let model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
+        let tokens = [BOS_TOKEN_ID, 300, 301, 302, 303, 304, 305, EOS_TOKEN_ID];
+        let trace = audit_production_probability_resolution(&model, &model, &tokens, 0x5678, 4, 2)
+            .expect("audit");
+        assert_eq!(trace.windows, 2);
+        assert!(trace.q15_requantization_exact);
+        assert_eq!(
+            trace
+                .precision_rows
+                .iter()
+                .map(|row| row.fractional_bits)
+                .collect::<Vec<_>>(),
+            [15, 19, 23, 27, 31]
+        );
+        assert!(trace.precision_rows.iter().all(|row| {
+            row.probability_changed_windows == 0
+                && row.target_probability_changed_windows == 0
+                && row.equal_loss_windows == 2
+        }));
+        assert!(trace.to_json_line().contains("q15_requantization_exact"));
+    }
+
+    #[test]
+    fn probability_normalization_audit_orders_methods_and_preserves_equality() {
+        let model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
+        let tokens = [BOS_TOKEN_ID, 300, 301, 302, 303, 304, 305, EOS_TOKEN_ID];
+        let trace =
+            audit_production_probability_normalization(&model, &model, &tokens, 0x5678, 4, 2)
+                .expect("audit");
+        assert_eq!(trace.windows, 2);
+        assert_eq!(trace.probability_fractional_bits, 23);
+        assert_eq!(
+            trace
+                .normalization_rows
+                .iter()
+                .map(|row| row.normalization)
+                .collect::<Vec<_>>(),
+            [
+                "legacy_q31_lut",
+                "q47_lut",
+                "q47_newton1",
+                "q47_exact_division"
+            ]
+        );
+        assert!(trace.normalization_rows.iter().all(|row| {
+            row.probability.probability_changed_windows == 0
+                && row.probability.target_probability_changed_windows == 0
+                && row.probability.equal_loss_windows == 2
+        }));
+        assert!(trace.to_json_line().contains("q47_exact_division"));
+    }
+
+    #[test]
+    fn probability_normalization_signal_attribution_uses_exact_ceiling() {
+        let model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
+        let tokens = [BOS_TOKEN_ID, 300, 301, 302, 303, 304, 305, EOS_TOKEN_ID];
+        let trace = audit_production_probability_normalization_signal_attribution(
+            &model, &model, &tokens, 0x5678, 4, 2,
+        )
+        .expect("audit");
+        assert_eq!(trace.windows, 2);
+        assert_eq!(trace.probability_fractional_bits, 23);
+        assert_eq!(
+            trace
+                .methods
+                .iter()
+                .map(|method| method.normalization)
+                .collect::<Vec<_>>(),
+            ["legacy_q31_lut", "q47_newton1", "q47_exact_division"]
+        );
+        assert!(
+            trace
+                .methods
+                .iter()
+                .all(|method| method.target_changed_window_indices.is_empty())
+        );
+        assert_eq!(
+            trace.methods[2].source_error_vs_exact,
+            ProductionNormalizationErrorTrace::default()
+        );
+        assert_eq!(
+            trace.methods[2].candidate_error_vs_exact,
+            ProductionNormalizationErrorTrace::default()
+        );
+        assert!(trace.window_attributions.is_empty());
+        assert!(trace.to_json_line().contains("window_attributions"));
+    }
+
+    #[test]
+    fn wider_probability_precision_can_expose_a_q15_tie() {
+        let left = 262_144_u32;
+        let right = 266_240_u32;
+        assert_eq!(
+            quantize_probability_q31(left, 15),
+            quantize_probability_q31(right, 15)
+        );
+        assert_ne!(
+            quantize_probability_q31(left, 19),
+            quantize_probability_q31(right, 19)
+        );
+        assert_eq!(negative_log2_microbits(16_384, 15), 1_000_000);
+        assert_eq!(negative_log2_microbits(8_192, 15), 2_000_000);
     }
 
     #[test]

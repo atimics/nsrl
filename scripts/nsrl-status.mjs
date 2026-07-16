@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import childProcess from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -272,6 +273,209 @@ function collectGit() {
     sample_changes: changes.slice(0, 12),
     status_error: status.ok ? "" : status.stderr || status.error,
   };
+}
+
+function sha256File(relativePath) {
+  try {
+    return crypto.createHash("sha256").update(fs.readFileSync(resolvePath(relativePath))).digest("hex");
+  } catch {
+    return "";
+  }
+}
+
+function collectIsingEvidence() {
+  const paths = {
+    audit_contract: "benchmarks/production-model-v1/p10m-atomic-ising-audit-v1-contract.json",
+    audit_result: "benchmarks/production-model-v1/p10m-atomic-ising-audit-v1.json",
+    document_ising: "benchmarks/production-model-v1/p10m-atomic-ising-proposal-v1.json",
+    confirmation_contract:
+      "benchmarks/production-model-v1/p10m-atomic-ising-confirmation-v1-contract.json",
+    confirmation_source:
+      "benchmarks/production-model-v1/p10m-atomic-structure-confirmation-v1.json",
+    confirmation_result:
+      "benchmarks/production-model-v1/p10m-atomic-ising-confirmation-v1.json",
+    cross_source_contract:
+      "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-contract.json",
+    cross_source_result:
+      "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-result.json",
+    cross_source_publication:
+      "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-publication.json",
+  };
+  const auditContract = maybeReadJson(paths.audit_contract);
+  const auditResult = maybeReadJson(paths.audit_result);
+  const documentIsing = maybeReadJson(paths.document_ising);
+  const confirmationContract = maybeReadJson(paths.confirmation_contract);
+  const confirmationSource = maybeReadJson(paths.confirmation_source);
+  const confirmationResult = maybeReadJson(paths.confirmation_result);
+  const crossSourceContract = maybeReadJson(paths.cross_source_contract);
+  const crossSourceResult = maybeReadJson(paths.cross_source_result);
+  const crossSourcePublication = maybeReadJson(paths.cross_source_publication);
+  const auditContractSha256 = sha256File(paths.audit_contract);
+  const auditResultSha256 = sha256File(paths.audit_result);
+  const confirmationContractSha256 = sha256File(paths.confirmation_contract);
+  const confirmationSourceSha256 = sha256File(paths.confirmation_source);
+  const confirmationResultSha256 = sha256File(paths.confirmation_result);
+  const crossSourceContractSha256 = sha256File(paths.cross_source_contract);
+  const crossSourceResultSha256 = sha256File(paths.cross_source_result);
+  const crossSourcePublicationSha256 = sha256File(paths.cross_source_publication);
+  const endpointSupport = confirmationResult?.mechanism_support || {};
+  const endpointValues = Object.values(endpointSupport);
+  const confirmationVerdict = endpointValues.length === 0
+    ? "inconclusive"
+    : endpointValues.every((value) => value === true)
+      ? "supported_within_source"
+      : "falsified_or_partially_supported";
+  const authorizationSafe = auditResult?.decision?.optimizer_change_authorized === false
+    && auditResult?.decision?.paid_scaling_authorized === false
+    && documentIsing?.decision?.optimizer_change_authorized === false
+    && documentIsing?.decision?.paid_scaling_authorized === false
+    && confirmationResult?.decision?.optimizer_change_authorized === false
+    && confirmationResult?.decision?.paid_scaling_authorized === false
+    && crossSourceContract?.authorization?.optimizer_change === false
+    && crossSourceContract?.authorization?.paid_scaling === false
+    && crossSourceResult?.decision?.optimizer_change_authorized === false
+    && crossSourceResult?.decision?.paid_scaling_authorized === false
+    && crossSourcePublication?.verdict?.optimizer_change_authorized === false
+    && crossSourcePublication?.verdict?.paid_scaling_authorized === false;
+  const auditOk = auditContract?.schema === "nsrl.production_atomic_ising_audit_contract.v1"
+    && auditResult?.schema === "nsrl.production_atomic_ising_audit.v1"
+    && auditResult.audit_contract_sha256 === auditContractSha256;
+  const documentIsingOk = documentIsing?.schema === "nsrl.production_atomic_ising_proposal.v1"
+    && documentIsing?.analysis_role === "proposal_only_calibration";
+  const confirmationOk = confirmationContract?.schema
+      === "nsrl.production_atomic_ising_confirmation_contract.v1"
+    && confirmationSource?.schema === "nsrl.production_atomic_structure.v1"
+    && confirmationSource?.analysis_role === "untouched_confirmation"
+    && confirmationResult?.schema === "nsrl.production_atomic_ising_confirmation.v1"
+    && confirmationResult.confirmation_contract_sha256 === confirmationContractSha256
+    && confirmationResult.source_result_sha256 === confirmationSourceSha256;
+  const crossSourceOk = crossSourceContract?.schema
+      === "nsrl.production_cross_source_exchange_contract.v1"
+    && crossSourceResult?.schema === "nsrl.production_cross_source_exchange_result.v1"
+    && crossSourceResult.source_sha256?.contract === crossSourceContractSha256
+    && crossSourceResult.decision?.documents_200_212_read === false;
+  const crossSourcePublicationOk = crossSourcePublication?.schema
+      === "nsrl.production_cross_source_exchange_publication.v1"
+    && crossSourcePublication.source_sha256?.frozen_prospective_contract
+      === crossSourceContractSha256
+    && crossSourcePublication.source_sha256?.checked_prospective_result
+      === crossSourceResultSha256
+    && ["supported", "falsified", "inconclusive"].includes(
+      crossSourcePublication.verdict?.status)
+    && crossSourcePublication.verdict?.vacuous_envelope_status === "inconclusive"
+    && crossSourcePublication.sealed_material?.read === false;
+  return {
+    present: Boolean(auditContract && auditResult && documentIsing
+      && confirmationContract && confirmationSource && confirmationResult
+      && crossSourceContract && crossSourceResult && crossSourcePublication),
+    ok: auditOk && documentIsingOk && confirmationOk && crossSourceOk
+      && crossSourcePublicationOk && authorizationSafe,
+    audit: {
+      state: auditOk ? "replayable" : "missing_or_invalid",
+      contract_path: paths.audit_contract,
+      contract_sha256: auditContractSha256,
+      result_path: paths.audit_result,
+      result_sha256: auditResultSha256,
+      sigma_delta_scope: "Gray-ordered high-order Walsh loss residual; not optimizer time dynamics",
+    },
+    document_ising: {
+      state: documentIsingOk ? "proposal_frozen" : "missing_or_invalid",
+      result_path: paths.document_ising,
+      source_clusters: documentIsing?.source_population?.proposal_source_clusters ?? 1,
+    },
+    confirmation: {
+      state: confirmationOk ? "replayable" : "missing_or_invalid",
+      verdict: confirmationVerdict,
+      contract_path: paths.confirmation_contract,
+      contract_sha256: confirmationContractSha256,
+      result_path: paths.confirmation_result,
+      result_sha256: confirmationResultSha256,
+      endpoints_supported: endpointValues.filter((value) => value === true).length,
+      endpoints_total: endpointValues.length,
+    },
+    cross_source: {
+      state: crossSourceOk && crossSourcePublicationOk ? "replayable" : "missing_or_invalid",
+      verdict: crossSourcePublication?.verdict?.status ?? "missing",
+      contract_path: paths.cross_source_contract,
+      contract_sha256: crossSourceContractSha256,
+      result_path: paths.cross_source_result,
+      result_sha256: crossSourceResultSha256,
+      publication_path: paths.cross_source_publication,
+      publication_sha256: crossSourcePublicationSha256,
+      fitting_source_panels: crossSourceResult?.population?.fitting_source_panels ?? 0,
+      calibration_source_panels: crossSourceResult?.population?.calibration_source_panels ?? 0,
+      evaluation_source_panels: crossSourceResult?.population?.evaluation_source_panels ?? 0,
+      envelope_covered: crossSourceResult?.untouched_evaluation?.envelope_covered ?? 0,
+      fired_source_panels: crossSourceResult?.untouched_evaluation?.fired_source_panels ?? 0,
+      unsafe_firings: crossSourceResult?.untouched_evaluation?.unsafe_firings ?? 0,
+      unsafe_action_rate:
+        crossSourcePublication?.untouched_evaluation_metrics?.unsafe_action_rate?.exact ?? "",
+      firing_rate:
+        crossSourcePublication?.untouched_evaluation_metrics?.firing_rate?.exact ?? "",
+      coverage_rate:
+        crossSourcePublication?.untouched_evaluation_metrics?.source_panel_coverage?.exact ?? "",
+      aggregate_signed_regret_relative_to_abstention_q32:
+        crossSourcePublication?.untouched_evaluation_metrics?.regret_relative_to_abstention
+          ?.aggregate_signed_q32 ?? "",
+      aggregate_positive_regret_relative_to_abstention_q32:
+        crossSourcePublication?.untouched_evaluation_metrics?.regret_relative_to_abstention
+          ?.aggregate_positive_part_q32 ?? "",
+    },
+    boundaries: {
+      default_optimizer: "integer_residual_sgd",
+      optimizer_change_authorized: authorizationSafe ? false : null,
+      paid_scaling_authorized: authorizationSafe ? false : null,
+      same_source_document_evidence_only: false,
+      cross_source_certificate_scope: crossSourceOk
+        ? "frozen_distinct_author_english_gutenberg_frame"
+        : "unidentified",
+      arbitrary_source_generalization_identified: false,
+      sealed_documents: "200--212",
+      frozen_structure_cube_reexecuted_in_clean_check: false,
+    },
+  };
+}
+
+function collectResearchHarness() {
+  const eventsPath = resolvePath("data/research-harness/events.jsonl");
+  if (!fs.existsSync(eventsPath)) {
+    return {
+      present: false,
+      ok: true,
+      state_root: "data/research-harness",
+      experiment_count: 0,
+      event_count: 0,
+      experiments: [],
+    };
+  }
+  const command = runCommand(
+    process.execPath,
+    ["scripts/research-harness.mjs", "status", "--json"],
+    { timeoutMs: 30_000, maxBuffer: 1024 * 1024 * 8 },
+  );
+  if (!command.ok) {
+    return {
+      present: true,
+      ok: false,
+      state_root: "data/research-harness",
+      error: command.stderr || command.error || "research harness status failed",
+      experiments: [],
+    };
+  }
+  try {
+    return {
+      present: true,
+      ...JSON.parse(command.stdout),
+    };
+  } catch (error) {
+    return {
+      present: true,
+      ok: false,
+      state_root: "data/research-harness",
+      error: `research harness emitted invalid JSON: ${error.message}`,
+      experiments: [],
+    };
+  }
 }
 
 function collectHygiene(runHygiene) {
@@ -773,6 +977,12 @@ function deriveStatus(report) {
   if (report.git.dirty) {
     warnings.push(`working tree is dirty (${report.git.change_count} changed paths)`);
   }
+  if (report.research_harness.present && !report.research_harness.ok) {
+    warnings.push("agentic research harness ledger is not valid");
+  }
+  if (!report.ising_evidence.ok) {
+    warnings.push("Ising audit/confirmation evidence is missing or invalid");
+  }
   if (report.hygiene.run && !report.hygiene.ok) {
     blockers.push("hygiene checks are not green");
   }
@@ -832,6 +1042,8 @@ function buildReport(config) {
     generated_at: new Date().toISOString(),
     repo_root: repoRoot,
     git: collectGit(),
+    ising_evidence: collectIsingEvidence(),
+    research_harness: collectResearchHarness(),
     hygiene: collectHygiene(config.runHygiene),
     prompts: collectPromptEvidence(),
     artifacts: collectArtifacts(),
@@ -854,6 +1066,15 @@ function nextCommands(report) {
   }
   if (!report.diagnostic.path) {
     commands.push("node scripts/nsrl-status.mjs --refresh-fast-diagnostic");
+  }
+  if (report.research_harness.present && !report.research_harness.ok) {
+    commands.push("node scripts/research-harness.mjs verify");
+  }
+  if (!report.ising_evidence.ok) {
+    commands.push("node scripts/check-production-atomic-ising-v1.mjs");
+    commands.push("node scripts/check-production-atomic-ising-confirmation-v1.mjs");
+    commands.push("node scripts/check-production-cross-source-exchange-v1.mjs");
+    commands.push("node scripts/check-production-cross-source-exchange-publication-v1.mjs");
   }
   if (report.diagnostic.failed_checks?.some((check) => check.name === "release-candidate-self-test")) {
     commands.push("node scripts/check-solomon-release-candidate-self-test.mjs");
@@ -884,11 +1105,23 @@ function renderMarkdown(report) {
   lines.push(`- Branch: \`${report.git.branch || "unknown"}\``);
   lines.push(`- HEAD: \`${report.git.head || "unknown"}\``);
   lines.push(`- Working tree: ${report.git.dirty ? `${report.git.change_count} changed paths` : "clean"}`);
+  lines.push(`- Ising evidence: ${renderIsingEvidenceOneLine(report.ising_evidence)}`);
+  lines.push(`- Research harness: ${renderResearchHarnessOneLine(report.research_harness)}`);
   lines.push(`- Hygiene: ${renderHygiene(report.hygiene)}`);
   lines.push(`- Product diagnostic: ${renderDiagnosticOneLine(report.diagnostic)}`);
   lines.push(`- Headline eval: ${renderHeadlineOneLine(report.headline_eval)}`);
   lines.push(`- Product proof files: ${report.product_evidence.files.length} found`);
   lines.push(`- Held-out prompt rows: ${report.prompts.expanded_prompts.rows ?? "missing"} expanded, ${report.prompts.prompts.rows ?? "missing"} base`);
+  lines.push("");
+
+  lines.push("## Ising Evidence");
+  lines.push("");
+  lines.push(`- Audit: **${report.ising_evidence.audit.state}**; contract \`${report.ising_evidence.audit.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.audit.result_sha256 || "missing"}\``);
+  lines.push(`- Document Ising: **${report.ising_evidence.document_ising.state}**; ${report.ising_evidence.document_ising.source_clusters} source cluster`);
+  lines.push(`- Confirmation: **${report.ising_evidence.confirmation.verdict}** (${report.ising_evidence.confirmation.endpoints_supported}/${report.ising_evidence.confirmation.endpoints_total} endpoints); contract \`${report.ising_evidence.confirmation.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.confirmation.result_sha256 || "missing"}\``);
+  lines.push(`- Cross-source exchange: **${report.ising_evidence.cross_source.verdict}**; ${report.ising_evidence.cross_source.envelope_covered}/${report.ising_evidence.cross_source.evaluation_source_panels} panels covered, ${report.ising_evidence.cross_source.fired_source_panels} fired, ${report.ising_evidence.cross_source.unsafe_firings} unsafe; contract \`${report.ising_evidence.cross_source.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.cross_source.result_sha256 || "missing"}\``);
+  lines.push(`- Boundary: default \`${report.ising_evidence.boundaries.default_optimizer}\`; optimizer change ${report.ising_evidence.boundaries.optimizer_change_authorized === false ? "not authorized" : "unknown"}; paid scaling ${report.ising_evidence.boundaries.paid_scaling_authorized === false ? "not authorized" : "unknown"}; cross-source certificate bounded to ${report.ising_evidence.boundaries.cross_source_certificate_scope}; arbitrary-source generalization unidentified; documents ${report.ising_evidence.boundaries.sealed_documents} sealed`);
+  lines.push(`- Sigma--delta scope: ${report.ising_evidence.audit.sigma_delta_scope}`);
   lines.push("");
 
   lines.push("## Headline Eval");
@@ -1036,6 +1269,22 @@ function renderDiagnosticOneLine(diagnostic) {
     : "";
   const skipped = diagnostic.skipped?.length ? `; skipped: ${diagnostic.skipped.join(", ")}` : "";
   return `${state} at \`${diagnostic.path}\`${failed}${skipped}`;
+}
+
+function renderResearchHarnessOneLine(harness) {
+  if (!harness.present) return "not initialized";
+  if (!harness.ok) return `invalid (${harness.error || "verification failed"})`;
+  const outcomes = (harness.experiments || [])
+    .filter((experiment) => experiment.outcome)
+    .map((experiment) => `${experiment.id}=${experiment.outcome}`)
+    .join(", ");
+  return `${harness.experiment_count} experiments, ${harness.event_count} events${outcomes ? `; ${outcomes}` : ""}`;
+}
+
+function renderIsingEvidenceOneLine(evidence) {
+  if (!evidence.present) return "missing";
+  const state = evidence.ok ? "replayable" : "invalid";
+  return `${state}; confirmation ${evidence.confirmation.verdict}; cross-source ${evidence.cross_source.verdict}; optimizer change not authorized`;
 }
 
 function writeOutput(config, text) {

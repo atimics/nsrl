@@ -72,6 +72,26 @@ not turn an empirical conjecture into a theorem.
 | `chi_delta(y_0,y_1)` | exact number of coarse quantizer cells crossed between two fine-grid values |
 | `A_d` | total absolute output-boundary activity for evaluation unit `d` |
 | `kappa_d` | coherence of signed output-boundary components for evaluation unit `d` |
+| `nu(U)` | population Möbius coefficient `E_d[mu_d(U)]` |
+| `tau_r` | absolute population Möbius mass above order `r` |
+| `A_r` | expected absolute document-level Möbius mass above order `r` |
+| `epsilon_ex` | uniform approximate exchange-convexity defect on a fixed-cardinality slice |
+| `osc_D(h)` | objective-relevant oscillation `max_D h-min_D h` |
+| `R` | retained nonempty Möbius support of a sparse surrogate |
+| `C(R)` | simultaneous population-regret certificate for retained support `R` |
+| `W_d(A)` | unnormalized integer Walsh coefficient of action character `A` |
+| `H_d(sigma)` | exact document-indexed Ising Hamiltonian on the atomic move cube |
+| `m_di(beta)` | Gibbs magnetization of atom `i` under document `d` at inverse temperature `beta` |
+| `bar m_i^Q(beta)` | quenched document-average magnetization |
+| `Delta_d(B;i->j)` | document contrast for replacing atom `i` by atom `j` inside base mask `B` |
+| `rho_d(B;i,j)` | conditional-exchange interaction residual after subtracting singleton effects |
+| `lambda_d(e)` | singleton-effect margin for conditional exchange `e` |
+| `q_e(phi)` | proper-training predictor of exchange residual `rho(e)` from pre-outcome probes `phi` |
+| `P_u` | frozen document panel sampled from source unit `u` |
+| `A_u` | simultaneous one-sided conformal score for calibration unit `u` |
+| `Q_alpha` | split-conformal upper correction at marginal error level `alpha` |
+| `m_T` | maximum number of residual Walsh characters disagreeing on a vertex pair |
+| `c_q(r)` | integer-valued Ramanujan sum of exact period `q` at phase `r` |
 | `U` | explicitly declared set of admissible control sequences |
 | `R_T(X_0, U)` | states reachable from `X_0` within `T` steps using controls in `U` |
 
@@ -91,6 +111,14 @@ representations only when needed; for example, `p^(23)` is a Q23 probability.
 | [MJ-2026-07-15-07](MJ-2026-07-15-07-prospective-boolean-jet-falsification.md) | Prospective Boolean-jet falsification and stability theory | Frozen synergy falsified; audit engineering closed; new proposal required |
 | [MJ-2026-07-15-08](MJ-2026-07-15-08-hierarchical-distributional-boolean-jets.md) | Hierarchical distributional Boolean jets and certifiability | Block pushforward and certification bounds established; hierarchical proposal operator open |
 | [MJ-2026-07-15-09](MJ-2026-07-15-09-objective-boundary-phase-calculus.md) | Objective-boundary phase calculus | Exact Q20 boundary decomposition established; reverse boundary proposal map open |
+| [MJ-2026-07-15-10](MJ-2026-07-15-10-discrete-structure-certificates.md) | Discrete structure certificates | Tail and exchange global-gap bounds established; empirical audit continued in MJ-13 |
+| [MJ-2026-07-15-11](MJ-2026-07-15-11-robust-surrogate-certificates.md) | Robust surrogate and finite-sample certificates | Tail bound sharpened; width/error certificate established; six-atom population reconstruction sample-limited |
+| [MJ-2026-07-15-12](MJ-2026-07-15-12-finite-group-harmonic-diagnostics.md) | Finite-group harmonic diagnostics | Exact Walsh/Ramanujan analysis and spectral regret bound established; predictive structure untested |
+| [MJ-2026-07-15-13](MJ-2026-07-15-13-six-atom-structure-audit.md) | Proposal-only six-atom structure audit | Q32 cubic aggregate tail observed; exact width maximal; source stability unidentifiable |
+| [MJ-2026-07-15-14](MJ-2026-07-15-14-quenched-document-ising-theory.md) | Quenched document Ising theory and prospective mechanism test | Exact theory and three untouched confirmation mechanisms frozen; document-disorder transfer law remains open |
+| [MJ-2026-07-15-15](MJ-2026-07-15-15-conditional-exchange-confirmation.md) | Untouched Ising confirmation and conditional-exchange revision | Three endpoints pass; routed conditional exchange replicates while pairwise/Gibbs parameter maps do not |
+| [MJ-2026-07-15-16](MJ-2026-07-15-16-conformal-conditional-exchange.md) | Conformal certificates for conditional exchange | Finite-sample unsafe-action theorem established; source-level prospective validation remains open |
+| [MJ-2026-07-15-17](MJ-2026-07-15-17-prospective-cross-source-exchange.md) | Prospective cross-source conditional exchange | Checked verdict supported on frozen 71-source frame with 16/16 coverage, 5/16 firing, 0/16 unsafe action, and negative regret; vacuity is inconclusive |
 
 ## Entry template
 
