@@ -465,6 +465,14 @@ function collectCouncilEvidence() {
       "protocol/examples/p10m-adaptive-composition-v1-preregistration.json",
     adaptive_theory:
       "research/mathematical-journal/MJ-2026-07-15-20-exchangeable-adaptive-composition.md",
+    adaptive_contract:
+      "benchmarks/production-model-v1/p10m-adaptive-composition-v1-contract.json",
+    adaptive_result:
+      "benchmarks/production-model-v1/p10m-adaptive-composition-v1-result.json",
+    adaptive_replay_receipt:
+      "benchmarks/production-model-v1/p10m-adaptive-composition-v1-replay-receipt.json",
+    adaptive_publication:
+      "benchmarks/production-model-v1/p10m-adaptive-composition-v1-publication.json",
     wisdom_eval_result: "benchmarks/solomon-council-v0/wisdom-eval-result.json",
     decision_regret_result:
       "benchmarks/production-model-v1/p10m-solomonic-judgment-v1-result.json",
@@ -479,7 +487,8 @@ function collectCouncilEvidence() {
       "wisdom_casebook", "wisdom_solo_bundle", "wisdom_council_bundle",
       "wisdom_gold_opening", "wisdom_generation_integrity", "wisdom_provenance",
       "wisdom_eval_input", "wisdom_eval_result", "decision_regret_result",
-      "decision_regret_publication",
+      "decision_regret_publication", "adaptive_contract", "adaptive_result",
+      "adaptive_replay_receipt", "adaptive_publication",
     ].includes(key));
   const files = Object.fromEntries(requiredPaths.map(([key, value]) => [key, fileInfo(value)]));
   const seals = sealPaths.map(fileInfo);
@@ -488,6 +497,10 @@ function collectCouncilEvidence() {
   const wisdomEval = maybeReadJson(paths.wisdom_eval_result);
   const regretResult = maybeReadJson(paths.decision_regret_result);
   const regretPublication = maybeReadJson(paths.decision_regret_publication);
+  const adaptiveContract = maybeReadJson(paths.adaptive_contract);
+  const adaptiveResult = maybeReadJson(paths.adaptive_result);
+  const adaptiveReplayReceipt = maybeReadJson(paths.adaptive_replay_receipt);
+  const adaptivePublication = maybeReadJson(paths.adaptive_publication);
   const selfCheck = runCommand(process.execPath, ["scripts/check-solomon-council-v0.mjs"], {
     timeoutMs: 10000,
   });
@@ -497,6 +510,10 @@ function collectCouncilEvidence() {
     process.execPath, ["scripts/check-solomon-wisdom-production-v0.mjs"], {timeoutMs: 20000});
   const adaptiveCheck = runCommand(
     process.execPath, ["scripts/check-adaptive-composition-theory-v1.mjs"], {timeoutMs: 10000});
+  const adaptivePublicationCheck = runCommand(
+    process.execPath, ["scripts/check-adaptive-composition-publication-v1.mjs"], {
+      timeoutMs: 10000,
+    });
   const selfCheckOk = selfCheck.ok;
   const ceremonyCheckOk = ceremonyCheck.ok;
   const productionWisdomCheckOk = productionWisdomCheck.ok;
@@ -554,6 +571,27 @@ function collectCouncilEvidence() {
     && regretPublication.verdict?.status === "supported"
     && regretResult.heldout_regret?.fired_passages > 0
     && BigInt(regretResult.heldout_regret?.signed_regret_q32 ?? "0") < 0n;
+  const adaptiveArtifactsPresent = Boolean(
+    adaptiveContract && adaptiveResult && adaptiveReplayReceipt && adaptivePublication);
+  const adaptiveEvidence = adaptivePublication?.evidence;
+  const adaptiveTrajectory = adaptiveEvidence?.adaptive_trajectory;
+  const adaptiveEndpoints = adaptiveEvidence?.endpoints;
+  const adaptiveExecutionValid = adaptiveArtifactsPresent
+    && adaptiveContract.schema === "nsrl.adaptive_composition_execution_contract.v1"
+    && adaptiveResult.schema === "nsrl.adaptive_composition_result.v1"
+    && adaptiveReplayReceipt.schema === "nsrl.adaptive_composition_replay_receipt.v1"
+    && adaptivePublication.schema === "nsrl.adaptive_composition_publication.v1"
+    && adaptivePublicationCheck.ok
+    && adaptiveResult.verdict === "falsified"
+    && adaptivePublication.verdict?.status === "falsified"
+    && adaptivePublication.verdict?.falsified === true
+    && adaptiveTrajectory?.accepted_actions === 0
+    && adaptiveTrajectory?.head_fires === 0
+    && adaptiveTrajectory?.trunk_fires === 0
+    && adaptiveEndpoints?.adaptive?.total_nll_millibits === "5930001"
+    && adaptiveEndpoints?.always_abstain?.total_nll_millibits === "5930001"
+    && adaptiveEvidence?.exact_byte_replay === true
+    && adaptiveReplayReceipt.guarantees?.post_outcome_threshold_change === false;
   return {
     present: filesPresent,
     ok: councilCoreOk,
@@ -599,9 +637,32 @@ function collectCouncilEvidence() {
     adaptive_composition: {
       theory_check_ok: adaptiveCheck.ok,
       replacement: "finite_horizon_simultaneous_state_action_conformal_plus_alpha_spending",
-      calibration_sources_per_family: 119,
-      execution_ready: false,
+      artifacts: {
+        contract: fileInfo(paths.adaptive_contract),
+        result: fileInfo(paths.adaptive_result),
+        replay_receipt: fileInfo(paths.adaptive_replay_receipt),
+        publication: fileInfo(paths.adaptive_publication),
+      },
+      execution_state: !adaptiveArtifactsPresent ? "not_measured"
+        : adaptiveExecutionValid ? "falsified" : "invalid",
+      execution_completed: adaptiveExecutionValid,
+      publication_check_ok: adaptivePublicationCheck.ok,
+      calibration_sources_per_family: adaptiveContract?.calibration?.sources_per_family ?? 119,
+      calibration_source_panels: adaptiveEvidence?.calibration_source_panels ?? 0,
+      calibration_cube_rows: adaptiveEvidence?.calibration_cube_rows ?? 0,
+      corrections_q32: adaptiveEvidence?.corrections_q32 ?? {},
+      adaptive_fires: adaptiveTrajectory?.accepted_actions ?? 0,
+      head_fires: adaptiveTrajectory?.head_fires ?? 0,
+      trunk_fires: adaptiveTrajectory?.trunk_fires ?? 0,
+      endpoint_nll_millibits: adaptiveEndpoints?.adaptive?.total_nll_millibits ?? "",
+      exact_replay: adaptiveEvidence?.exact_byte_replay === true,
+      threshold_retuning_authorized:
+        adaptivePublication?.interpretation?.threshold_retuning_after_outcome_authorized ?? false,
       optimizer_promotion_authorized: false,
+      next_optimizer_experiment:
+        adaptivePublication?.interpretation?.next_admissible_optimizer_experiment ?? "",
+      next_product_experiment:
+        adaptivePublication?.interpretation?.next_product_facing_experiment ?? "",
     },
   };
 }
@@ -1548,7 +1609,8 @@ function renderMarkdown(report) {
   lines.push(`- Judge states checked: ${report.council.decision_states_checked.join(", ")}; exact initial receipt ${report.council.receipt_ok ? "verified" : "invalid"}; outcome/revision chain ${report.council.revision_ok ? "verified" : "invalid"}`);
   lines.push(`- Wisdom receipt: \`${report.council.receipt_sha256 || "missing"}\`; revised receipt: \`${report.council.revised_receipt_sha256 || "missing"}\``);
   lines.push(`- Bounded decision-regret experiment: publication **${report.council.bounded_decision_regret_evidence.publication_status}** with ${report.council.bounded_decision_regret_evidence.fired_passages} favorable fired passages and signed regret ${report.council.bounded_decision_regret_evidence.signed_regret_q32 || "missing"} Q32; MJ-20 falsifies the marginal-to-conditional bridge, so the non-crossing e-process does not establish sequential safety`);
-  lines.push(`- Adaptive replacement: ${report.council.adaptive_composition.theory_check_ok ? "checked" : "invalid"}; requires ${report.council.adaptive_composition.calibration_sources_per_family} calibration source panels per family; execution and optimizer promotion remain unauthorized`);
+  const adaptive = report.council.adaptive_composition;
+  lines.push(`- Adaptive replacement: theory ${adaptive.theory_check_ok ? "checked" : "invalid"}; execution **${adaptive.execution_state}** with ${adaptive.adaptive_fires} adaptive fires, ${adaptive.calibration_cube_rows} calibration-cube rows across ${adaptive.calibration_source_panels} source panels, and ${adaptive.endpoint_nll_millibits || "missing"} endpoint NLL millibits; exact replay ${adaptive.exact_replay ? "verified" : "absent or invalid"}; threshold retuning and optimizer promotion remain unauthorized`);
   lines.push(`- Same-model wisdom gate: **${report.council.wisdom_evaluation.state}** at stage **${report.council.wisdom_evaluation.pipeline_stage}**; promotion ${report.council.wisdom_evaluation.promotion_gate_passed ? "passed" : "not authorized"}`);
   lines.push(`- Wisdom ceremony: ${report.council.wisdom_ceremony_check_ok ? "byte-bound compiler/replay self-check green" : "invalid"}; no production casebook or paired lanes are inferred from this self-test`);
   for (const blocker of report.status.council_blockers) {

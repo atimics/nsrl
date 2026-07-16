@@ -6,15 +6,31 @@ import path from "node:path";
 
 const outputDirectory = process.argv[2]
   ?? "data/raw/production-multifamily-exchange-v1";
+const requestedEligible = Number(process.argv[3] ?? "28");
+const requestedFamilies = (process.argv[4]
+  ?? "gutenberg,rfc,federal_register,science").split(",").filter(Boolean);
+const exclusionFramePaths = (process.argv[5] ?? "").split(",").filter(Boolean);
 const PRIOR_FRAME = "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-source-frame.json";
-const SEED = "nsrl-m4-multifamily-acquisition-2026-07-15-v1";
+const SEED = process.argv[6] ?? "nsrl-m4-multifamily-acquisition-2026-07-15-v1";
+const INDEPENDENCE_KEY_MODE = process.argv[7] ?? "legacy_creator_cluster";
 const MINIMUM_CLEANED_BYTES = 65_536;
-const ELIGIBLE_PER_FAMILY = 28;
+const ELIGIBLE_PER_FAMILY = requestedEligible;
 const USER_AGENT = "NSRL prospective research corpus acquisition/1.0";
+const KNOWN_FAMILIES = ["gutenberg", "rfc", "federal_register", "science"];
+const ACTIVE_FAMILIES = new Set(requestedFamilies);
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
+assert(Number.isSafeInteger(ELIGIBLE_PER_FAMILY) && ELIGIBLE_PER_FAMILY > 0,
+  "eligible records per family must be a positive integer");
+assert(ACTIVE_FAMILIES.size > 0
+  && [...ACTIVE_FAMILIES].every((family) => KNOWN_FAMILIES.includes(family)),
+"requested acquisition families are invalid");
+assert(["legacy_creator_cluster", "whole_publication"].includes(INDEPENDENCE_KEY_MODE),
+  "independence key mode is invalid");
+const identityKey = (legacy) => (candidate) => INDEPENDENCE_KEY_MODE === "whole_publication"
+  ? candidate.source_id : legacy(candidate);
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const shaKey = (...parts) => sha256(parts.join("\0"));
 const normalizeKey = (value) => value.normalize("NFKD").toLowerCase()
@@ -101,12 +117,16 @@ const catalogDownload = async (name, url) => {
   const {bytes, status} = await cachedDownload(url, outputPath);
   return {name, url, path: outputPath, status, bytes: bytes.length, sha256: sha256(bytes), content: bytes};
 };
+const excludedSourceIds = new Map(KNOWN_FAMILIES.map((family) => [family, new Set()]));
+const excludedIndependenceKeys = new Map(KNOWN_FAMILIES.map((family) => [family, new Set()]));
 const acquireUntil = async (family, candidates, identityKey, recordForCandidate) => {
   const records = [];
   const seen = new Set();
   for (const candidate of candidates) {
     const key = normalizeKey(identityKey(candidate));
-    if (!key || seen.has(key)) continue;
+    if (!key || seen.has(key)
+      || excludedSourceIds.get(family).has(candidate.source_id)
+      || excludedIndependenceKeys.get(family).has(key)) continue;
     let record;
     try {
       record = await recordForCandidate(candidate, key);
@@ -156,10 +176,22 @@ try {
 
 const priorFrameBytes = await fs.readFile(PRIOR_FRAME);
 const priorFrame = JSON.parse(priorFrameBytes);
+for (const framePath of exclusionFramePaths) {
+  const frame = JSON.parse(await fs.readFile(framePath, "utf8"));
+  assert(Array.isArray(frame.sources), `exclusion frame has no sources: ${framePath}`);
+  for (const source of frame.sources) {
+    if (!KNOWN_FAMILIES.includes(source.family)) continue;
+    excludedSourceIds.get(source.family).add(source.source_id);
+    if (source.independence_key) {
+      excludedIndependenceKeys.get(source.family).add(normalizeKey(source.independence_key));
+    }
+  }
+}
 const excludedGutenbergIds = new Set(priorFrame.sources.map((source) => source.ebook_id));
 const catalogs = [];
 const records = [];
 
+if (ACTIVE_FAMILIES.has("gutenberg")) {
 const gutenbergCatalog = await catalogDownload(
   "pg_catalog.csv", "https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv");
 catalogs.push({...gutenbergCatalog, content: undefined});
@@ -177,7 +209,8 @@ const gutenbergCandidates = gutenbergRows.filter((row) => row.Type === "Text"
     && !excludedGutenbergIds.has(candidate.ebook_id))
   .sort((left, right) => shaKey(SEED, "gutenberg", left.source_id)
     .localeCompare(shaKey(SEED, "gutenberg", right.source_id)));
-records.push(...await acquireUntil("gutenberg", gutenbergCandidates, (candidate) => candidate.author,
+records.push(...await acquireUntil("gutenberg", gutenbergCandidates,
+  identityKey((candidate) => candidate.author),
   async (candidate) => {
     const url = `https://www.gutenberg.org/cache/epub/${candidate.ebook_id}/pg${candidate.ebook_id}.txt`;
     const outputPath = path.join(outputDirectory, "gutenberg", `pg${candidate.ebook_id}.txt`);
@@ -190,7 +223,9 @@ records.push(...await acquireUntil("gutenberg", gutenbergCandidates, (candidate)
       license_id: "LicenseRef-Public-Domain-US-Project-Gutenberg",
     };
   }));
+}
 
+if (ACTIVE_FAMILIES.has("rfc")) {
 const rfcCatalog = await catalogDownload("rfc-index.xml", "https://www.rfc-editor.org/rfc-index.xml");
 catalogs.push({...rfcCatalog, content: undefined});
 const rfcEntries = [...rfcCatalog.content.toString("utf8").matchAll(/<rfc-entry>([\s\S]*?)<\/rfc-entry>/g)]
@@ -210,7 +245,7 @@ const rfcEntries = [...rfcCatalog.content.toString("utf8").matchAll(/<rfc-entry>
     && candidate.rfc_number >= 2_000 && candidate.author && candidate.page_count >= 20)
   .sort((left, right) => shaKey(SEED, "rfc", left.source_id)
     .localeCompare(shaKey(SEED, "rfc", right.source_id)));
-records.push(...await acquireUntil("rfc", rfcEntries, (candidate) => candidate.author,
+records.push(...await acquireUntil("rfc", rfcEntries, identityKey((candidate) => candidate.author),
   async (candidate) => {
     const url = `https://www.rfc-editor.org/rfc/rfc${candidate.rfc_number}.txt`;
     const outputPath = path.join(outputDirectory, "rfc", `rfc${candidate.rfc_number}.txt`);
@@ -223,21 +258,27 @@ records.push(...await acquireUntil("rfc", rfcEntries, (candidate) => candidate.a
       cleaned_body_bytes: Buffer.byteLength(body), license_id: "LicenseRef-IETF-Trust-Legal-Provisions",
     };
   }));
+}
 
+if (ACTIVE_FAMILIES.has("federal_register")) {
 const federalFields = ["document_number", "title", "publication_date", "page_length",
   "raw_text_url", "agencies", "type"];
 const federalParameters = new URLSearchParams({
   per_page: "100", order: "newest",
-  "conditions[publication_date][gte]": "2024-01-01",
-  "conditions[publication_date][lte]": "2025-12-31",
+  "conditions[publication_date][gte]": INDEPENDENCE_KEY_MODE === "whole_publication"
+    ? "2010-01-01" : "2024-01-01",
+  "conditions[publication_date][lte]": INDEPENDENCE_KEY_MODE === "whole_publication"
+    ? "2023-12-31" : "2025-12-31",
 });
 for (const field of federalFields) federalParameters.append("fields[]", field);
 let federalUrl = `https://www.federalregister.gov/api/v1/documents.json?${federalParameters}`;
 const federalCandidates = [];
-for (let page = 0; page < 50 && federalUrl; page += 1) {
+for (let page = 0; page < (INDEPENDENCE_KEY_MODE === "whole_publication" ? 200 : 50)
+  && federalUrl; page += 1) {
   const response = JSON.parse((await fetchBytes(federalUrl)).toString("utf8"));
   federalCandidates.push(...response.results.filter((record) => record.raw_text_url
-    && record.page_length >= 20 && record.agencies?.length > 0).map((record) => {
+    && record.page_length >= (INDEPENDENCE_KEY_MODE === "whole_publication" ? 12 : 20)
+    && record.agencies?.length > 0).map((record) => {
     const agency = record.agencies.at(-1);
     return {
       ...record, source_id: `federal-register-${record.document_number}`,
@@ -251,7 +292,7 @@ const federalCandidatesWithAgency = federalCandidates.filter(
 federalCandidatesWithAgency.sort((left, right) => shaKey(SEED, "federal_register", left.source_id)
   .localeCompare(shaKey(SEED, "federal_register", right.source_id)));
 records.push(...await acquireUntil("federal_register", federalCandidatesWithAgency,
-  (candidate) => candidate.agency_slug, async (candidate) => {
+  identityKey((candidate) => candidate.agency_slug), async (candidate) => {
     const outputPath = path.join(outputDirectory, "federal-register", `${candidate.document_number}.txt`);
     const {bytes, status} = await cachedDownload(candidate.raw_text_url, outputPath);
     const body = cleanedBody("federal_register", bytes.toString("utf8"));
@@ -265,14 +306,29 @@ records.push(...await acquireUntil("federal_register", federalCandidatesWithAgen
       cleaned_body_bytes: Buffer.byteLength(body), license_id: "LicenseRef-US-Government-Work",
     };
   }));
+}
 
-const scienceQuery = "OPEN_ACCESS:Y AND FIRST_PDATE:[2024-01-01 TO 2024-12-31]";
-const scienceUrl = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?${new URLSearchParams({
-  query: scienceQuery, format: "json", resultType: "core", pageSize: "1000",
-})}`;
-const scienceCatalog = await catalogDownload("europe-pmc-search-v2.json", scienceUrl);
-catalogs.push({...scienceCatalog, content: undefined});
-const scienceCandidates = JSON.parse(scienceCatalog.content.toString("utf8")).resultList.result
+if (ACTIVE_FAMILIES.has("science")) {
+const scienceQuery = INDEPENDENCE_KEY_MODE === "whole_publication"
+  ? "OPEN_ACCESS:Y AND FIRST_PDATE:[2020-01-01 TO 2024-12-31]"
+  : "OPEN_ACCESS:Y AND FIRST_PDATE:[2024-01-01 TO 2024-12-31]";
+const scienceResults = [];
+let scienceCursor = "*";
+const sciencePages = INDEPENDENCE_KEY_MODE === "whole_publication" ? 6 : 1;
+for (let page = 0; page < sciencePages && scienceCursor; page += 1) {
+  const scienceUrl = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?${new URLSearchParams({
+    query: scienceQuery, format: "json", resultType: "core", pageSize: "1000",
+    cursorMark: scienceCursor,
+  })}`;
+  const scienceCatalog = await catalogDownload(
+    `europe-pmc-search-v3-page-${String(page + 1).padStart(2, "0")}.json`, scienceUrl);
+  catalogs.push({...scienceCatalog, content: undefined});
+  const pageResults = JSON.parse(scienceCatalog.content.toString("utf8"));
+  scienceResults.push(...(pageResults.resultList?.result ?? []));
+  scienceCursor = pageResults.nextCursorMark && pageResults.nextCursorMark !== scienceCursor
+    ? pageResults.nextCursorMark : null;
+}
+const scienceCandidates = [...new Map(scienceResults
   .filter((record) => record.pmcid && record.isOpenAccess === "Y"
     && record.language === "eng" && record.firstPublicationDate
     && /^(?:cc\s*(?:by|0)|public domain)/i.test(record.license ?? ""))
@@ -284,14 +340,17 @@ const scienceCandidates = JSON.parse(scienceCatalog.content.toString("utf8")).re
     publication_date: record.firstPublicationDate, license: record.license,
   }))
   .filter((candidate) => candidate.author && candidate.journal)
+  .map((candidate) => [candidate.source_id, candidate])).values()]
   .sort((left, right) => shaKey(SEED, "science", left.source_id)
     .localeCompare(shaKey(SEED, "science", right.source_id)));
 const scienceJournalKeys = new Set();
 records.push(...await acquireUntil("science", scienceCandidates,
-  (candidate) => `${normalizeKey(candidate.author)}::${normalizeKey(candidate.journal)}`,
+  identityKey((candidate) => `${normalizeKey(candidate.author)}::${normalizeKey(candidate.journal)}`),
   async (candidate) => {
     const journalKey = normalizeKey(candidate.journal);
-    if (scienceJournalKeys.has(journalKey)) throw new Error("duplicate_journal");
+    if (INDEPENDENCE_KEY_MODE === "legacy_creator_cluster" && scienceJournalKeys.has(journalKey)) {
+      throw new Error("duplicate_journal");
+    }
     const url = `https://www.ebi.ac.uk/europepmc/webservices/rest/${candidate.pmcid}/fullTextXML`;
     const outputPath = path.join(outputDirectory, "science", `${candidate.pmcid}.xml`);
     const {bytes, status} = await cachedDownload(url, outputPath);
@@ -308,8 +367,9 @@ records.push(...await acquireUntil("science", scienceCandidates,
       license_excerpt: licenseText.slice(0, 500),
     };
   }));
+}
 
-const familySummary = Object.fromEntries(["gutenberg", "rfc", "federal_register", "science"]
+const familySummary = Object.fromEntries(requestedFamilies
   .map((family) => [family, {
     eligible: records.filter((record) => record.family === family
       && ["cached", "downloaded"].includes(record.status)).length,
@@ -325,12 +385,25 @@ const manifest = {
   seed: SEED,
   minimum_cleaned_body_bytes: MINIMUM_CLEANED_BYTES,
   eligible_records_required_per_family: ELIGIBLE_PER_FAMILY,
+  active_families: requestedFamilies,
+  independence_key_mode: INDEPENDENCE_KEY_MODE,
+  exclusion_frames: exclusionFramePaths,
+  excluded_source_ids_by_family: Object.fromEntries(KNOWN_FAMILIES.map(
+    (family) => [family, excludedSourceIds.get(family).size])),
+  excluded_independence_keys_by_family: Object.fromEntries(KNOWN_FAMILIES.map(
+    (family) => [family, excludedIndependenceKeys.get(family).size])),
   prior_gutenberg_frame: {path: PRIOR_FRAME, sha256: sha256(priorFrameBytes)},
   family_definitions: {
     gutenberg: "one English Project Gutenberg ebook from an author absent from the M3 frame",
-    rfc: "one RFC plain-text publication from a distinct first-listed author",
-    federal_register: "one Federal Register document from a distinct most-specific listed agency",
-    science: "one Europe PMC open-access article with a distinct first-author/journal pair and distinct journal",
+    rfc: INDEPENDENCE_KEY_MODE === "whole_publication"
+      ? "one RFC plain-text whole publication"
+      : "one RFC plain-text publication from a distinct first-listed author",
+    federal_register: INDEPENDENCE_KEY_MODE === "whole_publication"
+      ? "one Federal Register whole publication"
+      : "one Federal Register document from a distinct most-specific listed agency",
+    science: INDEPENDENCE_KEY_MODE === "whole_publication"
+      ? "one Europe PMC open-access English whole publication"
+      : "one Europe PMC open-access article with a distinct first-author/journal pair and distinct journal",
   },
   catalogs,
   family_summary: familySummary,

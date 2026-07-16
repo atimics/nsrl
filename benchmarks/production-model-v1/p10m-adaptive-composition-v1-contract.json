@@ -1,0 +1,374 @@
+{
+  "schema": "nsrl.adaptive_composition_execution_contract.v1",
+  "analysis_role": "frozen_after_calibration_before_adaptive_endpoint",
+  "experiment_id": "p10m-adaptive-composition-v1",
+  "theory": {
+    "path": "research/mathematical-journal/MJ-2026-07-15-20-exchangeable-adaptive-composition.md",
+    "sequential_validity": "finite_horizon_simultaneous_state_action_split_conformal_with_alpha_spending",
+    "forbidden_inference": "marginal_exchangeability_does_not_imply_conditional_unsafe_intensity",
+    "conditional_unsafe_null_assumed": false
+  },
+  "bindings": {
+    "preregistration": {
+      "path": "protocol/examples/p10m-adaptive-composition-v1-preregistration.json",
+      "sha256": "430797d2ecf7ce256b409a06e4a892454e8826949b0dbee98c9c1dbdac47089f",
+      "bytes": 6420
+    },
+    "source_frame": {
+      "path": "benchmarks/production-model-v1/p10m-adaptive-composition-v1-source-frame.json",
+      "sha256": "aeb74760d563d39388eed315e449667cde57a6948928ed90954903139910b905",
+      "bytes": 1707748
+    },
+    "action_manifest": {
+      "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/action-manifest.json",
+      "sha256": "e345fa0f1bc70fd17772c94f350f88b7dabc6bd3b2d987953d899306f81d1d46",
+      "bytes": 911
+    },
+    "actions": {
+      "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/actions.tsv",
+      "sha256": "e0fee480634aba7b9933d0f333bf5a7e39bd1a7820ae39cdbe494ffd67cfae09",
+      "bytes": 544
+    },
+    "predictor": {
+      "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/predictor.tsv",
+      "sha256": "012a5fc04ad2530cd9dd10150358ddbeddc2dd61d1ac0b12e3f5ea677a5daf31",
+      "bytes": 963
+    },
+    "fitting_cube": {
+      "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/fitting-cube.tsv",
+      "sha256": "3526b38be48524126af41a2728b5d27c7dd0a2a808e706b3022fe7205b13ec0c",
+      "bytes": 89299
+    },
+    "state_models": {
+      "empty": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/state-empty.nsrlpm",
+        "sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+        "bytes": 13539906
+      },
+      "H": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/state-H.nsrlpm",
+        "sha256": "c3d1720a0e592c6dd66fb6929a077056e66f02623c77499eba90b54eb158eec8",
+        "bytes": 13539906
+      },
+      "T": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/state-T.nsrlpm",
+        "sha256": "38f10d04f2e1d42050fb96fdd3463eaca5a38aa469409e12b34f64680182c524",
+        "bytes": 13539906
+      },
+      "HH": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/state-HH.nsrlpm",
+        "sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+        "bytes": 13539906
+      },
+      "HT": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/state-HT.nsrlpm",
+        "sha256": "61d287cfd0f9cf14623b7409bb8e51729e8a759a3db862b0abcba9e639be8ba3",
+        "bytes": 13539906
+      },
+      "TH": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/state-TH.nsrlpm",
+        "sha256": "6ccf4e12e201f25925ed2053158675fd012a30d0941d8cf229fc9f2b85c4fb41",
+        "bytes": 13539906
+      },
+      "TT": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/manifest/state-TT.nsrlpm",
+        "sha256": "6a8fa16d971e0f9c2c527f3bfb019c16d469a5d4aefefd2e171a20d4d6dcce4d",
+        "bytes": 13539906
+      }
+    },
+    "roles": {
+      "fitting": {
+        "corpus": {
+          "path": "data/processed/p10m-adaptive-composition-v1/fitting.txt",
+          "sha256": "f4878a519e3a154fb9b550f25843b1ec03c8693225381ca8a05b08c978a17cc9",
+          "bytes": 1769294
+        },
+        "index": {
+          "path": "data/processed/p10m-adaptive-composition-v1/fitting.index.tsv",
+          "sha256": "daf6aab97cfb97c0d7b685dc4e06c2abca7ae12b2cb832296f8e7b1ff575527a",
+          "bytes": 25012
+        },
+        "panels": {
+          "path": "data/processed/p10m-adaptive-composition-v1/fitting.panels.tsv",
+          "sha256": "fa7ada088d1d3fb566478467d917ebc4f5839b8bfdc97f75ba1e31053a126a98",
+          "bytes": 18489
+        },
+        "tokens": {
+          "path": "data/processed/p10m-adaptive-composition-v1/fitting.nsrltok",
+          "sha256": "3e7084953279bf8b6d779c781ca73a93946c5f7e2146344125c7c4fc73ac1647",
+          "bytes": 2326648
+        },
+        "token_trace": {
+          "path": "data/processed/p10m-adaptive-composition-v1/fitting.tokens.json",
+          "sha256": "ea6385dde6e4844b38dd8142a81d59a26f4b6830c42b056f165491b3ddf56003",
+          "bytes": 300
+        }
+      },
+      "calibration": {
+        "corpus": {
+          "path": "data/processed/p10m-adaptive-composition-v1/calibration.txt",
+          "sha256": "8248e45cf7aaaf565891b8c70d5416d51a4083b03e94f007fe44d9edbc646cbd",
+          "bytes": 17547265
+        },
+        "index": {
+          "path": "data/processed/p10m-adaptive-composition-v1/calibration.index.tsv",
+          "sha256": "fc1d41d2dbc57277be6bbb4d56ed975b49b861b226176ffb02892d907c49cc55",
+          "bytes": 249038
+        },
+        "panels": {
+          "path": "data/processed/p10m-adaptive-composition-v1/calibration.panels.tsv",
+          "sha256": "76f1a5c3c582e8392efbf9feb7139c7a8e906f9c0e221bce332cc45d5ca30b5f",
+          "bytes": 189829
+        },
+        "tokens": {
+          "path": "data/processed/p10m-adaptive-composition-v1/calibration.nsrltok",
+          "sha256": "2a203a0139b681256ae3e3c2eba78789c4b98a90ab05fa7458c9a848453a4cdb",
+          "bytes": 23667036
+        },
+        "token_trace": {
+          "path": "data/processed/p10m-adaptive-composition-v1/calibration.tokens.json",
+          "sha256": "6cc08cb542acadac01ba3303b8a26b7888a69f7ceb96a4cb5148f3d03bf1785e",
+          "bytes": 305
+        }
+      },
+      "adaptive": {
+        "corpus": {
+          "path": "data/processed/p10m-adaptive-composition-v1/adaptive.txt",
+          "sha256": "8d9bb00a741adf5fbaf07dfeaaca575905138ea1870c9fcba709e26e393fc197",
+          "bytes": 294881
+        },
+        "index": {
+          "path": "data/processed/p10m-adaptive-composition-v1/adaptive.index.tsv",
+          "sha256": "5f7bf008b701149d1a4bed0b314fc8275e6c0e98644841cdf0d2a17fd8471a3d",
+          "bytes": 4190
+        },
+        "panels": {
+          "path": "data/processed/p10m-adaptive-composition-v1/adaptive.panels.tsv",
+          "sha256": "f3647c994675e936940ac1bc4faff6b0f39f7d984bf0b4bc9bff1bdde6528882",
+          "bytes": 3149
+        },
+        "tokens": {
+          "path": "data/processed/p10m-adaptive-composition-v1/adaptive.nsrltok",
+          "sha256": "a3a5ef817af582d50a96c931e234f234c983fa4979bf6208571d17a17efd9d33",
+          "bytes": 389436
+        },
+        "token_trace": {
+          "path": "data/processed/p10m-adaptive-composition-v1/adaptive.tokens.json",
+          "sha256": "1ea699b2882eccb3fa9f1a13ceac967179a805c91fe91ca94f75b518b537e6d6",
+          "bytes": 295
+        }
+      },
+      "endpoint": {
+        "corpus": {
+          "path": "data/processed/p10m-adaptive-composition-v1/endpoint.txt",
+          "sha256": "1540f2e593bb84fe3c0059fc0c8629f8ff538d7f772a4dbb0431e4d3d87d1717",
+          "bytes": 2801571
+        },
+        "index": {
+          "path": "data/processed/p10m-adaptive-composition-v1/endpoint.index.tsv",
+          "sha256": "7f9cf28a7d9349e2da78e0149c5b22f0f893a03705052dadd089408eac45219e",
+          "bytes": 39628
+        },
+        "panels": {
+          "path": "data/processed/p10m-adaptive-composition-v1/endpoint.panels.tsv",
+          "sha256": "24fa473731e3f5c8302b10ce2888aa02775682f7a59fac0cb3cfac4cb6d7be69",
+          "bytes": 29525
+        },
+        "tokens": {
+          "path": "data/processed/p10m-adaptive-composition-v1/endpoint.nsrltok",
+          "sha256": "cb4b8ecab61515cb38ec30fca88c9b3dcaa776c1afe95d62cf72266eb4bdbb93",
+          "bytes": 3817440
+        },
+        "token_trace": {
+          "path": "data/processed/p10m-adaptive-composition-v1/endpoint.tokens.json",
+          "sha256": "acc0f31ff41093ed7f338d523da18f7e5336546e302b1d93452d8d77bfa0163f",
+          "bytes": 300
+        }
+      }
+    },
+    "runner_source": {
+      "path": "crates/nsrl-train/src/bin/nsrl-adaptive-composition.rs",
+      "sha256": "c2b66689b11d18888173a4befbe3bcefabf2dd42843d2a5002cfcc1451d0e492",
+      "bytes": 45447
+    },
+    "runner_binary": {
+      "path": "target/release/nsrl-adaptive-composition",
+      "sha256": "c95e5e89607955b4f3cbf4aec268540e59f69d9da753dd2197b705081fc32e18",
+      "bytes": 775488
+    },
+    "checker": {
+      "path": "scripts/check-adaptive-composition-execution-v1.mjs",
+      "sha256": "8d3bdf0caf893a2d3110dd8500c4d0f17bcb2065102a7da523655bcf297854c6",
+      "bytes": 14199
+    },
+    "freezer": {
+      "path": "scripts/freeze-adaptive-composition-v1.mjs",
+      "sha256": "3456df8526a873e10dc7261bdc35ac2407c2bef85366aca81ad17b24da9a93be",
+      "bytes": 5804
+    },
+    "sealer": {
+      "path": "scripts/seal-adaptive-composition-calibration-v1.mjs",
+      "sha256": "1d11d3a25fac0df2144809d83987faffce7c9e04118cf33a9fe02d0169c3e4ba",
+      "bytes": 3547
+    },
+    "precalibration_contract": {
+      "path": "benchmarks/production-model-v1/p10m-adaptive-composition-v1-precalibration-contract.json",
+      "sha256": "dce23774c62488a3498991f898b4813225ac66f7119bdf5d2d4392b4f891bc1b",
+      "bytes": 13571
+    },
+    "calibration": {
+      "cube": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/execution/calibration-cube.tsv",
+        "sha256": "80fe2e3e0c00884b4c4ea734400b59e6351cbe7d44acbc510912c18c8743c127",
+        "bytes": 1061603
+      },
+      "scores": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/execution/calibration-scores.tsv",
+        "sha256": "af179575910f9f57152ace6dfeaee2edfb799993fb36996f04da2987ae254bc5",
+        "bytes": 12716
+      },
+      "corrections": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/execution/corrections.tsv",
+        "sha256": "fdf51506bb24b970548f0ac3cdefc22e40a156f229acd38ec44f53c03cb0d47b",
+        "bytes": 127
+      },
+      "manifest": {
+        "path": "data/experiments/production-model-v1/p10m-adaptive-composition-v1/execution/calibration-manifest.json",
+        "sha256": "c40e0e19d141df489ca9b191987b7779af6921f339b9f460a2fb06bf8de5e682",
+        "bytes": 302
+      }
+    }
+  },
+  "controller": {
+    "error_control_unit": "whole_source_panel",
+    "decision_order": "frozen_source_order_then_frozen_passage_order",
+    "source_panel_rounds": 6,
+    "ordered_passage_decisions": 24,
+    "maximum_physical_actions_per_passage": 1,
+    "maximum_accepted_actions_globally": 2,
+    "persist_accepted_action_before_next_passage": true,
+    "after_acceptance_limit": "always_abstain",
+    "current_passage_exact_action_outcomes_are_controller_inputs": false
+  },
+  "actions": [
+    {
+      "id": "head_lattice_exit",
+      "kind": "state_specific_physical_move",
+      "allowed_groups": [
+        "output",
+        "bias"
+      ],
+      "maximum_coordinate_writes": 2,
+      "manifest_source": "proper_fitting_only"
+    },
+    {
+      "id": "trunk_lattice_exit",
+      "kind": "state_specific_physical_move",
+      "allowed_groups": [
+        "embeddings",
+        "attention_rms",
+        "mlp_rms",
+        "final_rms",
+        "q",
+        "k",
+        "v",
+        "o",
+        "up",
+        "gate",
+        "down"
+      ],
+      "maximum_coordinate_writes": 2,
+      "manifest_source": "proper_fitting_only"
+    },
+    {
+      "id": "abstain",
+      "kind": "abstention",
+      "allowed_groups": [],
+      "maximum_coordinate_writes": 0,
+      "manifest_source": "contract"
+    }
+  ],
+  "reachable_state_contract": {
+    "path_label_order": "chronological_left_to_right",
+    "labelled_paths": [
+      "empty",
+      "H",
+      "T",
+      "HH",
+      "HT",
+      "TH",
+      "TT"
+    ],
+    "maximum_labelled_states": 7,
+    "state_escape_is_hard_falsifier": true,
+    "calibration_score_covers_every_state_action_passage": true
+  },
+  "noncommutativity": {
+    "ht_model_hash": "0x7d0b390c63aeee06",
+    "th_model_hash": "0x1ad4e7c589516af2",
+    "ht_function_hash": "0xa2c82085f45aa68d",
+    "th_function_hash": "0x37a31269720399b3",
+    "passed": true
+  },
+  "predictor": {
+    "algorithm": "within-family lower median exact fitting contrast",
+    "observations_per_family_state_action": 48,
+    "fitting_panels_per_family": 12,
+    "current_candidate_outcomes_used": false
+  },
+  "calibration": {
+    "score": "max over seven states, two physical actions, and four passages of exact contrast minus fitting predictor",
+    "sources_per_family": 119,
+    "order_statistic_rank": 119,
+    "per_panel_error_spend": "1/120",
+    "global_error": "1/20",
+    "artifacts_frozen_before_adaptive_endpoint": true,
+    "adaptive_outcomes_read_at_freeze": false,
+    "endpoint_outcomes_read_at_freeze": false
+  },
+  "endpoint": {
+    "certificate_observation": "q47_weight_base2_nll_q32",
+    "primary_retained_model_endpoint": "integer_base2_softmax_nll_millibits",
+    "primary_aggregation": "total_nll_millibits",
+    "canonical_evaluator": "evaluate_production_model_canonical_nll",
+    "canonical_evaluator_path": "crates/nsrl-train/src/production.rs",
+    "normalization_independent": true,
+    "zero_probability_floor_millibits": 32000,
+    "secondary_endpoint": "zero_probability_windows"
+  },
+  "comparators": [
+    "always_abstain",
+    "head_lattice_exit_only_policy",
+    "trunk_lattice_exit_only_policy"
+  ],
+  "support_requires": {
+    "observed_cumulative_positive_regret_q32_equals": "0",
+    "adaptive_endpoint_strictly_beats_always_abstain": true,
+    "adaptive_endpoint_strictly_beats_best_fixed_action_policy": true,
+    "zero_probability_windows_do_not_increase": true,
+    "persistent_final_model_artifact_present": true,
+    "byte_identical_replay": true
+  },
+  "hard_falsifiers": [
+    "physical_action_delta_fingerprints_equal",
+    "physical_action_group_sets_equal",
+    "ht_th_model_hashes_equal",
+    "ht_th_function_hashes_equal",
+    "executed_state_outside_bound_reachable_set",
+    "post_fitting_evidence_used_to_build_action_manifest",
+    "current_candidate_outcome_used_for_selection",
+    "any_fired_exact_contrast_nonnegative",
+    "adaptive_endpoint_not_strictly_better_than_abstain",
+    "adaptive_endpoint_not_strictly_better_than_best_fixed_policy",
+    "zero_probability_windows_increase",
+    "replay_hash_mismatch"
+  ],
+  "authorization": {
+    "calibration_evaluation": true,
+    "adaptive_evaluation": true,
+    "endpoint_evaluation": true,
+    "granted_by_user_message": "run it",
+    "optimizer_promotion": false,
+    "paid_scaling": false
+  }
+}

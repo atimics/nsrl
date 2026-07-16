@@ -2,8 +2,8 @@
 
 - Date: 2026-07-15
 - Status: MJ-19 conditional-null bridge falsified; bounded-horizon
-  exchangeability-valid composition theorem established; persistent optimizer
-  experiment preregistered but not yet executed
+  exchangeability-valid composition theorem established; the preregistered
+  persistent optimizer execution is falsified by a zero-fire exact replay
 - Supersedes: the interpretation of a non-crossing MJ-19 unsafe-action
   e-process as affirmative sequential support
 - Extends: MJ-2026-07-15-16 through MJ-2026-07-15-19
@@ -11,6 +11,8 @@
   [`check-adaptive-composition-theory-v1.mjs`](../../scripts/check-adaptive-composition-theory-v1.mjs)
 - Preregistration:
   [`p10m-adaptive-composition-v1-preregistration.json`](../../protocol/examples/p10m-adaptive-composition-v1-preregistration.json)
+- Execution publication:
+  [`p10m-adaptive-composition-v1-publication.json`](../../benchmarks/production-model-v1/p10m-adaptive-composition-v1-publication.json)
 
 ## Question
 
@@ -403,6 +405,36 @@ target weight is zero, the declared evaluator returns the 32-bit floor, which
 is also at most 60 bits. Two-window passage loss is therefore in `[0,120]`
 bits and the absolute difference of two such losses is at most 120 bits.
 
+## 8. Frozen M5 execution result
+
+The full preregistered source design was executed without changing its
+rank-119 corrections or selection threshold after opening adaptive outcomes.
+Each of Federal Register, RFC, and science contributed 12 proper-fitting, 119
+calibration, two adaptive, and 19 sealed-endpoint whole-publication panels.
+The calibration cube contained 19,992 state-action rows over 357 calibration
+source panels.
+
+The simultaneous corrections were 16,785,479 Q32 for Federal Register,
+16,837,634 Q32 for RFC, and 16,698,609 Q32 for science. None of the 24 ordered
+adaptive passage decisions had a certified upper contrast below zero. The
+adaptive, always-abstain, head-only, and trunk-only trajectories therefore all
+retained the empty state with canonical endpoint NLL 5,930,001 millibits and
+zero zero-probability windows.
+
+**Decision 20.2.** The empirical M5 optimizer claim is falsified. It failed
+the frozen nonvacuity, strict-abstention-improvement, strict-best-fixed-policy,
+and both-physical-families gates. Zero observed positive regret is vacuous
+because no action fired. The theorem remains valid; this proposal family did
+not produce useful certified actions at its theorem-implied finite-sample
+price.
+
+Calibration, decisions, retained models, and the result JSON replayed byte for
+byte. The tracked replay receipt binds that one-time full replay without
+checking 194 MB of ignored corpus and model intermediates into Git. The
+publication is fail-closed and explicitly forbids post-outcome threshold
+retuning, optimizer promotion, paid scaling, successor mutation, or product
+release.
+
 ## Decision
 
 The MJ-19 conditional-null bridge is falsified under marginal exchangeability.
@@ -413,20 +445,21 @@ state-action-source conformalization plus alpha spending gives a valid
 finite-horizon adaptive composition guarantee. Its price is 119 calibration
 source panels per family for the six-round M5 design.
 
-M5 is preregistered but not execution-ready. It requires fitting-derived
-state-specific action manifests, a verified noncommutativity witness, a fresh
-source frame, and the full calibration count. Optimizer mutation and paid
-scaling remain unauthorized until the retained adaptive model beats both
-abstention and the best fixed action on the sealed canonical-NLL endpoint.
+M5 has now been executed and falsified. Its state-specific action manifests,
+noncommutativity witness, fresh source frame, full calibration count, sealed
+endpoint, and exact replay are preserved as negative evidence. Optimizer
+mutation and paid scaling remain unauthorized. A new proposal must be frozen
+prospectively; the M5 correction or firing threshold must not be tuned after
+this result.
 
 ## Open work
 
-- Construct the two state-specific physical action manifests from proper
-  fitting sources without reading calibration outcomes.
-- Acquire the preregistered fresh fitting, calibration, adaptive, and endpoint
-  source panels.
-- Implement full potential-outcome scoring over all reachable state-action
-  branches.
+- Preserve M5 as a terminal falsification; do not retune its correction or
+  threshold.
+- Run E21-A on the small transformer before proposing any production optimizer
+  change.
+- Run the product-facing E21-D pair-geometry experiment against the frozen
+  72-identity multimodal split.
 - Replace the union-bound design only if a stronger theorem derives from an
   equally explicit data-generating assumption; do not reintroduce an assumed
   conditional hazard under another name.

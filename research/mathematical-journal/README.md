@@ -99,6 +99,11 @@ not turn an empirical conjecture into a theorem.
 | `c_q(r)` | integer-valued Ramanujan sum of exact period `q` at phase `r` |
 | `U` | explicitly declared set of admissible control sequences |
 | `R_T(X_0, U)` | states reachable from `X_0` within `T` steps using controls in `U` |
+| `B_di` | Q32 singleton influence of lattice action `i` on fitting document `d` |
+| `Disc_E(x;u)` | worst-document linearized discrepancy of lattice rounding `x` from fine proposal `u` |
+| `H_n` | unnormalized order-`n` Walsh-Hadamard matrix |
+| `tau_i^(15)` | Q15 fitting-only sign-trust score for proposal coordinate `i` |
+| `d_t` | wide diagonal curvature state for a preconditioned recurrent memory update |
 
 Subscripts identify tensor roles or parameter groups. Superscripts identify
 representations only when needed; for example, `p^(23)` is a Q23 probability.
@@ -126,7 +131,8 @@ representations only when needed; for example, `p^(23)` is a Q23 probability.
 | [MJ-2026-07-15-17](MJ-2026-07-15-17-prospective-cross-source-exchange.md) | Prospective cross-source conditional exchange | Checked verdict supported on frozen 71-source frame with 16/16 coverage, 5/16 firing, 0/16 unsafe action, and negative regret; vacuity is inconclusive |
 | [MJ-2026-07-15-18](MJ-2026-07-15-18-multifamily-multipassage-exchange.md) | Multi-family, multi-passage conditional exchange | Overall coverage inconclusive with 14/16 panels covered; 12/64 passages fire across three families, all favorable; Federal Register and RFC promote locally, Gutenberg is withheld, science abstains |
 | [MJ-2026-07-15-19](MJ-2026-07-15-19-solomonic-judgment-calculus.md) | Solomonic judgment calculus | Exact six-source record has 8/24 favorable firings and negative regret in three families; sequential e-process interpretation is superseded by MJ-20; occult hash parity falsified |
-| [MJ-2026-07-15-20](MJ-2026-07-15-20-exchangeable-adaptive-composition.md) | Exchangeable adaptive composition and its finite-sample price | MJ-19 conditional bridge falsified; bounded six-panel persistent composition theorem established; fresh-source optimizer experiment preregistered, not executed |
+| [MJ-2026-07-15-20](MJ-2026-07-15-20-exchangeable-adaptive-composition.md) | Exchangeable adaptive composition and its finite-sample price | MJ-19 conditional bridge falsified; bounded six-panel theorem established; fresh-source optimizer execution falsified with zero firings and exact replay |
+| [MJ-2026-07-15-21](MJ-2026-07-15-21-correlated-lattice-neural-updates.md) | Correlated lattice optimization and scale-stable neural updates | Five recent-result-derived NSRL conjectures and a bounded experiment ladder established; optimizer, architecture, scaling, and release promotion remain unauthorized |
 
 ## Entry template
 

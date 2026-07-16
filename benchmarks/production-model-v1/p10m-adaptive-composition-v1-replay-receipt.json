@@ -1,0 +1,133 @@
+{
+  "schema": "nsrl.adaptive_composition_replay_receipt.v1",
+  "experiment_id": "p10m-adaptive-composition-v1",
+  "sources": {
+    "contract": {
+      "path": "benchmarks/production-model-v1/p10m-adaptive-composition-v1-contract.json",
+      "sha256": "92395df685e8272e6ad69b23b20f702f1bdc560a5751be61476cb03088454222",
+      "bytes": 15021
+    },
+    "result": {
+      "path": "benchmarks/production-model-v1/p10m-adaptive-composition-v1-result.json",
+      "sha256": "de3b25de54e21c3cee1f5e10dba9b7875ad6db8fe3ce9e7dba5fac73685cab68",
+      "bytes": 1203
+    },
+    "frozen_checker": {
+      "path": "scripts/check-adaptive-composition-execution-v1.mjs",
+      "sha256": "8d3bdf0caf893a2d3110dd8500c4d0f17bcb2065102a7da523655bcf297854c6",
+      "bytes": 14199
+    },
+    "recorder": {
+      "path": "scripts/record-adaptive-composition-replay-v1.mjs",
+      "sha256": "ec79e7e61c994df84d492268d7da90b6e586fa0d5c94fe5e76629e2b9e1d917d",
+      "bytes": 5051
+    }
+  },
+  "verdict": "falsified",
+  "execution_summary": {
+    "schema": "nsrl.adaptive_composition_execution_check.v1",
+    "verdict": "falsified",
+    "calibration_cube_rows": 19992,
+    "calibration_source_panels": 357,
+    "adaptive_fires": 0,
+    "head_fires": 0,
+    "trunk_fires": 0,
+    "positive_regret_q32": "0",
+    "endpoints": {
+      "adaptive": {
+        "final_state": "empty",
+        "accepted_actions": 0,
+        "total_nll_millibits": "5930001",
+        "zero_probability_windows": 0
+      },
+      "always_abstain": {
+        "final_state": "empty",
+        "accepted_actions": 0,
+        "total_nll_millibits": "5930001",
+        "zero_probability_windows": 0
+      },
+      "head_only": {
+        "final_state": "empty",
+        "accepted_actions": 0,
+        "total_nll_millibits": "5930001",
+        "zero_probability_windows": 0
+      },
+      "trunk_only": {
+        "final_state": "empty",
+        "accepted_actions": 0,
+        "total_nll_millibits": "5930001",
+        "zero_probability_windows": 0
+      }
+    },
+    "byte_replay": true,
+    "ok": true
+  },
+  "replay_artifacts": [
+    {
+      "name": "calibration-manifest.json",
+      "bytes": 302,
+      "sha256": "c40e0e19d141df489ca9b191987b7779af6921f339b9f460a2fb06bf8de5e682",
+      "identical": true
+    },
+    {
+      "name": "calibration-cube.tsv",
+      "bytes": 1061603,
+      "sha256": "80fe2e3e0c00884b4c4ea734400b59e6351cbe7d44acbc510912c18c8743c127",
+      "identical": true
+    },
+    {
+      "name": "calibration-scores.tsv",
+      "bytes": 12716,
+      "sha256": "af179575910f9f57152ace6dfeaee2edfb799993fb36996f04da2987ae254bc5",
+      "identical": true
+    },
+    {
+      "name": "corrections.tsv",
+      "bytes": 127,
+      "sha256": "fdf51506bb24b970548f0ac3cdefc22e40a156f229acd38ec44f53c03cb0d47b",
+      "identical": true
+    },
+    {
+      "name": "decisions.tsv",
+      "bytes": 6688,
+      "sha256": "0973ee02f9117cc98ef2e52dd064020dc84c17d121db74ac2066767fd43ecaa0",
+      "identical": true
+    },
+    {
+      "name": "adaptive-final.nsrlpm",
+      "bytes": 13539906,
+      "sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+      "identical": true
+    },
+    {
+      "name": "always-abstain-final.nsrlpm",
+      "bytes": 13539906,
+      "sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+      "identical": true
+    },
+    {
+      "name": "head-only-final.nsrlpm",
+      "bytes": 13539906,
+      "sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+      "identical": true
+    },
+    {
+      "name": "trunk-only-final.nsrlpm",
+      "bytes": 13539906,
+      "sha256": "7f0e94bdad208f93f2d9d2a12532df3c680fdf3a2579f1cb3a0108bf038df786",
+      "identical": true
+    }
+  ],
+  "result_replay": {
+    "bytes": 1203,
+    "sha256": "de3b25de54e21c3cee1f5e10dba9b7875ad6db8fe3ce9e7dba5fac73685cab68",
+    "identical": true
+  },
+  "guarantees": {
+    "calibration_byte_replay": true,
+    "decision_trace_byte_replay": true,
+    "retained_model_byte_replay": true,
+    "result_json_byte_replay": true,
+    "post_outcome_threshold_change": false
+  }
+}

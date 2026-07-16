@@ -27,6 +27,7 @@ node scripts/check-harmonic-structure-theory-v1.mjs
 node scripts/check-document-ising-theory-v1.mjs
 node scripts/check-conformal-exchange-theory-v1.mjs
 node scripts/check-adaptive-composition-theory-v1.mjs
+node scripts/check-adaptive-composition-publication-v1.mjs
 node scripts/check-production-boolean-jet-confirmation-v1.mjs
 node scripts/check-production-atomic-structure-v1.mjs
 node scripts/check-production-atomic-ising-v1.mjs
