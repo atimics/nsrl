@@ -440,7 +440,9 @@ function collectCouncilEvidence() {
     receipt_schema: "protocol/wisdom-receipt-v0.schema.json",
     observation_schema: "protocol/wisdom-outcome-observation-v0.schema.json",
     wisdom_eval_schema: "protocol/solomon-wisdom-eval-v0.schema.json",
+    wisdom_casebook_draft_schema: "protocol/solomon-wisdom-casebook-draft-v0.schema.json",
     wisdom_casebook_schema: "protocol/solomon-wisdom-casebook-v0.schema.json",
+    wisdom_gold_vault_schema: "protocol/solomon-wisdom-gold-vault-v0.schema.json",
     wisdom_lane_bundle_schema: "protocol/solomon-wisdom-lane-bundle-v0.schema.json",
     wisdom_lane_trace_schema: "protocol/solomon-wisdom-lane-trace-v0.schema.json",
     wisdom_gold_opening_schema: "protocol/solomon-wisdom-gold-opening-v0.schema.json",
@@ -1440,7 +1442,9 @@ function nextCommands(report) {
     commands.push("node scripts/check-solomon-council-v0.mjs");
   }
   if (report.council.wisdom_evaluation.state === "not_measured") {
-    commands.push("node scripts/compile-solomon-wisdom-eval-v0.mjs CASEBOOK.json SOLO-BUNDLE.json COUNCIL-BUNDLE.json GOLD-OPENING.json GENERATION-INTEGRITY.json PROVENANCE.json FROZEN-SAME-MODEL-INPUT.json");
+    commands.push("node scripts/freeze-solomon-wisdom-casebook-v0.mjs PRIVATE-DRAFT.json PUBLIC-CASEBOOK.json PRIVATE-GOLD-VAULT.json");
+    commands.push("node scripts/open-solomon-wisdom-gold-v0.mjs PUBLIC-CASEBOOK.json SOLO-BUNDLE.json COUNCIL-BUNDLE.json PRIVATE-GOLD-VAULT.json GOLD-OPENING.json");
+    commands.push("node scripts/compile-solomon-wisdom-eval-v0.mjs PUBLIC-CASEBOOK.json SOLO-BUNDLE.json COUNCIL-BUNDLE.json GOLD-OPENING.json GENERATION-INTEGRITY.json PROVENANCE.json FROZEN-SAME-MODEL-INPUT.json");
     commands.push("node scripts/evaluate-solomon-wisdom-v0.mjs FROZEN-SAME-MODEL-INPUT.json benchmarks/solomon-council-v0/wisdom-eval-result.json");
   }
   if (report.diagnostic.failed_checks?.some((check) => check.name === "release-candidate-self-test")) {

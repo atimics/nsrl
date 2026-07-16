@@ -13,7 +13,9 @@ import {
 } from "./lib/solomon-council-v0.mjs";
 import {
   compileWisdomCeremony,
+  freezeWisdomCasebook,
   goldCommitment,
+  openWisdomGold,
 } from "./lib/solomon-wisdom-ceremony-v0.mjs";
 import {evaluateWisdom, WISDOM_DIMENSIONS} from "./lib/solomon-wisdom-eval-v0.mjs";
 
@@ -105,7 +107,7 @@ try {
       decision_costs_milli: Object.fromEntries(decisionIds.map(
         (decisionId) => [decisionId, decisionId === councilDecisionId ? 100 : 900])),
     };
-    const nonce = `self-test-nonce-${index + 1}-not-a-production-secret`;
+    const nonce = sha256Json({self_test_nonce: index + 1});
     cases.push({
       episode_id: episodeId,
       dimension,
@@ -252,6 +254,38 @@ try {
     opened_after_both_lane_bundles: true,
     gold: goldOpenings,
   };
+  const draft = {
+    schema: "nsrl.solomon_wisdom_casebook_draft.v0",
+    analysis_role: casebook.analysis_role,
+    ceremony_id: casebook.ceremony_id,
+    minimum_cases_per_dimension: casebook.minimum_cases_per_dimension,
+    underlying_model: casebook.underlying_model,
+    integrity_policy: casebook.integrity_policy,
+    cases: cases.map((entry) => {
+      const secret = goldOpenings.find((candidate) => candidate.episode_id === entry.episode_id);
+      return {
+        episode_id: entry.episode_id,
+        dimension: entry.dimension,
+        source_family: entry.source_family,
+        unfamiliar_source: entry.unfamiliar_source,
+        evidence: entry.evidence,
+        decision_ids: entry.decision_ids,
+        nonce: secret.nonce,
+        gold: secret.gold,
+      };
+    }),
+  };
+  const frozen = freezeWisdomCasebook(draft, {baseDir: repoRoot});
+  assert(sha256Json(frozen.casebook) === sha256Json(casebook),
+    "casebook freezer did not reproduce the public casebook");
+  const replayedOpening = openWisdomGold({
+    casebook: frozen.casebook,
+    soloBundle,
+    councilBundle,
+    vault: frozen.vault,
+  }, {baseDir: repoRoot});
+  assert(sha256Json(replayedOpening) === sha256Json(opening),
+    "gold-opening command did not reproduce the bound opening");
   const sourceReport = writeJson("source-quality-report.json", {
     schema: "nsrl.solomon_wisdom_source_quality_self_test.v0", ok: true,
   });
@@ -357,6 +391,7 @@ try {
     gold_commitments_enforced: true,
     gold_opening_binds_both_lane_bundles: true,
     provenance_sets_exact: true,
+    casebook_freeze_and_gold_opening_replay: true,
     self_test_cannot_authorize_promotion: true,
   }, null, 2)}\n`);
 } finally {

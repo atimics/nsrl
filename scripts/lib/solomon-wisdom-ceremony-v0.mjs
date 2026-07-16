@@ -314,27 +314,8 @@ function validateOpening(opening, casebook, casebookHash, soloHash, councilHash,
       `gold opening ${entry?.episode_id ?? "unknown"}`);
     const caseEntry = casesById.get(entry.episode_id);
     assert(caseEntry, `gold opening has unknown episode ${entry.episode_id}`);
-    nonempty(entry.nonce, `gold opening ${entry.episode_id} nonce`);
-    exactKeys(entry.gold, [
-      "expected_label", "should_abstain", "decision_costs_milli",
-    ], [], `gold opening ${entry.episode_id} values`);
-    assert(typeof entry.gold.expected_label === "boolean",
-      `gold opening ${entry.episode_id} label must be boolean`);
-    assert(typeof entry.gold.should_abstain === "boolean",
-      `gold opening ${entry.episode_id} abstention must be boolean`);
-    const costs = entry.gold.decision_costs_milli;
-    assert(costs && typeof costs === "object" && !Array.isArray(costs),
-      `gold opening ${entry.episode_id} costs must be an object`);
-    assert(stableJson(Object.keys(costs).sort()) === stableJson([...caseEntry.decision_ids].sort()),
-      `gold opening ${entry.episode_id} decisions differ from casebook`);
-    for (const [decisionId, cost] of Object.entries(costs)) {
-      integer(cost, 0, Number.MAX_SAFE_INTEGER,
-        `gold opening ${entry.episode_id} cost ${decisionId}`);
-    }
-    if (caseEntry.dimension === "hard_negative_rejection") {
-      assert(entry.gold.expected_label === false,
-        `gold opening ${entry.episode_id} hard negative is not negative`);
-    }
+    hash(entry.nonce, `gold opening ${entry.episode_id} nonce`);
+    validateGold(entry.gold, caseEntry, `gold opening ${entry.episode_id}`);
     const commitment = sha256Json({
       episode_id: entry.episode_id,
       nonce: entry.nonce,
@@ -416,8 +397,129 @@ function verifyCeremonyArtifacts(bindings, values, baseDir) {
 
 export function goldCommitment(episodeId, nonce, gold) {
   nonempty(episodeId, "gold commitment episode id");
-  nonempty(nonce, "gold commitment nonce");
+  hash(nonce, "gold commitment nonce");
   return sha256Json({episode_id: episodeId, nonce, gold});
+}
+
+function validateGold(gold, caseEntry, label) {
+  exactKeys(gold, [
+    "expected_label", "should_abstain", "decision_costs_milli",
+  ], [], `${label} values`);
+  assert(typeof gold.expected_label === "boolean", `${label} label must be boolean`);
+  assert(typeof gold.should_abstain === "boolean", `${label} abstention must be boolean`);
+  const costs = gold.decision_costs_milli;
+  assert(costs && typeof costs === "object" && !Array.isArray(costs),
+    `${label} costs must be an object`);
+  assert(stableJson(Object.keys(costs).sort()) === stableJson([...caseEntry.decision_ids].sort()),
+    `${label} decisions differ from casebook`);
+  for (const [decisionId, cost] of Object.entries(costs)) {
+    integer(cost, 0, Number.MAX_SAFE_INTEGER, `${label} cost ${decisionId}`);
+  }
+  if (caseEntry.dimension === "hard_negative_rejection") {
+    assert(gold.expected_label === false, `${label} hard negative is not negative`);
+  }
+}
+
+export function freezeWisdomCasebook(draft, {baseDir = process.cwd()} = {}) {
+  exactKeys(draft, [
+    "schema", "analysis_role", "ceremony_id", "minimum_cases_per_dimension",
+    "underlying_model", "integrity_policy", "cases",
+  ], [], "wisdom casebook draft");
+  assert(draft.schema === "nsrl.solomon_wisdom_casebook_draft.v0",
+    "wrong wisdom casebook draft schema");
+  assert(Array.isArray(draft.cases), "wisdom casebook draft cases must be an array");
+  const cases = [];
+  const gold = [];
+  for (const entry of draft.cases) {
+    exactKeys(entry, [
+      "episode_id", "dimension", "source_family", "unfamiliar_source", "evidence",
+      "decision_ids", "nonce", "gold",
+    ], [], `wisdom casebook draft ${entry?.episode_id ?? "unknown"}`);
+    hash(entry.nonce, `wisdom casebook draft ${entry.episode_id} nonce`);
+    const publicEntry = {
+      episode_id: entry.episode_id,
+      dimension: entry.dimension,
+      source_family: entry.source_family,
+      unfamiliar_source: entry.unfamiliar_source,
+      evidence: entry.evidence,
+      decision_ids: entry.decision_ids,
+      gold_commitment_sha256: goldCommitment(entry.episode_id, entry.nonce, entry.gold),
+    };
+    validateGold(entry.gold, publicEntry, `wisdom casebook draft ${entry.episode_id}`);
+    cases.push(publicEntry);
+    gold.push({episode_id: entry.episode_id, nonce: entry.nonce, gold: entry.gold});
+  }
+  const casebook = {
+    schema: "nsrl.solomon_wisdom_casebook.v0",
+    analysis_role: draft.analysis_role,
+    ceremony_id: draft.ceremony_id,
+    frozen_before_lane_generation: true,
+    minimum_cases_per_dimension: draft.minimum_cases_per_dimension,
+    underlying_model: draft.underlying_model,
+    integrity_policy: draft.integrity_policy,
+    cases,
+  };
+  validateCasebook(casebook, baseDir);
+  return {
+    casebook,
+    vault: {
+      schema: "nsrl.solomon_wisdom_gold_vault.v0",
+      ceremony_id: casebook.ceremony_id,
+      casebook_sha256: sha256Json(casebook),
+      sealed_before_lane_generation: true,
+      gold,
+    },
+  };
+}
+
+function validateVault(vault, casebook, casesById) {
+  exactKeys(vault, [
+    "schema", "ceremony_id", "casebook_sha256", "sealed_before_lane_generation", "gold",
+  ], [], "wisdom gold vault");
+  assert(vault.schema === "nsrl.solomon_wisdom_gold_vault.v0", "wrong wisdom gold-vault schema");
+  assert(vault.ceremony_id === casebook.ceremony_id, "wisdom gold vault ceremony changed");
+  assert(vault.casebook_sha256 === sha256Json(casebook), "wisdom gold vault casebook changed");
+  assert(vault.sealed_before_lane_generation === true,
+    "wisdom gold vault was not sealed before lane generation");
+  assert(Array.isArray(vault.gold) && vault.gold.length === casebook.cases.length,
+    "wisdom gold vault case count changed");
+  unique(vault.gold.map((entry) => entry.episode_id), "wisdom gold vault episode ids");
+  for (const entry of vault.gold) {
+    exactKeys(entry, ["episode_id", "nonce", "gold"], [],
+      `wisdom gold vault ${entry?.episode_id ?? "unknown"}`);
+    const caseEntry = casesById.get(entry.episode_id);
+    assert(caseEntry, `wisdom gold vault has unknown episode ${entry.episode_id}`);
+    hash(entry.nonce, `wisdom gold vault ${entry.episode_id} nonce`);
+    validateGold(entry.gold, caseEntry, `wisdom gold vault ${entry.episode_id}`);
+    assert(goldCommitment(entry.episode_id, entry.nonce, entry.gold)
+      === caseEntry.gold_commitment_sha256,
+    `wisdom gold vault ${entry.episode_id} commitment changed`);
+  }
+}
+
+export function verifyWisdomLanesForOpening({casebook, soloBundle, councilBundle},
+  {baseDir = process.cwd()} = {}) {
+  const casesById = validateCasebook(casebook, baseDir);
+  const casebookHash = sha256Json(casebook);
+  validateBundle(soloBundle, "solo", casebook, casebookHash, casesById, baseDir);
+  validateBundle(councilBundle, "council", casebook, casebookHash, casesById, baseDir);
+  return {casesById, casebookHash};
+}
+
+export function openWisdomGold({casebook, soloBundle, councilBundle, vault},
+  {baseDir = process.cwd()} = {}) {
+  const {casesById, casebookHash} = verifyWisdomLanesForOpening(
+    {casebook, soloBundle, councilBundle}, {baseDir});
+  validateVault(vault, casebook, casesById);
+  return {
+    schema: "nsrl.solomon_wisdom_gold_opening.v0",
+    ceremony_id: casebook.ceremony_id,
+    casebook_sha256: casebookHash,
+    solo_bundle_sha256: sha256Json(soloBundle),
+    council_bundle_sha256: sha256Json(councilBundle),
+    opened_after_both_lane_bundles: true,
+    gold: structuredClone(vault.gold),
+  };
 }
 
 export function compileWisdomCeremony({

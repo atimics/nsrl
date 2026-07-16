@@ -1,20 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://nsrl.local/protocol/solomon-wisdom-gold-opening-v0.schema.json",
-  "title": "Solomon wisdom committed-gold opening",
+  "$id": "https://nsrl.local/protocol/solomon-wisdom-gold-vault-v0.schema.json",
+  "title": "Private sealed Solomon wisdom gold vault",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema", "ceremony_id", "casebook_sha256", "solo_bundle_sha256",
-    "council_bundle_sha256", "opened_after_both_lane_bundles", "gold"
+    "schema", "ceremony_id", "casebook_sha256", "sealed_before_lane_generation", "gold"
   ],
   "properties": {
-    "schema": {"const": "nsrl.solomon_wisdom_gold_opening.v0"},
+    "schema": {"const": "nsrl.solomon_wisdom_gold_vault.v0"},
     "ceremony_id": {"type": "string", "minLength": 1},
     "casebook_sha256": {"$ref": "#/$defs/sha256"},
-    "solo_bundle_sha256": {"$ref": "#/$defs/sha256"},
-    "council_bundle_sha256": {"$ref": "#/$defs/sha256"},
-    "opened_after_both_lane_bundles": {"const": true},
+    "sealed_before_lane_generation": {"const": true},
     "gold": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/opening"}}
   },
   "$defs": {

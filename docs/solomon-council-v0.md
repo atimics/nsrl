@@ -153,7 +153,9 @@ compiled from a four-stage ceremony:
 
 1. Freeze and publish a public casebook before either lane runs. Each case binds
    its evidence bytes, allowed decision IDs, and a salted canonical-JSON
-   commitment to still-hidden gold.
+   commitment to still-hidden gold. The freezer writes the public casebook and
+   a separate mode-0600 private gold vault; the draft and vault must never be
+   published with the casebook.
 2. Seal the solo and council lane bundles while gold remains closed. Every lane
    trace byte-binds its runner, inputs, outputs, model artifact, and leakage
    flags. Solo has exactly one model invocation. Council has exactly one
@@ -181,8 +183,14 @@ ceremony and scorer but can never authorize promotion.
 ```bash
 node scripts/check-solomon-wisdom-eval-v0.mjs
 node scripts/check-solomon-wisdom-ceremony-v0.mjs
+node scripts/freeze-solomon-wisdom-casebook-v0.mjs \
+  PRIVATE-DRAFT.json PUBLIC-CASEBOOK.json PRIVATE-GOLD-VAULT.json
+# Publish/commit PUBLIC-CASEBOOK.json, then run and seal both lanes.
+node scripts/open-solomon-wisdom-gold-v0.mjs \
+  PUBLIC-CASEBOOK.json SOLO-BUNDLE.json COUNCIL-BUNDLE.json \
+  PRIVATE-GOLD-VAULT.json GOLD-OPENING.json
 node scripts/compile-solomon-wisdom-eval-v0.mjs \
-  CASEBOOK.json SOLO-BUNDLE.json COUNCIL-BUNDLE.json GOLD-OPENING.json \
+  PUBLIC-CASEBOOK.json SOLO-BUNDLE.json COUNCIL-BUNDLE.json GOLD-OPENING.json \
   GENERATION-INTEGRITY.json PROVENANCE.json FROZEN-SAME-MODEL-INPUT.json
 node scripts/evaluate-solomon-wisdom-v0.mjs \
   FROZEN-SAME-MODEL-INPUT.json \
@@ -192,7 +200,10 @@ node scripts/evaluate-solomon-wisdom-v0.mjs \
 The compiler proves artifact consistency, not public chronology by itself. A
 production run must publish or commit the casebook before lane generation and
 both lane bundles before publishing the opening; those publication identities
-belong in the wisdom receipt set.
+belong in the wisdom receipt set. Production nonces must be independently
+generated 256-bit secrets encoded as lowercase hexadecimal. Reusing a nonce or
+checking the private draft/vault into the repository defeats gold hiding even
+though the commitment hashes still replay.
 
 No production same-model wisdom result is currently frozen. The canonical
 status therefore reports the council core as `shadow_ready` and the wisdom gate
