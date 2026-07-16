@@ -12,6 +12,8 @@ node scripts/build-model-localnet-site.mjs --check
 node scripts/check-integer-transformer-proof-self-test.mjs
 node scripts/check-integer-transformer-candidate-health-self-test.mjs
 node scripts/run-integer-transformer-successor-v2.mjs --check
+node scripts/check-solomon-council-v0.mjs
+node scripts/check-solomon-wisdom-eval-v0.mjs
 node scripts/check-integer-research-evidence-v1.mjs
 node scripts/check-boolean-jet-theory-v1.mjs
 node scripts/check-boolean-jet-stability-theory-v1.mjs
@@ -20,6 +22,7 @@ node scripts/check-discrete-structure-theory-v1.mjs
 node scripts/check-harmonic-structure-theory-v1.mjs
 node scripts/check-document-ising-theory-v1.mjs
 node scripts/check-conformal-exchange-theory-v1.mjs
+node scripts/check-adaptive-composition-theory-v1.mjs
 node scripts/check-production-boolean-jet-confirmation-v1.mjs
 node scripts/check-production-atomic-structure-v1.mjs
 node scripts/check-production-atomic-ising-v1.mjs
@@ -77,6 +80,8 @@ node scripts/analyze-production-multifamily-exchange-v1.mjs \
 cmp benchmarks/production-model-v1/p10m-multifamily-exchange-v1-result.json \
   /tmp/nsrl-p10m-multifamily-exchange-v1-result-check.json
 node scripts/check-production-multifamily-exchange-v1.mjs
+node scripts/check-solomonic-judgment-v1.mjs
+node scripts/check-solomonic-judgment-publication-v1.mjs
 node scripts/check-research-harness-v1.mjs
 node scripts/check-production-training-liveness-self-test.mjs
 node scripts/check-production-optimizer-residual-analysis-self-test.mjs

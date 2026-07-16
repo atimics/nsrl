@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.local/protocol/solomon-wisdom-eval-v0.schema.json",
+  "title": "Solomon Council v0 same-model wisdom evaluation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "analysis_role", "frozen_before_outcomes", "minimum_cases_per_dimension",
+    "underlying_model", "integrity", "episodes"
+  ],
+  "allOf": [
+    {
+      "if": {"properties": {"analysis_role": {"const": "frozen_same_model_comparison"}}},
+      "then": {"properties": {"minimum_cases_per_dimension": {"minimum": 72}}}
+    }
+  ],
+  "properties": {
+    "schema": {"const": "nsrl.solomon_wisdom_eval.v0"},
+    "analysis_role": {"enum": ["frozen_same_model_comparison", "self_test_only"]},
+    "frozen_before_outcomes": {"const": true},
+    "minimum_cases_per_dimension": {"type": "integer", "minimum": 1},
+    "underlying_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "artifact_sha256"],
+      "properties": {
+        "model_id": {"type": "string", "minLength": 1},
+        "artifact_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "no_oracle_target_lookup", "no_hidden_memory", "no_retrieval_target_leakage",
+        "generation_integrity_passed", "generation_integrity_report", "provenance_report"
+      ],
+      "properties": {
+        "no_oracle_target_lookup": {"const": true},
+        "no_hidden_memory": {"const": true},
+        "no_retrieval_target_leakage": {"const": true},
+        "generation_integrity_passed": {"const": true},
+        "generation_integrity_report": {
+          "$ref": "#/$defs/integrityBinding"
+        },
+        "provenance_report": {
+          "$ref": "#/$defs/integrityBinding"
+        }
+      }
+    },
+    "episodes": {"type": "array", "items": {"$ref": "#/$defs/episode"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "integrityBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "schema"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "schema": {
+          "enum": ["nsrl.wisdom_generation_integrity.v0", "nsrl.wisdom_provenance_gate.v0"]
+        }
+      }
+    },
+    "dimension": {
+      "enum": [
+        "source_grounded_correctness", "calibration", "hard_negative_rejection",
+        "contradiction_detection", "decision_regret", "appropriate_abstention",
+        "cross_modal_agreement", "unfamiliar_source_transfer"
+      ]
+    },
+    "lane": {
+      "type": "object",
+      "required": [
+        "model_sha256", "trace_sha256", "prediction_label", "confidence_milli",
+        "abstained", "decision_id"
+      ],
+      "properties": {
+        "model_sha256": {"$ref": "#/$defs/sha256"},
+        "trace_sha256": {"$ref": "#/$defs/sha256"},
+        "receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "prediction_label": {"type": "boolean"},
+        "confidence_milli": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "abstained": {"type": "boolean"},
+        "decision_id": {"type": "string", "minLength": 1}
+      }
+    },
+    "episode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "episode_id", "dimension", "source_family", "unfamiliar_source",
+        "evidence_sha256", "gold_opened_after_both_predictions", "gold", "solo", "council"
+      ],
+      "properties": {
+        "schema": {"const": "nsrl.solomon_wisdom_episode.v0"},
+        "episode_id": {"type": "string", "minLength": 1},
+        "dimension": {"$ref": "#/$defs/dimension"},
+        "source_family": {"type": "string", "minLength": 1},
+        "unfamiliar_source": {"type": "boolean"},
+        "evidence_sha256": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/sha256"}
+        },
+        "gold_opened_after_both_predictions": {"const": true},
+        "gold": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["expected_label", "should_abstain", "decision_costs_milli"],
+          "properties": {
+            "expected_label": {"type": "boolean"},
+            "should_abstain": {"type": "boolean"},
+            "decision_costs_milli": {
+              "type": "object", "minProperties": 1,
+              "additionalProperties": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "solo": {"$ref": "#/$defs/lane"},
+        "council": {
+          "allOf": [
+            {"$ref": "#/$defs/lane"},
+            {"required": ["receipt_sha256"]}
+          ]
+        }
+      }
+    }
+  }
+}

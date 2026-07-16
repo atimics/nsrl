@@ -2,12 +2,10 @@
 
 NSRL is a pure-Rust integer-only training stack for deterministic CPU and WASM
 models. The frozen `integer-transformer-proof-v1` result is a system-level
-proof for a transformer plus fitted suffix memory. The active follow-up gate is
-an architecture-level unassisted successor: a 16-cell suffix-free optimizer,
-duration, balancing, attention, and position sweep produced no passing row. The
-best transformer-only candidate still made 5,094 mistakes against the 2,510
-gate, so the repository does not claim that the transformer itself beat
-retrieval, byte n-gram, and the independently produced floating-point reference.
+proof for a transformer plus fitted suffix memory. Its first architecture-level
+unassisted follow-up was a valid falsification: a 16-cell suffix-free sweep
+produced no passing row. Successor-v2 changes the learning objective and closes
+that substrate gate under the canonical NLL contract.
 
 The successor-v2 repair is now fully executed under canonical integer base-2
 NLL. The first physically stripped candidate remains preserved in history as a
@@ -20,6 +18,15 @@ transformer (40,847,697), with zero zero-probability windows and no suffix
 memory, retrieval, router, or held-out lookup. Replay the trainer, candidate,
 bound matrix, and evidence with
 `node scripts/run-integer-transformer-successor-v2.mjs --check`.
+
+Solomon Council v0 adds a separate shadow-mode judgment layer. Six Ed25519-
+sealed faculties deliberate inside explicit permission, evidence, tool, and
+resource circles; a deterministic integer controller can select a recommendation,
+request evidence, ask the user, or abstain, while preserving dissent and never
+executing an action. Initial and revised wisdom receipts replay exactly. The
+council core is ready, but its required same-underlying-model comparison across
+all eight wisdom dimensions is not yet measured, so council promotion remains
+unauthorized. See [`docs/solomon-council-v0.md`](docs/solomon-council-v0.md).
 
 Solomon multimodal generation and literary expert routing are experiment suites
 that exercise the shared substrate. Their results inform candidate design, but

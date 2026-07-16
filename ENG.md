@@ -43,6 +43,18 @@ canonical integer NLL function. Suffix-memory, retrieval, and routing-oracle
 ablations are replay-invariant. The candidate scores 25,347,655 millibits with
 zero zero-probability windows and beats all four frozen baselines.
 
+The council layer is deliberately protocol-native rather than a privileged
+router prompt. Static Ed25519 manifests constrain six faculty identities and
+capabilities. Each invocation supplies a smaller circle whose permissions,
+tools, evidence IDs, and measured resource use are checked against its seal.
+The judge is derived code: callers cannot supply its recommendation. An action
+must pass every integer controller predicate before selection; unresolved user
+information, missing evidence/hard contradiction, and no eligible action route
+to `ask_user`, `request_evidence`, and `abstain`, respectively. Receipts and
+outcome revisions are canonical-JSON hash chains and v0 never grants execution
+authority. `scripts/check-solomon-council-v0.mjs` exercises the four decision
+states and the principal boundary attacks.
+
 Prior work already establishes integer and quantized training as a field. The
 engineering contribution pursued here is the auditable combination: no float
 master weights, exact integer replay, explicit saturation and residual-carry

@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.local/protocol/solomon-council-request-v0.schema.json",
+  "title": "Solomon Council v0 shadow deliberation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "request_id", "recorded_at", "mode", "question", "models",
+    "evidence", "actions", "controller", "invocations"
+  ],
+  "properties": {
+    "schema": {"const": "nsrl.solomon_council_request.v0"},
+    "request_id": {"type": "string", "minLength": 1},
+    "recorded_at": {"type": "string", "minLength": 1},
+    "mode": {"const": "shadow"},
+    "question": {"type": "string", "minLength": 1},
+    "models": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/model"}},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+    "actions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/action"}},
+    "controller": {"$ref": "#/$defs/controller"},
+    "invocations": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/invocation"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "facultyId": {
+      "enum": ["mathematician", "engineer", "historian", "skeptic", "consequence_planner", "judge"]
+    },
+    "stringArray": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_id", "artifact_uri", "artifact_sha256", "role"],
+      "properties": {
+        "model_id": {"type": "string", "minLength": 1},
+        "artifact_uri": {"type": "string", "minLength": 1},
+        "artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "role": {"type": "string", "minLength": 1}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id", "source_uri", "source_sha256", "content_sha256", "retrieved_at",
+        "summary", "claim_ids", "accessible_to"
+      ],
+      "properties": {
+        "evidence_id": {"type": "string", "minLength": 1},
+        "source_uri": {"type": "string", "minLength": 1},
+        "source_sha256": {"$ref": "#/$defs/sha256"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "retrieved_at": {"type": "string", "minLength": 1},
+        "summary": {"type": "string", "minLength": 1},
+        "claim_ids": {"$ref": "#/$defs/stringArray"},
+        "accessible_to": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/facultyId"}}
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_id", "summary", "risk_milli", "reversible", "required_permissions",
+        "required_tools", "evidence_ids"
+      ],
+      "properties": {
+        "action_id": {"type": "string", "minLength": 1},
+        "summary": {"type": "string", "minLength": 1},
+        "risk_milli": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "reversible": {"type": "boolean"},
+        "required_permissions": {"$ref": "#/$defs/stringArray"},
+        "required_tools": {"$ref": "#/$defs/stringArray"},
+        "evidence_ids": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "controller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema", "allowed_action_ids", "forbidden_action_ids", "max_risk_milli",
+        "min_distinct_evidence_sources", "min_supporting_faculties",
+        "min_support_confidence_milli", "require_skeptic_review",
+        "require_reversible_at_or_above_risk_milli", "tie_break"
+      ],
+      "properties": {
+        "schema": {"const": "nsrl.mathematical_controller.v0"},
+        "allowed_action_ids": {"$ref": "#/$defs/stringArray"},
+        "forbidden_action_ids": {"$ref": "#/$defs/stringArray"},
+        "max_risk_milli": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "min_distinct_evidence_sources": {"type": "integer", "minimum": 0},
+        "min_supporting_faculties": {"type": "integer", "minimum": 1, "maximum": 5},
+        "min_support_confidence_milli": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "require_skeptic_review": {"type": "boolean"},
+        "require_reversible_at_or_above_risk_milli": {"type": "integer", "minimum": 0, "maximum": 1001},
+        "tie_break": {"const": "highest_margin_then_lexicographic_action_id"}
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_bytes", "output_bytes", "tool_calls", "tokens", "wall_clock_ms"],
+      "properties": {
+        "input_bytes": {"type": "integer", "minimum": 0},
+        "output_bytes": {"type": "integer", "minimum": 0},
+        "tool_calls": {"type": "integer", "minimum": 0},
+        "tokens": {"type": "integer", "minimum": 0},
+        "wall_clock_ms": {"type": "integer", "minimum": 0}
+      }
+    },
+    "circle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["faculty_id", "permissions", "tools", "budget", "usage", "accessed_evidence_ids"],
+      "properties": {
+        "faculty_id": {"$ref": "#/$defs/facultyId"},
+        "permissions": {"$ref": "#/$defs/stringArray"},
+        "tools": {"$ref": "#/$defs/stringArray"},
+        "budget": {"$ref": "#/$defs/resources"},
+        "usage": {"$ref": "#/$defs/resources"},
+        "accessed_evidence_ids": {"$ref": "#/$defs/stringArray"}
+      }
+    },
+    "contradiction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "action_id", "claim_id", "conflicts_with_claim_id", "explanation"],
+      "properties": {
+        "severity": {"enum": ["soft", "hard"]},
+        "action_id": {"type": ["string", "null"]},
+        "claim_id": {"type": "string", "minLength": 1},
+        "conflicts_with_claim_id": {"type": "string", "minLength": 1},
+        "explanation": {"type": "string", "minLength": 1}
+      }
+    },
+    "consequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "horizon", "description", "impact_milli", "confidence_milli"],
+      "properties": {
+        "action_id": {"type": "string", "minLength": 1},
+        "horizon": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "impact_milli": {"type": "integer", "minimum": -1000, "maximum": 1000},
+        "confidence_milli": {"type": "integer", "minimum": 0, "maximum": 1000}
+      }
+    },
+    "missingInformation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "action_id", "question"],
+      "properties": {
+        "kind": {"enum": ["evidence", "user"]},
+        "action_id": {"type": ["string", "null"]},
+        "question": {"type": "string", "minLength": 1}
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disposition", "action_id", "rationale", "confidence_milli", "calibration_bucket",
+        "evidence_ids", "contradictions", "predicted_consequences", "missing_information"
+      ],
+      "properties": {
+        "disposition": {"enum": ["support", "oppose", "abstain", "request_evidence", "ask_user"]},
+        "action_id": {"type": ["string", "null"]},
+        "rationale": {"type": "string", "minLength": 1},
+        "confidence_milli": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "calibration_bucket": {
+          "enum": ["0-99", "100-199", "200-299", "300-399", "400-499", "500-599", "600-699", "700-799", "800-899", "900-1000"]
+        },
+        "evidence_ids": {"$ref": "#/$defs/stringArray"},
+        "contradictions": {"type": "array", "items": {"$ref": "#/$defs/contradiction"}},
+        "predicted_consequences": {"type": "array", "items": {"$ref": "#/$defs/consequence"}},
+        "missing_information": {"type": "array", "items": {"$ref": "#/$defs/missingInformation"}}
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invocation_id", "faculty_id", "seal_id", "circle", "recommendation"],
+      "properties": {
+        "invocation_id": {"type": "string", "minLength": 1},
+        "faculty_id": {"$ref": "#/$defs/facultyId"},
+        "seal_id": {"type": "string", "minLength": 1},
+        "circle": {"$ref": "#/$defs/circle"},
+        "recommendation": {"anyOf": [{"$ref": "#/$defs/recommendation"}, {"type": "null"}]}
+      }
+    }
+  }
+}

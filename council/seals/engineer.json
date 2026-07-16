@@ -1,0 +1,34 @@
+{
+  "schema": "nsrl.faculty_capability_seal.v0",
+  "seal_id": "seal-solomon-engineer-v0",
+  "faculty_id": "engineer",
+  "role": "Engineer",
+  "version": 0,
+  "issuer_key_id": "nsrl-solomon-council-offline-root-2026-07-v0",
+  "capabilities": [
+    "audit_artifact_identity",
+    "assess_execution_feasibility",
+    "assess_permissions",
+    "recommend_action",
+    "request_evidence"
+  ],
+  "allowed_permissions": [
+    "read:evidence",
+    "read:model_hashes",
+    "recommend:action",
+    "request:evidence"
+  ],
+  "allowed_tools": ["artifact_inspector", "evidence_reader"],
+  "resource_ceiling": {
+    "input_bytes": 32768,
+    "output_bytes": 16384,
+    "tool_calls": 4,
+    "tokens": 8192,
+    "wall_clock_ms": 30000
+  },
+  "issued_at": "2026-07-15T00:00:00Z",
+  "signature": {
+    "algorithm": "ed25519",
+    "value_base64": "rAa+db3ONn1/+1cUdhzNATCFGv1H4zOnWeqrsxtM379A6Yx5BUapvvct5cEShGw1KL6ErORJJKrqAvOwtdhFCA=="
+  }
+}

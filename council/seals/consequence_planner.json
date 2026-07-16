@@ -1,0 +1,34 @@
+{
+  "schema": "nsrl.faculty_capability_seal.v0",
+  "seal_id": "seal-solomon-consequence_planner-v0",
+  "faculty_id": "consequence_planner",
+  "role": "Consequence planner",
+  "version": 0,
+  "issuer_key_id": "nsrl-solomon-council-offline-root-2026-07-v0",
+  "capabilities": [
+    "estimate_consequences",
+    "assess_reversibility",
+    "assess_regret",
+    "recommend_action",
+    "ask_user"
+  ],
+  "allowed_permissions": [
+    "read:evidence",
+    "read:model_hashes",
+    "recommend:action",
+    "ask:user"
+  ],
+  "allowed_tools": ["evidence_reader", "consequence_ledger"],
+  "resource_ceiling": {
+    "input_bytes": 32768,
+    "output_bytes": 16384,
+    "tool_calls": 4,
+    "tokens": 8192,
+    "wall_clock_ms": 30000
+  },
+  "issued_at": "2026-07-15T00:00:00Z",
+  "signature": {
+    "algorithm": "ed25519",
+    "value_base64": "TQfuB3L40AxcXbG7Q327RbsT4SRuN8pfl0CQPUrWnLxxHYXeotBfXykyt5x+YxGD8d91iQ1EEvmPueszrj9uBQ=="
+  }
+}

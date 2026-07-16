@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.local/protocol/wisdom-receipt-v0.schema.json",
+  "title": "Solomon Council v0 wisdom receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "receipt_id", "recorded_at", "mode", "request", "bindings",
+    "retrieved_evidence", "faculty_invocations", "deliberation", "decision",
+    "predicted_consequences", "permissions_and_budget", "shadow_execution",
+    "outcome", "revisions", "identity"
+  ],
+  "properties": {
+    "schema": {"const": "nsrl.wisdom_receipt.v0"},
+    "receipt_id": {"type": "string", "minLength": 1},
+    "recorded_at": {"type": "string", "minLength": 1},
+    "mode": {"const": "shadow"},
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "question", "request_sha256"],
+      "properties": {
+        "request_id": {"type": "string", "minLength": 1},
+        "question": {"type": "string", "minLength": 1},
+        "request_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "bindings": {"type": "object", "required": ["models", "trust_root", "sources"]},
+    "retrieved_evidence": {"type": "array"},
+    "faculty_invocations": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {"$ref": "#/$defs/invocationRecord"}
+    },
+    "deliberation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["controller_schema", "comparisons", "contradictions", "dissent"],
+      "properties": {
+        "controller_schema": {"const": "nsrl.mathematical_controller.v0"},
+        "comparisons": {"type": "array", "items": {"$ref": "#/$defs/comparison"}},
+        "contradictions": {"type": "array"},
+        "dissent": {"type": "array"}
+      }
+    },
+    "decision": {"$ref": "#/$defs/decision"},
+    "predicted_consequences": {"type": "array"},
+    "permissions_and_budget": {"type": "array", "minItems": 6, "maxItems": 6},
+    "shadow_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_action_id", "controller_authorized_recommendation",
+        "action_execution_allowed", "action_executed", "reason"
+      ],
+      "properties": {
+        "selected_action_id": {"type": ["string", "null"]},
+        "controller_authorized_recommendation": {"type": "boolean"},
+        "action_execution_allowed": {"const": false},
+        "action_executed": {"const": false},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "observed_at", "metrics", "notes"],
+      "properties": {
+        "status": {"enum": ["pending", "observed", "revised"]},
+        "observed_at": {"type": ["string", "null"]},
+        "metrics": {"type": "array"},
+        "notes": {"type": "string"}
+      }
+    },
+    "revisions": {"type": "array"},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalization", "receipt_sha256"],
+      "properties": {
+        "canonicalization": {"type": "string", "minLength": 1},
+        "receipt_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "facultyId": {
+      "enum": ["mathematician", "engineer", "historian", "skeptic", "consequence_planner", "judge"]
+    },
+    "invocationRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invocation_id", "faculty_id", "seal", "circle", "recommendation"],
+      "properties": {
+        "invocation_id": {"type": "string", "minLength": 1},
+        "faculty_id": {"$ref": "#/$defs/facultyId"},
+        "seal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["seal_id", "manifest_path", "manifest_sha256", "signature_verified"],
+          "properties": {
+            "seal_id": {"type": "string", "minLength": 1},
+            "manifest_path": {"type": "string", "minLength": 1},
+            "manifest_sha256": {"$ref": "#/$defs/sha256"},
+            "signature_verified": {"const": true}
+          }
+        },
+        "circle": {"type": "object"},
+        "recommendation": {"type": ["object", "null"]}
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_id", "controller_allowed", "checks", "supporting_faculties",
+        "opposing_faculties", "distinct_cited_source_hashes", "hard_contradictions",
+        "missing_information", "margin_milli"
+      ],
+      "properties": {
+        "action_id": {"type": "string", "minLength": 1},
+        "controller_allowed": {"type": "boolean"},
+        "checks": {"type": "object", "additionalProperties": {"type": "boolean"}},
+        "supporting_faculties": {"type": "array", "items": {"$ref": "#/$defs/facultyId"}},
+        "opposing_faculties": {"type": "array", "items": {"$ref": "#/$defs/facultyId"}},
+        "distinct_cited_source_hashes": {"type": "array", "items": {"$ref": "#/$defs/sha256"}},
+        "hard_contradictions": {"type": "array"},
+        "missing_information": {"type": "array"},
+        "margin_milli": {"type": "integer"}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind", "selected_action_id", "rationale", "confidence_milli", "calibration",
+        "mathematical_controller_allowed", "questions"
+      ],
+      "properties": {
+        "kind": {"enum": ["select", "request_evidence", "ask_user", "abstain"]},
+        "selected_action_id": {"type": ["string", "null"]},
+        "rationale": {"type": "string", "minLength": 1},
+        "confidence_milli": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "calibration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "bucket", "outcome_observed"],
+          "properties": {
+            "method": {"type": "string", "minLength": 1},
+            "bucket": {"type": "string", "minLength": 1},
+            "outcome_observed": {"type": "boolean"}
+          }
+        },
+        "mathematical_controller_allowed": {"type": "boolean"},
+        "questions": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    }
+  }
+}

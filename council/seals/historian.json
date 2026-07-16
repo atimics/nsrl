@@ -1,0 +1,34 @@
+{
+  "schema": "nsrl.faculty_capability_seal.v0",
+  "seal_id": "seal-solomon-historian-v0",
+  "faculty_id": "historian",
+  "role": "Historian/source scholar",
+  "version": 0,
+  "issuer_key_id": "nsrl-solomon-council-offline-root-2026-07-v0",
+  "capabilities": [
+    "audit_source_provenance",
+    "compare_sources",
+    "detect_anachronism",
+    "recommend_action",
+    "request_evidence"
+  ],
+  "allowed_permissions": [
+    "read:evidence",
+    "read:model_hashes",
+    "recommend:action",
+    "request:evidence"
+  ],
+  "allowed_tools": ["evidence_reader", "source_catalog"],
+  "resource_ceiling": {
+    "input_bytes": 32768,
+    "output_bytes": 16384,
+    "tool_calls": 4,
+    "tokens": 8192,
+    "wall_clock_ms": 30000
+  },
+  "issued_at": "2026-07-15T00:00:00Z",
+  "signature": {
+    "algorithm": "ed25519",
+    "value_base64": "fcMzlWiBM9kIgr+G6zaI9UpqKvARdK2vhFD0ODBVBNImfqZtN52EbS0mp+Lin2DEAKV5vnxfBycxH2DUu0LRBg=="
+  }
+}

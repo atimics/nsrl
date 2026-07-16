@@ -1,0 +1,242 @@
+{
+  "schema": "nsrl.solomon_council_request.v0",
+  "request_id": "successor-v2-status-shadow-001",
+  "recorded_at": "2026-07-15T21:30:00Z",
+  "mode": "shadow",
+  "question": "Should the repaired native successor be recorded as passing its frozen substrate promotion gate?",
+  "models": [
+    {
+      "model_id": "integer-transformer-successor-v2",
+      "artifact_uri": "benchmarks/integer-transformer-proof-v1/successor-v2-candidate.nsrlmt",
+      "artifact_sha256": "89260e3cae329677e132eef4439d784c6290e8e46b8779c3667da8d157bf7259",
+      "role": "underlying native model"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "training-receipt",
+      "source_uri": "benchmarks/integer-transformer-proof-v1/successor-v2-training.json",
+      "source_sha256": "42a6fa80102fd787ace7cd3655fe600c2b09c82a78e932d5b05160309cb8e48c",
+      "content_sha256": "42a6fa80102fd787ace7cd3655fe600c2b09c82a78e932d5b05160309cb8e48c",
+      "retrieved_at": "2026-07-15T21:25:00Z",
+      "summary": "Canonical training-only integer NLL receipt with zero unsupported byte classes and no held-out access.",
+      "claim_ids": ["canonical-training", "no-hidden-assistance"],
+      "accessible_to": [
+        "mathematician", "engineer", "historian", "skeptic", "consequence_planner", "judge"
+      ]
+    },
+    {
+      "evidence_id": "evaluation-evidence",
+      "source_uri": "benchmarks/integer-transformer-proof-v1/successor-v2-evidence.json",
+      "source_sha256": "5a67581388751a68a049f8fec728051aeb1539b6769fd4c43b0ac783594e0f87",
+      "content_sha256": "5a67581388751a68a049f8fec728051aeb1539b6769fd4c43b0ac783594e0f87",
+      "retrieved_at": "2026-07-15T21:25:00Z",
+      "summary": "Five-system frozen evaluation showing 25,347,655 millibits, zero zero-probability windows, and exact replay hashes.",
+      "claim_ids": ["heldout-nll", "zero-probability", "baseline-comparison"],
+      "accessible_to": [
+        "mathematician", "engineer", "historian", "skeptic", "consequence_planner", "judge"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "action_id": "record-substrate-promotion",
+      "summary": "Recommend recording the frozen successor-v2 substrate gate as passed; do not execute a product release.",
+      "risk_milli": 100,
+      "reversible": true,
+      "required_permissions": ["recommend:repository_change"],
+      "required_tools": ["evidence_reader"],
+      "evidence_ids": ["training-receipt", "evaluation-evidence"]
+    }
+  ],
+  "controller": {
+    "schema": "nsrl.mathematical_controller.v0",
+    "allowed_action_ids": ["record-substrate-promotion"],
+    "forbidden_action_ids": [],
+    "max_risk_milli": 250,
+    "min_distinct_evidence_sources": 2,
+    "min_supporting_faculties": 3,
+    "min_support_confidence_milli": 700,
+    "require_skeptic_review": true,
+    "require_reversible_at_or_above_risk_milli": 200,
+    "tie_break": "highest_margin_then_lexicographic_action_id"
+  },
+  "invocations": [
+    {
+      "invocation_id": "successor-v2-status-shadow-001:mathematician",
+      "faculty_id": "mathematician",
+      "seal_id": "seal-solomon-mathematician-v0",
+      "circle": {
+        "faculty_id": "mathematician",
+        "permissions": ["read:evidence", "read:model_hashes", "recommend:action"],
+        "tools": ["evidence_reader", "metric_checker"],
+        "budget": {"input_bytes": 16384, "output_bytes": 4096, "tool_calls": 2, "tokens": 2048, "wall_clock_ms": 10000},
+        "usage": {"input_bytes": 2083, "output_bytes": 720, "tool_calls": 2, "tokens": 610, "wall_clock_ms": 80},
+        "accessed_evidence_ids": ["training-receipt", "evaluation-evidence"]
+      },
+      "recommendation": {
+        "disposition": "support",
+        "action_id": "record-substrate-promotion",
+        "rationale": "The exact canonical NLL is below every frozen comparison and the unsupported-window count is zero.",
+        "confidence_milli": 950,
+        "calibration_bucket": "900-1000",
+        "evidence_ids": ["training-receipt", "evaluation-evidence"],
+        "contradictions": [],
+        "predicted_consequences": [
+          {
+            "action_id": "record-substrate-promotion",
+            "horizon": "immediate",
+            "description": "The substrate status becomes mathematically consistent with the frozen table.",
+            "impact_milli": 600,
+            "confidence_milli": 950
+          }
+        ],
+        "missing_information": []
+      }
+    },
+    {
+      "invocation_id": "successor-v2-status-shadow-001:engineer",
+      "faculty_id": "engineer",
+      "seal_id": "seal-solomon-engineer-v0",
+      "circle": {
+        "faculty_id": "engineer",
+        "permissions": ["read:evidence", "read:model_hashes", "recommend:action"],
+        "tools": ["artifact_inspector", "evidence_reader"],
+        "budget": {"input_bytes": 16384, "output_bytes": 4096, "tool_calls": 2, "tokens": 2048, "wall_clock_ms": 10000},
+        "usage": {"input_bytes": 2894, "output_bytes": 690, "tool_calls": 2, "tokens": 590, "wall_clock_ms": 110},
+        "accessed_evidence_ids": ["training-receipt", "evaluation-evidence"]
+      },
+      "recommendation": {
+        "disposition": "support",
+        "action_id": "record-substrate-promotion",
+        "rationale": "The candidate, receipt, evidence, and replay identities are bound and the recommendation is reversible documentation work.",
+        "confidence_milli": 900,
+        "calibration_bucket": "900-1000",
+        "evidence_ids": ["training-receipt", "evaluation-evidence"],
+        "contradictions": [],
+        "predicted_consequences": [
+          {
+            "action_id": "record-substrate-promotion",
+            "horizon": "next check run",
+            "description": "Repository checks continue to reproduce the candidate before accepting its status.",
+            "impact_milli": 500,
+            "confidence_milli": 900
+          }
+        ],
+        "missing_information": []
+      }
+    },
+    {
+      "invocation_id": "successor-v2-status-shadow-001:historian",
+      "faculty_id": "historian",
+      "seal_id": "seal-solomon-historian-v0",
+      "circle": {
+        "faculty_id": "historian",
+        "permissions": ["read:evidence", "read:model_hashes", "recommend:action"],
+        "tools": ["evidence_reader", "source_catalog"],
+        "budget": {"input_bytes": 16384, "output_bytes": 4096, "tool_calls": 2, "tokens": 2048, "wall_clock_ms": 10000},
+        "usage": {"input_bytes": 2894, "output_bytes": 680, "tool_calls": 2, "tokens": 570, "wall_clock_ms": 95},
+        "accessed_evidence_ids": ["training-receipt", "evaluation-evidence"]
+      },
+      "recommendation": {
+        "disposition": "support",
+        "action_id": "record-substrate-promotion",
+        "rationale": "The proposed wording distinguishes the repaired active artifact from the preserved first falsification and from product release.",
+        "confidence_milli": 820,
+        "calibration_bucket": "800-899",
+        "evidence_ids": ["training-receipt", "evaluation-evidence"],
+        "contradictions": [],
+        "predicted_consequences": [],
+        "missing_information": []
+      }
+    },
+    {
+      "invocation_id": "successor-v2-status-shadow-001:skeptic",
+      "faculty_id": "skeptic",
+      "seal_id": "seal-solomon-skeptic-v0",
+      "circle": {
+        "faculty_id": "skeptic",
+        "permissions": ["read:evidence", "read:model_hashes", "recommend:action"],
+        "tools": ["evidence_reader", "contradiction_checker"],
+        "budget": {"input_bytes": 16384, "output_bytes": 4096, "tool_calls": 2, "tokens": 2048, "wall_clock_ms": 10000},
+        "usage": {"input_bytes": 2894, "output_bytes": 850, "tool_calls": 2, "tokens": 710, "wall_clock_ms": 105},
+        "accessed_evidence_ids": ["training-receipt", "evaluation-evidence"]
+      },
+      "recommendation": {
+        "disposition": "oppose",
+        "action_id": "record-substrate-promotion",
+        "rationale": "Passing a frozen NLL comparison does not demonstrate rich contextual modeling or authorize the product release.",
+        "confidence_milli": 650,
+        "calibration_bucket": "600-699",
+        "evidence_ids": ["training-receipt", "evaluation-evidence"],
+        "contradictions": [
+          {
+            "severity": "soft",
+            "action_id": "record-substrate-promotion",
+            "claim_id": "substrate-promotion",
+            "conflicts_with_claim_id": "product-readiness",
+            "explanation": "Substrate promotion must not be restated as product or contextual-intelligence promotion."
+          }
+        ],
+        "predicted_consequences": [
+          {
+            "action_id": "record-substrate-promotion",
+            "horizon": "release review",
+            "description": "Imprecise wording could be mistaken for satisfaction of the separate NSRL-MME release gate.",
+            "impact_milli": -300,
+            "confidence_milli": 650
+          }
+        ],
+        "missing_information": []
+      }
+    },
+    {
+      "invocation_id": "successor-v2-status-shadow-001:consequence",
+      "faculty_id": "consequence_planner",
+      "seal_id": "seal-solomon-consequence_planner-v0",
+      "circle": {
+        "faculty_id": "consequence_planner",
+        "permissions": ["read:evidence", "read:model_hashes", "recommend:action"],
+        "tools": ["evidence_reader", "consequence_ledger"],
+        "budget": {"input_bytes": 16384, "output_bytes": 4096, "tool_calls": 2, "tokens": 2048, "wall_clock_ms": 10000},
+        "usage": {"input_bytes": 2894, "output_bytes": 760, "tool_calls": 2, "tokens": 640, "wall_clock_ms": 90},
+        "accessed_evidence_ids": ["training-receipt", "evaluation-evidence"]
+      },
+      "recommendation": {
+        "disposition": "support",
+        "action_id": "record-substrate-promotion",
+        "rationale": "A scoped status correction reduces decision error while preserving all product and wisdom gates as independent blockers.",
+        "confidence_milli": 860,
+        "calibration_bucket": "800-899",
+        "evidence_ids": ["training-receipt", "evaluation-evidence"],
+        "contradictions": [],
+        "predicted_consequences": [
+          {
+            "action_id": "record-substrate-promotion",
+            "horizon": "near term",
+            "description": "Future work can target council quality instead of repeating the closed substrate gate.",
+            "impact_milli": 450,
+            "confidence_milli": 860
+          }
+        ],
+        "missing_information": []
+      }
+    },
+    {
+      "invocation_id": "successor-v2-status-shadow-001:judge",
+      "faculty_id": "judge",
+      "seal_id": "seal-solomon-judge-v0",
+      "circle": {
+        "faculty_id": "judge",
+        "permissions": [
+          "read:evidence", "read:model_hashes", "recommend:repository_change", "request:evidence", "ask:user"
+        ],
+        "tools": ["evidence_reader"],
+        "budget": {"input_bytes": 32768, "output_bytes": 8192, "tool_calls": 1, "tokens": 4096, "wall_clock_ms": 20000},
+        "usage": {"input_bytes": 12500, "output_bytes": 1800, "tool_calls": 1, "tokens": 1850, "wall_clock_ms": 180},
+        "accessed_evidence_ids": ["training-receipt", "evaluation-evidence"]
+      },
+      "recommendation": null
+    }
+  ]
+}

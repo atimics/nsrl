@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.local/protocol/wisdom-generation-integrity-v0.schema.json",
+  "title": "Wisdom evaluation generation-integrity gate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "ok", "model_artifact_sha256", "source_report", "gates"],
+  "properties": {
+    "schema": {"const": "nsrl.wisdom_generation_integrity.v0"},
+    "ok": {"const": true},
+    "model_artifact_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "quality_report_green", "generation_integrity_green", "source_grounding_green",
+        "cross_modal_agreement_green"
+      ],
+      "properties": {
+        "quality_report_green": {"const": true},
+        "generation_integrity_green": {"const": true},
+        "source_grounding_green": {"const": true},
+        "cross_modal_agreement_green": {"const": true}
+      }
+    }
+  }
+}

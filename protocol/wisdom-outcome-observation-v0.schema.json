@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.local/protocol/wisdom-outcome-observation-v0.schema.json",
+  "title": "Solomon Council v0 outcome observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_id", "observed_at", "observer", "metrics", "notes", "revision"],
+  "properties": {
+    "schema": {"const": "nsrl.wisdom_outcome_observation.v0"},
+    "receipt_id": {"type": "string", "minLength": 1},
+    "observed_at": {"type": "string", "minLength": 1},
+    "observer": {"type": "string", "minLength": 1},
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["metric_id", "value", "unit"],
+        "properties": {
+          "metric_id": {"type": "string", "minLength": 1},
+          "value": {"type": ["string", "number", "boolean"]},
+          "unit": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "notes": {"type": "string"},
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "confidence_milli", "calibration_bucket"],
+      "properties": {
+        "reason": {"type": "string", "minLength": 1},
+        "confidence_milli": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "calibration_bucket": {
+          "enum": ["0-99", "100-199", "200-299", "300-399", "400-499", "500-599", "600-699", "700-799", "800-899", "900-1000"]
+        }
+      }
+    }
+  }
+}

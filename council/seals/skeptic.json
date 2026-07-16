@@ -1,0 +1,34 @@
+{
+  "schema": "nsrl.faculty_capability_seal.v0",
+  "seal_id": "seal-solomon-skeptic-v0",
+  "faculty_id": "skeptic",
+  "role": "Skeptic/red-team critic",
+  "version": 0,
+  "issuer_key_id": "nsrl-solomon-council-offline-root-2026-07-v0",
+  "capabilities": [
+    "detect_contradiction",
+    "identify_hard_negative",
+    "oppose_action",
+    "recommend_abstention",
+    "request_evidence"
+  ],
+  "allowed_permissions": [
+    "read:evidence",
+    "read:model_hashes",
+    "recommend:action",
+    "request:evidence"
+  ],
+  "allowed_tools": ["evidence_reader", "contradiction_checker"],
+  "resource_ceiling": {
+    "input_bytes": 32768,
+    "output_bytes": 16384,
+    "tool_calls": 4,
+    "tokens": 8192,
+    "wall_clock_ms": 30000
+  },
+  "issued_at": "2026-07-15T00:00:00Z",
+  "signature": {
+    "algorithm": "ed25519",
+    "value_base64": "nwDOiMKSovO4r0XoxFTiKq58eXgzl9OER1tVH28qI5N3Tp6YTjCpD8/l1dWtm5OE+CwrEZIh36BAjrrXdmGUDw=="
+  }
+}

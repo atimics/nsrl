@@ -38,6 +38,19 @@ transformer-plus-suffix-memory result remains separately replayable. Solomon
 and literary results are experiment evidence rather than alternate headline
 criteria.
 
+Solomon Council v0 is **shadow-ready**. All six faculty seals verify; the judge
+exercises selection, evidence request, user question, and abstention; circle
+overruns and unauthorized evidence fail closed; dissent is retained; and both
+the initial wisdom receipt and its outcome/revision chain replay byte-for-byte.
+The bounded solomonic experiment records eight favorable fired passages and
+`-52381` Q32 signed regret. Its original publication is supported under an
+explicit conditional unsafe-intensity null, but MJ-20 supplies an exact
+exchangeable counterexample to deriving that null from marginal coverage. The
+non-crossing e-process therefore does not establish sequential safety. The
+checked finite-horizon replacement requires 119 calibration source panels per
+family and is not execution-ready. The eight-dimension same-model wisdom
+evaluation also remains unmeasured, so council promotion is not authorized.
+
 The project headline is `NSRL-MME v0`, a model-native multimodal LLM eval
 defined in `docs/multimodal-llm-eval.md`. The current local score is **371 per
 mille**, below the 700 target. The quality report and generated-output integrity

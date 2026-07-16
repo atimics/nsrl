@@ -1,0 +1,7 @@
+{
+  "schema": "nsrl.council_trust_root.v0",
+  "key_id": "nsrl-solomon-council-offline-root-2026-07-v0",
+  "algorithm": "ed25519",
+  "purpose": "verify immutable faculty capability seals; this key grants no tool execution authority",
+  "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA6fm3rWbX18eQ2VoOK0NX57720FOqpHPkKATxHMh7woU=\n-----END PUBLIC KEY-----\n"
+}

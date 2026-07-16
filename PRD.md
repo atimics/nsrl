@@ -63,6 +63,17 @@ promotion comparison without retrieval, suffix memory, routing, or held-out
 lookup. This repairs the substrate gate; it does not by itself satisfy the
 separate NSRL-MME product release gate.
 
+Solomon Council v0 is now implemented as a separate shadow-mode judgment gate.
+Its mathematician, engineer, historian/source scholar, skeptic, consequence
+planner, and judge/router each run under an Ed25519-signed capability seal and a
+per-invocation permission/resource circle. The deterministic judge preserves
+dissent and can select only a mathematical-controller-allowed recommendation,
+request evidence, ask the user, or abstain. Hash-bound wisdom receipts include
+model/source identity, evidence, confidence/calibration, predicted consequences,
+permissions/budgets, outcome, and append-only revision history. The core and its
+adversarial replay checks pass. Promotion does not: the frozen same-model wisdom
+evaluation across all eight required dimensions has not yet been produced.
+
 The p10m training roadmap has completed its local scaling-readiness review. A
 contracted 2,048-window run bound the K/V schedule to the same initialization,
 data order, context, batch geometry, budget, and held-out split as a float32 SGD

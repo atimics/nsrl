@@ -433,6 +433,126 @@ function collectNativeModelEvidence() {
   };
 }
 
+function collectCouncilEvidence() {
+  const paths = {
+    trust_root: "council/trust-root-v0.json",
+    request_schema: "protocol/solomon-council-request-v0.schema.json",
+    receipt_schema: "protocol/wisdom-receipt-v0.schema.json",
+    observation_schema: "protocol/wisdom-outcome-observation-v0.schema.json",
+    wisdom_eval_schema: "protocol/solomon-wisdom-eval-v0.schema.json",
+    generation_integrity_schema: "protocol/wisdom-generation-integrity-v0.schema.json",
+    provenance_gate_schema: "protocol/wisdom-provenance-gate-v0.schema.json",
+    request: "benchmarks/solomon-council-v0/fixtures/select-request.json",
+    receipt: "benchmarks/solomon-council-v0/fixtures/select-receipt.json",
+    observation: "benchmarks/solomon-council-v0/fixtures/select-observation.json",
+    revised_receipt: "benchmarks/solomon-council-v0/fixtures/select-revised-receipt.json",
+    adaptive_preregistration:
+      "protocol/examples/p10m-adaptive-composition-v1-preregistration.json",
+    adaptive_theory:
+      "research/mathematical-journal/MJ-2026-07-15-20-exchangeable-adaptive-composition.md",
+    wisdom_eval_result: "benchmarks/solomon-council-v0/wisdom-eval-result.json",
+    decision_regret_result:
+      "benchmarks/production-model-v1/p10m-solomonic-judgment-v1-result.json",
+    decision_regret_publication:
+      "benchmarks/production-model-v1/p10m-solomonic-judgment-v1-publication.json",
+  };
+  const sealPaths = [
+    "mathematician", "engineer", "historian", "skeptic", "consequence_planner", "judge",
+  ].map((faculty) => `council/seals/${faculty}.json`);
+  const requiredPaths = Object.entries(paths).filter(
+    ([key]) => !["wisdom_eval_result", "decision_regret_result", "decision_regret_publication"].includes(key));
+  const files = Object.fromEntries(requiredPaths.map(([key, value]) => [key, fileInfo(value)]));
+  const seals = sealPaths.map(fileInfo);
+  const receipt = maybeReadJson(paths.receipt);
+  const revisedReceipt = maybeReadJson(paths.revised_receipt);
+  const wisdomEval = maybeReadJson(paths.wisdom_eval_result);
+  const regretResult = maybeReadJson(paths.decision_regret_result);
+  const regretPublication = maybeReadJson(paths.decision_regret_publication);
+  const selfCheck = runCommand(process.execPath, ["scripts/check-solomon-council-v0.mjs"], {
+    timeoutMs: 10000,
+  });
+  const adaptiveCheck = runCommand(
+    process.execPath, ["scripts/check-adaptive-composition-theory-v1.mjs"], {timeoutMs: 10000});
+  const selfCheckOk = selfCheck.ok;
+  const receiptOk = receipt?.schema === "nsrl.wisdom_receipt.v0"
+    && receipt.mode === "shadow"
+    && receipt.faculty_invocations?.length === 6
+    && receipt.faculty_invocations.every((entry) => entry.seal?.signature_verified === true)
+    && ["select", "request_evidence", "ask_user", "abstain"].includes(receipt.decision?.kind)
+    && receipt.shadow_execution?.action_execution_allowed === false
+    && receipt.shadow_execution?.action_executed === false
+    && receipt.outcome?.status === "pending"
+    && receipt.revisions?.length === 0
+    && /^[0-9a-f]{64}$/.test(receipt.identity?.receipt_sha256 ?? "");
+  const revisionOk = revisedReceipt?.schema === "nsrl.wisdom_receipt.v0"
+    && revisedReceipt.mode === "shadow"
+    && revisedReceipt.outcome?.status === "observed"
+    && revisedReceipt.revisions?.length === 1
+    && revisedReceipt.revisions[0]?.prior_receipt_sha256 === receipt?.identity?.receipt_sha256
+    && revisedReceipt.shadow_execution?.action_executed === false;
+  const filesPresent = Object.values(files).every((file) => file.present)
+    && seals.every((file) => file.present);
+  const councilCoreOk = filesPresent && receiptOk && revisionOk && selfCheckOk;
+  const wisdomGatePassed = wisdomEval?.schema === "nsrl.solomon_wisdom_eval_result.v0"
+    && wisdomEval.analysis_role === "frozen_same_model_comparison"
+    && wisdomEval.verdict?.all_dimensions_outperform === true
+    && wisdomEval.verdict?.promotion_gate_passed === true
+    && wisdomEval.authorization?.council_promotion_authorized === true
+    && wisdomEval.authorization?.product_release_authorized === false;
+  const wisdomState = !wisdomEval ? "not_measured"
+    : wisdomGatePassed ? "passed" : "failed_or_invalid";
+  const regretEvidenceOk = regretResult?.schema === "nsrl.solomonic_judgment_result.v1"
+    && regretPublication?.schema === "nsrl.solomonic_judgment_publication.v1"
+    && regretPublication.verdict?.status === "supported"
+    && regretResult.heldout_regret?.fired_passages > 0
+    && BigInt(regretResult.heldout_regret?.signed_regret_q32 ?? "0") < 0n;
+  return {
+    present: filesPresent,
+    ok: councilCoreOk,
+    state: !filesPresent ? "missing"
+      : !councilCoreOk ? "invalid"
+        : wisdomGatePassed ? "wisdom_gate_passed" : "shadow_ready",
+    files,
+    seals,
+    faculties: receipt?.faculty_invocations?.map((entry) => entry.faculty_id) ?? [],
+    seal_signatures_verified: receipt?.faculty_invocations?.filter(
+      (entry) => entry.seal?.signature_verified === true).length ?? 0,
+    decision_states_checked: ["select", "request_evidence", "ask_user", "abstain"],
+    receipt_sha256: receipt?.identity?.receipt_sha256 ?? "",
+    revised_receipt_sha256: revisedReceipt?.identity?.receipt_sha256 ?? "",
+    self_check_ok: selfCheckOk,
+    receipt_ok: receiptOk,
+    revision_ok: revisionOk,
+    shadow_execution_only: receipt?.shadow_execution?.action_execution_allowed === false
+      && receipt?.shadow_execution?.action_executed === false,
+    wisdom_evaluation: {
+      state: wisdomState,
+      path: paths.wisdom_eval_result,
+      dimensions: wisdomEval?.dimensions ?? {},
+      all_dimensions_outperform: wisdomEval?.verdict?.all_dimensions_outperform === true,
+      promotion_gate_passed: wisdomGatePassed,
+    },
+    bounded_decision_regret_evidence: {
+      present: Boolean(regretResult && regretPublication),
+      empirical_result_supported: regretEvidenceOk,
+      publication_status: regretPublication?.verdict?.status ?? "missing",
+      fired_passages: regretResult?.heldout_regret?.fired_passages ?? 0,
+      signed_regret_q32: regretResult?.heldout_regret?.signed_regret_q32 ?? "",
+      same_model_solo_comparison: false,
+      conditional_null_assumed: true,
+      conditional_bridge_falsified_by_mj20: true,
+      sequential_safety_supported: false,
+    },
+    adaptive_composition: {
+      theory_check_ok: adaptiveCheck.ok,
+      replacement: "finite_horizon_simultaneous_state_action_conformal_plus_alpha_spending",
+      calibration_sources_per_family: 119,
+      execution_ready: false,
+      optimizer_promotion_authorized: false,
+    },
+  };
+}
+
 function collectIsingEvidence() {
   const paths = {
     audit_contract: "benchmarks/production-model-v1/p10m-atomic-ising-audit-v1-contract.json",
@@ -1172,6 +1292,7 @@ function collectDiagnostic(config) {
 function deriveStatus(report) {
   const blockers = [];
   const warnings = [];
+  const councilBlockers = [];
   if (report.git.dirty) {
     warnings.push(`working tree is dirty (${report.git.change_count} changed paths)`);
   }
@@ -1195,6 +1316,15 @@ function deriveStatus(report) {
     if (!report.native_model.beats_all_frozen_baselines_gate) {
       blockers.push("native successor-v2 has not beaten every frozen promotion baseline");
     }
+  }
+  if (!report.council.present || !report.council.ok) {
+    councilBlockers.push("Solomon Council v0 core or its exact receipt replay is missing/invalid");
+  }
+  if (report.council.wisdom_evaluation.state === "not_measured") {
+    councilBlockers.push("same-model frozen wisdom evaluation is not measured");
+  } else if (!report.council.wisdom_evaluation.promotion_gate_passed) {
+    councilBlockers.push(
+      "Council does not strictly outperform the same underlying model on every wisdom dimension");
   }
   if (report.hygiene.run && !report.hygiene.ok) {
     blockers.push("hygiene checks are not green");
@@ -1245,6 +1375,8 @@ function deriveStatus(report) {
     llm_path_state: llmPathState,
     blockers: [...new Set(blockers)],
     warnings: [...new Set(warnings)],
+    council_ready: councilBlockers.length === 0,
+    council_blockers: [...new Set(councilBlockers)],
   };
 }
 
@@ -1256,6 +1388,7 @@ function buildReport(config) {
     repo_root: repoRoot,
     git: collectGit(),
     native_model: collectNativeModelEvidence(),
+    council: collectCouncilEvidence(),
     ising_evidence: collectIsingEvidence(),
     research_harness: collectResearchHarness(),
     hygiene: collectHygiene(config.runHygiene),
@@ -1294,6 +1427,12 @@ function nextCommands(report) {
   if (!report.native_model.ok) {
     commands.push("node scripts/run-integer-transformer-successor-v2.mjs --check");
   }
+  if (!report.council.ok) {
+    commands.push("node scripts/check-solomon-council-v0.mjs");
+  }
+  if (report.council.wisdom_evaluation.state === "not_measured") {
+    commands.push("node scripts/evaluate-solomon-wisdom-v0.mjs FROZEN_INPUT.json benchmarks/solomon-council-v0/wisdom-eval-result.json");
+  }
   if (report.diagnostic.failed_checks?.some((check) => check.name === "release-candidate-self-test")) {
     commands.push("node scripts/check-solomon-release-candidate-self-test.mjs");
   }
@@ -1324,6 +1463,7 @@ function renderMarkdown(report) {
   lines.push(`- HEAD: \`${report.git.head || "unknown"}\``);
   lines.push(`- Working tree: ${report.git.dirty ? `${report.git.change_count} changed paths` : "clean"}`);
   lines.push(`- Native model: ${renderNativeModelOneLine(report.native_model)}`);
+  lines.push(`- Solomon Council: ${report.council.state}; wisdom evaluation ${report.council.wisdom_evaluation.state}`);
   lines.push(`- Ising evidence: ${renderIsingEvidenceOneLine(report.ising_evidence)}`);
   lines.push(`- Research harness: ${renderResearchHarnessOneLine(report.research_harness)}`);
   lines.push(`- Hygiene: ${renderHygiene(report.hygiene)}`);
@@ -1343,6 +1483,19 @@ function renderMarkdown(report) {
     lines.push(`- Gap to ${system}: ${gap >= 0 ? "+" : ""}${gap} millibits (baseline ${nll})`);
   }
   lines.push(`- Gates: zero-probability ${report.native_model.zero_probability_gate ? "green" : "red"}; beats uniform ${report.native_model.beats_uniform_gate ? "green" : "red"}; beats every frozen baseline ${report.native_model.beats_all_frozen_baselines_gate ? "green" : "red"}`);
+  lines.push("");
+
+  lines.push("## Solomon Council v0");
+  lines.push("");
+  lines.push(`- Core: **${report.council.state}**; ${report.council.seal_signatures_verified}/6 Ed25519 faculty seals verified; shadow-only execution ${report.council.shadow_execution_only ? "enforced" : "invalid"}`);
+  lines.push(`- Judge states checked: ${report.council.decision_states_checked.join(", ")}; exact initial receipt ${report.council.receipt_ok ? "verified" : "invalid"}; outcome/revision chain ${report.council.revision_ok ? "verified" : "invalid"}`);
+  lines.push(`- Wisdom receipt: \`${report.council.receipt_sha256 || "missing"}\`; revised receipt: \`${report.council.revised_receipt_sha256 || "missing"}\``);
+  lines.push(`- Bounded decision-regret experiment: publication **${report.council.bounded_decision_regret_evidence.publication_status}** with ${report.council.bounded_decision_regret_evidence.fired_passages} favorable fired passages and signed regret ${report.council.bounded_decision_regret_evidence.signed_regret_q32 || "missing"} Q32; MJ-20 falsifies the marginal-to-conditional bridge, so the non-crossing e-process does not establish sequential safety`);
+  lines.push(`- Adaptive replacement: ${report.council.adaptive_composition.theory_check_ok ? "checked" : "invalid"}; requires ${report.council.adaptive_composition.calibration_sources_per_family} calibration source panels per family; execution and optimizer promotion remain unauthorized`);
+  lines.push(`- Same-model wisdom gate: **${report.council.wisdom_evaluation.state}**; promotion ${report.council.wisdom_evaluation.promotion_gate_passed ? "passed" : "not authorized"}`);
+  for (const blocker of report.status.council_blockers) {
+    lines.push(`- Council blocker: ${blocker}`);
+  }
   lines.push("");
 
   lines.push("## Ising Evidence");

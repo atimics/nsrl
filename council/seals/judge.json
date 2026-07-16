@@ -1,0 +1,36 @@
+{
+  "schema": "nsrl.faculty_capability_seal.v0",
+  "seal_id": "seal-solomon-judge-v0",
+  "faculty_id": "judge",
+  "role": "Judge/router",
+  "version": 0,
+  "issuer_key_id": "nsrl-solomon-council-offline-root-2026-07-v0",
+  "capabilities": [
+    "compare_recommendations",
+    "preserve_dissent",
+    "request_evidence",
+    "ask_user",
+    "abstain",
+    "select_controller_allowed_action"
+  ],
+  "allowed_permissions": [
+    "read:evidence",
+    "read:model_hashes",
+    "recommend:repository_change",
+    "request:evidence",
+    "ask:user"
+  ],
+  "allowed_tools": ["evidence_reader"],
+  "resource_ceiling": {
+    "input_bytes": 65536,
+    "output_bytes": 32768,
+    "tool_calls": 2,
+    "tokens": 16384,
+    "wall_clock_ms": 60000
+  },
+  "issued_at": "2026-07-15T00:00:00Z",
+  "signature": {
+    "algorithm": "ed25519",
+    "value_base64": "R43a2kMsVi2HGCXkrKvptPNxB1ML0S4wAkt2D6bngDiLO7p1AdIRm/6X3oN83rxebRV35kL7o5rleg7ahy2MBQ=="
+  }
+}

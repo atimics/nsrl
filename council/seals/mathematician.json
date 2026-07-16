@@ -1,0 +1,34 @@
+{
+  "schema": "nsrl.faculty_capability_seal.v0",
+  "seal_id": "seal-solomon-mathematician-v0",
+  "faculty_id": "mathematician",
+  "role": "Mathematician",
+  "version": 0,
+  "issuer_key_id": "nsrl-solomon-council-offline-root-2026-07-v0",
+  "capabilities": [
+    "audit_integer_metrics",
+    "evaluate_controller_constraints",
+    "estimate_calibration",
+    "recommend_action",
+    "request_evidence"
+  ],
+  "allowed_permissions": [
+    "read:evidence",
+    "read:model_hashes",
+    "recommend:action",
+    "request:evidence"
+  ],
+  "allowed_tools": ["evidence_reader", "metric_checker"],
+  "resource_ceiling": {
+    "input_bytes": 32768,
+    "output_bytes": 16384,
+    "tool_calls": 4,
+    "tokens": 8192,
+    "wall_clock_ms": 30000
+  },
+  "issued_at": "2026-07-15T00:00:00Z",
+  "signature": {
+    "algorithm": "ed25519",
+    "value_base64": "iJW5yJRXjglt0AlCaL0CZEbMrULtL7iLGjq25st712rdOsGgpPi1eo/ZlTimM0ZKP9+VfxaafPO9rQxtAxVcAw=="
+  }
+}

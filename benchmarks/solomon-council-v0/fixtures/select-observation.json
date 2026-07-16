@@ -1,0 +1,16 @@
+{
+  "schema": "nsrl.wisdom_outcome_observation.v0",
+  "receipt_id": "wisdom-c51745bf146641f0c1d78b4e",
+  "observed_at": "2026-07-15T21:45:00Z",
+  "observer": "nsrl-status-exact-replay",
+  "metrics": [
+    {"metric_id": "native_model_status_verified", "value": true, "unit": "boolean"},
+    {"metric_id": "shadow_action_executed", "value": false, "unit": "boolean"}
+  ],
+  "notes": "The status checker independently verified the candidate, training receipt, frozen comparisons, and zero unsupported windows; Council remained non-executing.",
+  "revision": {
+    "reason": "Independent status replay increased confidence without changing the shadow recommendation.",
+    "confidence_milli": 970,
+    "calibration_bucket": "900-1000"
+  }
+}
