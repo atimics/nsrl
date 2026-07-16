@@ -128,6 +128,51 @@ const outerOk =
   outer.transformer.layers === 2 &&
   outer.transformer.attentionRmsWeights !== null;
 report.push({ name: "solomon-v5-wrapper", ok: outerOk });
-const finalOk = ok && outerOk;
+outer.textMemory = new Proxy({}, {
+  get() {
+    throw new Error("raw scorer touched embedded memory");
+  },
+});
+outer.selectTextExample = () => {
+  throw new Error("raw scorer selected an embedded example");
+};
+const rawCandidates = [
+  {candidate_id: "yes", text: "yes"},
+  {candidate_id: "no", text: "no"},
+];
+const rawScore = outer.scoreRawContinuations(
+  "seal of Bael",
+  rawCandidates,
+  {task: "match", imageBins: [0, 1]},
+);
+const rawReplay = outer.scoreRawContinuations(
+  "seal of Bael",
+  rawCandidates,
+  {task: "match", imageBins: [0, 1]},
+);
+const changedImage = outer.scoreRawContinuations(
+  "seal of Bael",
+  rawCandidates,
+  {task: "match", imageBins: [0, 2]},
+);
+const rawOk =
+  JSON.stringify(rawScore) === JSON.stringify(rawReplay) &&
+  rawScore.schema === "nsrl.solomon_raw_continuation_score.v0" &&
+  rawScore.provenance.raw_transformer_only === true &&
+  rawScore.provenance.embedded_text_memory_used === false &&
+  rawScore.provenance.retrieval_used === false &&
+  rawScore.provenance.oracle_or_target_lookup_used === false &&
+  rawScore.conditioning.task_token === 8 &&
+  rawScore.conditioning.image_token_count === 2 &&
+  rawScore.conditioning.prefix_token_hash !== changedImage.conditioning.prefix_token_hash &&
+  rawScore.scores.length === 2 &&
+  rawScore.scores.every((score) => score.token_rows.length === score.token_count);
+report.push({
+  name: "raw-continuation-no-memory-replay",
+  ok: rawOk,
+  selected_candidate_id: rawScore.selected_candidate_id,
+  prefix_token_hash: rawScore.conditioning.prefix_token_hash,
+});
+const finalOk = ok && outerOk && rawOk;
 process.stdout.write(`${JSON.stringify({ schema: "nsrl.solomon_attention_web_model_self_test.v1", ok: finalOk, cases: report }, null, 2)}\n`);
 if (!finalOk) process.exitCode = 1;

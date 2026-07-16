@@ -493,10 +493,13 @@ function collectCouncilEvidence() {
   });
   const ceremonyCheck = runCommand(
     process.execPath, ["scripts/check-solomon-wisdom-ceremony-v0.mjs"], {timeoutMs: 10000});
+  const productionWisdomCheck = runCommand(
+    process.execPath, ["scripts/check-solomon-wisdom-production-v0.mjs"], {timeoutMs: 20000});
   const adaptiveCheck = runCommand(
     process.execPath, ["scripts/check-adaptive-composition-theory-v1.mjs"], {timeoutMs: 10000});
   const selfCheckOk = selfCheck.ok;
   const ceremonyCheckOk = ceremonyCheck.ok;
+  const productionWisdomCheckOk = productionWisdomCheck.ok;
   const receiptOk = receipt?.schema === "nsrl.wisdom_receipt.v0"
     && receipt.mode === "shadow"
     && receipt.faculty_invocations?.length === 6
@@ -518,6 +521,7 @@ function collectCouncilEvidence() {
   const councilCoreOk = filesPresent && receiptOk && revisionOk && selfCheckOk && ceremonyCheckOk;
   const wisdomGatePassed = wisdomEval?.schema === "nsrl.solomon_wisdom_eval_result.v0"
     && wisdomEval.analysis_role === "frozen_same_model_comparison"
+    && productionWisdomCheckOk
     && wisdomEval.verdict?.all_dimensions_outperform === true
     && wisdomEval.verdict?.promotion_gate_passed === true
     && wisdomEval.authorization?.council_promotion_authorized === true
@@ -567,6 +571,7 @@ function collectCouncilEvidence() {
     self_check_ok: selfCheckOk,
     wisdom_ceremony_check_ok: ceremonyCheckOk,
     wisdom_ceremony_byte_bound: ceremonyCheckOk,
+    wisdom_production_check_ok: productionWisdomCheckOk,
     receipt_ok: receiptOk,
     revision_ok: revisionOk,
     shadow_execution_only: receipt?.shadow_execution?.action_execution_allowed === false

@@ -13,8 +13,11 @@ node scripts/check-integer-transformer-proof-self-test.mjs
 node scripts/check-integer-transformer-candidate-health-self-test.mjs
 node scripts/run-integer-transformer-successor-v2.mjs --check
 node scripts/check-solomon-council-v0.mjs
+node scripts/check-solomon-raw-judgment-pilot-v0.mjs
 node scripts/check-solomon-wisdom-eval-v0.mjs
 node scripts/check-solomon-wisdom-ceremony-v0.mjs
+node scripts/build-solomon-wisdom-integrity-v0.mjs --check
+node scripts/check-solomon-wisdom-production-v0.mjs
 node scripts/check-integer-research-evidence-v1.mjs
 node scripts/check-boolean-jet-theory-v1.mjs
 node scripts/check-boolean-jet-stability-theory-v1.mjs

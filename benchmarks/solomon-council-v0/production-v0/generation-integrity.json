@@ -1,0 +1,18 @@
+{
+  "schema": "nsrl.wisdom_generation_integrity.v0",
+  "ok": true,
+  "model_artifact_sha256": "89260e3cae329677e132eef4439d784c6290e8e46b8779c3667da8d157bf7259",
+  "source_report": {
+    "path": "benchmarks/solomon-council-v0/production-v0/source-quality.json",
+    "sha256": "eafdbd5976c0913c3fb78039af8f341f87a369ef325641acb0f2c54994eb6b09"
+  },
+  "gates": {
+    "quality_report_green": true,
+    "generation_integrity_green": true,
+    "source_grounding_green": true,
+    "cross_modal_agreement_green": true,
+    "same_model_invocation_green": true,
+    "trace_replay_green": true,
+    "faculty_output_binding_green": true
+  }
+}

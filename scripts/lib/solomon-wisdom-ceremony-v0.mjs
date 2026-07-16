@@ -12,6 +12,8 @@ import {WISDOM_DIMENSIONS} from "./solomon-wisdom-constants-v0.mjs";
 
 const shaPattern = /^[0-9a-f]{64}$/;
 const laneNames = ["solo", "council"];
+const verifiedArtifactCache = new Map();
+const jsonlRecordCache = new Map();
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -47,23 +49,58 @@ function resolveArtifact(baseDir, artifactPath) {
 }
 
 function verifyArtifact(binding, baseDir, label) {
-  exactKeys(binding, ["path", "sha256"], [], label);
+  exactKeys(binding, ["path", "sha256"], ["record_id", "record_sha256"], label);
   nonempty(binding.path, `${label} path`);
   hash(binding.sha256, `${label} hash`);
+  const selected = Object.hasOwn(binding, "record_id") || Object.hasOwn(binding, "record_sha256");
+  assert(!selected || (Object.hasOwn(binding, "record_id")
+      && Object.hasOwn(binding, "record_sha256")),
+  `${label} record selector is incomplete`);
+  if (selected) {
+    nonempty(binding.record_id, `${label} record id`);
+    hash(binding.record_sha256, `${label} record hash`);
+  }
   const resolved = resolveArtifact(baseDir, binding.path);
+  const cacheKey = `${resolved}\u0000${binding.sha256}`;
+  if (verifiedArtifactCache.has(cacheKey)) {
+    return {bytes: verifiedArtifactCache.get(cacheKey), resolved};
+  }
   assert(fs.existsSync(resolved), `${label} is missing: ${binding.path}`);
   const bytes = fs.readFileSync(resolved);
   assert(sha256Bytes(bytes) === binding.sha256, `${label} byte hash changed`);
+  verifiedArtifactCache.set(cacheKey, bytes);
   return {bytes, resolved};
 }
 
 function parseJsonArtifact(binding, baseDir, label) {
   const artifact = verifyArtifact(binding, baseDir, label);
   try {
-    return {...artifact, value: JSON.parse(artifact.bytes)};
+    if (!Object.hasOwn(binding, "record_id")) {
+      return {...artifact, value: JSON.parse(artifact.bytes)};
+    }
+    const cacheKey = `${artifact.resolved}\u0000${binding.sha256}`;
+    if (!jsonlRecordCache.has(cacheKey)) {
+      const byId = new Map();
+      for (const line of artifact.bytes.toString("utf8").trimEnd().split("\n")) {
+        const entry = JSON.parse(line);
+        exactKeys(entry, ["artifact_id", "value"], [], `${label} record envelope`);
+        assert(!byId.has(entry.artifact_id), `${label} record selector is not unique`);
+        byId.set(entry.artifact_id, entry.value);
+      }
+      jsonlRecordCache.set(cacheKey, byId);
+    }
+    const value = jsonlRecordCache.get(cacheKey).get(binding.record_id);
+    assert(value !== undefined, `${label} record selector is missing`);
+    assert(sha256Json(value) === binding.record_sha256,
+      `${label} selected record hash changed`);
+    return {...artifact, value};
   } catch (error) {
     throw new Error(`${label} is not JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function evidenceIdentityHash(binding) {
+  return binding.record_sha256 || binding.sha256;
 }
 
 function validatePrediction(prediction, decisionIds, label) {
@@ -75,6 +112,44 @@ function validatePrediction(prediction, decisionIds, label) {
   assert(typeof prediction.abstained === "boolean", `${label} abstention must be boolean`);
   nonempty(prediction.decision_id, `${label} decision id`);
   assert(decisionIds.includes(prediction.decision_id), `${label} decision is outside the frozen casebook`);
+}
+
+function validateModelScore(score, decisionIds, label) {
+  exactKeys(score, [
+    "schema", "selected_candidate_id", "confidence_milli", "margin_microunits",
+    "score_sha256", "visible_context_hash", "zero_probability_tokens_q15",
+    "raw_transformer_only", "context_independence_proven_from_weights",
+    "forbidden_assistance_absent",
+  ], [], label);
+  assert(score.schema === "nsrl.solomon_native_judgment_score_binding.v0",
+    `${label} has wrong schema`);
+  assert(decisionIds.includes(score.selected_candidate_id),
+    `${label} candidate is outside the frozen decision set`);
+  integer(score.confidence_milli, 0, 1000, `${label} confidence`);
+  integer(score.margin_microunits, 0, Number.MAX_SAFE_INTEGER, `${label} margin`);
+  hash(score.score_sha256, `${label} score hash`);
+  assert(/^0x[0-9a-f]{16}$/.test(score.visible_context_hash),
+    `${label} visible context hash is invalid`);
+  integer(score.zero_probability_tokens_q15, 0, Number.MAX_SAFE_INTEGER,
+    `${label} zero-probability tokens`);
+  assert(score.raw_transformer_only === true, `${label} did not use the raw transformer`);
+  assert(score.context_independence_proven_from_weights === true,
+    `${label} did not prove the successor's context-independence`);
+  assert(score.forbidden_assistance_absent === true, `${label} declared forbidden assistance`);
+}
+
+function validateToolObservation(observation, decisionIds, evidenceHashes, label) {
+  exactKeys(observation, [
+    "schema", "tool", "evidence_sha256", "derived_decision_id", "derived_without_gold",
+  ], [], label);
+  assert(observation.schema === "nsrl.solomon_faculty_tool_observation.v0",
+    `${label} has wrong schema`);
+  nonempty(observation.tool, `${label} tool`);
+  hash(observation.evidence_sha256, `${label} evidence hash`);
+  assert(evidenceHashes.has(observation.evidence_sha256), `${label} used evidence outside the case`);
+  assert(decisionIds.includes(observation.derived_decision_id),
+    `${label} decision is outside the frozen decision set`);
+  assert(observation.derived_without_gold === true, `${label} was derived from opened gold`);
 }
 
 function validateCasebook(casebook, baseDir) {
@@ -128,7 +203,7 @@ function validateCasebook(casebook, baseDir) {
     const evidenceHashes = [];
     for (const [index, binding] of entry.evidence.entries()) {
       verifyArtifact(binding, baseDir, `casebook ${entry.episode_id} evidence ${index}`);
-      evidenceHashes.push(binding.sha256);
+      evidenceHashes.push(evidenceIdentityHash(binding));
     }
     unique(evidenceHashes, `casebook ${entry.episode_id} evidence hashes`);
     unique(entry.decision_ids, `casebook ${entry.episode_id} decision ids`);
@@ -145,7 +220,7 @@ function validateCasebook(casebook, baseDir) {
   return byId;
 }
 
-function validateTrace(trace, lane, caseEntry, modelHash, baseDir, label) {
+function validateTrace(trace, lane, caseEntry, modelHash, baseDir, label, production) {
   exactKeys(trace, [
     "schema", "ceremony_id", "episode_id", "lane", "underlying_model_sha256",
     "runner", "gold_accessed", "hidden_memory_used", "retrieval_target_accessed",
@@ -205,12 +280,20 @@ function validateTrace(trace, lane, caseEntry, modelHash, baseDir, label) {
     const output = outputs.get("solo");
     exactKeys(output, [
       "schema", "episode_id", "model_sha256", "prediction",
-    ], [], `${label} solo model output`);
+    ], ["model_score"], `${label} solo model output`);
     assert(output.schema === "nsrl.solomon_solo_model_output.v0", `${label} solo output schema changed`);
     assert(output.episode_id === caseEntry.episode_id, `${label} solo output episode changed`);
     assert(output.model_sha256 === modelHash, `${label} solo output model changed`);
     assert(stableJson(output.prediction) === stableJson(trace.prediction),
       `${label} solo prediction differs from model output`);
+    if (production) {
+      assert(output.model_score, `${label} solo output omitted its model score`);
+    }
+    if (output.model_score) {
+      validateModelScore(output.model_score, caseEntry.decision_ids, `${label} solo model score`);
+      assert(output.model_score.selected_candidate_id === output.prediction.decision_id,
+        `${label} solo prediction differs from its raw model score`);
+    }
   }
   return outputs;
 }
@@ -242,7 +325,8 @@ function validateBundle(bundle, lane, casebook, casebookHash, casesById, baseDir
     const traceArtifact = parseJsonArtifact(entry.trace, baseDir,
       `${lane} bundle ${entry.episode_id} trace`);
     const outputs = validateTrace(traceArtifact.value, lane, caseEntry, modelHash, baseDir,
-      `${lane} trace ${entry.episode_id}`);
+      `${lane} trace ${entry.episode_id}`,
+      casebook.analysis_role === "frozen_same_model_comparison");
     assert(traceArtifact.value.ceremony_id === casebook.ceremony_id,
       `${lane} trace ${entry.episode_id} ceremony changed`);
     assert(stableJson(traceArtifact.value.prediction) === stableJson(entry.prediction),
@@ -251,9 +335,18 @@ function validateBundle(bundle, lane, casebook, casebookHash, casesById, baseDir
     if (lane === "council") {
       const requestArtifact = parseJsonArtifact(entry.request, baseDir,
         `council bundle ${entry.episode_id} request`);
-      const receiptArtifact = parseJsonArtifact({path: entry.receipt.path, sha256: entry.receipt.artifact_sha256},
+      const receiptArtifact = parseJsonArtifact({
+        path: entry.receipt.path,
+        sha256: entry.receipt.artifact_sha256,
+        ...(entry.receipt.record_id ? {
+          record_id: entry.receipt.record_id,
+          record_sha256: entry.receipt.record_sha256,
+        } : {}),
+      },
         baseDir, `council bundle ${entry.episode_id} receipt`);
-      exactKeys(entry.receipt, ["path", "artifact_sha256", "receipt_sha256"], [],
+      exactKeys(entry.receipt, ["path", "artifact_sha256", "receipt_sha256"], [
+        "record_id", "record_sha256",
+      ],
         `council bundle ${entry.episode_id} receipt binding`);
       hash(entry.receipt.receipt_sha256, `council bundle ${entry.episode_id} receipt identity`);
       verifyReceipt(receiptArtifact.value, requestArtifact.value);
@@ -283,7 +376,7 @@ function validateBundle(bundle, lane, casebook, casebookHash, casesById, baseDir
         `council bundle ${entry.episode_id} abstention differs from receipt`);
       assert(entry.prediction.confidence_milli === receiptArtifact.value.decision.confidence_milli,
         `council bundle ${entry.episode_id} confidence differs from receipt`);
-      const sourceHashes = new Set(caseEntry.evidence.map((binding) => binding.sha256));
+      const sourceHashes = new Set(caseEntry.evidence.map(evidenceIdentityHash));
       const receiptSourceHashes = receiptArtifact.value.bindings.sources.map(
         (source) => source.content_sha256);
       for (const source of receiptArtifact.value.bindings.sources) {
@@ -296,13 +389,27 @@ function validateBundle(bundle, lane, casebook, casebookHash, casesById, baseDir
         const output = outputs.get(facultyId);
         exactKeys(output, [
           "schema", "episode_id", "faculty_id", "model_sha256", "recommendation",
-        ], [], `council ${entry.episode_id} ${facultyId} model output`);
+        ], ["model_score", "tool_observation"],
+        `council ${entry.episode_id} ${facultyId} model output`);
         assert(output.schema === "nsrl.solomon_faculty_model_output.v0",
           `council ${entry.episode_id} ${facultyId} output schema changed`);
         assert(output.episode_id === entry.episode_id && output.faculty_id === facultyId,
           `council ${entry.episode_id} ${facultyId} output binding changed`);
         assert(output.model_sha256 === modelHash,
           `council ${entry.episode_id} ${facultyId} output model changed`);
+        if (casebook.analysis_role === "frozen_same_model_comparison") {
+          assert(output.model_score && output.tool_observation,
+            `council ${entry.episode_id} ${facultyId} omitted model or tool evidence`);
+        }
+        if (output.model_score) {
+          validateModelScore(output.model_score, caseEntry.decision_ids,
+            `council ${entry.episode_id} ${facultyId} model score`);
+        }
+        if (output.tool_observation) {
+          validateToolObservation(output.tool_observation, caseEntry.decision_ids,
+            new Set(caseEntry.evidence.map(evidenceIdentityHash)),
+            `council ${entry.episode_id} ${facultyId} tool observation`);
+        }
         const receiptInvocation = receiptArtifact.value.faculty_invocations.find(
           (invocation) => invocation.faculty_id === facultyId);
         assert(receiptInvocation && stableJson(receiptInvocation.recommendation) === stableJson(output.recommendation),
@@ -311,7 +418,7 @@ function validateBundle(bundle, lane, casebook, casebookHash, casesById, baseDir
     }
     byId.set(entry.episode_id, {
       prediction: entry.prediction,
-      trace_sha256: entry.trace.sha256,
+      trace_sha256: entry.trace.record_sha256 || entry.trace.sha256,
       receipt_sha256: receiptIdentity,
     });
   }
@@ -570,7 +677,7 @@ export function compileWisdomCeremony({
   const goldById = validateOpening(
     opening, casebook, casebookHash, soloHash, councilHash, casesById);
   const sourceHashes = new Set(casebook.cases.flatMap(
-    (entry) => entry.evidence.map((binding) => binding.sha256)));
+    (entry) => entry.evidence.map(evidenceIdentityHash)));
   const traceHashes = new Set([
     ...[...soloById.values()].map((entry) => entry.trace_sha256),
     ...[...councilById.values()].map((entry) => entry.trace_sha256),
@@ -587,7 +694,7 @@ export function compileWisdomCeremony({
       dimension: caseEntry.dimension,
       source_family: caseEntry.source_family,
       unfamiliar_source: caseEntry.unfamiliar_source,
-      evidence_sha256: caseEntry.evidence.map((binding) => binding.sha256),
+      evidence_sha256: caseEntry.evidence.map(evidenceIdentityHash),
       gold_opened_after_both_predictions: true,
       gold: goldById.get(caseEntry.episode_id),
       solo: {

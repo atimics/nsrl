@@ -7,6 +7,11 @@ const PROMPT = 2;
 const TEXT = 3;
 const IMAGE = 4;
 const EOS = 5;
+const TASK_TEXT_TO_IMAGE = 6;
+const TASK_IMAGE_TO_TEXT = 7;
+const TASK_MATCH = 8;
+const TASK_EXPLAIN = 9;
+const TASK_IDENTIFY = 10;
 const TEXT_BASE = 16;
 const TEXT_COUNT = 128;
 const IMAGE_BASE = TEXT_BASE + TEXT_COUNT;
@@ -351,6 +356,74 @@ export class SolomonAttentionSampler {
     };
   }
 
+  scoreRawContinuations(prompt, continuations, options = {}) {
+    const normalizedPrompt = normalizeText(prompt);
+    const candidates = requireRawContinuationCandidates(continuations, this.textTokenProfile);
+    const taskToken = rawScoringTaskToken(options.task || "text");
+    const imageTokens = rawScoringImageTokens(options);
+    const prefix = [BOS];
+    if (taskToken !== null) {
+      prefix.push(taskToken);
+    }
+    prefix.push(PROMPT, ...encodeTextTokens(normalizedPrompt, this.textTokenProfile));
+    if (imageTokens) {
+      prefix.push(IMAGE, ...imageTokens);
+    }
+    prefix.push(TEXT);
+
+    const scores = candidates.map((candidate) =>
+      scoreRawContinuationCandidate(
+        this.transformer,
+        this.positionPolicy,
+        this.contextSeqLen,
+        prefix,
+        candidate,
+      ));
+    scores.sort((left, right) =>
+      right.mean_log_probability_microunits - left.mean_log_probability_microunits ||
+      left.candidate_id.localeCompare(right.candidate_id),
+    );
+    const winner = scores[0];
+    const runnerUp = scores[1] || null;
+    const visiblePrefix = prefix.slice(-this.contextSeqLen);
+    const promptToken = encodeTextTokens(normalizedPrompt, this.textTokenProfile);
+
+    return {
+      schema: "nsrl.solomon_raw_continuation_score.v0",
+      selected_candidate_id: winner.candidate_id,
+      selected_text: winner.text,
+      margin_microunits: runnerUp
+        ? winner.mean_log_probability_microunits - runnerUp.mean_log_probability_microunits
+        : null,
+      scores,
+      conditioning: {
+        task: options.task || "text",
+        task_token: taskToken,
+        normalized_prompt: normalizedPrompt,
+        prompt_token_count: promptToken.length,
+        image_token_count: imageTokens?.length || 0,
+        prefix_token_count: prefix.length,
+        prefix_token_hash: fnv64Hex(prefix),
+        context_seq_len: this.contextSeqLen,
+        truncated_prefix_tokens: Math.max(0, prefix.length - this.contextSeqLen),
+        visible_prefix_tokens: visiblePrefix,
+        prompt_marker_visible: visiblePrefix.includes(PROMPT),
+        image_marker_visible: imageTokens ? visiblePrefix.includes(IMAGE) : null,
+      },
+      provenance: {
+        model_kind: MODEL_MAGIC,
+        model_hash: hex64(this.modelHash),
+        inner_model_hash: hex64(this.innerModelHash),
+        token_hash: hex64(this.tokenHash),
+        token_count: this.tokenCount,
+        raw_transformer_only: true,
+        embedded_text_memory_used: false,
+        retrieval_used: false,
+        oracle_or_target_lookup_used: false,
+      },
+    };
+  }
+
   generateTextTokens(tokens, seed, topK, maxTextTokens, textPrior = null, options = {}) {
     const textTokens = [];
     for (let step = 0; step < maxTextTokens; step += 1) {
@@ -408,6 +481,125 @@ export class SolomonAttentionSampler {
     const best = pool.filter((entry) => entry.score === bestScore);
     return best[mix32(seed) % best.length]?.example || null;
   }
+}
+
+function requireRawContinuationCandidates(continuations, textTokenProfile) {
+  if (!Array.isArray(continuations) || continuations.length < 2) {
+    throw new Error("raw continuation scoring requires at least two candidates");
+  }
+  const ids = new Set();
+  return continuations.map((candidate, index) => {
+    const value = typeof candidate === "string"
+      ? {candidate_id: candidate, text: candidate}
+      : candidate;
+    const candidateId = String(value?.candidate_id || "").trim();
+    const text = normalizeTextPreservingEdgeSpace(value?.text || "");
+    if (!candidateId || ids.has(candidateId)) {
+      throw new Error(`raw continuation candidate ${index} has a missing or duplicate id`);
+    }
+    ids.add(candidateId);
+    const tokens = encodeNormalizedTextTokens(text, textTokenProfile);
+    if (tokens.length === 0) {
+      throw new Error(`raw continuation candidate ${candidateId} has no encodable text`);
+    }
+    return {candidate_id: candidateId, text, tokens};
+  });
+}
+
+function rawScoringTaskToken(task) {
+  const tasks = new Map([
+    ["text", null],
+    ["match", TASK_MATCH],
+    ["explain", TASK_EXPLAIN],
+    ["identify", TASK_IDENTIFY],
+    ["image-to-text", TASK_IMAGE_TO_TEXT],
+    ["text-to-image", TASK_TEXT_TO_IMAGE],
+  ]);
+  if (!tasks.has(task)) {
+    throw new Error(`unknown raw continuation scoring task ${task}`);
+  }
+  return tasks.get(task);
+}
+
+function rawScoringImageTokens(options) {
+  if (options.imageTokens !== undefined && options.imageBins !== undefined) {
+    throw new Error("provide raw imageTokens or imageBins, not both");
+  }
+  if (options.imageTokens !== undefined) {
+    if (!Array.isArray(options.imageTokens) && !ArrayBuffer.isView(options.imageTokens)) {
+      throw new Error("raw imageTokens must be an array");
+    }
+    const tokens = Array.from(options.imageTokens, Number);
+    if (tokens.length === 0 || tokens.some((token) =>
+      !Number.isInteger(token) ||
+      !(isImageToken(token) || (token >= TASK_IDENTIFY + 1 && token < TEXT_BASE)))) {
+      throw new Error("raw imageTokens contain an invalid token");
+    }
+    return tokens;
+  }
+  if (options.imageBins !== undefined) {
+    if (!Array.isArray(options.imageBins) && !ArrayBuffer.isView(options.imageBins)) {
+      throw new Error("raw imageBins must be an array");
+    }
+    const bins = Array.from(options.imageBins, Number);
+    if (bins.length === 0 || bins.some((bin) =>
+      !Number.isInteger(bin) || bin < 0 || bin >= IMAGE_BINS)) {
+      throw new Error(`raw imageBins must be integers in [0, ${IMAGE_BINS - 1}]`);
+    }
+    return bins.map((bin) => IMAGE_BASE + bin);
+  }
+  return null;
+}
+
+function scoreRawContinuationCandidate(
+  transformer,
+  positionPolicy,
+  contextSeqLen,
+  prefix,
+  candidate,
+) {
+  const history = prefix.slice();
+  let logProbability = 0;
+  let logitSum = 0;
+  const tokenRows = [];
+  for (const token of candidate.tokens) {
+    const context = paddedContext(history, contextSeqLen);
+    const row = transformer.forward(context, positionPolicy);
+    const tokenLogProbability = logSoftmaxForToken(row.logits, token);
+    logProbability += tokenLogProbability;
+    logitSum += row.logits[token];
+    tokenRows.push({
+      token,
+      logit_q8: row.logits[token],
+      probability_q15: row.probabilities[token],
+      context_hash: fnv64Hex(context),
+    });
+    history.push(token);
+  }
+  const meanLogProbability = logProbability / candidate.tokens.length;
+  return {
+    candidate_id: candidate.candidate_id,
+    text: candidate.text,
+    token_count: candidate.tokens.length,
+    token_hash: fnv64Hex(candidate.tokens),
+    logit_sum_q8: logitSum,
+    log_probability_microunits: Math.round(logProbability * 1_000_000),
+    mean_log_probability_microunits: Math.round(meanLogProbability * 1_000_000),
+    zero_probability_tokens_q15: tokenRows.filter((row) => row.probability_q15 === 0).length,
+    token_rows: tokenRows,
+  };
+}
+
+function logSoftmaxForToken(logits, token) {
+  let maxLogit = -Infinity;
+  for (const logit of logits) {
+    maxLogit = Math.max(maxLogit, logit);
+  }
+  let normalizer = 0;
+  for (const logit of logits) {
+    normalizer += Math.pow(2, (logit - maxLogit) / 256);
+  }
+  return ((logits[token] - maxLogit) / 256) * Math.LN2 - Math.log(normalizer);
 }
 
 export class MiniTransformerModel {
@@ -1365,6 +1557,10 @@ function hashBytes(bytes) {
     hash = (hash * FNV_PRIME) & FNV_MASK;
   }
   return hash;
+}
+
+function fnv64Hex(tokens) {
+  return hex64(hashBytes(Uint8Array.from(tokens)));
 }
 
 function hex64(value) {

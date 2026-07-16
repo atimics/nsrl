@@ -1,0 +1,133 @@
+{
+  "schema": "nsrl.solomon_wisdom_eval_result.v0",
+  "analysis_role": "frozen_same_model_comparison",
+  "source_sha256": "021566faaa436ced1059f7b66ddc2c633040613cab4be44e6ef2219bdcb327e0",
+  "evaluator_sha256": "230c31f43911b03bf3258052107c7c3c5589d2dd0247b6793a030a45d6093e26",
+  "underlying_model": {
+    "model_id": "native-successor-v2-canonical-nll",
+    "artifact_sha256": "89260e3cae329677e132eef4439d784c6290e8e46b8779c3667da8d157bf7259"
+  },
+  "integrity": {
+    "no_oracle_target_lookup": true,
+    "no_hidden_memory": true,
+    "no_retrieval_target_leakage": true,
+    "generation_integrity_passed": true,
+    "generation_integrity_report": {
+      "path": "benchmarks/solomon-council-v0/production-v0/generation-integrity.json",
+      "sha256": "ed23758ed59ab33158322bdce54e2bb1e1c95cb347a0186c8fa73d870c7620fa",
+      "schema": "nsrl.wisdom_generation_integrity.v0"
+    },
+    "provenance_report": {
+      "path": "benchmarks/solomon-council-v0/production-v0/provenance.json",
+      "sha256": "c3fee8bc60cf5fcf310d651efda6500e05bc735211402b7556b11d9d6a203433",
+      "schema": "nsrl.wisdom_provenance_gate.v0"
+    }
+  },
+  "dimensions": {
+    "source_grounded_correctness": {
+      "cases": 72,
+      "solo": {
+        "correct": 36,
+        "score_per_mille": 500
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_outperforms": true
+    },
+    "calibration": {
+      "cases": 72,
+      "solo": {
+        "mean_brier_millionths": 260000,
+        "score_per_mille": 740
+      },
+      "council": {
+        "mean_brier_millionths": 10000,
+        "score_per_mille": 990
+      },
+      "council_outperforms": true
+    },
+    "hard_negative_rejection": {
+      "cases": 72,
+      "solo": {
+        "correct": 0,
+        "score_per_mille": 0
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_outperforms": true
+    },
+    "contradiction_detection": {
+      "cases": 72,
+      "solo": {
+        "correct": 0,
+        "score_per_mille": 0
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_outperforms": true
+    },
+    "decision_regret": {
+      "cases": 72,
+      "solo": {
+        "total_regret_milli": 33600,
+        "mean_regret_milli": 466
+      },
+      "council": {
+        "total_regret_milli": 0,
+        "mean_regret_milli": 0
+      },
+      "council_outperforms": true
+    },
+    "appropriate_abstention": {
+      "cases": 72,
+      "solo": {
+        "correct": 0,
+        "score_per_mille": 0
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_outperforms": true
+    },
+    "cross_modal_agreement": {
+      "cases": 72,
+      "solo": {
+        "correct": 36,
+        "score_per_mille": 500
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_outperforms": true
+    },
+    "unfamiliar_source_transfer": {
+      "cases": 72,
+      "solo": {
+        "correct": 36,
+        "score_per_mille": 500
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_outperforms": true
+    }
+  },
+  "verdict": {
+    "all_dimensions_outperform": true,
+    "promotion_gate_passed": true,
+    "self_test_only": false
+  },
+  "authorization": {
+    "council_promotion_authorized": true,
+    "product_release_authorized": false
+  }
+}

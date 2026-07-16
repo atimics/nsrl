@@ -57,8 +57,11 @@
       "required": ["path", "sha256"],
       "properties": {
         "path": {"type": "string", "minLength": 1},
-        "sha256": {"$ref": "#/$defs/sha256"}
-      }
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "record_id": {"type": "string", "minLength": 1},
+        "record_sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "dependentRequired": {"record_id": ["record_sha256"], "record_sha256": ["record_id"]}
     },
     "dimension": {
       "enum": [

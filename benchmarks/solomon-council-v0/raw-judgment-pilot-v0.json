@@ -1,0 +1,72 @@
+{
+  "schema": "nsrl.solomon_raw_judgment_pilot.v0",
+  "analysis_role": "substrate_falsification",
+  "model": {
+    "path": "web/assets/solomon-attention.nsrllmm",
+    "sha256": "60826f8b823f3bc6e0cb45a769ab2797eaae2a3581deac295e6937dc91f7e475",
+    "outer_model_hash": "0xff009204cd3d1767",
+    "inner_model_hash": "0xcda8900e4db87089",
+    "context_tokens": 32,
+    "embedded_memory_examples_present_but_disabled": 72
+  },
+  "source": {
+    "path": "web/assets/solomon-spirit-text-signatures.tsv",
+    "sha256": "34c0227d0f54ab5c2237fd243a6e41c93a2bea1ce353c7a2cbe5013f33c58b29",
+    "canonical_seals": 72
+  },
+  "runner": {
+    "path": "scripts/check-solomon-raw-judgment-pilot-v0.mjs",
+    "sha256": "9b403478921cf683e3d336c7c86239c726ffbb1fea287d28b0af7e87dbe3c7cd"
+  },
+  "protocol": {
+    "task": "match",
+    "candidates": [
+      {
+        "candidate_id": "yes",
+        "text": "yes"
+      },
+      {
+        "candidate_id": "no",
+        "text": "no"
+      }
+    ],
+    "negative_rule": "cyclic-next-seal",
+    "raw_transformer_only": true,
+    "hidden_memory_used": false,
+    "retrieval_used": false,
+    "oracle_or_target_lookup_used": false
+  },
+  "conditions": [
+    {
+      "image_token_profile": "ink16",
+      "balanced_trials": 144,
+      "positive_trials": 72,
+      "negative_trials": 72,
+      "correct": 72,
+      "accuracy_per_mille": 500,
+      "yes_predictions": 0,
+      "no_predictions": 144,
+      "prompt_marker_visible_trials": 0,
+      "image_marker_visible_trials": 0,
+      "trace_set_sha256": "be10dacdab71e7af6d828140ce0969771e330d96226d640e384eaf4799187fd8"
+    },
+    {
+      "image_token_profile": "symbolic16",
+      "balanced_trials": 144,
+      "positive_trials": 72,
+      "negative_trials": 72,
+      "correct": 72,
+      "accuracy_per_mille": 500,
+      "yes_predictions": 0,
+      "no_predictions": 144,
+      "prompt_marker_visible_trials": 0,
+      "image_marker_visible_trials": 0,
+      "trace_set_sha256": "fb08ccbeeef897fff1d0d3cdc2e0a2e811283cdacfd047fd206e30a94ae2008e"
+    }
+  ],
+  "conclusion": {
+    "suitable_for_frozen_wisdom_ceremony": false,
+    "reason": "balanced seal-match accuracy is exactly chance because every prediction is no and the 32-token decision context excludes both prompt and image markers",
+    "production_casebook_freeze_authorized": false
+  }
+}
