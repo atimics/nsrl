@@ -16,7 +16,7 @@ use super::alignment::{
 };
 use super::{
     FNV_OFFSET, FNV_PRIME, PRODUCTION_RMS_EPSILON, ProductionModelV1, TrainError, checked_product,
-    fnv1a, linear_params, scale_shifts, scales,
+    fnv1a, linear_params, scale_shifts, scales, spread_document_windows,
 };
 
 const OPTIMIZER_MAGIC: &[u8; 8] = b"NSRLPO2\n";
@@ -208,6 +208,7 @@ impl GradientProposalSpec {
 pub struct ProductionFullTrainConfig {
     pub context_tokens: usize,
     pub max_windows: usize,
+    pub spread_windows: bool,
     pub epochs: usize,
     pub matrix_learning_rate_shift: u8,
     pub q_learning_rate_shift: Option<u8>,
@@ -234,6 +235,7 @@ impl Default for ProductionFullTrainConfig {
         Self {
             context_tokens: 4,
             max_windows: 8,
+            spread_windows: false,
             epochs: 2,
             matrix_learning_rate_shift: 16,
             q_learning_rate_shift: None,
@@ -418,6 +420,7 @@ pub struct ProductionFullTrainTrace {
     pub token_stream_hash: u64,
     pub context_tokens: usize,
     pub windows: usize,
+    pub spread_windows: bool,
     pub epochs: usize,
     pub initial_mistakes: usize,
     pub final_mistakes: usize,
@@ -484,7 +487,7 @@ impl ProductionFullTrainTrace {
             .map(|(name, value)| format!("\"{name}\":{value}"))
             .collect::<Vec<_>>()
             .join(",");
-        format!(
+        let mut output = format!(
             concat!(
                 "{{\"schema\":\"nsrl.production_full_train_smoke.v1\",",
                 "\"profile\":\"{}\",\"parameter_count\":{},",
@@ -550,7 +553,14 @@ impl ProductionFullTrainTrace {
             self.optimizer_state_hash,
             self.movement_l1.iter().all(|&value| value > 0),
             self.initial_model_hash != self.final_model_hash,
-        )
+        );
+        if self.spread_windows {
+            output = output.replace(
+                ",\"evaluation_windows\"",
+                ",\"window_selection\":\"deterministic_uniform_target_rank_over_all_documents\",\"evaluation_windows\"",
+            );
+        }
+        output
     }
 }
 
@@ -784,7 +794,11 @@ pub fn train_production_full_smoke(
     {
         return Err(TrainError::InvalidConfig);
     }
-    let windows = document_windows(tokens, config.context_tokens, config.max_windows);
+    let windows = if config.spread_windows {
+        spread_document_windows(tokens, config.context_tokens, config.max_windows)
+    } else {
+        document_windows(tokens, config.context_tokens, config.max_windows)
+    };
     if windows.is_empty() {
         return Err(TrainError::InvalidConfig);
     }
@@ -849,6 +863,7 @@ pub fn train_production_full_smoke(
         token_stream_hash,
         context_tokens: config.context_tokens,
         windows: windows.len(),
+        spread_windows: config.spread_windows,
         epochs: config.epochs,
         initial_mistakes,
         final_mistakes,
@@ -2208,6 +2223,7 @@ fn document_windows(tokens: &[u32], context: usize, max: usize) -> Vec<(Vec<u32>
     }
     windows
 }
+
 fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     let mut bytes = Vec::new();
     for value in [c.context_tokens, c.max_windows, c.epochs, c.batch_windows] {
@@ -2237,6 +2253,9 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
             SoftmaxNormalization::Q47Exact => 3,
         };
         bytes.extend_from_slice(&[0xfe, method]);
+    }
+    if c.spread_windows {
+        bytes.extend_from_slice(&[0xfd, 1]);
     }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
@@ -2345,7 +2364,8 @@ mod tests {
     use super::{
         BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME,
         ProductionFullTrainConfig, UpdateStats, accumulate_residual,
-        effective_learning_rate_shifts, schedule_hash, systematic_fixed_mass_gradient,
+        effective_learning_rate_shifts, schedule_hash, spread_document_windows,
+        systematic_fixed_mass_gradient,
     };
 
     #[test]
@@ -2427,6 +2447,40 @@ mod tests {
             schedule_hash(wide_probability),
             schedule_hash(normalized_probability)
         );
+        let spread = ProductionFullTrainConfig {
+            spread_windows: true,
+            ..base
+        };
+        assert_ne!(schedule_hash(base), schedule_hash(spread));
+    }
+
+    #[test]
+    fn spread_windows_select_the_first_middle_and_last_global_ranks() {
+        let tokens = [
+            super::BOS_TOKEN_ID,
+            10,
+            11,
+            12,
+            13,
+            super::EOS_TOKEN_ID,
+            super::BOS_TOKEN_ID,
+            20,
+            21,
+            22,
+            23,
+            super::EOS_TOKEN_ID,
+            super::BOS_TOKEN_ID,
+            30,
+            31,
+            32,
+            33,
+            super::EOS_TOKEN_ID,
+        ];
+        assert_eq!(
+            spread_document_windows(&tokens, 2, 3),
+            vec![(vec![10, 11], 12), (vec![20, 21], 22), (vec![31, 32], 33)]
+        );
+        assert_eq!(spread_document_windows(&tokens, 2, 99).len(), 6);
     }
 
     #[test]

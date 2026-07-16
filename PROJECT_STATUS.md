@@ -21,7 +21,7 @@ node scripts/nsrl-status.mjs --refresh-fast-diagnostic
 
 ## Current Read
 
-As of 2026-07-15, NSRL is not release-ready. The integer runtime and research
+As of 2026-07-16, NSRL is not release-ready. The integer runtime and research
 artifacts exist, but the Solomon product proof is incomplete.
 
 The active substrate promotion contract is
@@ -63,7 +63,6 @@ headline result.
 
 Known facts from the status command:
 
-- the working tree is dirty,
 - the production Q23/Q47-Newton path now carries exact-replayable integer signal
   through target probabilities, but its first materialized output boundary
   regresses dev; the document-blocked rescue-stratified alignment audit fails
@@ -126,9 +125,23 @@ Known facts from the status command:
   present under `data/`,
 - raw/free-running attention text is still diagnostic-only,
 - coherent Solomon text currently comes from prompted or memory-assisted paths,
-- `NSRLPM1` now has a tokenizer-bound native generation command with greedy and
-  deterministic top-k replay, but it has not passed `open-generation-v1` and
-  still uses full-window replay rather than an incremental serving cache.
+- `NSRLPM1` generation now uses an exact incremental causal-linear-attention
+  cache rather than full-window replay. Prefix parity is locked against the
+  original forward path; the p10m cache uses 405,504 state bytes and 10,240
+  workspace bytes, and all 60 frozen development samples run beyond the
+  256-token training context with zero residual saturation,
+- the first complete unassisted p10m `open-generation-v1` development row is
+  frozen and failing. It scores 3,687 millibits per original UTF-8 byte on the
+  candidate modeling surface, but required modeling baselines are not yet
+  present. All four serving/integrity gates pass; all six measured quality
+  gates fail: worst-sample four-gram repetition is 989 per mille, minimum
+  unique share is 11 per mille, minimum entropy is 431 Q10, UTF-8 validity is
+  166 per mille, and context use plus distractor resistance are both zero,
+- a bounded corpus-spread training diagnostic rejected output-head-only repair.
+  A V-only row improved 512-window development NLL by 407 millibits but worsened
+  the untouched test stream by 11, so no training candidate was promoted. The
+  next LLM gate is a prospectively defined full-trunk objective that improves
+  both development and untouched test evidence before another generation run.
 
 ## Headline Eval
 
@@ -159,24 +172,29 @@ must be born into the integer/base-2 attention contract.
 The practical sequence is:
 
 1. Keep `node scripts/nsrl-status.mjs` green enough that project state is obvious.
-2. Use `nsrl-production-model generate` to bind the first unassisted p10m text
-   candidate to generation traces, then score it under `open-generation-v1`.
-3. Produce `data/processed/nsrl-mme-v0.json` with:
+2. Use `scripts/run-open-generation-development-v1.sh` to reproduce the first
+   unassisted p10m generation/modeling row and its compact checkpoint.
+3. Add the required byte-ngram, retrieval, best-smaller-NSRL, and same-shape
+   float-twin bits-per-original-byte rows; keep the modeling gate red until the
+   full matrix exists.
+4. Train a prospectively frozen full-trunk candidate that improves both
+   development and untouched test NLL before rerunning the generation panel.
+5. Produce `data/processed/nsrl-mme-v0.json` with:
 
    ```bash
    node scripts/check-nsrl-mme-v0.mjs --out data/processed/nsrl-mme-v0.json
    ```
 
-4. Feed the scorer a measured `quality-report.json` with confidence-trace
+6. Feed the scorer a measured `quality-report.json` with confidence-trace
    evidence plus objective coverage.
-5. Repair the failing product-proof/self-test surface.
-6. Run the Graviton product path:
+7. Repair the failing product-proof/self-test surface.
+8. Run the Graviton product path:
 
    ```bash
    NSRL_S3_URI=s3://BUCKET/PREFIX scripts/aws/run-solomon-end-to-end.sh
    ```
 
-7. Prove the completed run:
+9. Prove the completed run:
 
    ```bash
    scripts/aws/prove-solomon-product-run.sh \
@@ -185,5 +203,5 @@ The practical sequence is:
      --require-launch-dir
    ```
 
-8. Promote the first narrow NSRL-born `NSRLLMM1` expert before scaling outward
+10. Promote the first narrow NSRL-born `NSRLLMM1` expert before scaling outward
    into routed expert swarms.

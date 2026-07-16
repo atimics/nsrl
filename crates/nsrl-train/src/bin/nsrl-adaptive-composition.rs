@@ -289,6 +289,7 @@ fn fitting_training_config() -> ProductionFullTrainConfig {
     ProductionFullTrainConfig {
         context_tokens: CONTEXT_TOKENS,
         max_windows: 8,
+        spread_windows: false,
         epochs: 1,
         matrix_learning_rate_shift: 25,
         q_learning_rate_shift: Some(29),

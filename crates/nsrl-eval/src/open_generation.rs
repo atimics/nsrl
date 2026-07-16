@@ -45,6 +45,15 @@ pub struct OpenGenerationManifest {
     pub min_human_preference_delta_per_mille: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenGenerationPrompt {
+    pub id: String,
+    pub category: String,
+    pub max_new_tokens: usize,
+    pub required_phrase: Vec<u8>,
+    pub prompt: Vec<u8>,
+}
+
 impl OpenGenerationManifest {
     pub fn to_json_line(&self) -> String {
         let seeds = self
@@ -194,12 +203,42 @@ pub fn load_open_generation_manifest(path: &Path) -> Result<OpenGenerationManife
     })
 }
 
+pub fn load_open_generation_development_panel(
+    manifest: &OpenGenerationManifest,
+) -> Result<Vec<OpenGenerationPrompt>, String> {
+    let panel = fs::read(&manifest.development_panel_path).map_err(|error| {
+        format!(
+            "cannot read development panel {}: {error}",
+            manifest.development_panel_path.display()
+        )
+    })?;
+    if fnv_hash(&panel) != manifest.development_panel_hash {
+        return Err("open-generation development panel hash mismatch".to_string());
+    }
+    parse_development_panel(
+        &panel,
+        manifest.prompt_count,
+        manifest.max_prompt_bytes,
+        manifest.generation_tokens,
+    )
+}
+
 fn validate_development_panel(
     bytes: &[u8],
     expected_prompts: usize,
     max_prompt_bytes: usize,
     generation_tokens: usize,
 ) -> Result<(), String> {
+    parse_development_panel(bytes, expected_prompts, max_prompt_bytes, generation_tokens)
+        .map(|_| ())
+}
+
+fn parse_development_panel(
+    bytes: &[u8],
+    expected_prompts: usize,
+    max_prompt_bytes: usize,
+    generation_tokens: usize,
+) -> Result<Vec<OpenGenerationPrompt>, String> {
     let input = core::str::from_utf8(bytes)
         .map_err(|_| "development panel must be valid UTF-8 TSV".to_string())?;
     let mut lines = input.lines();
@@ -208,7 +247,7 @@ fn validate_development_panel(
     }
     let mut ids = HashSet::new();
     let mut categories = HashSet::new();
-    let mut prompts = 0_usize;
+    let mut prompts = Vec::with_capacity(expected_prompts);
     for (index, line) in lines.enumerate() {
         if line.trim().is_empty() {
             continue;
@@ -236,17 +275,21 @@ fn validate_development_panel(
             return Err(format!("unknown development prompt category {}", fields[4]));
         }
         categories.insert(fields[4]);
-        if parse_positive(fields[5], "max_new_tokens")? < generation_tokens {
+        let max_new_tokens = parse_positive(fields[5], "max_new_tokens")?;
+        if max_new_tokens < generation_tokens {
             return Err(
                 "every development prompt must permit the frozen generation length".to_string(),
             );
         }
-        if fields[6] != "-" {
+        let required_phrase = if fields[6] == "-" {
+            Vec::new()
+        } else {
             let required = decode_hex(fields[6], "required phrase")?;
             if required.is_empty() || core::str::from_utf8(&required).is_err() {
                 return Err("required phrase must be non-empty UTF-8".to_string());
             }
-        }
+            required
+        };
         let prompt = decode_hex(fields[7], "prompt")?;
         if prompt.is_empty()
             || prompt.len() > max_prompt_bytes
@@ -254,11 +297,18 @@ fn validate_development_panel(
         {
             return Err("prompt must be non-empty UTF-8 within max_prompt_bytes".to_string());
         }
-        prompts += 1;
+        prompts.push(OpenGenerationPrompt {
+            id: fields[3].to_string(),
+            category: fields[4].to_string(),
+            max_new_tokens,
+            required_phrase,
+            prompt,
+        });
     }
-    if prompts != expected_prompts {
+    if prompts.len() != expected_prompts {
         return Err(format!(
-            "development panel has {prompts} prompts, expected {expected_prompts}"
+            "development panel has {} prompts, expected {expected_prompts}",
+            prompts.len()
         ));
     }
     if REQUIRED_CATEGORIES
@@ -267,7 +317,7 @@ fn validate_development_panel(
     {
         return Err("development panel is missing a required category".to_string());
     }
-    Ok(())
+    Ok(prompts)
 }
 
 fn resolve_path(directory: &Path, value: &str, field: &str) -> Result<PathBuf, String> {

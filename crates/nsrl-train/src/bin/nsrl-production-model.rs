@@ -68,6 +68,7 @@ struct Config {
     max_new_tokens: usize,
     top_k: usize,
     stop_on_eos: bool,
+    spread_windows: bool,
     max_windows: usize,
     epochs: usize,
     feature_shift: u8,
@@ -146,6 +147,7 @@ impl Default for Config {
             max_new_tokens: 64,
             top_k: 1,
             stop_on_eos: true,
+            spread_windows: false,
             max_windows: smoke.max_windows,
             epochs: smoke.epochs,
             feature_shift: smoke.feature_shift,
@@ -1124,6 +1126,7 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
     ProductionFullTrainConfig {
         context_tokens: config.context_tokens,
         max_windows: config.max_windows,
+        spread_windows: config.spread_windows,
         epochs: config.epochs,
         matrix_learning_rate_shift: config.matrix_learning_rate_shift,
         q_learning_rate_shift: config.q_learning_rate_shift,
@@ -1252,6 +1255,7 @@ fn smoke_train(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             feature_shift: config.feature_shift,
             bias_step_q8: config.bias_step_q8,
             margin_q8: config.margin_q8,
+            spread_windows: config.spread_windows,
         },
     )?;
     fs::write(model_out, model.try_to_bytes()?)?;
@@ -1343,6 +1347,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             }
             "--top-k" => config.top_k = next(&mut args, "--top-k")?.parse()?,
             "--no-stop-on-eos" => config.stop_on_eos = false,
+            "--spread-windows" => config.spread_windows = true,
             "--max-windows" => config.max_windows = next(&mut args, "--max-windows")?.parse()?,
             "--epochs" => config.epochs = next(&mut args, "--epochs")?.parse()?,
             "--feature-shift" => {
@@ -1574,6 +1579,9 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
+        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream.\n"
+    );
+    println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
     );
     println!(
@@ -1634,6 +1642,28 @@ mod tests {
             config.max_windows,
             ProductionSmokeConfig::default().max_windows
         );
+    }
+
+    #[test]
+    fn spread_window_flag_is_available_to_training_commands() {
+        let config = parse_args(args(&[
+            "full-train-smoke",
+            "--tokenizer",
+            "tokenizer.nsrlbpe",
+            "--tokens",
+            "train.nsrltok",
+            "--model",
+            "model.nsrlpm",
+            "--model-out",
+            "trained.nsrlpm",
+            "--optimizer-state-out",
+            "optimizer.nsrlpo",
+            "--trace",
+            "trace.json",
+            "--spread-windows",
+        ]))
+        .expect("spread training arguments");
+        assert!(config.spread_windows);
     }
 
     #[test]

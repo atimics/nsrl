@@ -1,0 +1,143 @@
+{
+  "schema": "nsrl.open_generation_development_checkpoint.v1",
+  "contract": "open-generation-v1",
+  "partition": "development",
+  "candidate": {
+    "model_fnv64": "0xf72c406da5c09556",
+    "tokenizer_fnv64": "0xf4fe71d93c438c1a"
+  },
+  "execution": {
+    "decoder": "incremental_linear_attention_cache_v1",
+    "sampling": {
+      "greedy": true,
+      "top_k": 40,
+      "seeds": [
+        7,
+        19,
+        43,
+        97
+      ]
+    },
+    "counts": {
+      "prompts": 12,
+      "samples": 60,
+      "generated_tokens": 30720,
+      "samples_beyond_training_context": 60
+    },
+    "cache": {
+      "maximum_state_bytes": 405504,
+      "maximum_workspace_bytes": 10240,
+      "maximum_tokens_processed": 568
+    },
+    "residual_saturation_count": 0,
+    "forbidden_assistance": {
+      "retrieval": false,
+      "corpus_prior": false,
+      "memory_injection": false,
+      "target_lookup": false,
+      "routing_oracle": false
+    }
+  },
+  "modeling": {
+    "sequence_policy": "reset_per_prompt_bos_then_score_candidate_tokens_no_eos",
+    "original_utf8_bytes": 1580,
+    "candidate_tokens": 448,
+    "total_nll_millibits": 5824797,
+    "millibits_per_original_utf8_byte": 3687,
+    "required_baselines_measured": false
+  },
+  "generation": {
+    "thresholds": {
+      "retained_improvement_per_mille": 900,
+      "max_repeat_4gram_share_per_mille": 150,
+      "min_unique_4gram_share_per_mille": 600,
+      "min_entropy_q10": 2048,
+      "min_utf8_valid_per_mille": 1000,
+      "min_context_use_per_mille": 750,
+      "min_distractor_resistance_per_mille": 700,
+      "min_human_preference_delta_per_mille": -100
+    },
+    "metrics": {
+      "max_repeat_4gram_share_per_mille": 989,
+      "min_unique_4gram_share_per_mille": 11,
+      "aggregate_unique_4gram_share_per_mille": 806,
+      "min_entropy_q10": 431,
+      "utf8_valid_per_mille": 166,
+      "context_use_per_mille": 0,
+      "distractor_resistance_per_mille": 0
+    },
+    "gates": {
+      "complete_generation_matrix": true,
+      "incremental_cached_decoding": true,
+      "no_residual_saturation": true,
+      "repeat_4gram_health": false,
+      "unique_4gram_health": false,
+      "entropy_health": false,
+      "utf8_validity": false,
+      "context_use": false,
+      "distractor_resistance": false,
+      "forbidden_assistance_absent": true,
+      "development_generation_passed": false
+    }
+  },
+  "evidence_layers": {
+    "generation_health_measured": true,
+    "candidate_modeling_measured": true,
+    "modeling_measured": false,
+    "blinded_human_product_quality_measured": false,
+    "hidden_panel_measured": false,
+    "integer_transformer_proof_v1_bound": false
+  },
+  "missing_evidence": [
+    "required_baseline_bits_per_original_utf8_byte",
+    "retained_float_twin_improvement",
+    "blinded_human_preference",
+    "hidden_panel_generation",
+    "candidate_integer_transformer_proof_v1"
+  ],
+  "promotion_passed": false,
+  "artifacts": {
+    "run": {
+      "path": "data/experiments/open-generation-v1/p10m-kv-scaling-baseline/run.json",
+      "bytes": 935,
+      "fnv64": "0xcc882b74284ad749",
+      "sha256": "85a9d7593975f74443c42fa61f75b18addfcc5cab2d3854e349af0a73f8c338b"
+    },
+    "modeling": {
+      "path": "data/experiments/open-generation-v1/p10m-kv-scaling-baseline/modeling.json",
+      "bytes": 3445,
+      "fnv64": "0xdd32fa2c4c97cb03",
+      "sha256": "d1869b2a7ae0681678343ed7f0fd7dfb3f20ba4bcb6664289c997fe181e4b1dd"
+    },
+    "samples": {
+      "path": "data/experiments/open-generation-v1/p10m-kv-scaling-baseline/samples.jsonl",
+      "bytes": 408539,
+      "fnv64": "0xbedb99cb17b3db45",
+      "sha256": "7c950e89394d9d3d2704db230df892102b6dc6bee6d0f7c6d55a214e40d3dfd7"
+    },
+    "decoder_traces": {
+      "path": "data/experiments/open-generation-v1/p10m-kv-scaling-baseline/decoder-traces.jsonl",
+      "bytes": 6600618,
+      "fnv64": "0xbd5b107ada937774",
+      "sha256": "251026680ec21a0da9dca57f356ee2291ff0d2e1ef2a865e5658dcaf881362c3"
+    },
+    "result": {
+      "path": "data/experiments/open-generation-v1/p10m-kv-scaling-baseline/result.json",
+      "bytes": 4072,
+      "fnv64": "0xc03847c3ae1af105",
+      "sha256": "c893f63995e047cc90cca7fdc2408fc0e1e777d545f40cd846af09b4ad4ca2d3"
+    }
+  },
+  "runner_bindings": {
+    "generation_source_fnv64": "0x58cac41c3627f65c",
+    "generation_binary_fnv64": "0x6e1366a430b3e81c",
+    "modeling_source_fnv64": "0x577a8c661ecda0a4",
+    "modeling_binary_fnv64": "0xca68c2cba7944d37"
+  },
+  "known_non_claims": [
+    "development_baseline_not_model_promotion",
+    "required_modeling_baselines_not_measured",
+    "human_preference_not_measured",
+    "hidden_panel_not_opened_or_scored"
+  ]
+}

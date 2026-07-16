@@ -238,10 +238,21 @@ in residual state instead of forcing one-unit steps. The float twin remains a
 NumPy reference rather than an accelerator runner. Neither bounded smoke is a
 language-quality result.
 
-The production artifact can now generate subword continuations directly, but
-this is a capability surface rather than a promotion. No candidate has passed
-`open-generation-v1`, and full-window replay has not yet met a production
-tokens-per-second or latency budget.
+The production artifact can now generate subword continuations with an exact
+incremental causal-linear-attention cache. A parity test compares every prefix
+through the configured training context against the original full forward path.
+The frozen p10m development run uses 405,504 bytes of cache state and 10,240
+bytes of workspace; all 60 samples continue beyond the 256-token training
+context with zero residual saturation. This closes full-window replay as a
+serving-correctness gap, but no latency or tokens-per-second promotion budget is
+claimed yet.
+
+No candidate has passed `open-generation-v1`. The first complete p10m row is
+frozen at `benchmarks/open-generation-v1/p10m-kv-scaling-baseline.json`: the
+serving and provenance gates pass, while all six measured generation-quality
+gates fail. Candidate modeling is 3,687 millibits per original UTF-8 byte, but
+the required baseline matrix, float-twin retention, blinded human comparison,
+hidden-panel run, and candidate proof binding remain absent.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at

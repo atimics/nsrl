@@ -435,6 +435,61 @@ function collectNativeModelEvidence() {
   };
 }
 
+function collectOpenGenerationEvidence() {
+  const checkpointPath = "benchmarks/open-generation-v1/p10m-kv-scaling-baseline.json";
+  const file = fileInfo(checkpointPath);
+  const checkpoint = maybeReadJson(checkpointPath);
+  const servingGates = [
+    "complete_generation_matrix",
+    "incremental_cached_decoding",
+    "no_residual_saturation",
+    "forbidden_assistance_absent",
+  ];
+  const qualityGates = [
+    "repeat_4gram_health",
+    "unique_4gram_health",
+    "entropy_health",
+    "utf8_validity",
+    "context_use",
+    "distractor_resistance",
+  ];
+  const bindingsOk = Boolean(checkpoint
+    && checkpoint.schema === "nsrl.open_generation_development_checkpoint.v1"
+    && checkpoint.contract === "open-generation-v1"
+    && /^0x[0-9a-f]{16}$/.test(checkpoint.candidate?.model_fnv64 || "")
+    && /^0x[0-9a-f]{16}$/.test(checkpoint.candidate?.tokenizer_fnv64 || ""));
+  const servingOk = Boolean(bindingsOk
+    && checkpoint.execution?.decoder === "incremental_linear_attention_cache_v1"
+    && checkpoint.execution.counts?.samples === 60
+    && checkpoint.execution.counts?.generated_tokens === 30_720
+    && checkpoint.execution.residual_saturation_count === 0
+    && servingGates.every((gate) => checkpoint.generation?.gates?.[gate] === true));
+  const qualityOk = Boolean(servingOk
+    && qualityGates.every((gate) => checkpoint.generation?.gates?.[gate] === true)
+    && checkpoint.generation?.gates?.development_generation_passed === true);
+  const promotionGatePassed = Boolean(qualityOk && checkpoint.promotion_passed === true);
+  const ok = bindingsOk && servingOk;
+  const state = !file.present ? "missing"
+    : !ok ? "invalid"
+      : promotionGatePassed ? "promotion_gate_passed"
+        : "development_failed";
+  return {
+    present: file.present,
+    ok,
+    state,
+    file,
+    candidate: checkpoint?.candidate || {},
+    modeling: checkpoint?.modeling || null,
+    generation_metrics: checkpoint?.generation?.metrics || {},
+    generation_gates: checkpoint?.generation?.gates || {},
+    cache: checkpoint?.execution?.cache || {},
+    serving_ok: servingOk,
+    quality_ok: qualityOk,
+    promotion_gate_passed: promotionGatePassed,
+    missing_evidence: checkpoint?.missing_evidence || [],
+  };
+}
+
 function collectCouncilEvidence() {
   const paths = {
     trust_root: "council/trust-root-v0.json",
@@ -1482,6 +1537,16 @@ function deriveStatus(report) {
       blockers.push("native successor-v2 has not beaten every frozen promotion baseline");
     }
   }
+  if (!report.open_generation.present) {
+    blockers.push("open-generation-v1 development evidence is missing");
+  } else if (!report.open_generation.ok) {
+    blockers.push("open-generation-v1 checkpoint or serving evidence is invalid");
+  } else if (!report.open_generation.promotion_gate_passed) {
+    blockers.push("open-generation-v1 candidate has not passed development and promotion gates");
+    if (report.open_generation.missing_evidence.length > 0) {
+      warnings.push(`open-generation-v1 missing evidence: ${report.open_generation.missing_evidence.join(", ")}`);
+    }
+  }
   if (!report.council.present || !report.council.ok) {
     councilBlockers.push("Solomon Council v0 core or its exact receipt replay is missing/invalid");
   }
@@ -1557,6 +1622,7 @@ function buildReport(config) {
     repo_root: repoRoot,
     git: collectGit(),
     native_model: collectNativeModelEvidence(),
+    open_generation: collectOpenGenerationEvidence(),
     council: collectCouncilEvidence(),
     ising_evidence: collectIsingEvidence(),
     research_harness: collectResearchHarness(),
@@ -1595,6 +1661,11 @@ function nextCommands(report) {
   }
   if (!report.native_model.ok) {
     commands.push("node scripts/run-integer-transformer-successor-v2.mjs --check");
+  }
+  if (!report.open_generation.present) {
+    commands.push("scripts/run-open-generation-development-v1.sh");
+  } else {
+    commands.push("scripts/check-open-generation-v1.sh");
   }
   if (!report.council.ok) {
     commands.push("node scripts/check-solomon-council-v0.mjs");
@@ -1635,6 +1706,7 @@ function renderMarkdown(report) {
   lines.push(`- HEAD: \`${report.git.head || "unknown"}\``);
   lines.push(`- Working tree: ${report.git.dirty ? `${report.git.change_count} changed paths` : "clean"}`);
   lines.push(`- Native model: ${renderNativeModelOneLine(report.native_model)}`);
+  lines.push(`- Open generation: ${report.open_generation.state}; cached serving ${report.open_generation.serving_ok ? "verified" : "invalid"}; promotion ${report.open_generation.promotion_gate_passed ? "passed" : "not passed"}`);
   lines.push(`- Solomon Council: ${report.council.state}; wisdom evaluation ${report.council.wisdom_evaluation.state}`);
   lines.push(`- Ising evidence: ${renderIsingEvidenceOneLine(report.ising_evidence)}`);
   lines.push(`- Research harness: ${renderResearchHarnessOneLine(report.research_harness)}`);
@@ -1655,6 +1727,15 @@ function renderMarkdown(report) {
     lines.push(`- Gap to ${system}: ${gap >= 0 ? "+" : ""}${gap} millibits (baseline ${nll})`);
   }
   lines.push(`- Gates: zero-probability ${report.native_model.zero_probability_gate ? "green" : "red"}; beats uniform ${report.native_model.beats_uniform_gate ? "green" : "red"}; beats every frozen baseline ${report.native_model.beats_all_frozen_baselines_gate ? "green" : "red"}`);
+  lines.push("");
+
+  lines.push("## Open Generation v1");
+  lines.push("");
+  lines.push(`- State: **${report.open_generation.state}**; candidate model \`${report.open_generation.candidate.model_fnv64 || "missing"}\`; tokenizer \`${report.open_generation.candidate.tokenizer_fnv64 || "missing"}\``);
+  lines.push(`- Serving: ${report.open_generation.serving_ok ? "green" : "red"}; cache ${report.open_generation.cache.maximum_state_bytes ?? "missing"} state bytes + ${report.open_generation.cache.maximum_workspace_bytes ?? "missing"} workspace bytes`);
+  lines.push(`- Modeling: ${report.open_generation.modeling?.millibits_per_original_utf8_byte ?? "missing"} millibits/original UTF-8 byte; required baselines ${report.open_generation.modeling?.required_baselines_measured ? "measured" : "missing"}`);
+  lines.push(`- Generation: repeat ${report.open_generation.generation_metrics.max_repeat_4gram_share_per_mille ?? "missing"}‰; unique floor ${report.open_generation.generation_metrics.min_unique_4gram_share_per_mille ?? "missing"}‰; entropy floor ${report.open_generation.generation_metrics.min_entropy_q10 ?? "missing"} Q10; UTF-8 ${report.open_generation.generation_metrics.utf8_valid_per_mille ?? "missing"}‰; context ${report.open_generation.generation_metrics.context_use_per_mille ?? "missing"}‰; distractor ${report.open_generation.generation_metrics.distractor_resistance_per_mille ?? "missing"}‰`);
+  lines.push(`- Missing evidence: ${report.open_generation.missing_evidence.join(", ") || "none"}`);
   lines.push("");
 
   lines.push("## Solomon Council v0/v1");

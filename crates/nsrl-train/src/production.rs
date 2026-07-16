@@ -51,8 +51,8 @@ pub use boolean_jet::{
     production_boolean_jet_binary_fnv64, production_boolean_jet_source_fnv64,
 };
 pub use generation::{
-    PRODUCTION_GENERATION_SCHEMA, ProductionGenerationConfig, ProductionGenerationStepTrace,
-    ProductionGenerationTrace, generate_production_model,
+    PRODUCTION_GENERATION_SCHEMA, ProductionDecoder, ProductionGenerationConfig,
+    ProductionGenerationStepTrace, ProductionGenerationTrace, generate_production_model,
 };
 pub use numeric_contract::{
     PRODUCTION_ACTIVATION_FRACTIONAL_BITS, PRODUCTION_LOGIT_FRACTIONAL_BITS,
@@ -900,6 +900,7 @@ pub struct ProductionSmokeConfig {
     pub feature_shift: u8,
     pub bias_step_q8: i32,
     pub margin_q8: i32,
+    pub spread_windows: bool,
 }
 
 impl Default for ProductionSmokeConfig {
@@ -911,6 +912,7 @@ impl Default for ProductionSmokeConfig {
             feature_shift: 13,
             bias_step_q8: 4,
             margin_q8: 8,
+            spread_windows: false,
         }
     }
 }
@@ -931,11 +933,12 @@ pub struct ProductionSmokeTrace {
     pub residual_saturation_count: usize,
     pub initial_model_hash: u64,
     pub final_model_hash: u64,
+    pub spread_windows: bool,
 }
 
 impl ProductionSmokeTrace {
     pub fn to_json_line(self) -> String {
-        format!(
+        let mut output = format!(
             concat!(
                 "{{\"schema\":\"nsrl.production_model_smoke.v1\",",
                 "\"profile\":\"{}\",\"parameter_count\":{},",
@@ -960,7 +963,14 @@ impl ProductionSmokeTrace {
             self.residual_saturation_count,
             self.initial_model_hash,
             self.final_model_hash,
-        )
+        );
+        if self.spread_windows {
+            output = output.replace(
+                ",\"known_non_claims\"",
+                ",\"window_selection\":\"deterministic_uniform_target_rank_over_all_documents\",\"known_non_claims\"",
+            );
+        }
+        output
     }
 }
 
@@ -2281,7 +2291,11 @@ pub fn train_production_output_smoke(
     {
         return Err(TrainError::InvalidConfig);
     }
-    let windows = document_windows(tokens, config.context_tokens, config.max_windows);
+    let windows = if config.spread_windows {
+        spread_document_windows(tokens, config.context_tokens, config.max_windows)
+    } else {
+        document_windows(tokens, config.context_tokens, config.max_windows)
+    };
     if windows.is_empty() {
         return Err(TrainError::InvalidConfig);
     }
@@ -2350,6 +2364,7 @@ pub fn train_production_output_smoke(
         residual_saturation_count,
         initial_model_hash,
         final_model_hash: model.model_hash(),
+        spread_windows: config.spread_windows,
     })
 }
 
@@ -2635,6 +2650,77 @@ fn document_windows(
                     if windows.len() >= max_windows {
                         return windows;
                     }
+                }
+            }
+            document.clear();
+            in_document = false;
+        } else if in_document {
+            document.push(token);
+        }
+    }
+    windows
+}
+
+fn spread_document_windows(
+    tokens: &[u32],
+    context_tokens: usize,
+    max_windows: usize,
+) -> Vec<(Vec<u32>, u32)> {
+    let mut total_windows = 0_usize;
+    let mut document_tokens = 0_usize;
+    let mut in_document = false;
+    for &token in tokens {
+        if token == BOS_TOKEN_ID {
+            document_tokens = 0;
+            in_document = true;
+        } else if token == EOS_TOKEN_ID {
+            if in_document {
+                total_windows =
+                    total_windows.saturating_add(document_tokens.saturating_sub(context_tokens));
+            }
+            document_tokens = 0;
+            in_document = false;
+        } else if in_document {
+            document_tokens = document_tokens.saturating_add(1);
+        }
+    }
+    let selected = max_windows.min(total_windows);
+    if selected == 0 {
+        return Vec::new();
+    }
+    let ranks = if selected == 1 {
+        vec![total_windows / 2]
+    } else {
+        (0..selected)
+            .map(|index| {
+                ((index as u128) * ((total_windows - 1) as u128) / ((selected - 1) as u128))
+                    as usize
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut windows = Vec::with_capacity(selected);
+    let mut rank_cursor = 0_usize;
+    let mut current_rank = 0_usize;
+    let mut document = Vec::new();
+    in_document = false;
+    for &token in tokens {
+        if token == BOS_TOKEN_ID {
+            document.clear();
+            in_document = true;
+        } else if token == EOS_TOKEN_ID {
+            if in_document && document.len() > context_tokens {
+                for start in 0..document.len() - context_tokens {
+                    if rank_cursor < ranks.len() && current_rank == ranks[rank_cursor] {
+                        windows.push((
+                            document[start..start + context_tokens].to_vec(),
+                            document[start + context_tokens],
+                        ));
+                        rank_cursor += 1;
+                        if rank_cursor == ranks.len() {
+                            return windows;
+                        }
+                    }
+                    current_rank = current_rank.saturating_add(1);
                 }
             }
             document.clear();
@@ -2957,6 +3043,71 @@ mod tests {
     }
 
     #[test]
+    fn spread_windows_cover_the_full_document_stream_deterministically() {
+        let tokens = [
+            BOS_TOKEN_ID,
+            10,
+            11,
+            12,
+            13,
+            EOS_TOKEN_ID,
+            BOS_TOKEN_ID,
+            20,
+            21,
+            22,
+            23,
+            EOS_TOKEN_ID,
+            BOS_TOKEN_ID,
+            30,
+            31,
+            32,
+            33,
+            EOS_TOKEN_ID,
+        ];
+        let expected = vec![(vec![10, 11], 12), (vec![20, 21], 22), (vec![31, 32], 33)];
+        assert_eq!(spread_document_windows(&tokens, 2, 3), expected);
+        assert_eq!(spread_document_windows(&tokens, 2, 3), expected);
+        assert_eq!(spread_document_windows(&tokens, 2, 99).len(), 6);
+        assert!(spread_document_windows(&tokens, 8, 3).is_empty());
+    }
+
+    #[test]
+    fn spread_window_selection_is_explicit_in_smoke_trace() {
+        let mut model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
+        let tokens = [
+            BOS_TOKEN_ID,
+            300,
+            301,
+            302,
+            303,
+            EOS_TOKEN_ID,
+            BOS_TOKEN_ID,
+            304,
+            305,
+            306,
+            307,
+            EOS_TOKEN_ID,
+        ];
+        let trace = train_production_output_smoke(
+            &mut model,
+            &tokens,
+            0x5678,
+            ProductionSmokeConfig {
+                context_tokens: 2,
+                max_windows: 2,
+                epochs: 1,
+                spread_windows: true,
+                ..ProductionSmokeConfig::default()
+            },
+        )
+        .expect("spread smoke train");
+        assert!(trace.spread_windows);
+        assert!(trace.to_json_line().contains(
+            "\"window_selection\":\"deterministic_uniform_target_rank_over_all_documents\""
+        ));
+    }
+
+    #[test]
     fn production_eval_is_deterministic_and_reports_millibits() {
         assert_eq!(q15_negative_log2_millibits(16_384), 1_000);
         assert_eq!(q15_negative_log2_millibits(8_192), 2_000);
@@ -3151,6 +3302,7 @@ mod tests {
         let config = ProductionFullTrainConfig {
             context_tokens: 4,
             max_windows: 4,
+            spread_windows: true,
             epochs: 2,
             q_learning_rate_shift: Some(17),
             k_learning_rate_shift: Some(21),
@@ -3170,6 +3322,10 @@ mod tests {
                 > 0
         );
         assert!(uninterrupted_trace.schedule_complete);
+        assert!(uninterrupted_trace.spread_windows);
+        assert!(uninterrupted_trace.to_json_line().contains(
+            "\"window_selection\":\"deterministic_uniform_target_rank_over_all_documents\""
+        ));
         assert_eq!(uninterrupted_trace.output_backward_shift, 8);
         assert_eq!(uninterrupted_trace.learning_rate_shifts[4], 17);
         assert_eq!(uninterrupted_trace.learning_rate_shifts[5], 21);
