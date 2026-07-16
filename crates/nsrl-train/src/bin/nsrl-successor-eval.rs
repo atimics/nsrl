@@ -37,6 +37,7 @@ struct Config {
     candidate_artifact_hash: String,
     evaluator_hash: String,
     runner_hash: String,
+    training_trace_hash: String,
     float_trace_hash: String,
 }
 
@@ -178,7 +179,7 @@ fn parse_args() -> Result<Config, Box<dyn std::error::Error>> {
     while let Some(arg) = args.next() {
         if arg == "--help" || arg == "-h" {
             println!(
-                "Usage: nsrl-successor-eval --train PATH --eval PATH --candidate PATH --float-logits PATH \\\n+                 --out-matrix PATH --out-evidence PATH --dataset-hash HASH --tokenizer-hash HASH \\\n+                 --candidate-model-hash HASH --candidate-artifact-hash HASH --evaluator-hash HASH \\\n+                 --runner-hash HASH --float-trace-hash HASH"
+                "Usage: nsrl-successor-eval --train PATH --eval PATH --candidate PATH --float-logits PATH \\\n+                 --out-matrix PATH --out-evidence PATH --dataset-hash HASH --tokenizer-hash HASH \\\n+                 --candidate-model-hash HASH --candidate-artifact-hash HASH --evaluator-hash HASH \\\n+                 --runner-hash HASH --training-trace-hash HASH --float-trace-hash HASH"
             );
             std::process::exit(0);
         }
@@ -210,6 +211,7 @@ fn parse_args() -> Result<Config, Box<dyn std::error::Error>> {
         candidate_artifact_hash: take("--candidate-artifact-hash")?,
         evaluator_hash: take("--evaluator-hash")?,
         runner_hash: take("--runner-hash")?,
+        training_trace_hash: take("--training-trace-hash")?,
         float_trace_hash: take("--float-trace-hash")?,
     };
     if !values.is_empty() {
@@ -495,6 +497,9 @@ fn evidence_json(
             "\"evaluator_hash\":\"{}\",\"runner_hash\":\"{}\"}},",
             "\"objective\":{{\"id\":\"integer_base2_softmax_nll_millibits\",",
             "\"zero_probability_floor_millibits\":32000,\"identical_partition\":true}},",
+            "\"training\":{{\"objective\":\"integer_base2_softmax_nll_millibits\",",
+            "\"partition\":\"train\",\"trace_hash\":\"{}\",",
+            "\"heldout_targets_read\":false}},",
             "\"candidate_assistance\":{{\"suffix_memory_present\":false,",
             "\"position_storage_all_zero\":true,",
             "\"retrieval_assistance_present\":false,\"routing_oracle_present\":false,",
@@ -515,6 +520,7 @@ fn evidence_json(
         config.candidate_artifact_hash,
         config.evaluator_hash,
         config.runner_hash,
+        config.training_trace_hash,
         suffix_replay,
         retrieval_replay,
         routing_replay,

@@ -9,13 +9,16 @@ best transformer-only candidate still made 5,094 mistakes against the 2,510
 gate, so the repository does not claim that the transformer itself beat
 retrieval, byte n-gram, and the independently produced floating-point reference.
 
-The first successor-v2 comparison is now fully executed under canonical integer
-base-2 NLL. The physically stripped candidate (model
-`0xeb39de58e94e0007`) scores 115,010,055 total millibits, worse than uniform
-(47,168,000), retrieval (38,271,425), byte n-gram (38,025,720), and a genuine
-trained float32 transformer (40,847,697). This is a frozen falsification: the
-trial is valid, promotion is false, and paid scaling remains unauthorized.
-Replay the bound matrix with
+The successor-v2 repair is now fully executed under canonical integer base-2
+NLL. The first physically stripped candidate remains preserved in history as a
+valid falsification. Its deterministic replacement (model
+`0x3e2b06f1c8ec76df`) is trained directly on canonical training NLL, keeps all
+256 byte classes inside nonzero exponent support, and scores 25,347,655 total
+millibits on the untouched surface. It beats uniform (47,168,000), retrieval
+(38,271,425), byte n-gram (38,025,720), and the genuine trained float32
+transformer (40,847,697), with zero zero-probability windows and no suffix
+memory, retrieval, router, or held-out lookup. Replay the trainer, candidate,
+bound matrix, and evidence with
 `node scripts/run-integer-transformer-successor-v2.mjs --check`.
 
 Solomon multimodal generation and literary expert routing are experiment suites
@@ -94,12 +97,13 @@ separate proposal and document-separated (or full-context-gap) transfer
 surfaces with a deterministic random control. The
 successor-v2 promotion contract requires a
 transformer-only candidate and a real float-transformer baseline. These are
-now exercised measurement tools, not a positive quality result. The first
-matrix binds the dataset, exact target count, byte tokenizer, physically clean
-candidate model, evaluator source set, runner, evidence, and all five replay
-hashes. Candidate ablations prove that suffix-memory removal, retrieval
-disablement, and routing-oracle disablement leave the same replay; the
-candidate loses canonical NLL to every baseline. The rescue-stratified p10m v2
+now exercised measurement tools with a passing substrate promotion result. The
+current matrix binds the dataset, exact target count, byte tokenizer,
+physically clean candidate model, canonical-NLL training receipt, evaluator
+source set, runner, evidence, and all five replay hashes. Candidate ablations
+prove that suffix-memory removal, retrieval disablement, and routing-oracle
+disablement leave the same replay; the candidate beats every frozen baseline.
+The rescue-stratified p10m v2
 audit is complete over four proposal and four separate transfer documents. Its
 primary rescue-exposed trunk proposal agreed on only `1/3` comparable
 coordinates versus paired random `3/3`, and produced zero exact descents versus

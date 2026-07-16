@@ -91,7 +91,7 @@ cargo run -p nsrl-eval -- successor-check --results PATH
 This contract migration removes the improper probability-error objective from
 future headline promotion without rewriting the historical v1 result.
 
-### First successor-v2 comparison
+### Successor-v2 falsification and repair
 
 The first complete matrix is published in
 `benchmarks/integer-transformer-proof-v1/successor-v2-matrix.tsv`. Every row is
@@ -100,7 +100,7 @@ the identical 5,896-target partition:
 
 | System | Mistakes | Total NLL millibits | Zero-probability windows |
 |---|---:|---:|---:|
-| Transformer only | 5,094 | 115,010,055 | 2,916 |
+| Transformer only | 4,993 | 25,347,655 | 0 |
 | Uniform | 5,896 | 47,168,000 | 0 |
 | Retrieval | 2,510 | 38,271,425 | 0 |
 | Byte n-gram | 2,551 | 38,025,720 | 0 |
@@ -109,24 +109,29 @@ the identical 5,896-target partition:
 The float row is produced by a trained float32 causal transformer with learned
 embeddings, Q/K/V/O projections, recurrent causal attention, gated MLP,
 residual connections, and output head. It is not the historical floating
-n-gram mixture. The integer candidate artifact has model hash
-`0xeb39de58e94e0007`; its full position-storage tensor is zero, so neither an
+n-gram mixture. The first integer candidate, model `0xeb39de58e94e0007`,
+remains preserved in repository history as a valid falsification with 2,916
+zero-probability windows. The repaired artifact has model hash
+`0x3e2b06f1c8ec76df`. Its deterministic trainer minimizes canonical NLL on the
+training partition under a nonzero-support constraint; it never opens the
+held-out partition. Its full position-storage tensor is zero, so neither an
 active header nor dormant suffix corpus remains. Independent suffix-memory,
 retrieval-assistance, and routing-oracle ablations reproduce replay hash
-`0xe0c0848da2d833b9` exactly.
+`0xbe997ac639256baa` exactly.
 
-The transformer loses canonical NLL to all four baselines, including uniform.
-This is a valid frozen falsification and does not authorize paid scaling.
-Regenerate the float model, all logits, the matrix, and the evidence bundle,
-then byte-compare them with the publication using:
+The repaired transformer beats canonical NLL for all four frozen baselines,
+including uniform. Regenerate the native training receipt and candidate, the
+float model, all logits, matrix, and evidence bundle, then byte-compare them
+with the publication using:
 
 ```bash
 node scripts/run-integer-transformer-successor-v2.mjs --check
 ```
 
 The candidate-specific manifest binds the frozen corpus and target count,
-tokenizer, candidate model and artifact, evaluator source set, runner, exact
-matrix/evidence bytes, and each system replay hash. `successor-check` rejects
+tokenizer, candidate model and artifact, canonical-NLL training receipt,
+evaluator source set, runner, exact matrix/evidence bytes, and each system
+replay hash. `successor-check` rejects
 row edits even when they remain syntactically valid; repository checks perform
 the stronger end-to-end regeneration.
 

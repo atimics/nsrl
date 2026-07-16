@@ -314,9 +314,11 @@ function collectNativeModelEvidence() {
     evidence: "benchmarks/integer-transformer-proof-v1/successor-v2-evidence.json",
     manifest: "benchmarks/integer-transformer-proof-v1/successor-v2-manifest.tsv",
     matrix: "benchmarks/integer-transformer-proof-v1/successor-v2-matrix.tsv",
+    training: "benchmarks/integer-transformer-proof-v1/successor-v2-training.json",
   };
   const files = Object.fromEntries(Object.entries(paths).map(([key, value]) => [key, fileInfo(value)]));
   const evidence = maybeReadJson(paths.evidence);
+  const training = maybeReadJson(paths.training);
   const manifestRows = parseTsv(maybeReadText(paths.manifest));
   const matrixRows = parseTsv(maybeReadText(paths.matrix));
   const manifest = manifestRows.length === 1 ? manifestRows[0] : null;
@@ -326,11 +328,27 @@ function collectNativeModelEvidence() {
     (evidence?.systems || []).map((system) => [system.system, system]),
   );
   const allFilesPresent = Object.values(files).every((file) => file.present);
+  const trainingReceiptOk = Boolean(manifest && training
+    && training.schema === "nsrl.integer_transformer_successor_train.v1"
+    && training.objective?.id === "integer_base2_softmax_nll_millibits"
+    && training.objective?.partition === "train"
+    && training.objective?.context === Number(manifest.context)
+    && training.objective?.zero_probability_floor_millibits === 32000
+    && training.method?.name === "deterministic_constrained_coordinate_descent"
+    && training.metrics?.zero_probability_classes === 0
+    && training.metrics?.final_nll_millibits < training.metrics?.uniform_nll_millibits
+    && training.bindings?.model_hash === manifest.candidate_model_hash
+    && training.bindings?.artifact_fnv64 === manifest.candidate_artifact_hash
+    && evidence?.training?.trace_hash === fnv64File(paths.training)
+    && evidence?.training?.objective === training.objective.id
+    && evidence?.training?.partition === training.objective.partition
+    && evidence?.training?.heldout_targets_read === false);
   const artifactIdentityOk = Boolean(manifest && allFilesPresent
     && manifest.candidate_artifact_hash === fnv64File(paths.candidate)
     && manifest.matrix_hash === fnv64File(paths.matrix)
     && manifest.evidence_hash === fnv64File(paths.evidence)
-    && evidence?.bindings?.candidate_artifact_hash === manifest.candidate_artifact_hash);
+    && evidence?.bindings?.candidate_artifact_hash === manifest.candidate_artifact_hash
+    && trainingReceiptOk);
   const replayFields = [
     ["transformer-only", "transformer_replay_hash"],
     ["uniform", "uniform_replay_hash"],
@@ -367,7 +385,11 @@ function collectNativeModelEvidence() {
     && evidence?.candidate_assistance?.suffix_memory_present === false
     && evidence?.candidate_assistance?.retrieval_assistance_present === false
     && evidence?.candidate_assistance?.routing_oracle_present === false
-    && evidence?.candidate_assistance?.position_storage_all_zero === true);
+    && evidence?.candidate_assistance?.position_storage_all_zero === true
+    && training?.assistance?.suffix_memory === false
+    && training?.assistance?.retrieval === false
+    && training?.assistance?.routing_oracle === false
+    && training?.assistance?.heldout_targets_read === false);
   const candidateNll = candidate ? Number(candidate.total_nll_millibits) : null;
   const zeroProbabilityWindows = candidate ? Number(candidate.zero_probability_windows) : null;
   const baselineNll = Object.fromEntries(baselines.map((row) => [row.system,
@@ -403,6 +425,7 @@ function collectNativeModelEvidence() {
     gap_to_baseline_millibits: gaps,
     assistance_absent: assistanceAbsent,
     artifact_identity_ok: artifactIdentityOk,
+    training_receipt_ok: trainingReceiptOk,
     replay_bindings_ok: bindingsOk,
     zero_probability_gate: zeroProbabilityGate,
     beats_uniform_gate: uniformGate,
@@ -1313,7 +1336,7 @@ function renderMarkdown(report) {
   lines.push("## Native Model Promotion");
   lines.push("");
   lines.push(`- Contract: \`${report.native_model.contract}\`; state **${report.native_model.state}**`);
-  lines.push(`- Identity: artifact ${report.native_model.artifact_identity_ok ? "verified" : "invalid"}; replay bindings ${report.native_model.replay_bindings_ok ? "verified" : "invalid"}; forbidden assistance ${report.native_model.assistance_absent ? "absent" : "present or unverified"}`);
+  lines.push(`- Identity: artifact ${report.native_model.artifact_identity_ok ? "verified" : "invalid"}; training receipt ${report.native_model.training_receipt_ok ? "verified" : "invalid"}; replay bindings ${report.native_model.replay_bindings_ok ? "verified" : "invalid"}; forbidden assistance ${report.native_model.assistance_absent ? "absent" : "present or unverified"}`);
   lines.push(`- Candidate: ${report.native_model.candidate_nll_millibits ?? "missing"} canonical NLL millibits over ${report.native_model.target_count ?? "missing"} targets; ${report.native_model.zero_probability_windows ?? "missing"} zero-probability windows`);
   for (const [system, nll] of Object.entries(report.native_model.baseline_nll_millibits)) {
     const gap = report.native_model.gap_to_baseline_millibits[system];

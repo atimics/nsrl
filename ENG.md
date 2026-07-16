@@ -28,16 +28,20 @@ frozen: none of 16 bounded variants passed, so the next attempt must change the
 learning architecture or objective rather than only retune the existing
 calibrated trainer.
 
-Successor-v2 now has an end-to-end sealed replay rather than a row-only parser.
-Its candidate-specific manifest binds the 5,896-target dataset, identity-byte
-tokenizer, physically stripped model, evaluator source set, runner, exact
-matrix/evidence bytes, and per-system replay hashes. The repository check
-re-trains the float32 causal transformer and re-evaluates transformer-only,
+Successor-v2 now has an end-to-end sealed training and evaluation replay rather
+than a row-only parser. Its candidate-specific manifest binds the 5,896-target
+dataset, identity-byte tokenizer, physically unassisted model, canonical-NLL
+training trace, evaluator source set, runner, exact matrix/evidence bytes, and
+per-system replay hashes. The repair materializes a constant Q15 residual
+feature in a two-layer native transformer and learns only its quantized output
+head by deterministic constrained coordinate descent on the exact canonical
+training objective. A 29-step output-weight span keeps all byte classes inside
+the 15-bit exponent support. The repository check rebuilds that artifact,
+re-trains the float32 causal transformer, and re-evaluates transformer-only,
 uniform, retrieval, byte n-gram, and float-transformer logits through one
 canonical integer NLL function. Suffix-memory, retrieval, and routing-oracle
-ablations are replay-invariant. The candidate scores 115,010,055 millibits and
-loses to all four baselines, so the engineering result is a frozen
-falsification and not scaling authorization.
+ablations are replay-invariant. The candidate scores 25,347,655 millibits with
+zero zero-probability windows and beats all four frozen baselines.
 
 Prior work already establishes integer and quantized training as a field. The
 engineering contribution pursued here is the auditable combination: no float

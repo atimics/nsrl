@@ -36,6 +36,7 @@ const evaluatorSources = [
   "crates/nsrl-train/src/mini_transformer/model.rs",
   "crates/nsrl-train/src/mini_transformer/trace.rs",
   "crates/nsrl-train/src/mini_transformer/training.rs",
+  "crates/nsrl-train/src/bin/nsrl-successor-train.rs",
   "crates/nsrl-train/src/bin/nsrl-successor-eval.rs",
   "scripts/run-float-transformer-successor-v2.py",
 ];
@@ -208,8 +209,38 @@ function validateFloatTrace(trace, manifest) {
   }
 }
 
+function validateTrainingTrace(trace, manifest, candidateArtifactHash) {
+  const expectedTrainTargets = fs.readFileSync(manifest.trainPath).length - manifest.context;
+  if (trace.schema !== "nsrl.integer_transformer_successor_train.v1"
+      || trace.objective?.id !== "integer_base2_softmax_nll_millibits"
+      || trace.objective?.partition !== "train"
+      || trace.objective?.context !== manifest.context
+      || trace.objective?.targets !== expectedTrainTargets
+      || trace.objective?.zero_probability_floor_millibits !== 32000) {
+    throw new Error("successor training trace does not use the canonical training objective");
+  }
+  if (trace.method?.name !== "deterministic_constrained_coordinate_descent"
+      || Number(trace.method?.transformer_layers) < 1
+      || trace.metrics?.zero_probability_classes !== 0
+      || !(trace.metrics?.final_nll_millibits < trace.metrics?.uniform_nll_millibits)) {
+    throw new Error("successor training trace did not pass the constrained train gate");
+  }
+  if (trace.assistance?.suffix_memory !== false
+      || trace.assistance?.retrieval !== false
+      || trace.assistance?.routing_oracle !== false
+      || trace.assistance?.heldout_targets_read !== false) {
+    throw new Error("successor training trace declares forbidden assistance or held-out access");
+  }
+  if (!/^0x[0-9a-f]{16}$/.test(trace.bindings?.model_hash ?? "")
+      || trace.bindings?.artifact_fnv64 !== candidateArtifactHash) {
+    throw new Error("successor training trace candidate binding is invalid");
+  }
+}
+
 function publishedPaths(manifest) {
   return {
+    candidate: manifest.candidatePath,
+    trainingTrace: path.join(manifest.directory, "successor-v2-training.json"),
     matrix: path.join(manifest.directory, "successor-v2-matrix.tsv"),
     evidence: path.join(manifest.directory, "successor-v2-evidence.json"),
     floatTrace: path.join(manifest.directory, "successor-v2-float-transformer.json"),
@@ -240,8 +271,32 @@ function main() {
   fs.mkdirSync(temporary, { recursive: true });
   const floatLogits = path.join(temporary, "float-transformer.logits");
   const floatTrace = path.join(temporary, "float-transformer.json");
+  const candidate = path.join(temporary, "candidate.nsrlmt");
+  const trainingTrace = path.join(temporary, "training.json");
   const matrix = path.join(temporary, "matrix.tsv");
   const evidence = path.join(temporary, "evidence.json");
+
+  command("cargo", [
+    "build", "--release", "-p", "nsrl-train",
+    "--bin", "nsrl-successor-train", "--bin", "nsrl-successor-eval",
+    "--features", "mini-heads-8,mini-calibrated",
+  ]);
+  command(path.join(root, "target/release/nsrl-successor-train"), [
+    "--train", manifest.trainPath,
+    "--out", candidate,
+    "--trace", trainingTrace,
+    "--context", String(manifest.context),
+  ]);
+  const candidateArtifactHash = hex64(fnv64(fs.readFileSync(candidate)));
+  const trainingTraceValue = JSON.parse(fs.readFileSync(trainingTrace, "utf8"));
+  validateTrainingTrace(trainingTraceValue, manifest, candidateArtifactHash);
+  const candidateModelHash = trainingTraceValue.bindings.model_hash;
+  const trainingTraceHash = hex64(fnv64(fs.readFileSync(trainingTrace)));
+  if (!config.allowUnfrozen
+      && (candidateArtifactHash !== manifest.candidateArtifactHash
+        || candidateModelHash !== manifest.candidateModelHash)) {
+    throw new Error("replayed successor candidate does not match the frozen manifest");
+  }
 
   command("python3", [
     "scripts/run-float-transformer-successor-v2.py",
@@ -254,23 +309,20 @@ function main() {
   validateFloatTrace(floatTraceValue, manifest);
   const floatTraceHash = hex64(fnv64(fs.readFileSync(floatTrace)));
 
-  command("cargo", [
-    "build", "--release", "-p", "nsrl-train", "--bin", "nsrl-successor-eval",
-    "--features", "mini-heads-8,mini-calibrated",
-  ]);
   command(path.join(root, "target/release/nsrl-successor-eval"), [
     "--train", manifest.trainPath,
     "--eval", manifest.evalPath,
-    "--candidate", manifest.candidatePath,
+    "--candidate", candidate,
     "--float-logits", floatLogits,
     "--out-matrix", matrix,
     "--out-evidence", evidence,
     "--dataset-hash", manifest.datasetHash,
     "--tokenizer-hash", manifest.tokenizerHash,
-    "--candidate-model-hash", manifest.candidateModelHash,
-    "--candidate-artifact-hash", manifest.candidateArtifactHash,
+    "--candidate-model-hash", candidateModelHash,
+    "--candidate-artifact-hash", candidateArtifactHash,
     "--evaluator-hash", actualEvaluatorHash,
     "--runner-hash", actualRunnerHash,
+    "--training-trace-hash", trainingTraceHash,
     "--float-trace-hash", floatTraceHash,
   ]);
 
@@ -280,6 +332,9 @@ function main() {
   const replayHashes = resultLines.map((line) => line.split("\t")[17]);
   if (resultLines.length !== 5) throw new Error("successor evaluator did not emit five systems");
   const freezeValues = {
+    candidate_model_hash: candidateModelHash,
+    candidate_artifact_hash: candidateArtifactHash,
+    training_trace_hash: trainingTraceHash,
     evaluator_hash: actualEvaluatorHash,
     runner_hash: actualRunnerHash,
     matrix_hash: matrixHash,
@@ -300,10 +355,22 @@ function main() {
 
   const published = publishedPaths(manifest);
   if (config.mode === "freeze") {
+    fs.copyFileSync(candidate, published.candidate);
+    fs.copyFileSync(trainingTrace, published.trainingTrace);
     fs.copyFileSync(matrix, published.matrix);
     fs.copyFileSync(evidence, published.evidence);
     fs.copyFileSync(floatTrace, published.floatTrace);
+    const manifestFields = [
+      manifestSchema, contract, path.basename(manifest.trainPath), path.basename(manifest.evalPath),
+      path.basename(manifest.candidatePath), manifest.context, manifest.stride, manifest.targets,
+      manifest.datasetHash, tokenizer, manifest.tokenizerHash, candidateModelHash,
+      candidateArtifactHash, actualEvaluatorHash, actualRunnerHash, matrixHash, evidenceHash,
+      ...replayHashes,
+    ];
+    fs.writeFileSync(manifest.absolute, `${manifestHeader}\n${manifestFields.join("\t")}\n`);
   } else if (!config.allowUnfrozen) {
+    byteEqual(candidate, published.candidate, "published candidate");
+    byteEqual(trainingTrace, published.trainingTrace, "published training trace");
     byteEqual(matrix, published.matrix, "published matrix");
     byteEqual(evidence, published.evidence, "published evidence");
     byteEqual(floatTrace, published.floatTrace, "published float-transformer trace");

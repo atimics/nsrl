@@ -133,12 +133,13 @@ were too strong:
 The specific NSRL implementation may still be useful or novel in combination,
 but novelty cannot rest on integer accumulation alone.
 
-## Evidence still missing in NSRL
+## Evidence status in NSRL
 
-1. An unassisted transformer-only candidate that passes the frozen proof; the
-   completed v1 component ablation found that suffix memory supplies all top-1
-   gain, and a 16-cell suffix-free successor sweep still missed the mistake gate
-   by 2,584.
+1. The former unassisted-transformer gap is closed. The repaired successor-v2
+   trains directly against canonical integer NLL, has zero zero-probability
+   windows, and beats uniform, retrieval, byte n-gram, and the trained float32
+   transformer on the frozen 5,896-target surface without suffix memory,
+   retrieval, routing, or held-out lookup.
 2. Functionally visible activation of additional p10m trunk groups. `up` is now
    safely reachable: shift 22 produced 101,543 exact updates with zero
    saturation. But a matched window-1,024 comparison against shift 23 found

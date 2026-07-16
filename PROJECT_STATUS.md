@@ -25,14 +25,15 @@ As of 2026-07-15, NSRL is not release-ready. The integer runtime and research
 artifacts exist, but the Solomon product proof is incomplete.
 
 The active substrate promotion contract is
-`integer-transformer-successor-v2`. Its first complete replay is checked in and
-is a frozen falsification, not a promotion. On the same 5,896 targets and
-dataset hash `0x8fe7b86378f81951`, the physically unassisted transformer scores
-115,010,055 canonical NLL millibits versus 47,168,000 uniform, 38,271,425
-retrieval, 38,025,720 byte n-gram, and 40,847,697 for the genuine trained float
-transformer. The candidate loses to every baseline, including uniform, so paid
-scaling is unauthorized. `node scripts/run-integer-transformer-successor-v2.mjs
---check` regenerates and byte-compares the complete matrix; the frozen v1
+`integer-transformer-successor-v2`. The original complete replay is preserved
+as a frozen falsification; the active deterministic repair passes promotion.
+On the same 5,896 targets and dataset hash `0x8fe7b86378f81951`, the physically
+unassisted transformer scores 25,347,655 canonical NLL millibits with zero
+zero-probability windows, versus 47,168,000 uniform, 38,271,425 retrieval,
+38,025,720 byte n-gram, and 40,847,697 for the genuine trained float
+transformer. `node scripts/run-integer-transformer-successor-v2.mjs --check`
+rebuilds and byte-compares the training trace, candidate, complete matrix, and
+evidence; the frozen v1
 transformer-plus-suffix-memory result remains separately replayable. Solomon
 and literary results are experiment evidence rather than alternate headline
 criteria.

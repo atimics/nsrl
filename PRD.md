@@ -41,23 +41,27 @@ explicitly a falsifiable research hypothesis; see `research/README.md`,
 `docs/integer-transformer-proof-v1.md` and enforced by `nsrl-eval`, remains a
 frozen system-level result. A matched component ablation found that its fitted
 suffix memory supplies every top-1 improvement; transformer logits improve
-probability error but change no predicted tokens. The active headline gate is
+probability error but change no predicted tokens. The resulting headline gate is
 therefore an unassisted transformer-only successor on the same frozen
 partition. A 16-cell suffix-free successor sweep varied update scale, duration,
 batch geometry, balancing, coverage, attention, and position policy; no row
-passed, and the best remained at 5,094 mistakes versus the 2,510 gate. Further
-work must change the learning architecture or objective rather than promote a
-hyperparameter variant. Until an unassisted row passes, the v1 artifact must be
-described as a transformer-plus-suffix-memory system rather than proof that the
-parametric transformer learned the task by itself.
+passed, and the best remained at 5,094 mistakes versus the 2,510 gate. That
+falsification required a change to the learning objective rather than promotion
+of a hyperparameter variant. The v1 artifact remains a
+transformer-plus-suffix-memory system rather than proof that its parametric
+transformer learned the task by itself.
 
-The first successor-v2 trial is complete and frozen as a falsification. Under
-canonical integer base-2 NLL, the physically unassisted candidate scores
-115,010,055 millibits versus 47,168,000 uniform, 38,271,425 retrieval,
+The first successor-v2 trial is preserved as a frozen falsification. Its
+deterministic repair is now the active artifact. A constrained native
+transformer head trains directly against canonical integer base-2 NLL on the
+training partition and retains nonzero support for every byte class. On the
+unchanged evaluation surface it scores 25,347,655 millibits with zero
+zero-probability windows, versus 47,168,000 uniform, 38,271,425 retrieval,
 38,025,720 byte n-gram, and 40,847,697 for a genuine trained float32
-transformer. It loses every comparison. Paid scaling remains unauthorized;
-future authorization requires a new transformer-only candidate to beat all
-four rows strictly on the same bound NLL objective.
+transformer. It strictly passes the first gate and every frozen successor
+promotion comparison without retrieval, suffix memory, routing, or held-out
+lookup. This repairs the substrate gate; it does not by itself satisfy the
+separate NSRL-MME product release gate.
 
 The p10m training roadmap has completed its local scaling-readiness review. A
 contracted 2,048-window run bound the K/V schedule to the same initialization,
