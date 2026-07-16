@@ -70,6 +70,7 @@ struct Config {
     stop_on_eos: bool,
     spread_windows: bool,
     targets_per_window: usize,
+    training_workers: usize,
     max_windows: usize,
     epochs: usize,
     feature_shift: u8,
@@ -151,6 +152,7 @@ impl Default for Config {
             stop_on_eos: true,
             spread_windows: false,
             targets_per_window: full.targets_per_window,
+            training_workers: full.training_workers,
             max_windows: smoke.max_windows,
             epochs: smoke.epochs,
             feature_shift: smoke.feature_shift,
@@ -1132,6 +1134,7 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
         max_windows: config.max_windows,
         spread_windows: config.spread_windows,
         targets_per_window: config.targets_per_window,
+        training_workers: config.training_workers,
         epochs: config.epochs,
         matrix_learning_rate_shift: config.matrix_learning_rate_shift,
         q_learning_rate_shift: config.q_learning_rate_shift,
@@ -1356,6 +1359,9 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--spread-windows" => config.spread_windows = true,
             "--targets-per-window" => {
                 config.targets_per_window = next(&mut args, "--targets-per-window")?.parse()?
+            }
+            "--training-workers" => {
+                config.training_workers = next(&mut args, "--training-workers")?.parse()?
             }
             "--max-windows" => config.max_windows = next(&mut args, "--max-windows")?.parse()?,
             "--epochs" => config.epochs = next(&mut args, "--epochs")?.parse()?,
@@ -1592,7 +1598,7 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor.\n"
+        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor.\n"
     );
     println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
@@ -1676,12 +1682,15 @@ mod tests {
             "--spread-windows",
             "--targets-per-window",
             "4",
+            "--training-workers",
+            "3",
             "--embedding-learning-rate-boost-shift",
             "1",
         ]))
         .expect("spread training arguments");
         assert!(config.spread_windows);
         assert_eq!(config.targets_per_window, 4);
+        assert_eq!(config.training_workers, 3);
         assert_eq!(config.embedding_learning_rate_boost_shift, 1);
     }
 

@@ -1,4 +1,5 @@
 use core::{cmp::Reverse, ops::Range};
+use std::thread;
 
 use nsrl_core::{
     GatedMlpI16Params, GatedMlpWorkspace, LinearAttentionWorkspace, RmsNormBackwardWorkspace,
@@ -210,6 +211,7 @@ pub struct ProductionFullTrainConfig {
     pub max_windows: usize,
     pub spread_windows: bool,
     pub targets_per_window: usize,
+    pub training_workers: usize,
     pub epochs: usize,
     pub matrix_learning_rate_shift: u8,
     pub q_learning_rate_shift: Option<u8>,
@@ -239,6 +241,7 @@ impl Default for ProductionFullTrainConfig {
             max_windows: 8,
             spread_windows: false,
             targets_per_window: 1,
+            training_workers: 1,
             epochs: 2,
             matrix_learning_rate_shift: 16,
             q_learning_rate_shift: None,
@@ -426,6 +429,7 @@ pub struct ProductionFullTrainTrace {
     pub windows: usize,
     pub spread_windows: bool,
     pub targets_per_window: usize,
+    pub training_workers: usize,
     pub supervised_targets: usize,
     pub embedding_learning_rate_boost_shift: u8,
     pub epochs: usize,
@@ -587,6 +591,15 @@ impl ProductionFullTrainTrace {
                 ),
             );
         }
+        if self.training_workers > 1 {
+            output = output.replace(
+                ",\"learning_rate_shifts\"",
+                &format!(
+                    ",\"training_workers\":{},\"learning_rate_shifts\"",
+                    self.training_workers,
+                ),
+            );
+        }
         output
     }
 }
@@ -641,6 +654,52 @@ struct UpdateStats {
     gradient_saturation: usize,
     residual_saturation: usize,
     weight_saturation: usize,
+}
+
+impl UpdateStats {
+    fn merge(&mut self, other: Self) {
+        for (left, right) in self.movement.iter_mut().zip(other.movement) {
+            *left = left.saturating_add(right);
+        }
+        for (left, right) in self.gradient_nonzero.iter_mut().zip(other.gradient_nonzero) {
+            *left = left.saturating_add(right);
+        }
+        for (left, right) in self.residual_carry.iter_mut().zip(other.residual_carry) {
+            *left = left.saturating_add(right);
+        }
+        for (left, right) in self.update_nonzero.iter_mut().zip(other.update_nonzero) {
+            *left = left.saturating_add(right);
+        }
+        for (left, right) in self
+            .saturation_by_group
+            .iter_mut()
+            .zip(other.saturation_by_group)
+        {
+            *left = left.saturating_add(right);
+        }
+        for (left, right) in self
+            .residual_saturation_by_group
+            .iter_mut()
+            .zip(other.residual_saturation_by_group)
+        {
+            *left = left.saturating_add(right);
+        }
+        self.backward_ste_rescue = self
+            .backward_ste_rescue
+            .saturating_add(other.backward_ste_rescue);
+        self.backward_quantization = self
+            .backward_quantization
+            .saturating_add(other.backward_quantization);
+        self.gradient_saturation = self
+            .gradient_saturation
+            .saturating_add(other.gradient_saturation);
+        self.residual_saturation = self
+            .residual_saturation
+            .saturating_add(other.residual_saturation);
+        self.weight_saturation = self
+            .weight_saturation
+            .saturating_add(other.weight_saturation);
+    }
 }
 
 struct BackwardQuantizer {
@@ -800,6 +859,8 @@ pub fn train_production_full_smoke(
         || config.targets_per_window == 0
         || config.targets_per_window > config.context_tokens
         || !config.targets_per_window.is_power_of_two()
+        || config.training_workers == 0
+        || config.training_workers > 256
         || config.embedding_learning_rate_boost_shift
             > config
                 .embedding_learning_rate_shift
@@ -870,6 +931,7 @@ pub fn train_production_full_smoke(
                 model,
                 context,
                 targets.len(),
+                config.training_workers,
                 config.probability_gradient_fractional_bits,
                 config.probability_normalization,
             )?;
@@ -906,6 +968,7 @@ pub fn train_production_full_smoke(
         windows: windows.len(),
         spread_windows: config.spread_windows,
         targets_per_window: config.targets_per_window,
+        training_workers: config.training_workers,
         supervised_targets,
         embedding_learning_rate_boost_shift: config.embedding_learning_rate_boost_shift,
         epochs: config.epochs,
@@ -968,6 +1031,7 @@ fn forward_cache(
         model,
         context_tokens,
         1,
+        1,
         probability_gradient_fractional_bits,
         probability_normalization,
     )
@@ -977,6 +1041,7 @@ fn forward_cache_for_target_rows(
     model: &ProductionModelV1,
     context_tokens: &[u32],
     target_rows: usize,
+    training_workers: usize,
     probability_gradient_fractional_bits: u8,
     probability_normalization: SoftmaxNormalization,
 ) -> Result<ForwardCache, TrainError> {
@@ -985,6 +1050,7 @@ fn forward_cache_for_target_rows(
         || context_tokens.len() > config.context_tokens
         || target_rows == 0
         || target_rows > context_tokens.len()
+        || training_workers == 0
         || context_tokens
             .iter()
             .any(|&token| token as usize >= config.vocab_size)
@@ -1136,31 +1202,13 @@ fn forward_cache_for_target_rows(
         &model.final_rms_weights,
         config.d_model,
     )?;
-    let mut logits = Vec::with_capacity(target_rows * config.vocab_size);
-    let mut probabilities = Vec::with_capacity(target_rows * config.vocab_size);
-    for feature_row in features.chunks_exact(config.d_model) {
-        let row_logits = output_logits(model, feature_row);
-        if probability_gradient_fractional_bits == 15
-            && probability_normalization == SoftmaxNormalization::LegacyQ31Lut
-        {
-            let mut q15 = vec![0_i16; config.vocab_size];
-            base2_softmax_i32_q15(&row_logits, &mut q15)
-                .ok_or(TrainError::CoreRejected("production_training_softmax"))?;
-            probabilities.extend(q15.into_iter().map(i32::from));
-        } else {
-            let mut q31 = vec![0_u32; config.vocab_size];
-            base2_softmax_i32_q31_with_normalization(
-                &row_logits,
-                &mut q31,
-                probability_normalization,
-            )
-            .ok_or(TrainError::CoreRejected("production_training_softmax_wide"))?;
-            probabilities.extend(q31.into_iter().map(|probability| {
-                quantize_probability_q31(probability, probability_gradient_fractional_bits)
-            }));
-        }
-        logits.extend(row_logits);
-    }
+    let (logits, probabilities) = output_rows(
+        model,
+        &features,
+        training_workers,
+        probability_gradient_fractional_bits,
+        probability_normalization,
+    )?;
     Ok(ForwardCache {
         layers,
         final_hidden,
@@ -1480,67 +1528,32 @@ fn backward_update_with_spec(
         gradients.push(gradient);
     }
     let precision_shift = precision_shift.ok_or(TrainError::InvalidConfig)?;
+    let feature_accumulators =
+        output_feature_accumulators(model, &gradients, config.training_workers)?;
     let mut grad_features = vec![0_i16; targets.len() * c.d_model];
-    for (row, grad_logits) in gradients.iter().enumerate() {
-        for dim in 0..c.d_model {
-            let mut acc = 0_i64;
-            for (token, &grad) in grad_logits.iter().enumerate() {
-                acc = acc.saturating_add(
-                    i64::from(grad) * i64::from(model.output_weights[token * c.d_model + dim]),
-                );
-            }
-            grad_features[row * c.d_model + dim] = saturate_i16(
-                quantizer.shift(
-                    acc,
-                    config
-                        .output_backward_shift
-                        .unwrap_or(model.scales.output_shift)
-                        .saturating_add(precision_shift),
-                    stats,
-                ),
-            );
-        }
-    }
-    for token in 0..c.vocab_size {
-        let bias_gradient = gradients
-            .iter()
-            .fold(0_i64, |sum, row| sum.saturating_add(i64::from(row[token])));
-        update_i32(
-            &mut model.output_bias_q8[token],
-            bias_gradient,
-            config
-                .vector_learning_rate_shift
-                .saturating_add(precision_shift)
-                .saturating_add(target_mean_shift(config)),
-            &mut residuals[ranges.bias.start + token],
-            apply_updates,
-            12,
-            stats,
-        );
-        for dim in 0..c.d_model {
-            let gradient = gradients
-                .iter()
-                .enumerate()
-                .fold(0_i64, |sum, (row, grad_logits)| {
-                    sum.saturating_add(
-                        i64::from(grad_logits[token])
-                            * i64::from(cache.features[row * c.d_model + dim]),
-                    )
-                });
-            update_i16(
-                &mut model.output_weights[token * c.d_model + dim],
-                gradient,
+    for (gradient, accumulator) in grad_features.iter_mut().zip(feature_accumulators) {
+        *gradient = saturate_i16(
+            quantizer.shift(
+                accumulator,
                 config
-                    .output_learning_rate_shift
-                    .saturating_add(precision_shift)
-                    .saturating_add(target_mean_shift(config)),
-                &mut residuals[ranges.output.start + token * c.d_model + dim],
-                apply_updates,
-                11,
+                    .output_backward_shift
+                    .unwrap_or(model.scales.output_shift)
+                    .saturating_add(precision_shift),
                 stats,
-            );
-        }
+            ),
+        );
     }
+    update_output_parameters(
+        model,
+        &gradients,
+        &cache.features,
+        config,
+        precision_shift,
+        ranges,
+        residuals,
+        apply_updates,
+        stats,
+    )?;
     let final_start = (seq_len - targets.len()) * c.d_model;
     let mut grad_hidden = vec![0_i16; total];
     let mut final_gamma_grad = vec![0_i64; c.d_model];
@@ -1858,6 +1871,151 @@ fn backward_update_with_spec(
                 stats,
             );
         }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_output_parameter_chunk(
+    output_weights: &mut [i16],
+    output_bias: &mut [i32],
+    output_residuals: &mut [i64],
+    bias_residuals: &mut [i64],
+    first_token: usize,
+    d_model: usize,
+    gradients: &[Vec<i32>],
+    features: &[i16],
+    output_shift: u8,
+    bias_shift: u8,
+    apply_updates: bool,
+) -> UpdateStats {
+    let mut stats = UpdateStats::default();
+    for local_token in 0..output_bias.len() {
+        let token = first_token + local_token;
+        let bias_gradient = gradients
+            .iter()
+            .fold(0_i64, |sum, row| sum.saturating_add(i64::from(row[token])));
+        update_i32(
+            &mut output_bias[local_token],
+            bias_gradient,
+            bias_shift,
+            &mut bias_residuals[local_token],
+            apply_updates,
+            12,
+            &mut stats,
+        );
+        for dim in 0..d_model {
+            let gradient = gradients
+                .iter()
+                .enumerate()
+                .fold(0_i64, |sum, (row, grad_logits)| {
+                    sum.saturating_add(
+                        i64::from(grad_logits[token]) * i64::from(features[row * d_model + dim]),
+                    )
+                });
+            let index = local_token * d_model + dim;
+            update_i16(
+                &mut output_weights[index],
+                gradient,
+                output_shift,
+                &mut output_residuals[index],
+                apply_updates,
+                11,
+                &mut stats,
+            );
+        }
+    }
+    stats
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_output_parameters(
+    model: &mut ProductionModelV1,
+    gradients: &[Vec<i32>],
+    features: &[i16],
+    config: ProductionFullTrainConfig,
+    precision_shift: u8,
+    ranges: &ParameterRanges,
+    residuals: &mut [i64],
+    apply_updates: bool,
+    stats: &mut UpdateStats,
+) -> Result<(), TrainError> {
+    if ranges.output.end != ranges.bias.start {
+        return Err(TrainError::InvalidModel(
+            "production output parameter ranges are not contiguous",
+        ));
+    }
+    let d_model = model.config.d_model;
+    let vocabulary = model.config.vocab_size;
+    let workers = config.training_workers.min(vocabulary).max(1);
+    let tokens_per_worker = vocabulary.div_ceil(workers);
+    let output_shift = config
+        .output_learning_rate_shift
+        .saturating_add(precision_shift)
+        .saturating_add(target_mean_shift(config));
+    let bias_shift = config
+        .vector_learning_rate_shift
+        .saturating_add(precision_shift)
+        .saturating_add(target_mean_shift(config));
+    let parameter_residuals = &mut residuals[ranges.output.start..ranges.bias.end];
+    let (output_residuals, bias_residuals) = parameter_residuals.split_at_mut(ranges.output.len());
+    if workers == 1 {
+        stats.merge(update_output_parameter_chunk(
+            &mut model.output_weights,
+            &mut model.output_bias_q8,
+            output_residuals,
+            bias_residuals,
+            0,
+            d_model,
+            gradients,
+            features,
+            output_shift,
+            bias_shift,
+            apply_updates,
+        ));
+        return Ok(());
+    }
+    let output_chunk_len = tokens_per_worker * d_model;
+    let chunk_stats = thread::scope(|scope| {
+        let chunks = model
+            .output_weights
+            .chunks_mut(output_chunk_len)
+            .zip(model.output_bias_q8.chunks_mut(tokens_per_worker))
+            .zip(output_residuals.chunks_mut(output_chunk_len))
+            .zip(bias_residuals.chunks_mut(tokens_per_worker));
+        let handles = chunks
+            .enumerate()
+            .map(
+                |(worker, (((weights, bias), weight_residuals), bias_residuals))| {
+                    scope.spawn(move || {
+                        update_output_parameter_chunk(
+                            weights,
+                            bias,
+                            weight_residuals,
+                            bias_residuals,
+                            worker * tokens_per_worker,
+                            d_model,
+                            gradients,
+                            features,
+                            output_shift,
+                            bias_shift,
+                            apply_updates,
+                        )
+                    })
+                },
+            )
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .map_err(|_| TrainError::CoreRejected("production_training_worker_panicked"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+    for chunk in chunk_stats {
+        stats.merge(chunk);
     }
     Ok(())
 }
@@ -2319,6 +2477,149 @@ fn output_logits(model: &ProductionModelV1, features: &[i16]) -> Vec<i32> {
         })
         .collect()
 }
+
+fn output_row(
+    model: &ProductionModelV1,
+    features: &[i16],
+    probability_gradient_fractional_bits: u8,
+    probability_normalization: SoftmaxNormalization,
+) -> Result<(Vec<i32>, Vec<i32>), TrainError> {
+    let logits = output_logits(model, features);
+    let probabilities = if probability_gradient_fractional_bits == 15
+        && probability_normalization == SoftmaxNormalization::LegacyQ31Lut
+    {
+        let mut q15 = vec![0_i16; model.config.vocab_size];
+        base2_softmax_i32_q15(&logits, &mut q15)
+            .ok_or(TrainError::CoreRejected("production_training_softmax"))?;
+        q15.into_iter().map(i32::from).collect()
+    } else {
+        let mut q31 = vec![0_u32; model.config.vocab_size];
+        base2_softmax_i32_q31_with_normalization(&logits, &mut q31, probability_normalization)
+            .ok_or(TrainError::CoreRejected("production_training_softmax_wide"))?;
+        q31.into_iter()
+            .map(|probability| {
+                quantize_probability_q31(probability, probability_gradient_fractional_bits)
+            })
+            .collect()
+    };
+    Ok((logits, probabilities))
+}
+
+fn output_rows(
+    model: &ProductionModelV1,
+    features: &[i16],
+    training_workers: usize,
+    probability_gradient_fractional_bits: u8,
+    probability_normalization: SoftmaxNormalization,
+) -> Result<(Vec<i32>, Vec<i32>), TrainError> {
+    let target_rows = features.len() / model.config.d_model;
+    let workers = training_workers.min(target_rows).max(1);
+    let rows_per_worker = target_rows.div_ceil(workers);
+    let feature_chunk_len = rows_per_worker * model.config.d_model;
+    let chunks = if workers == 1 {
+        vec![features]
+    } else {
+        features.chunks(feature_chunk_len).collect::<Vec<_>>()
+    };
+    let results = if workers == 1 {
+        vec![
+            chunks[0]
+                .chunks_exact(model.config.d_model)
+                .map(|row| {
+                    output_row(
+                        model,
+                        row,
+                        probability_gradient_fractional_bits,
+                        probability_normalization,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ]
+    } else {
+        thread::scope(|scope| {
+            let handles = chunks
+                .into_iter()
+                .map(|chunk| {
+                    scope.spawn(move || {
+                        chunk
+                            .chunks_exact(model.config.d_model)
+                            .map(|row| {
+                                output_row(
+                                    model,
+                                    row,
+                                    probability_gradient_fractional_bits,
+                                    probability_normalization,
+                                )
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                })
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle.join().map_err(|_| {
+                        TrainError::CoreRejected("production_training_worker_panicked")
+                    })?
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })?
+    };
+    let mut logits = Vec::with_capacity(target_rows * model.config.vocab_size);
+    let mut probabilities = Vec::with_capacity(target_rows * model.config.vocab_size);
+    for chunk in results {
+        for (row_logits, row_probabilities) in chunk {
+            logits.extend(row_logits);
+            probabilities.extend(row_probabilities);
+        }
+    }
+    Ok((logits, probabilities))
+}
+
+fn output_feature_accumulators(
+    model: &ProductionModelV1,
+    gradients: &[Vec<i32>],
+    training_workers: usize,
+) -> Result<Vec<i64>, TrainError> {
+    let workers = training_workers.min(gradients.len()).max(1);
+    let rows_per_worker = gradients.len().div_ceil(workers);
+    let accumulate_rows = |rows: &[Vec<i32>]| {
+        let mut accumulators = Vec::with_capacity(rows.len() * model.config.d_model);
+        for grad_logits in rows {
+            for dim in 0..model.config.d_model {
+                let mut accumulator = 0_i64;
+                for (token, &gradient) in grad_logits.iter().enumerate() {
+                    accumulator = accumulator.saturating_add(
+                        i64::from(gradient)
+                            * i64::from(model.output_weights[token * model.config.d_model + dim]),
+                    );
+                }
+                accumulators.push(accumulator);
+            }
+        }
+        accumulators
+    };
+    if workers == 1 {
+        return Ok(accumulate_rows(gradients));
+    }
+    let chunks = gradients.chunks(rows_per_worker).collect::<Vec<_>>();
+    let results = thread::scope(|scope| {
+        let handles = chunks
+            .into_iter()
+            .map(|chunk| scope.spawn(move || accumulate_rows(chunk)))
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .map_err(|_| TrainError::CoreRejected("production_training_worker_panicked"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+    Ok(results.into_iter().flatten().collect())
+}
+
 fn evaluate_mistakes(
     model: &ProductionModelV1,
     windows: &[(Vec<u32>, u32)],
@@ -2645,6 +2946,11 @@ mod tests {
         };
         assert_eq!(effective_learning_rate_shifts(boosted_embedding)[0], 2);
         assert_ne!(schedule_hash(sequence), schedule_hash(boosted_embedding));
+        let parallel = ProductionFullTrainConfig {
+            training_workers: 4,
+            ..base
+        };
+        assert_eq!(schedule_hash(base), schedule_hash(parallel));
     }
 
     #[test]

@@ -3343,6 +3343,33 @@ mod tests {
             uninterrupted_trace.final_model_hash
         );
 
+        let parallel_config = ProductionFullTrainConfig {
+            training_workers: 4,
+            ..config
+        };
+        let mut parallel_model = initial.clone();
+        let (parallel_trace, parallel_state) = train_production_full_smoke(
+            &mut parallel_model,
+            &tokens,
+            0x5678,
+            parallel_config,
+            None,
+        )
+        .expect("parallel full train");
+        assert_eq!(parallel_model, uninterrupted_model);
+        assert_eq!(parallel_state, uninterrupted_state);
+        assert_eq!(parallel_trace.training_workers, 4);
+        assert_eq!(parallel_trace.movement_l1, uninterrupted_trace.movement_l1);
+        assert_eq!(
+            parallel_trace.gradient_nonzero_count,
+            uninterrupted_trace.gradient_nonzero_count
+        );
+        assert!(
+            parallel_trace
+                .to_json_line()
+                .contains("\"training_workers\":4")
+        );
+
         let mut resumed_model = initial;
         let partial_config = ProductionFullTrainConfig {
             max_optimizer_steps: 1,
@@ -3358,9 +3385,14 @@ mod tests {
         let mut corrupt = bytes;
         corrupt[80] ^= 1;
         assert!(ProductionOptimizerStateV2::from_bytes(&corrupt).is_err());
-        let (_, resumed_state) =
-            train_production_full_smoke(&mut resumed_model, &tokens, 0x5678, config, Some(decoded))
-                .expect("resume");
+        let (_, resumed_state) = train_production_full_smoke(
+            &mut resumed_model,
+            &tokens,
+            0x5678,
+            parallel_config,
+            Some(decoded),
+        )
+        .expect("resume with a different worker count");
         assert_eq!(resumed_model, uninterrupted_model);
         assert_eq!(resumed_state, uninterrupted_state);
         assert!(

@@ -291,6 +291,7 @@ fn fitting_training_config() -> ProductionFullTrainConfig {
         max_windows: 8,
         spread_windows: false,
         targets_per_window: 1,
+        training_workers: 1,
         epochs: 1,
         matrix_learning_rate_shift: 25,
         q_learning_rate_shift: Some(29),
