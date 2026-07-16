@@ -133,6 +133,7 @@ representations only when needed; for example, `p^(23)` is a Q23 probability.
 | [MJ-2026-07-15-19](MJ-2026-07-15-19-solomonic-judgment-calculus.md) | Solomonic judgment calculus | Exact six-source record has 8/24 favorable firings and negative regret in three families; sequential e-process interpretation is superseded by MJ-20; occult hash parity falsified |
 | [MJ-2026-07-15-20](MJ-2026-07-15-20-exchangeable-adaptive-composition.md) | Exchangeable adaptive composition and its finite-sample price | MJ-19 conditional bridge falsified; bounded six-panel theorem established; fresh-source optimizer execution falsified with zero firings and exact replay |
 | [MJ-2026-07-15-21](MJ-2026-07-15-21-correlated-lattice-neural-updates.md) | Correlated lattice optimization and scale-stable neural updates | Five recent-result-derived NSRL conjectures and a bounded experiment ladder established; optimizer, architecture, scaling, and release promotion remain unauthorized |
+| [MJ-2026-07-16-22](MJ-2026-07-16-22-council-tool-parity-hardening.md) | Council tool-parity hardening | Historical v0 promotion falsified under stronger requirements: solo had 0 tool observations versus Council's 2,880, a diagnostic parity baseline ties all eight dimensions, seven hardening surfaces remain missing, and Council returns to shadow-only |
 
 ## Entry template
 

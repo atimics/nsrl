@@ -1,0 +1,57 @@
+{
+  "schema": "nsrl.solomon_council_hardening_contract.v1",
+  "audit_id": "solomon-council-hardening-v1",
+  "analysis_role": "retrospective_falsification_of_v0_promotion_under_stronger_requirements",
+  "frozen_before_hardening_audit": true,
+  "v0_lane_outcomes_already_opened": true,
+  "claim_boundary": "This audit may revoke effective Council promotion but may not rewrite the historical v0 ceremony or claim prospective Council-v1 performance.",
+  "baseline": {
+    "same_underlying_model_required": true,
+    "same_public_evidence_required": true,
+    "equivalent_tool_observations_required": true,
+    "equivalent_tool_permissions_required": true,
+    "equivalent_tool_budget_required": true,
+    "strict_council_outperformance_required": true,
+    "post_hoc_tool_parity_counterfactual_is_diagnostic_only": true
+  },
+  "adversarial_evidence_minimums": {
+    "misleading": 72,
+    "incomplete": 72,
+    "stale": 72,
+    "conflicting": 72
+  },
+  "tool_boundary_minimums": {
+    "successful_observations": 72,
+    "tool_failures": 24,
+    "permission_denials": 24
+  },
+  "human_ambiguity_minimums": {
+    "human_authored_ambiguous_cases": 72,
+    "ask_user_or_abstain_cases": 36
+  },
+  "outcome_minimums": {
+    "production_receipts_with_observed_outcomes": 72,
+    "production_receipts_with_calibration_revisions": 72,
+    "distinct_observation_sources": 3
+  },
+  "transfer_minimums": {
+    "unfamiliar_source_cases": 144,
+    "unfamiliar_source_families": 4,
+    "cross_modal_cases": 144,
+    "cross_modal_source_families": 2
+  },
+  "integrity": {
+    "exact_replay_required": true,
+    "generation_integrity_required": true,
+    "provenance_required": true,
+    "no_oracle_target_lookup": true,
+    "no_hidden_memory": true,
+    "no_retrieval_target_leakage": true,
+    "all_receipts_shadow_only": true
+  },
+  "authorizations": {
+    "council_promotion_authorized_before_all_gates_pass": false,
+    "operational_action_execution_authorized": false,
+    "product_release_authorized": false
+  }
+}

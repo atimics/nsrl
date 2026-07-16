@@ -258,14 +258,16 @@ function shortText(text, max = 120) {
 
 function collectGit() {
   const status = runCommand("git", ["status", "--short", "--branch"], { timeoutMs: 10000 });
+  const currentBranch = runCommand("git", ["branch", "--show-current"], { timeoutMs: 10000 });
   const head = runCommand("git", ["log", "--oneline", "-1"], { timeoutMs: 10000 });
   const lines = status.stdout.trimEnd().split("\n").filter(Boolean);
-  const branch = lines[0] || "";
+  const branch = currentBranch.stdout.trim()
+    || (lines[0] || "").replace(/^##\s+/, "").split("...")[0];
   const changes = lines.slice(1);
   return {
     branch,
     head: head.stdout.trim(),
-    ok: status.ok && head.ok,
+    ok: status.ok && currentBranch.ok && head.ok,
     dirty: changes.length > 0,
     change_count: changes.length,
     tracked_change_count: changes.filter((line) => !line.startsWith("??")).length,
@@ -473,6 +475,10 @@ function collectCouncilEvidence() {
       "benchmarks/production-model-v1/p10m-adaptive-composition-v1-replay-receipt.json",
     adaptive_publication:
       "benchmarks/production-model-v1/p10m-adaptive-composition-v1-publication.json",
+    council_hardening_contract:
+      "benchmarks/solomon-council-v1/hardening-contract.json",
+    council_hardening_result:
+      "benchmarks/solomon-council-v1/hardening-result.json",
     wisdom_eval_result: "benchmarks/solomon-council-v0/wisdom-eval-result.json",
     decision_regret_result:
       "benchmarks/production-model-v1/p10m-solomonic-judgment-v1-result.json",
@@ -488,7 +494,8 @@ function collectCouncilEvidence() {
       "wisdom_gold_opening", "wisdom_generation_integrity", "wisdom_provenance",
       "wisdom_eval_input", "wisdom_eval_result", "decision_regret_result",
       "decision_regret_publication", "adaptive_contract", "adaptive_result",
-      "adaptive_replay_receipt", "adaptive_publication",
+      "adaptive_replay_receipt", "adaptive_publication", "council_hardening_contract",
+      "council_hardening_result",
     ].includes(key));
   const files = Object.fromEntries(requiredPaths.map(([key, value]) => [key, fileInfo(value)]));
   const seals = sealPaths.map(fileInfo);
@@ -501,6 +508,8 @@ function collectCouncilEvidence() {
   const adaptiveResult = maybeReadJson(paths.adaptive_result);
   const adaptiveReplayReceipt = maybeReadJson(paths.adaptive_replay_receipt);
   const adaptivePublication = maybeReadJson(paths.adaptive_publication);
+  const councilHardeningContract = maybeReadJson(paths.council_hardening_contract);
+  const councilHardeningResult = maybeReadJson(paths.council_hardening_result);
   const selfCheck = runCommand(process.execPath, ["scripts/check-solomon-council-v0.mjs"], {
     timeoutMs: 10000,
   });
@@ -513,6 +522,10 @@ function collectCouncilEvidence() {
   const adaptivePublicationCheck = runCommand(
     process.execPath, ["scripts/check-adaptive-composition-publication-v1.mjs"], {
       timeoutMs: 10000,
+    });
+  const councilHardeningCheck = runCommand(
+    process.execPath, ["scripts/check-solomon-council-hardening-v1.mjs"], {
+      timeoutMs: 30000,
     });
   const selfCheckOk = selfCheck.ok;
   const ceremonyCheckOk = ceremonyCheck.ok;
@@ -543,8 +556,23 @@ function collectCouncilEvidence() {
     && wisdomEval.verdict?.promotion_gate_passed === true
     && wisdomEval.authorization?.council_promotion_authorized === true
     && wisdomEval.authorization?.product_release_authorized === false;
+  const hardeningMeasured = councilHardeningContract?.schema
+      === "nsrl.solomon_council_hardening_contract.v1"
+    && councilHardeningResult?.schema === "nsrl.solomon_council_hardening_result.v1";
+  const hardeningGatePassed = hardeningMeasured
+    && councilHardeningCheck.ok
+    && councilHardeningResult.gates?.all_passed === true
+    && councilHardeningResult.authorization?.effective_council_promotion_authorized === true;
+  const hardeningState = !hardeningMeasured ? "not_measured"
+    : !councilHardeningCheck.ok ? "invalid"
+      : councilHardeningResult.verdict?.status === "falsified" ? "falsified"
+        : hardeningGatePassed ? "passed" : "failed_or_inconclusive";
+  const effectiveWisdomPromotion = wisdomGatePassed && hardeningGatePassed;
   const wisdomState = !wisdomEval ? "not_measured"
-    : wisdomGatePassed ? "passed" : "failed_or_invalid";
+    : !wisdomGatePassed ? "failed_or_invalid"
+      : hardeningState === "not_measured" ? "v0_passed_hardening_not_measured"
+        : hardeningState === "falsified" ? "v0_passed_hardening_falsified"
+          : hardeningState === "passed" ? "hardening_passed" : "hardening_invalid";
   const wisdomArtifacts = Object.fromEntries([
     "wisdom_casebook", "wisdom_solo_bundle", "wisdom_council_bundle",
     "wisdom_gold_opening", "wisdom_generation_integrity", "wisdom_provenance",
@@ -597,7 +625,9 @@ function collectCouncilEvidence() {
     ok: councilCoreOk,
     state: !filesPresent ? "missing"
       : !councilCoreOk ? "invalid"
-        : wisdomGatePassed ? "wisdom_gate_passed" : "shadow_ready",
+        : effectiveWisdomPromotion ? "wisdom_hardening_gate_passed"
+          : hardeningState === "falsified" ? "hardening_falsified_shadow_only"
+            : wisdomGatePassed ? "v0_passed_hardening_pending" : "shadow_ready",
     files,
     seals,
     faculties: receipt?.faculty_invocations?.map((entry) => entry.faculty_id) ?? [],
@@ -621,7 +651,28 @@ function collectCouncilEvidence() {
       artifacts: wisdomArtifacts,
       dimensions: wisdomEval?.dimensions ?? {},
       all_dimensions_outperform: wisdomEval?.verdict?.all_dimensions_outperform === true,
-      promotion_gate_passed: wisdomGatePassed,
+      v0_promotion_gate_passed: wisdomGatePassed,
+      promotion_gate_passed: effectiveWisdomPromotion,
+      hardening: {
+        state: hardeningState,
+        check_ok: councilHardeningCheck.ok,
+        contract: fileInfo(paths.council_hardening_contract),
+        result: fileInfo(paths.council_hardening_result),
+        verdict: councilHardeningResult?.verdict?.status ?? "not_measured",
+        actual_solo_tool_observations:
+          councilHardeningResult?.baseline_fairness?.actual_solo_tool_observations ?? 0,
+        actual_council_tool_observations:
+          councilHardeningResult?.baseline_fairness?.actual_council_tool_observations ?? 0,
+        tool_parity_dimensions_tied: Object.values(
+          councilHardeningResult?.dimensions ?? {}).filter((dimension) => dimension.exact_tie).length,
+        gates_passed: Object.entries(councilHardeningResult?.gates ?? {})
+          .filter(([key, value]) => key !== "all_passed" && value === true).length,
+        gates_total: Object.keys(councilHardeningResult?.gates ?? {})
+          .filter((key) => key !== "all_passed").length,
+        missing_coverage: councilHardeningResult?.next_required_evidence ?? [],
+        remain_shadow_only:
+          councilHardeningResult?.authorization?.remain_shadow_only !== false,
+      },
     },
     bounded_decision_regret_evidence: {
       present: Boolean(regretResult && regretPublication),
@@ -1437,6 +1488,9 @@ function deriveStatus(report) {
   if (report.council.wisdom_evaluation.state === "not_measured") {
     councilBlockers.push(
       `same-model frozen wisdom evaluation is not measured (${report.council.wisdom_evaluation.pipeline_stage})`);
+  } else if (report.council.wisdom_evaluation.hardening.state === "falsified") {
+    councilBlockers.push(
+      "Council-v1 hardening falsified effective v0 promotion: the historical solo lane lacked tool parity and the diagnostic parity baseline ties all eight dimensions");
   } else if (!report.council.wisdom_evaluation.promotion_gate_passed) {
     councilBlockers.push(
       "Council does not strictly outperform the same underlying model on every wisdom dimension");
@@ -1603,7 +1657,7 @@ function renderMarkdown(report) {
   lines.push(`- Gates: zero-probability ${report.native_model.zero_probability_gate ? "green" : "red"}; beats uniform ${report.native_model.beats_uniform_gate ? "green" : "red"}; beats every frozen baseline ${report.native_model.beats_all_frozen_baselines_gate ? "green" : "red"}`);
   lines.push("");
 
-  lines.push("## Solomon Council v0");
+  lines.push("## Solomon Council v0/v1");
   lines.push("");
   lines.push(`- Core: **${report.council.state}**; ${report.council.seal_signatures_verified}/6 Ed25519 faculty seals verified; shadow-only execution ${report.council.shadow_execution_only ? "enforced" : "invalid"}`);
   lines.push(`- Judge states checked: ${report.council.decision_states_checked.join(", ")}; exact initial receipt ${report.council.receipt_ok ? "verified" : "invalid"}; outcome/revision chain ${report.council.revision_ok ? "verified" : "invalid"}`);
@@ -1611,7 +1665,9 @@ function renderMarkdown(report) {
   lines.push(`- Bounded decision-regret experiment: publication **${report.council.bounded_decision_regret_evidence.publication_status}** with ${report.council.bounded_decision_regret_evidence.fired_passages} favorable fired passages and signed regret ${report.council.bounded_decision_regret_evidence.signed_regret_q32 || "missing"} Q32; MJ-20 falsifies the marginal-to-conditional bridge, so the non-crossing e-process does not establish sequential safety`);
   const adaptive = report.council.adaptive_composition;
   lines.push(`- Adaptive replacement: theory ${adaptive.theory_check_ok ? "checked" : "invalid"}; execution **${adaptive.execution_state}** with ${adaptive.adaptive_fires} adaptive fires, ${adaptive.calibration_cube_rows} calibration-cube rows across ${adaptive.calibration_source_panels} source panels, and ${adaptive.endpoint_nll_millibits || "missing"} endpoint NLL millibits; exact replay ${adaptive.exact_replay ? "verified" : "absent or invalid"}; threshold retuning and optimizer promotion remain unauthorized`);
-  lines.push(`- Same-model wisdom gate: **${report.council.wisdom_evaluation.state}** at stage **${report.council.wisdom_evaluation.pipeline_stage}**; promotion ${report.council.wisdom_evaluation.promotion_gate_passed ? "passed" : "not authorized"}`);
+  const hardening = report.council.wisdom_evaluation.hardening;
+  lines.push(`- Historical v0 wisdom gate: ${report.council.wisdom_evaluation.v0_promotion_gate_passed ? "passed" : "not passed"}; effective promotion ${report.council.wisdom_evaluation.promotion_gate_passed ? "authorized" : "not authorized"}`);
+  lines.push(`- Council-v1 hardening: **${hardening.state}**; actual solo/Council tool observations ${hardening.actual_solo_tool_observations}/${hardening.actual_council_tool_observations}; ${hardening.tool_parity_dimensions_tied}/8 parity dimensions tie; ${hardening.gates_passed}/${hardening.gates_total} hardening gates pass; shadow-only ${hardening.remain_shadow_only ? "enforced" : "invalid"}`);
   lines.push(`- Wisdom ceremony: ${report.council.wisdom_ceremony_check_ok ? "byte-bound compiler/replay self-check green" : "invalid"}; no production casebook or paired lanes are inferred from this self-test`);
   for (const blocker of report.status.council_blockers) {
     lines.push(`- Council blocker: ${blocker}`);

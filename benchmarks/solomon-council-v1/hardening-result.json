@@ -1,0 +1,321 @@
+{
+  "schema": "nsrl.solomon_council_hardening_result.v1",
+  "audit_id": "solomon-council-hardening-v1",
+  "analysis_role": "retrospective_falsification_of_v0_promotion_under_stronger_requirements",
+  "historical_ceremony": {
+    "ceremony_id": "solomon-wisdom-production-v0",
+    "cases": 576,
+    "underlying_model": {
+      "model_id": "native-successor-v2-canonical-nll",
+      "artifact": {
+        "path": "benchmarks/integer-transformer-proof-v1/successor-v2-candidate.nsrlmt",
+        "sha256": "89260e3cae329677e132eef4439d784c6290e8e46b8779c3667da8d157bf7259"
+      }
+    },
+    "v0_promotion_gate_passed": true,
+    "v0_result_preserved_as_historical_record": true
+  },
+  "sources": {
+    "contract": {
+      "path": "benchmarks/solomon-council-v1/hardening-contract.json",
+      "sha256": "3bcc1250281e3efe28431ba41310cc7c98e26899a881843026f21fc67bbf2b3d",
+      "bytes": 2000
+    },
+    "casebook": {
+      "path": "benchmarks/solomon-council-v0/production-v0/casebook.json",
+      "sha256": "3a046e79fe68b9887baf427d8a1a32ee5482a40482c1a564ed6268600c809e02",
+      "bytes": 506869
+    },
+    "solo_bundle": {
+      "path": "benchmarks/solomon-council-v0/production-v0/solo-bundle.json",
+      "sha256": "495a52f9d5c067d87bfbd3ca48a640c4e5429421918e3acbb7ae1e2fda83057e",
+      "bytes": 337327
+    },
+    "council_bundle": {
+      "path": "benchmarks/solomon-council-v0/production-v0/council-bundle.json",
+      "sha256": "adcba33267a906ba321ee40323b885808e62b90290d7a6251abb056f3bb707ca",
+      "bytes": 825706
+    },
+    "council_invocations": {
+      "path": "benchmarks/solomon-council-v0/production-v0/council-invocations.jsonl",
+      "sha256": "52c491fef2aaa20de8d40d8745c15885e8300cc3ad53e924d8aee649c52b4d6a",
+      "bytes": 6066123
+    },
+    "solo_invocations": {
+      "path": "benchmarks/solomon-council-v0/production-v0/solo-invocations.jsonl",
+      "sha256": "9a19658bb95969a7ee6ff5527fff6b32d8eccd71e58ccd19f73aeb3cb491ee72",
+      "bytes": 883959
+    },
+    "council_receipts": {
+      "path": "benchmarks/solomon-council-v0/production-v0/council-requests-receipts.jsonl",
+      "sha256": "52afeaabf0061ade73ddb64db2c66be3f13d5b4efa39355dcf7b03955072f121",
+      "bytes": 11748378
+    },
+    "eval_input": {
+      "path": "benchmarks/solomon-council-v0/production-v0/eval-input.json",
+      "sha256": "0095ca35f58644541ec90bb10aeec2389bf342f2a86f7d5a7c50c79059b8ebab",
+      "bytes": 793677
+    },
+    "eval_result": {
+      "path": "benchmarks/solomon-council-v0/wisdom-eval-result.json",
+      "sha256": "d661d0838f0a05ae75c85ed9b4832a1630229d66e0fbff1d5b6b14400e20e84d",
+      "bytes": 3462
+    },
+    "generation_integrity": {
+      "path": "benchmarks/solomon-council-v0/production-v0/generation-integrity.json",
+      "sha256": "ed23758ed59ab33158322bdce54e2bb1e1c95cb347a0186c8fa73d870c7620fa",
+      "bytes": 632
+    },
+    "provenance": {
+      "path": "benchmarks/solomon-council-v0/production-v0/provenance.json",
+      "sha256": "c3fee8bc60cf5fcf310d651efda6500e05bc735211402b7556b11d9d6a203433",
+      "bytes": 124796
+    },
+    "fixture_prior_receipt": {
+      "path": "benchmarks/solomon-council-v0/fixtures/select-receipt.json",
+      "sha256": "582dd2b4f9de646a15cb7c94474d40b24d4de0f0d89e2a3e1d236fbaa34f428a",
+      "bytes": 21951
+    },
+    "fixture_observation": {
+      "path": "benchmarks/solomon-council-v0/fixtures/select-observation.json",
+      "sha256": "100815924ba29c79c6722a7ea9e96635c2076c528d67345b86f52ae13fa3fa58",
+      "bytes": 737
+    },
+    "fixture_revised_receipt": {
+      "path": "benchmarks/solomon-council-v0/fixtures/select-revised-receipt.json",
+      "sha256": "12529ce6809df097b5ec3c98d794a0e869b0c784791176d58e279475dbf49e48",
+      "bytes": 22918
+    },
+    "auditor": {
+      "path": "scripts/audit-solomon-council-hardening-v1.mjs",
+      "sha256": "7b554581693c1dd2d29b2b7f7e1e917d3913170ef077eb60a01cf89057c5d3c1",
+      "bytes": 20515
+    }
+  },
+  "baseline_fairness": {
+    "actual_same_model": true,
+    "actual_same_public_casebook": true,
+    "actual_solo_tool_observations": 0,
+    "actual_council_tool_observations": 2880,
+    "actual_solo_permission_budget_declarations": 0,
+    "actual_council_permission_budget_declarations": 3456,
+    "actual_equivalent_tool_access": false,
+    "counterfactual_tool_parity_cases": 576,
+    "counterfactual_role": "diagnostic_only_because_it_was_computed_after_v0_gold_opening"
+  },
+  "dimensions": {
+    "appropriate_abstention": {
+      "cases": 72,
+      "historical_unassisted_solo": {
+        "correct": 0,
+        "score_per_mille": 0
+      },
+      "tool_parity_solo": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_strictly_outperforms_tool_parity_solo": false,
+      "exact_tie": true
+    },
+    "calibration": {
+      "cases": 72,
+      "historical_unassisted_solo": {
+        "mean_brier_millionths": 260000,
+        "score_per_mille": 740
+      },
+      "tool_parity_solo": {
+        "mean_brier_millionths": 10000,
+        "score_per_mille": 990
+      },
+      "council": {
+        "mean_brier_millionths": 10000,
+        "score_per_mille": 990
+      },
+      "council_strictly_outperforms_tool_parity_solo": false,
+      "exact_tie": true
+    },
+    "contradiction_detection": {
+      "cases": 72,
+      "historical_unassisted_solo": {
+        "correct": 0,
+        "score_per_mille": 0
+      },
+      "tool_parity_solo": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_strictly_outperforms_tool_parity_solo": false,
+      "exact_tie": true
+    },
+    "cross_modal_agreement": {
+      "cases": 72,
+      "historical_unassisted_solo": {
+        "correct": 36,
+        "score_per_mille": 500
+      },
+      "tool_parity_solo": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_strictly_outperforms_tool_parity_solo": false,
+      "exact_tie": true
+    },
+    "decision_regret": {
+      "cases": 72,
+      "historical_unassisted_solo": {
+        "total_regret_milli": 33600,
+        "mean_regret_milli": 466
+      },
+      "tool_parity_solo": {
+        "total_regret_milli": 0,
+        "mean_regret_milli": 0
+      },
+      "council": {
+        "total_regret_milli": 0,
+        "mean_regret_milli": 0
+      },
+      "council_strictly_outperforms_tool_parity_solo": false,
+      "exact_tie": true
+    },
+    "hard_negative_rejection": {
+      "cases": 72,
+      "historical_unassisted_solo": {
+        "correct": 0,
+        "score_per_mille": 0
+      },
+      "tool_parity_solo": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_strictly_outperforms_tool_parity_solo": false,
+      "exact_tie": true
+    },
+    "source_grounded_correctness": {
+      "cases": 72,
+      "historical_unassisted_solo": {
+        "correct": 36,
+        "score_per_mille": 500
+      },
+      "tool_parity_solo": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_strictly_outperforms_tool_parity_solo": false,
+      "exact_tie": true
+    },
+    "unfamiliar_source_transfer": {
+      "cases": 72,
+      "historical_unassisted_solo": {
+        "correct": 36,
+        "score_per_mille": 500
+      },
+      "tool_parity_solo": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council": {
+        "correct": 72,
+        "score_per_mille": 1000
+      },
+      "council_strictly_outperforms_tool_parity_solo": false,
+      "exact_tie": true
+    }
+  },
+  "coverage": {
+    "adversarial_evidence": {
+      "misleading": 72,
+      "incomplete": 72,
+      "stale": 0,
+      "conflicting": 72
+    },
+    "tool_boundaries": {
+      "successful_observations": 2880,
+      "tool_failures": 0,
+      "permission_denials": 0,
+      "actual_solo_tool_observations": 0,
+      "actual_council_tool_observations": 2880,
+      "actual_solo_permission_budget_declarations": 0,
+      "actual_council_permission_budget_declarations": 3456,
+      "counterfactual_parity_solo_decisions": 576
+    },
+    "human_ambiguity": {
+      "human_authored_ambiguous_cases": 0,
+      "ask_user_or_abstain_cases": 96,
+      "deterministic_public_verifier_cases": 576
+    },
+    "outcomes": {
+      "production_receipts": 576,
+      "production_receipts_with_observed_outcomes": 0,
+      "production_receipts_with_calibration_revisions": 0,
+      "distinct_observation_sources": 0,
+      "fixture_revision_replays": 1,
+      "fixture_revision_counts_toward_production_minimum": false
+    },
+    "transfer": {
+      "unfamiliar_source_cases": 72,
+      "unfamiliar_source_families": 3,
+      "cross_modal_cases": 72,
+      "cross_modal_source_families": 1
+    }
+  },
+  "integrity": {
+    "exact_v0_ceremony_replay": true,
+    "generation_integrity_green": true,
+    "provenance_green": true,
+    "no_oracle_target_lookup": true,
+    "no_hidden_memory": true,
+    "no_retrieval_target_leakage": true,
+    "all_receipts_shadow_only": true
+  },
+  "gates": {
+    "actual_tool_parity_baseline": false,
+    "strict_council_outperformance": false,
+    "adversarial_evidence_coverage": false,
+    "tool_boundary_coverage": false,
+    "human_ambiguity_coverage": false,
+    "outcome_revision_coverage": false,
+    "long_transfer_coverage": false,
+    "generation_integrity_and_provenance": true,
+    "exact_v0_ceremony_replay": true,
+    "all_receipts_shadow_only": true,
+    "all_passed": false
+  },
+  "verdict": {
+    "status": "falsified",
+    "claim": "Council v0 strictly outperforms the same underlying model under the Council-v1 hardening contract",
+    "reason": "The historical solo lane lacked tool parity; an explicitly diagnostic parity baseline ties the Council on every dimension, and the stale, tool-failure, permission-denial, human-ambiguity, production-outcome, and longer-transfer requirements are not met."
+  },
+  "authorization": {
+    "historical_v0_result_rewritten": false,
+    "effective_council_promotion_authorized": false,
+    "operational_action_execution_authorized": false,
+    "product_release_authorized": false,
+    "remain_shadow_only": true
+  },
+  "next_required_evidence": [
+    "Generate prospective solo and Council lanes with identical tool observations, permissions, budgets, questions, evidence, and unopened gold.",
+    "Add stale evidence, actual tool failures, permission denials, and human-authored ambiguous decisions.",
+    "Record production outcomes and deterministic receipt calibration revisions from at least three observation sources.",
+    "At least double both unfamiliar-source and cross-modal sets before any new promotion claim."
+  ]
+}
