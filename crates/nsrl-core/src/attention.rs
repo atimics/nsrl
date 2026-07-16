@@ -1349,6 +1349,9 @@ pub fn linear_attention_ttt_delta_state_i16_q15_checked(
 
 #[inline]
 fn linear_attention_phi_i16_u32(value: i16) -> u32 {
+    // This affine-positive feature map is part of the serialized production
+    // model v1 inference contract. A different map requires a new artifact
+    // version because model hashes bind bytes, not executable kernel semantics.
     (i32::from(value) + 32769) as u32
 }
 
@@ -2252,6 +2255,15 @@ mod tests {
         assert!(linear_attention_i16_q15_checked(&input, params, workspace, &mut output).is_some());
         assert_eq!(&output[..4], &input[..4]);
         assert_ne!(&output[4..], &input[..4]);
+    }
+
+    #[test]
+    fn linear_attention_feature_map_preserves_v1_affine_contract() {
+        assert_eq!(linear_attention_phi_i16_u32(i16::MIN), 1);
+        assert_eq!(linear_attention_phi_i16_u32(-1), 32_768);
+        assert_eq!(linear_attention_phi_i16_u32(0), 32_769);
+        assert_eq!(linear_attention_phi_i16_u32(1), 32_770);
+        assert_eq!(linear_attention_phi_i16_u32(i16::MAX), 65_536);
     }
 
     #[test]

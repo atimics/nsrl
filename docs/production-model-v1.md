@@ -15,7 +15,10 @@ The runtime now provides:
   attention, gated MLP, RMS vectors, output weights, and output bias;
 - checksummed `NSRLPM1` serialization and strict shape validation;
 - tokenizer-hash and vocabulary validation when loading `NSRLTOK1` streams;
-- integer forward execution over u32 subword contexts; and
+- integer forward execution over u32 subword contexts;
+- unassisted autoregressive `NSRLPM1` generation with tokenizer-bound prompts,
+  bounded rolling context, greedy or deterministic seeded top-k selection,
+  EOS handling, special-token masking, and exact per-step replay traces; and
 - a bounded output-head perceptron smoke trainer with model-hash and saturation
   evidence;
 - full quantized backpropagation through embeddings, attention projections,
@@ -85,7 +88,26 @@ cargo run -p nsrl-train --bin nsrl-production-model -- \
   numeric-contract --profile p10m
 ```
 
-The command emits separate forward and training JSONL contracts. Run canonical
+Exercise native text generation independently of the training stream:
+
+```bash
+cargo run --release -p nsrl-train --bin nsrl-production-model -- generate \
+  --tokenizer data/processed/production-corpus-v1/tokenizer.nsrlbpe \
+  --model data/experiments/production-model-v1/CANDIDATE.nsrlpm \
+  --prompt "The king" \
+  --max-new-tokens 64 \
+  --top-k 1 \
+  --trace data/experiments/production-model-v1/generation-trace.json
+```
+
+`top-k 1` is canonical greedy decoding. Larger values use Q15 probability
+weights and the declared integer seed. Generation currently replays the bounded
+context through the exact production forward path for every token. This closes
+the correctness and traceability gap; an incremental cached path and a passing
+`open-generation-v1` result remain separate performance and quality gates.
+
+The `numeric-contract` command emits separate forward and training JSONL
+contracts. Run canonical
 evaluation with `evaluate-canonical`; frozen `evaluate` remains the legacy Q15
 surface so v1 checkpoints remain reproducible. The bounded lattice calibration
 surface is exposed through `gradient-alignment-audit`; `--max-windows` binds the
@@ -215,6 +237,11 @@ quantization dead zones, while parameter updates carry sub-quantum gradients
 in residual state instead of forcing one-unit steps. The float twin remains a
 NumPy reference rather than an accelerator runner. Neither bounded smoke is a
 language-quality result.
+
+The production artifact can now generate subword continuations directly, but
+this is a capability surface rather than a promotion. No candidate has passed
+`open-generation-v1`, and full-window replay has not yet met a production
+tokens-per-second or latency budget.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at

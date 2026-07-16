@@ -20,6 +20,7 @@ use crate::{PRODUCTION_MODEL_V1_MAGIC, TrainError};
 
 mod alignment;
 mod boolean_jet;
+mod generation;
 mod numeric_contract;
 mod structure_audit;
 mod training;
@@ -49,6 +50,10 @@ pub use boolean_jet::{
     audit_production_boolean_jet_rank_two, freeze_production_boolean_jet_matched_control,
     production_boolean_jet_binary_fnv64, production_boolean_jet_source_fnv64,
 };
+pub use generation::{
+    PRODUCTION_GENERATION_SCHEMA, ProductionGenerationConfig, ProductionGenerationStepTrace,
+    ProductionGenerationTrace, generate_production_model,
+};
 pub use numeric_contract::{
     PRODUCTION_ACTIVATION_FRACTIONAL_BITS, PRODUCTION_LOGIT_FRACTIONAL_BITS,
     PRODUCTION_RMS_SQUARE_FRACTIONAL_BITS, ProductionAttentionBounds,
@@ -65,8 +70,10 @@ pub use structure_audit::{
     audit_production_atomic_structure, freeze_production_atomic_structure_contract,
 };
 pub use training::{
-    ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionGradientProposalLane,
-    ProductionOptimizerStateV2, train_production_full_smoke,
+    DirectFeatureTrainConfig, DirectFeatureTrainTrace, DirectHeadTrainConfig,
+    DirectTrainWindowBinding, ProductionFullTrainConfig, ProductionFullTrainTrace,
+    ProductionGradientProposalLane, ProductionOptimizerStateV2, train_production_direct_feature,
+    train_production_direct_head_search, train_production_full_smoke,
 };
 
 pub const PRODUCTION_MODEL_V1_SCHEMA: &str = "nsrl.production_model.v1";
@@ -983,7 +990,12 @@ impl ProductionModelV1 {
             embeddings,
             attention_rms_weights: vec![30_000; checked_product(config.layers, config.d_model)?],
             mlp_rms_weights: vec![30_000; checked_product(config.layers, config.d_model)?],
-            final_rms_weights: vec![30_000; config.d_model],
+            final_rms_weights: positive_initial_i16(
+                config.d_model,
+                initialization_seed ^ 0xc0ff_ee12_3456_789a,
+                1000,
+                31000,
+            ),
             q_weights: stacked_identity(config.layers, config.d_model, 16),
             k_weights: stacked_identity(config.layers, config.d_model, 16),
             v_weights: stacked_identity(config.layers, config.d_model, 16),
@@ -2735,6 +2747,18 @@ fn initial_i16_tensor(count: usize, seed: u64, amplitude: i16) -> Vec<i16> {
         .map(|index| {
             let value = splitmix64(seed ^ index as u64) % span as u64;
             (value as i32 - i32::from(amplitude)) as i16
+        })
+        .collect()
+}
+
+fn positive_initial_i16(count: usize, seed: u64, min: i16, max: i16) -> Vec<i16> {
+    let span = (max as u32).saturating_sub(min as u32).saturating_add(1) as u64;
+    (0..count)
+        .map(|index| {
+            let value = splitmix64(seed ^ index as u64) % span;
+            (min as u32)
+                .saturating_add(value as u32)
+                .min(i16::MAX as u32) as i16
         })
         .collect()
 }

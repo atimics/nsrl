@@ -73,23 +73,23 @@
     },
     "fixture_prior_receipt": {
       "path": "benchmarks/solomon-council-v0/fixtures/select-receipt.json",
-      "sha256": "582dd2b4f9de646a15cb7c94474d40b24d4de0f0d89e2a3e1d236fbaa34f428a",
+      "sha256": "e371f94538fa8837cb93bf57323b8ff598bf23ed3c907cb2e8145cbe274774d4",
       "bytes": 21951
     },
     "fixture_observation": {
       "path": "benchmarks/solomon-council-v0/fixtures/select-observation.json",
-      "sha256": "100815924ba29c79c6722a7ea9e96635c2076c528d67345b86f52ae13fa3fa58",
+      "sha256": "daf0bc0c453e626fe3f51511ed6142721b7da1b0c8d2f3052f5f9f1cbcb13a57",
       "bytes": 737
     },
     "fixture_revised_receipt": {
       "path": "benchmarks/solomon-council-v0/fixtures/select-revised-receipt.json",
-      "sha256": "12529ce6809df097b5ec3c98d794a0e869b0c784791176d58e279475dbf49e48",
+      "sha256": "4a2aa083a67e6a2ce6f11c0974aeaf093f75d1d700bdcad10b4ec96c3aebf6a1",
       "bytes": 22918
     },
     "auditor": {
       "path": "scripts/audit-solomon-council-hardening-v1.mjs",
-      "sha256": "7b554581693c1dd2d29b2b7f7e1e917d3913170ef077eb60a01cf89057c5d3c1",
-      "bytes": 20515
+      "sha256": "9fd6efbc841ff3dbe93e42cdb9d7291469c3f94231ac0e1c219ede2bee7ae711",
+      "bytes": 23417
     }
   },
   "baseline_fairness": {
@@ -99,6 +99,9 @@
     "actual_council_tool_observations": 2880,
     "actual_solo_permission_budget_declarations": 0,
     "actual_council_permission_budget_declarations": 3456,
+    "actual_equivalent_tool_observations": false,
+    "actual_equivalent_tool_permissions": false,
+    "actual_equivalent_tool_budgets": false,
     "actual_equivalent_tool_access": false,
     "counterfactual_tool_parity_cases": 576,
     "counterfactual_role": "diagnostic_only_because_it_was_computed_after_v0_gold_opening"
@@ -256,6 +259,9 @@
       "actual_council_tool_observations": 2880,
       "actual_solo_permission_budget_declarations": 0,
       "actual_council_permission_budget_declarations": 3456,
+      "actual_equivalent_tool_observations": false,
+      "actual_equivalent_tool_permissions": false,
+      "actual_equivalent_tool_budgets": false,
       "counterfactual_parity_solo_decisions": 576
     },
     "human_ambiguity": {

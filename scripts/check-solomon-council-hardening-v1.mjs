@@ -39,6 +39,9 @@ assert(result.baseline_fairness?.actual_solo_tool_observations === 0
   && result.baseline_fairness?.actual_council_tool_observations === 2880
   && result.baseline_fairness?.actual_solo_permission_budget_declarations === 0
   && result.baseline_fairness?.actual_council_permission_budget_declarations === 3456
+  && result.baseline_fairness?.actual_equivalent_tool_observations === false
+  && result.baseline_fairness?.actual_equivalent_tool_permissions === false
+  && result.baseline_fairness?.actual_equivalent_tool_budgets === false
   && result.baseline_fairness?.actual_equivalent_tool_access === false,
 "historical tool-access asymmetry changed");
 assert(result.baseline_fairness?.counterfactual_tool_parity_cases === 576

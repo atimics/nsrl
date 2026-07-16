@@ -1,4 +1,4 @@
-use core::ops::Range;
+use core::{cmp::Reverse, ops::Range};
 
 use nsrl_core::{
     GatedMlpI16Params, GatedMlpWorkspace, LinearAttentionWorkspace, RmsNormBackwardWorkspace,
@@ -10,6 +10,10 @@ use nsrl_core::{
 };
 use nsrl_corpus::subword::{BOS_TOKEN_ID, EOS_TOKEN_ID};
 
+use super::alignment::{
+    DocumentWindow, ProductionGradientAlignmentConfig, SurfaceEval, can_perturb, evaluate_surface,
+    select_surfaces, set_parameter_delta,
+};
 use super::{
     FNV_OFFSET, FNV_PRIME, PRODUCTION_RMS_EPSILON, ProductionModelV1, TrainError, checked_product,
     fnv1a, linear_params, scale_shifts, scales,
@@ -216,6 +220,7 @@ pub struct ProductionFullTrainConfig {
     pub vector_learning_rate_shift: u8,
     pub embedding_learning_rate_shift: u8,
     pub output_learning_rate_shift: u8,
+    pub final_rms_learning_rate_shift: Option<u8>,
     pub output_backward_shift: Option<u8>,
     pub probability_gradient_fractional_bits: u8,
     pub probability_normalization: SoftmaxNormalization,
@@ -241,6 +246,7 @@ impl Default for ProductionFullTrainConfig {
             vector_learning_rate_shift: 10,
             embedding_learning_rate_shift: 4,
             output_learning_rate_shift: 24,
+            final_rms_learning_rate_shift: None,
             output_backward_shift: None,
             probability_gradient_fractional_bits: 15,
             probability_normalization: SoftmaxNormalization::LegacyQ31Lut,
@@ -1847,6 +1853,16 @@ fn rms_backward_row(
 
 type AttentionGradients = (Vec<i16>, Vec<i16>, Vec<i16>);
 
+#[inline]
+fn production_linear_attention_phi_i64(value: i16) -> i64 {
+    i64::from(value) + 32769
+}
+
+#[inline]
+fn production_linear_attention_phi_derivative_i64(_value: i16) -> i64 {
+    1
+}
+
 #[allow(clippy::too_many_arguments)]
 fn linear_attention_backward(
     d_model: usize,
@@ -1875,7 +1891,7 @@ fn linear_attention_backward(
         for token in 0..seq_len {
             let base = token * d_model + offset;
             for kd in 0..head_dim {
-                let phi = i64::from(k[base + kd]) + 32769;
+                let phi = production_linear_attention_phi_i64(k[base + kd]);
                 sums[kd] = sums[kd].saturating_add(phi);
                 for vd in 0..head_dim {
                     state[kd * head_dim + vd] =
@@ -1883,7 +1899,7 @@ fn linear_attention_backward(
                 }
             }
             denominators[token] = (0..head_dim)
-                .map(|d| (i64::from(q[base + d]) + 32769) * sums[d])
+                .map(|d| production_linear_attention_phi_i64(q[base + d]) * sums[d])
                 .sum();
             if denominators[token] <= 0 {
                 return Err(TrainError::CoreRejected(
@@ -1914,11 +1930,14 @@ fn linear_attention_backward(
                 numerator = numerator.saturating_sub(
                     dot_grad_context.saturating_mul(prefix_sums[token * head_dim + kd]),
                 );
+                let phi_gradient = quantizer.ratio(numerator, denominator, stats)?;
                 gq[base + kd] =
-                    gq[base + kd].saturating_add(quantizer.ratio(numerator, denominator, stats)?);
+                    gq[base + kd].saturating_add(phi_gradient.saturating_mul(
+                        production_linear_attention_phi_derivative_i64(q[base + kd]),
+                    ));
             }
             for kd in 0..head_dim {
-                let phi_q = i64::from(q[base + kd]) + 32769;
+                let phi_q = production_linear_attention_phi_i64(q[base + kd]);
                 for vd in 0..head_dim {
                     let product = i64::from(grad_context[base + vd])
                         .saturating_mul(phi_q)
@@ -1936,7 +1955,7 @@ fn linear_attention_backward(
                 for vd in 0..head_dim {
                     let mut value_numerator = 0_i64;
                     for kd in 0..head_dim {
-                        let phi_k = i64::from(k[base + kd]) + 32769;
+                        let phi_k = production_linear_attention_phi_i64(k[base + kd]);
                         value_numerator = value_numerator
                             .saturating_add(grad_state[kd * head_dim + vd].saturating_mul(phi_k));
                     }
@@ -1950,13 +1969,16 @@ fn linear_attention_backward(
                             grad_state[kd * head_dim + vd].saturating_mul(i64::from(v[base + vd])),
                         );
                     }
-                    gk[base + kd] = gk[base + kd]
-                        .saturating_add(quantizer.shift(key_numerator, 15, stats))
+                    let phi_gradient = quantizer
+                        .shift(key_numerator, 15, stats)
                         .saturating_add(grad_sums[kd]);
+                    gk[base + kd] = gk[base + kd].saturating_add(phi_gradient.saturating_mul(
+                        production_linear_attention_phi_derivative_i64(k[base + kd]),
+                    ));
                 }
             } else {
                 for kd in 0..head_dim {
-                    let phi_k = i64::from(k[base + kd]) + 32769;
+                    let phi_k = production_linear_attention_phi_i64(k[base + kd]);
                     let mut key_grad = 0_i64;
                     for vd in 0..head_dim {
                         let sg = grad_state[kd * head_dim + vd];
@@ -1971,9 +1993,10 @@ fn linear_attention_backward(
                             stats,
                         ));
                     }
-                    gk[base + kd] = gk[base + kd]
-                        .saturating_add(key_grad)
-                        .saturating_add(grad_sums[kd]);
+                    let phi_gradient = key_grad.saturating_add(grad_sums[kd]);
+                    gk[base + kd] = gk[base + kd].saturating_add(phi_gradient.saturating_mul(
+                        production_linear_attention_phi_derivative_i64(k[base + kd]),
+                    ));
                 }
             }
         }
@@ -2292,7 +2315,9 @@ pub(super) fn effective_learning_rate_shifts(config: ProductionFullTrainConfig) 
         config.embedding_learning_rate_shift,
         vector_group_shift(config.vector_learning_rate_shift, 1),
         vector_group_shift(config.vector_learning_rate_shift, 2),
-        vector_group_shift(config.vector_learning_rate_shift, 3),
+        config
+            .final_rms_learning_rate_shift
+            .unwrap_or_else(|| vector_group_shift(config.vector_learning_rate_shift, 3)),
         matrix_learning_rate_shift(config, 4),
         matrix_learning_rate_shift(config, 5),
         matrix_learning_rate_shift(config, 6),
@@ -2422,5 +2447,1337 @@ mod tests {
         assert_eq!(residual, i64::MAX);
         assert_eq!(stats.residual_saturation, 1);
         assert_eq!(stats.residual_saturation_by_group[4], 1);
+    }
+}
+
+// ─── Direct-search with trainable final RMS feature scales ───
+
+/// Tunes the per-dimension final RMS gamma together with the output head by
+/// finite-difference coordinate search. Transformer layers remain frozen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectFeatureTrainConfig {
+    pub context_tokens: usize,
+    pub train_windows: usize,
+    pub dev_windows: usize,
+    pub head_candidates_per_round: usize,
+    pub final_rms_candidates_per_round: usize,
+    pub max_rounds: usize,
+    pub min_train_nll_delta: i64,
+    pub probability_gradient_fractional_bits: u8,
+    pub probability_normalization: SoftmaxNormalization,
+    pub sample_seed: u64,
+}
+
+impl Default for DirectFeatureTrainConfig {
+    fn default() -> Self {
+        Self {
+            context_tokens: 64,
+            train_windows: 512,
+            dev_windows: 256,
+            head_candidates_per_round: 16,
+            final_rms_candidates_per_round: 8,
+            max_rounds: 500,
+            min_train_nll_delta: 0,
+            probability_gradient_fractional_bits: 23,
+            probability_normalization: SoftmaxNormalization::Q47Newton1,
+            sample_seed: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectTrainWindowBinding {
+    pub document: usize,
+    pub context_start: usize,
+    pub context_tokens: usize,
+    pub target_offset: usize,
+    pub target_token: u32,
+}
+
+fn direct_window_bindings(windows: &[DocumentWindow]) -> Vec<DirectTrainWindowBinding> {
+    windows
+        .iter()
+        .map(|window| DirectTrainWindowBinding {
+            document: window.document,
+            context_start: window.context_start,
+            context_tokens: window.context.len(),
+            target_offset: window.context_start.saturating_add(window.context.len()),
+            target_token: window.target,
+        })
+        .collect()
+}
+
+fn push_direct_window_bindings_json(json: &mut String, bindings: &[DirectTrainWindowBinding]) {
+    use std::fmt::Write;
+
+    json.push('[');
+    for (index, binding) in bindings.iter().enumerate() {
+        if index != 0 {
+            json.push(',');
+        }
+        write!(
+            json,
+            concat!(
+                "{{\"document\":{},\"context_start\":{},",
+                "\"context_tokens\":{},\"target_offset\":{},",
+                "\"target_token\":{}}}"
+            ),
+            binding.document,
+            binding.context_start,
+            binding.context_tokens,
+            binding.target_offset,
+            binding.target_token,
+        )
+        .expect("writing direct train window binding JSON cannot fail");
+    }
+    json.push(']');
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectFeatureMoveKind {
+    NoOp,
+    OutputWeight,
+    OutputBias,
+    FinalRmsScale,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectFeatureTrainRound {
+    pub round: usize,
+    pub kind: DirectFeatureMoveKind,
+    pub coordinate: usize,
+    pub applied_delta: i8,
+    pub train_nll_q20_before: u64,
+    pub train_nll_q20_after: u64,
+    pub dev_nll_q20_before: u64,
+    pub dev_nll_q20_after: u64,
+    pub dev_mistakes: usize,
+    pub function_visible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectFeatureTrainTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub train_windows: usize,
+    pub dev_windows: usize,
+    pub head_candidates_per_round: usize,
+    pub final_rms_candidates_per_round: usize,
+    pub max_rounds: usize,
+    pub probability_gradient_fractional_bits: u8,
+    pub probability_normalization: &'static str,
+    pub sample_seed: u64,
+    pub initial_model_hash: u64,
+    pub final_model_hash: u64,
+    pub initial_train_nll_q20: u64,
+    pub final_train_nll_q20: u64,
+    pub initial_dev_nll_q20: u64,
+    pub final_dev_nll_q20: u64,
+    pub initial_dev_mistakes: usize,
+    pub final_dev_mistakes: usize,
+    pub rounds: usize,
+    pub output_rounds: usize,
+    pub bias_rounds: usize,
+    pub final_rms_rounds: usize,
+    pub train_bindings: Vec<DirectTrainWindowBinding>,
+    pub dev_bindings: Vec<DirectTrainWindowBinding>,
+    pub round_traces: Vec<DirectFeatureTrainRound>,
+}
+
+impl DirectFeatureTrainTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut json = String::new();
+        use std::fmt::Write;
+        write!(
+            json,
+            concat!(
+                "{{\"schema\":\"nsrl.direct_feature_train.v1\",",
+                "\"objective\":\"integer_base2_softmax_nll_q20\",",
+                "\"method\":\"gradient_ranked_probe_scored_coordinate_descent_with_final_rms_scale\",",
+                "\"claims\":{{\"trunk\":\"layers_frozen_final_rms_gamma_trainable\",",
+                "\"training\":\"backprop_gradient_ranked_finite_difference_full_train_verified\",",
+                "\"gradient_use\":\"candidate_ranking_only_not_update_rule\"}},",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",",
+                "\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"training\":{{\"context_tokens\":{},\"train_windows\":{},",
+                "\"dev_windows\":{},\"head_candidates_per_round\":{},",
+                "\"final_rms_candidates_per_round\":{},\"max_rounds\":{},",
+                "\"probability_gradient_fractional_bits\":{},",
+                "\"probability_normalization\":\"{}\",\"sample_seed\":{}}},",
+                "\"quality\":{{\"initial_train_nll_q20\":{},",
+                "\"final_train_nll_q20\":{},",
+                "\"initial_dev_nll_q20\":{},\"final_dev_nll_q20\":{},",
+                "\"initial_dev_mistakes\":{},\"final_dev_mistakes\":{}}},",
+                "\"hashes\":{{\"initial_model\":\"0x{:016x}\",",
+                "\"final_model\":\"0x{:016x}\"}},",
+                "\"stats\":{{\"rounds\":{},\"output_rounds\":{},",
+                "\"bias_rounds\":{},\"final_rms_rounds\":{}}},\"rounds\":["
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.train_windows,
+            self.dev_windows,
+            self.head_candidates_per_round,
+            self.final_rms_candidates_per_round,
+            self.max_rounds,
+            self.probability_gradient_fractional_bits,
+            self.probability_normalization,
+            self.sample_seed,
+            self.initial_train_nll_q20,
+            self.final_train_nll_q20,
+            self.initial_dev_nll_q20,
+            self.final_dev_nll_q20,
+            self.initial_dev_mistakes,
+            self.final_dev_mistakes,
+            self.initial_model_hash,
+            self.final_model_hash,
+            self.rounds,
+            self.output_rounds,
+            self.bias_rounds,
+            self.final_rms_rounds,
+        )
+        .expect("writing json");
+        for (i, r) in self.round_traces.iter().enumerate() {
+            if i > 0 {
+                json.push(',');
+            }
+            let kind = match r.kind {
+                DirectFeatureMoveKind::NoOp => "none",
+                DirectFeatureMoveKind::OutputWeight => "output_weight",
+                DirectFeatureMoveKind::OutputBias => "output_bias",
+                DirectFeatureMoveKind::FinalRmsScale => "final_rms_scale",
+            };
+            write!(
+                json,
+                concat!(
+                    "{{\"round\":{},\"kind\":\"{}\",\"coordinate\":{},",
+                    "\"applied_delta\":{},\"train_nll_q20_before\":{},",
+                    "\"train_nll_q20_after\":{},\"dev_nll_q20_before\":{},",
+                    "\"dev_nll_q20_after\":{},\"dev_mistakes\":{},",
+                    "\"function_visible\":{}}}"
+                ),
+                r.round,
+                kind,
+                r.coordinate,
+                r.applied_delta,
+                r.train_nll_q20_before,
+                r.train_nll_q20_after,
+                r.dev_nll_q20_before,
+                r.dev_nll_q20_after,
+                r.dev_mistakes,
+                r.function_visible,
+            )
+            .expect("writing round");
+        }
+        json.push_str("],\"window_selection\":\"different_document_else_nonoverlap_context_plus_target\",\"window_bindings\":{\"train\":");
+        push_direct_window_bindings_json(&mut json, &self.train_bindings);
+        json.push_str(",\"dev\":");
+        push_direct_window_bindings_json(&mut json, &self.dev_bindings);
+        json.push_str("}}\n");
+        json
+    }
+}
+
+fn select_direct_train_dev_surfaces(
+    windows: &[DocumentWindow],
+    train_windows: usize,
+    dev_windows: usize,
+    insufficient_reason: &'static str,
+) -> Result<(Vec<DocumentWindow>, Vec<DocumentWindow>), TrainError> {
+    let required = train_windows
+        .checked_add(dev_windows)
+        .ok_or(TrainError::InvalidConfig)?;
+    if windows.len() < required {
+        return Err(TrainError::CoreRejected(insufficient_reason));
+    }
+    select_surfaces(
+        windows,
+        ProductionGradientAlignmentConfig {
+            proposal_windows: train_windows,
+            transfer_windows: dev_windows,
+            documents_per_surface: 0,
+            rescue_stratified_sampling: false,
+            include_mass_corrected_no_rescue: false,
+            include_systematic_fixed_mass: false,
+            coordinates_per_group: 1,
+            sample_seed: 0,
+        },
+    )
+    .map_err(|_| TrainError::CoreRejected(insufficient_reason))
+}
+
+pub fn train_production_direct_feature(
+    model: &mut ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    config: DirectFeatureTrainConfig,
+) -> Result<DirectFeatureTrainTrace, TrainError> {
+    model.validate()?;
+    if config.context_tokens == 0
+        || config.context_tokens > model.config.context_tokens
+        || config.train_windows == 0
+        || config.dev_windows == 0
+        || config.head_candidates_per_round == 0
+        || config.final_rms_candidates_per_round == 0
+        || config.max_rounds == 0
+        || config.min_train_nll_delta < 0
+        || !(15..=31).contains(&config.probability_gradient_fractional_bits)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let all_windows =
+        super::alignment::document_windows_with_coordinates(tokens, config.context_tokens);
+    let (train_surface, dev_surface) = select_direct_train_dev_surfaces(
+        &all_windows,
+        config.train_windows,
+        config.dev_windows,
+        "direct_feature_insufficient_windows",
+    )?;
+    let train_windows = train_surface.as_slice();
+    let dev_windows = dev_surface.as_slice();
+    let initial_model_hash = model.model_hash();
+    let initial_train = evaluate_surface(model, train_windows)?;
+    let initial_dev = evaluate_surface(model, dev_windows)?;
+    let initial_dev_mistakes = count_mistakes(model, dev_windows)?;
+    // Score candidates on a small probe to keep latency tractable
+    let probe_windows = train_windows.len().min(12);
+    let score_surface = &train_windows[..probe_windows];
+    let output_weight_count = checked_product(model.config.vocab_size, model.config.d_model)?;
+    let bias_offset = output_weight_count;
+    let final_rms_dim = model.config.d_model;
+    let mut round_traces = Vec::with_capacity(config.max_rounds);
+    let mut output_rounds = 0_usize;
+    let mut bias_rounds = 0_usize;
+    let mut final_rms_rounds = 0_usize;
+    for round_index in 0..config.max_rounds {
+        let full_train = evaluate_surface(model, train_windows)?;
+        let full_dev = evaluate_surface(model, dev_windows)?;
+        let dev_mistakes = count_mistakes(model, dev_windows)?;
+        // --- Evaluate head candidates ---
+        let top_head = select_top_gradient_candidates(
+            model,
+            train_windows,
+            &DirectHeadTrainConfig {
+                context_tokens: config.context_tokens,
+                train_windows: config.train_windows,
+                dev_windows: config.dev_windows,
+                candidates_per_round: config.head_candidates_per_round,
+                max_rounds: 1,
+                min_train_nll_delta: 0,
+                probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
+                probability_normalization: config.probability_normalization,
+                sample_seed: config.sample_seed.wrapping_add(round_index as u64),
+            },
+            output_weight_count,
+        )?;
+        // When gradient candidates are empty (e.g. zero output weights),
+        // fall back to random head candidates.
+        let head_candidates: Vec<(usize, i64)> = if top_head.is_empty() {
+            let mut rand_head = Vec::new();
+            let mut rng = splitmix64(
+                config
+                    .sample_seed
+                    .wrapping_add(model.model_hash())
+                    .wrapping_add((round_index as u64).rotate_left(7)),
+            );
+            for i in 0..config.head_candidates_per_round {
+                let is_bias = i % 3 == 0;
+                if is_bias {
+                    let local = (rng as usize) % model.config.vocab_size;
+                    rand_head.push((bias_offset + local, 0));
+                } else {
+                    let local = (rng as usize) % output_weight_count;
+                    rand_head.push((local, 0));
+                }
+                rng = splitmix64(rng);
+            }
+            rand_head
+        } else {
+            top_head
+        };
+        let score = evaluate_surface(model, score_surface)?;
+        let mut best_kind = None;
+        let mut best_coord = 0_usize;
+        let mut best_delta = 0_i8;
+        let mut best_score_delta = 0_i64;
+        // Step sizes: large enough to be visible through the output shift
+        let weight_step: i8 =
+            (1_i32 << (model.scales.output_shift.saturating_sub(6))).min(64) as i8;
+        let final_rms_step: i8 = 64;
+        // Head candidates: output weights + bias
+        for &(global, _gradient) in &head_candidates {
+            let is_bias = global >= bias_offset;
+            let group: usize = if is_bias { 12 } else { 11 };
+            let local = if is_bias {
+                global - bias_offset
+            } else {
+                global
+            };
+            let step: i8 = if is_bias { 1 } else { weight_step.max(4) };
+            if !can_perturb(model, group, local, step) || !can_perturb(model, group, local, -step) {
+                continue;
+            }
+            let plus = evaluate_parameter_delta(model, group, local, step, score_surface)?;
+            let minus = evaluate_parameter_delta(model, group, local, -step, score_surface)?;
+            let (better, delta) = best_dir(score.nll_q20, plus.nll_q20, minus.nll_q20, step);
+            if delta > best_score_delta {
+                best_kind = Some(if is_bias {
+                    DirectFeatureMoveKind::OutputBias
+                } else {
+                    DirectFeatureMoveKind::OutputWeight
+                });
+                best_coord = local;
+                best_delta = better;
+                best_score_delta = delta;
+            }
+        }
+        // Final RMS gamma candidates.
+        let mut final_rms_candidates = Vec::new();
+        let seed = splitmix64(
+            config
+                .sample_seed
+                .wrapping_add(model.model_hash())
+                .wrapping_add((round_index as u64).rotate_left(13)),
+        );
+        let mut rng = seed;
+        for dim in 0..final_rms_dim {
+            if can_perturb(model, 3, dim, final_rms_step)
+                && can_perturb(model, 3, dim, -final_rms_step)
+            {
+                final_rms_candidates.push((dim, rng));
+                rng = splitmix64(rng);
+            }
+        }
+        final_rms_candidates.sort_unstable_by_key(|&(_, key)| key);
+        final_rms_candidates.truncate(config.final_rms_candidates_per_round);
+        for (dim, _key) in &final_rms_candidates {
+            let dim = *dim;
+            let step: i8 = final_rms_step;
+            let plus = evaluate_parameter_delta(model, 3, dim, step, score_surface)?;
+            let minus = evaluate_parameter_delta(model, 3, dim, -step, score_surface)?;
+            let (better, delta) = best_dir(score.nll_q20, plus.nll_q20, minus.nll_q20, step);
+            if delta > best_score_delta {
+                best_kind = Some(DirectFeatureMoveKind::FinalRmsScale);
+                best_coord = dim;
+                best_delta = better;
+                best_score_delta = delta;
+            }
+        }
+        if best_kind.is_none() || best_score_delta <= config.min_train_nll_delta {
+            round_traces.push(DirectFeatureTrainRound {
+                round: round_index,
+                kind: DirectFeatureMoveKind::NoOp,
+                coordinate: 0,
+                applied_delta: 0,
+                train_nll_q20_before: full_train.nll_q20,
+                train_nll_q20_after: full_train.nll_q20,
+                dev_nll_q20_before: full_dev.nll_q20,
+                dev_nll_q20_after: full_dev.nll_q20,
+                dev_mistakes,
+                function_visible: false,
+            });
+            break;
+        }
+        let kind = best_kind.expect("positive score delta has a move kind");
+        let (group, local) = match kind {
+            DirectFeatureMoveKind::NoOp => unreachable!("no-op is not a candidate move"),
+            DirectFeatureMoveKind::OutputWeight => (11, best_coord),
+            DirectFeatureMoveKind::OutputBias => (12, best_coord),
+            DirectFeatureMoveKind::FinalRmsScale => (3, best_coord),
+        };
+        let post_train = evaluate_parameter_delta(model, group, local, best_delta, train_windows)?;
+        let full_train_delta = signed_nll_improvement(full_train.nll_q20, post_train.nll_q20);
+        if full_train_delta <= config.min_train_nll_delta {
+            round_traces.push(DirectFeatureTrainRound {
+                round: round_index,
+                kind,
+                coordinate: best_coord,
+                applied_delta: 0,
+                train_nll_q20_before: full_train.nll_q20,
+                train_nll_q20_after: full_train.nll_q20,
+                dev_nll_q20_before: full_dev.nll_q20,
+                dev_nll_q20_after: full_dev.nll_q20,
+                dev_mistakes,
+                function_visible: false,
+            });
+            break;
+        }
+        shift_parameter(model, group, local, best_delta)?;
+        let post_dev = evaluate_surface(model, dev_windows)?;
+        let post_mistakes = count_mistakes(model, dev_windows)?;
+        let function_visible = post_train.logits != full_train.logits;
+        match kind {
+            DirectFeatureMoveKind::NoOp => unreachable!("no-op was not applied"),
+            DirectFeatureMoveKind::OutputWeight => output_rounds = output_rounds.saturating_add(1),
+            DirectFeatureMoveKind::OutputBias => bias_rounds = bias_rounds.saturating_add(1),
+            DirectFeatureMoveKind::FinalRmsScale => {
+                final_rms_rounds = final_rms_rounds.saturating_add(1)
+            }
+        }
+        round_traces.push(DirectFeatureTrainRound {
+            round: round_index,
+            kind,
+            coordinate: best_coord,
+            applied_delta: best_delta,
+            train_nll_q20_before: full_train.nll_q20,
+            train_nll_q20_after: post_train.nll_q20,
+            dev_nll_q20_before: full_dev.nll_q20,
+            dev_nll_q20_after: post_dev.nll_q20,
+            dev_mistakes: post_mistakes,
+            function_visible,
+        });
+    }
+    let final_train = evaluate_surface(model, train_windows)?;
+    let final_dev = evaluate_surface(model, dev_windows)?;
+    let final_mistakes = count_mistakes(model, dev_windows)?;
+    Ok(DirectFeatureTrainTrace {
+        profile: model.config.profile_id().unwrap_or("custom"),
+        parameter_count: model.parameter_count(),
+        tokenizer_hash: model.tokenizer_hash,
+        token_stream_hash,
+        context_tokens: config.context_tokens,
+        train_windows: config.train_windows,
+        dev_windows: config.dev_windows,
+        head_candidates_per_round: config.head_candidates_per_round,
+        final_rms_candidates_per_round: config.final_rms_candidates_per_round,
+        max_rounds: config.max_rounds,
+        probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
+        probability_normalization: config.probability_normalization.as_str(),
+        sample_seed: config.sample_seed,
+        initial_model_hash,
+        final_model_hash: model.model_hash(),
+        initial_train_nll_q20: initial_train.nll_q20,
+        final_train_nll_q20: final_train.nll_q20,
+        initial_dev_nll_q20: initial_dev.nll_q20,
+        final_dev_nll_q20: final_dev.nll_q20,
+        initial_dev_mistakes,
+        final_dev_mistakes: final_mistakes,
+        rounds: round_traces.len(),
+        output_rounds,
+        bias_rounds,
+        final_rms_rounds,
+        train_bindings: direct_window_bindings(train_windows),
+        dev_bindings: direct_window_bindings(dev_windows),
+        round_traces,
+    })
+}
+
+fn best_dir(current: u64, plus: u64, minus: u64, step: i8) -> (i8, i64) {
+    if plus <= minus && plus < current {
+        (step, signed_nll_improvement(current, plus))
+    } else if minus < current {
+        (-step, signed_nll_improvement(current, minus))
+    } else {
+        (0, 0)
+    }
+}
+
+// ─── Direct-search output-head trainer (original) ───
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectHeadTrainConfig {
+    pub context_tokens: usize,
+    pub train_windows: usize,
+    pub dev_windows: usize,
+    pub candidates_per_round: usize,
+    pub max_rounds: usize,
+    pub min_train_nll_delta: i64,
+    pub probability_gradient_fractional_bits: u8,
+    pub probability_normalization: SoftmaxNormalization,
+    pub sample_seed: u64,
+}
+
+impl Default for DirectHeadTrainConfig {
+    fn default() -> Self {
+        Self {
+            context_tokens: 64,
+            train_windows: 512,
+            dev_windows: 256,
+            candidates_per_round: 32,
+            max_rounds: 500,
+            min_train_nll_delta: 0,
+            probability_gradient_fractional_bits: 23,
+            probability_normalization: SoftmaxNormalization::Q47Newton1,
+            sample_seed: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectHeadTrainRound {
+    pub round: usize,
+    pub candidates_evaluated: usize,
+    pub candidates_with_descent: usize,
+    pub best_delta_train_nll_q20: i64,
+    pub best_delta_dev_nll_q20: i64,
+    pub output_weight_coordinate: Option<usize>,
+    pub output_bias_coordinate: Option<usize>,
+    pub applied_delta: i8,
+    pub train_nll_q20_after: u64,
+    pub dev_nll_q20_after: u64,
+    pub dev_mistakes: usize,
+    pub output_gradient_sum: i64,
+    pub weight_saturation_count: usize,
+    pub function_visible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectHeadTrainTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub train_windows: usize,
+    pub dev_windows: usize,
+    pub candidates_per_round: usize,
+    pub max_rounds: usize,
+    pub probability_gradient_fractional_bits: u8,
+    pub probability_normalization: &'static str,
+    pub sample_seed: u64,
+    pub initial_model_hash: u64,
+    pub final_model_hash: u64,
+    pub initial_train_nll_q20: u64,
+    pub final_train_nll_q20: u64,
+    pub initial_dev_nll_q20: u64,
+    pub final_dev_nll_q20: u64,
+    pub initial_dev_mistakes: usize,
+    pub final_dev_mistakes: usize,
+    pub rounds: usize,
+    pub total_descent_steps: usize,
+    pub total_candidates_evaluated: usize,
+    pub output_rounds: usize,
+    pub bias_rounds: usize,
+    pub rounds_with_descent: usize,
+    pub train_bindings: Vec<DirectTrainWindowBinding>,
+    pub dev_bindings: Vec<DirectTrainWindowBinding>,
+    pub round_traces: Vec<DirectHeadTrainRound>,
+}
+
+impl DirectHeadTrainTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut json = String::new();
+        use std::fmt::Write;
+        write!(
+            json,
+            concat!(
+                "{{\"schema\":\"nsrl.direct_head_train.v1\",",
+                "\"objective\":\"integer_base2_softmax_nll_q20\",",
+                "\"method\":\"gradient_ranked_probe_scored_coordinate_descent\",",
+                "\"claims\":{{\"trunk\":\"frozen_no_backprop_through_layers\",",
+                "\"output_head\":\"unit_finite_difference_full_train_verified\",",
+                "\"gradient_use\":\"candidate_ranking_only_not_update_rule\"}},",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",",
+                "\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"training\":{{\"context_tokens\":{},\"train_windows\":{},",
+                "\"dev_windows\":{},\"candidates_per_round\":{},",
+                "\"max_rounds\":{},",
+                "\"probability_gradient_fractional_bits\":{},",
+                "\"probability_normalization\":\"{}\",\"sample_seed\":{}}},",
+                "\"quality\":{{\"initial_train_nll_q20\":{},",
+                "\"final_train_nll_q20\":{},",
+                "\"initial_dev_nll_q20\":{},\"final_dev_nll_q20\":{},",
+                "\"initial_dev_mistakes\":{},\"final_dev_mistakes\":{}}},",
+                "\"hashes\":{{\"initial_model\":\"0x{:016x}\",",
+                "\"final_model\":\"0x{:016x}\"}},",
+                "\"stats\":{{\"rounds\":{},\"rounds_with_descent\":{},",
+                "\"output_rounds\":{},\"bias_rounds\":{},",
+                "\"total_descent_steps\":{},",
+                "\"total_candidates_evaluated\":{}}},\"rounds\":["
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.train_windows,
+            self.dev_windows,
+            self.candidates_per_round,
+            self.max_rounds,
+            self.probability_gradient_fractional_bits,
+            self.probability_normalization,
+            self.sample_seed,
+            self.initial_train_nll_q20,
+            self.final_train_nll_q20,
+            self.initial_dev_nll_q20,
+            self.final_dev_nll_q20,
+            self.initial_dev_mistakes,
+            self.final_dev_mistakes,
+            self.initial_model_hash,
+            self.final_model_hash,
+            self.rounds,
+            self.rounds_with_descent,
+            self.output_rounds,
+            self.bias_rounds,
+            self.total_descent_steps,
+            self.total_candidates_evaluated,
+        )
+        .expect("writing direct head train JSON cannot fail");
+        for (index, round) in self.round_traces.iter().enumerate() {
+            if index > 0 {
+                json.push(',');
+            }
+            write!(
+                json,
+                "{{\"round\":{},\"candidates_evaluated\":{},",
+                round.round, round.candidates_evaluated
+            )
+            .expect("write round");
+            write!(
+                json,
+                "\"candidates_with_descent\":{},",
+                round.candidates_with_descent
+            )
+            .expect("write");
+            write!(
+                json,
+                "\"best_delta_train_nll_q20\":{},",
+                round.best_delta_train_nll_q20
+            )
+            .expect("w");
+            write!(
+                json,
+                "\"best_delta_dev_nll_q20\":{},",
+                round.best_delta_dev_nll_q20
+            )
+            .expect("w");
+            write!(json, "\"output_weight_coordinate\":").expect("w");
+            if let Some(coord) = round.output_weight_coordinate {
+                write!(json, "{coord}").expect("w");
+            } else {
+                json.push_str("null");
+            }
+            write!(json, ",\"output_bias_coordinate\":").expect("w");
+            if let Some(coord) = round.output_bias_coordinate {
+                write!(json, "{coord}").expect("w");
+            } else {
+                json.push_str("null");
+            }
+            write!(
+                json,
+                concat!(
+                    ",\"applied_delta\":{},\"train_nll_q20_after\":{},",
+                    "\"dev_nll_q20_after\":{},\"dev_mistakes\":{},",
+                    "\"output_gradient_sum\":{},",
+                    "\"weight_saturation_count\":{},",
+                    "\"function_visible\":{}}}"
+                ),
+                round.applied_delta,
+                round.train_nll_q20_after,
+                round.dev_nll_q20_after,
+                round.dev_mistakes,
+                round.output_gradient_sum,
+                round.weight_saturation_count,
+                round.function_visible,
+            )
+            .expect("writing round tail");
+        }
+        json.push_str("],\"window_selection\":\"different_document_else_nonoverlap_context_plus_target\",\"window_bindings\":{\"train\":");
+        push_direct_window_bindings_json(&mut json, &self.train_bindings);
+        json.push_str(",\"dev\":");
+        push_direct_window_bindings_json(&mut json, &self.dev_bindings);
+        json.push_str("}}\n");
+        json
+    }
+}
+
+pub fn train_production_direct_head_search(
+    model: &mut ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    config: DirectHeadTrainConfig,
+) -> Result<DirectHeadTrainTrace, TrainError> {
+    model.validate()?;
+    if config.context_tokens == 0
+        || config.context_tokens > model.config.context_tokens
+        || config.train_windows == 0
+        || config.dev_windows == 0
+        || config.candidates_per_round == 0
+        || config.max_rounds == 0
+        || config.min_train_nll_delta < 0
+        || !(15..=31).contains(&config.probability_gradient_fractional_bits)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let all_windows =
+        super::alignment::document_windows_with_coordinates(tokens, config.context_tokens);
+    let (train_surface, dev_surface) = select_direct_train_dev_surfaces(
+        &all_windows,
+        config.train_windows,
+        config.dev_windows,
+        "direct_head_search_insufficient_windows",
+    )?;
+    let train_windows = train_surface.as_slice();
+    let dev_windows = dev_surface.as_slice();
+    let initial_model_hash = model.model_hash();
+    let initial_train = evaluate_surface(model, train_windows)?;
+    let initial_dev = evaluate_surface(model, dev_windows)?;
+    let initial_dev_mistakes = count_mistakes(model, dev_windows)?;
+    let initial_train_nll = initial_train.nll_q20;
+    let initial_dev_nll = initial_dev.nll_q20;
+    let output_weight_count = checked_product(model.config.vocab_size, model.config.d_model)?;
+    let bias_offset = output_weight_count;
+    let mut round_traces = Vec::with_capacity(config.max_rounds);
+    let mut total_descent_steps = 0_usize;
+    let mut total_candidates_evaluated = 0_usize;
+    let mut output_rounds = 0_usize;
+    let mut bias_rounds = 0_usize;
+    let mut rounds_with_descent = 0_usize;
+    // Score candidates on a small probe subset, then verify on full train
+    let probe_windows = train_windows.len().min(16);
+    let score_surface = &train_windows[..probe_windows];
+    for round_index in 0..config.max_rounds {
+        let current_score = evaluate_surface(model, score_surface)?;
+        let top_candidates =
+            select_top_gradient_candidates(model, train_windows, &config, output_weight_count)?;
+        let mut best_coord = None;
+        let mut best_is_bias = false;
+        let mut best_delta = 0_i8;
+        let mut best_probe_delta = 0_i64;
+        let mut candidates_with_descent = 0_usize;
+        let mut round_candidates_evaluated = 0_usize;
+        let mut output_gradient_sum = 0_i64;
+        for &(global, gradient) in &top_candidates {
+            let gradient_magnitude = gradient.unsigned_abs().min(i64::MAX as u64) as i64;
+            output_gradient_sum = output_gradient_sum.saturating_add(gradient_magnitude);
+            let is_bias = global >= bias_offset;
+            let group: usize = if is_bias { 12 } else { 11 };
+            let local = if is_bias {
+                global - bias_offset
+            } else {
+                global
+            };
+            if !can_perturb(model, group, local, 1) || !can_perturb(model, group, local, -1) {
+                continue;
+            }
+            let plus_score = evaluate_parameter_delta(model, group, local, 1, score_surface)?;
+            let minus_score = evaluate_parameter_delta(model, group, local, -1, score_surface)?;
+            round_candidates_evaluated = round_candidates_evaluated.saturating_add(1);
+            total_candidates_evaluated = total_candidates_evaluated.saturating_add(1);
+            let (candidate_delta, probe_delta) = best_dir(
+                current_score.nll_q20,
+                plus_score.nll_q20,
+                minus_score.nll_q20,
+                1,
+            );
+            if candidate_delta != 0 {
+                candidates_with_descent = candidates_with_descent.saturating_add(1);
+                if probe_delta > best_probe_delta {
+                    best_coord = Some(global);
+                    best_is_bias = is_bias;
+                    best_delta = candidate_delta;
+                    best_probe_delta = probe_delta;
+                }
+            }
+        }
+        let current_train = evaluate_surface(model, train_windows)?;
+        let current_dev = evaluate_surface(model, dev_windows)?;
+        let current_dev_mistakes = count_mistakes(model, dev_windows)?;
+        let round_train_nll = current_train.nll_q20;
+        let round_dev_nll = current_dev.nll_q20;
+        if let Some(global) = best_coord {
+            let is_bias = global >= bias_offset;
+            let group: usize = if is_bias { 12 } else { 11 };
+            let local = if is_bias {
+                global - bias_offset
+            } else {
+                global
+            };
+            let post_train =
+                evaluate_parameter_delta(model, group, local, best_delta, train_windows)?;
+            let full_train_delta = signed_nll_improvement(round_train_nll, post_train.nll_q20);
+            if full_train_delta <= config.min_train_nll_delta {
+                round_traces.push(DirectHeadTrainRound {
+                    round: round_index,
+                    candidates_evaluated: round_candidates_evaluated,
+                    candidates_with_descent,
+                    best_delta_train_nll_q20: full_train_delta,
+                    best_delta_dev_nll_q20: 0,
+                    output_weight_coordinate: if best_is_bias { None } else { Some(local) },
+                    output_bias_coordinate: if best_is_bias { Some(local) } else { None },
+                    applied_delta: 0,
+                    train_nll_q20_after: round_train_nll,
+                    dev_nll_q20_after: round_dev_nll,
+                    dev_mistakes: current_dev_mistakes,
+                    output_gradient_sum,
+                    weight_saturation_count: 0,
+                    function_visible: false,
+                });
+                break;
+            }
+            shift_parameter(model, group, local, best_delta)?;
+            if is_bias {
+                bias_rounds = bias_rounds.saturating_add(1);
+            } else {
+                output_rounds = output_rounds.saturating_add(1);
+            }
+            rounds_with_descent = rounds_with_descent.saturating_add(1);
+            total_descent_steps = total_descent_steps.saturating_add(1);
+            let post_dev = evaluate_surface(model, dev_windows)?;
+            let post_dev_mistakes = count_mistakes(model, dev_windows)?;
+            let best_dev_delta = signed_nll_improvement(round_dev_nll, post_dev.nll_q20);
+            let function_visible = post_dev.logits != current_dev.logits;
+            round_traces.push(DirectHeadTrainRound {
+                round: round_index,
+                candidates_evaluated: round_candidates_evaluated,
+                candidates_with_descent,
+                best_delta_train_nll_q20: full_train_delta,
+                best_delta_dev_nll_q20: best_dev_delta,
+                output_weight_coordinate: if best_is_bias { None } else { Some(local) },
+                output_bias_coordinate: if best_is_bias { Some(local) } else { None },
+                applied_delta: best_delta,
+                train_nll_q20_after: post_train.nll_q20,
+                dev_nll_q20_after: post_dev.nll_q20,
+                dev_mistakes: post_dev_mistakes,
+                output_gradient_sum,
+                weight_saturation_count: 0,
+                function_visible,
+            });
+        } else {
+            round_traces.push(DirectHeadTrainRound {
+                round: round_index,
+                candidates_evaluated: round_candidates_evaluated,
+                candidates_with_descent: 0,
+                best_delta_train_nll_q20: 0,
+                best_delta_dev_nll_q20: 0,
+                output_weight_coordinate: None,
+                output_bias_coordinate: None,
+                applied_delta: 0,
+                train_nll_q20_after: round_train_nll,
+                dev_nll_q20_after: round_dev_nll,
+                dev_mistakes: current_dev_mistakes,
+                output_gradient_sum,
+                weight_saturation_count: 0,
+                function_visible: false,
+            });
+            break;
+        }
+    }
+    let final_train = evaluate_surface(model, train_windows)?;
+    let final_dev = evaluate_surface(model, dev_windows)?;
+    let final_dev_mistakes = count_mistakes(model, dev_windows)?;
+    Ok(DirectHeadTrainTrace {
+        profile: model.config.profile_id().unwrap_or("custom"),
+        parameter_count: model.parameter_count(),
+        tokenizer_hash: model.tokenizer_hash,
+        token_stream_hash,
+        context_tokens: config.context_tokens,
+        train_windows: config.train_windows,
+        dev_windows: config.dev_windows,
+        candidates_per_round: config.candidates_per_round,
+        max_rounds: config.max_rounds,
+        probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
+        probability_normalization: config.probability_normalization.as_str(),
+        sample_seed: config.sample_seed,
+        initial_model_hash,
+        final_model_hash: model.model_hash(),
+        initial_train_nll_q20: initial_train_nll,
+        final_train_nll_q20: final_train.nll_q20,
+        initial_dev_nll_q20: initial_dev_nll,
+        final_dev_nll_q20: final_dev.nll_q20,
+        initial_dev_mistakes,
+        final_dev_mistakes,
+        rounds: round_traces.len(),
+        total_descent_steps,
+        total_candidates_evaluated,
+        output_rounds,
+        bias_rounds,
+        rounds_with_descent,
+        train_bindings: direct_window_bindings(train_windows),
+        dev_bindings: direct_window_bindings(dev_windows),
+        round_traces,
+    })
+}
+
+fn count_mistakes(
+    model: &ProductionModelV1,
+    windows: &[DocumentWindow],
+) -> Result<usize, TrainError> {
+    let mut mistakes = 0_usize;
+    for window in windows {
+        let forward = super::forward_production_model(model, &window.context)?;
+        let predicted = forward
+            .logits_q8
+            .iter()
+            .enumerate()
+            .max_by_key(|&(index, &value)| (value, Reverse(index)))
+            .map(|(idx, _)| idx)
+            .unwrap_or(0);
+        if predicted != window.target as usize {
+            mistakes = mistakes.saturating_add(1);
+        }
+    }
+    Ok(mistakes)
+}
+
+fn select_top_gradient_candidates(
+    model: &ProductionModelV1,
+    windows: &[DocumentWindow],
+    config: &DirectHeadTrainConfig,
+    output_weight_count: usize,
+) -> Result<Vec<(usize, i64)>, TrainError> {
+    let training = ProductionFullTrainConfig {
+        context_tokens: config.context_tokens,
+        max_windows: windows.len(),
+        epochs: 1,
+        probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
+        probability_normalization: config.probability_normalization,
+        batch_windows: 1,
+        max_optimizer_steps: 1,
+        evaluation_windows: 0,
+        ..ProductionFullTrainConfig::default()
+    };
+    let total_head_params = output_weight_count.saturating_add(model.config.vocab_size);
+    let mut gradient_sum = vec![0_i64; total_head_params];
+    let ranges = ParameterRanges::new(model);
+    if ranges.output.len() != output_weight_count || ranges.bias.len() != model.config.vocab_size {
+        return Err(TrainError::InvalidModel(
+            "direct head gradient range mismatch",
+        ));
+    }
+    let mut working = model.clone();
+    let spec = GradientProposalSpec::lane(
+        ProductionGradientProposalLane::MassCorrectedNormalized,
+        splitmix64(
+            config
+                .sample_seed
+                .wrapping_add(model.model_hash())
+                .wrapping_add(0x9e37_79b9_7f4a_7c15),
+        ),
+    );
+    for window in windows.iter().take(config.train_windows) {
+        let snapshot = coarse_gradients_for_window_with_spec(
+            &mut working,
+            &window.context,
+            window.target as usize,
+            training,
+            spec,
+        )?;
+        for (local, sum) in gradient_sum[..output_weight_count].iter_mut().enumerate() {
+            *sum = sum.saturating_add(snapshot.residuals[ranges.output.start + local]);
+        }
+        for (local, sum) in gradient_sum[output_weight_count..].iter_mut().enumerate() {
+            *sum = sum.saturating_add(snapshot.residuals[ranges.bias.start + local]);
+        }
+    }
+    let mut indexed = gradient_sum
+        .into_iter()
+        .enumerate()
+        .filter(|&(_, value)| value != 0)
+        .collect::<Vec<_>>();
+    indexed.sort_unstable_by_key(|&(_, value)| {
+        -(value.unsigned_abs() as i128).min(i64::MAX as i128) as i64
+    });
+    indexed.truncate(config.candidates_per_round);
+    Ok(indexed)
+}
+
+fn signed_nll_improvement(before: u64, after: u64) -> i64 {
+    if before >= after {
+        i64::try_from(before - after).unwrap_or(i64::MAX)
+    } else {
+        -i64::try_from(after - before).unwrap_or(i64::MAX)
+    }
+}
+
+fn evaluate_parameter_delta(
+    model: &mut ProductionModelV1,
+    group: usize,
+    index: usize,
+    delta: i8,
+    windows: &[DocumentWindow],
+) -> Result<SurfaceEval, TrainError> {
+    let inverse = delta.checked_neg().ok_or(TrainError::CoreRejected(
+        "direct_search_delta_not_invertible",
+    ))?;
+    shift_parameter(model, group, index, delta)?;
+    let evaluation = evaluate_surface(model, windows);
+    shift_parameter(model, group, index, inverse)?;
+    evaluation
+}
+
+fn shift_parameter(
+    model: &mut ProductionModelV1,
+    group: usize,
+    index: usize,
+    delta: i8,
+) -> Result<(), TrainError> {
+    if group >= 13 {
+        return Err(TrainError::CoreRejected("direct_search_invalid_group"));
+    }
+    if !can_perturb(model, group, index, delta) {
+        return Err(TrainError::CoreRejected(
+            "direct_search_parameter_delta_out_of_range",
+        ));
+    }
+    set_parameter_delta(model, group, index, delta)
+}
+
+#[cfg(test)]
+mod direct_search_tests {
+    use super::*;
+    use crate::production::ProductionModelConfig;
+
+    fn tiny_model() -> ProductionModelV1 {
+        let config = ProductionModelConfig {
+            vocab_size: 320,
+            d_model: 16,
+            heads: 4,
+            layers: 1,
+            hidden_dim: 32,
+            context_tokens: 8,
+        };
+        let mut model =
+            ProductionModelV1::new_initial(config, 0x1234, 0x5678).expect("tiny production model");
+        model
+            .initialize_output_weights(8)
+            .expect("active output head");
+        model
+    }
+
+    fn one_window() -> Vec<DocumentWindow> {
+        vec![DocumentWindow {
+            document: 0,
+            context_start: 0,
+            context: vec![300, 301],
+            target: 302,
+        }]
+    }
+
+    fn token_fixture() -> Vec<u32> {
+        vec![
+            BOS_TOKEN_ID,
+            300,
+            301,
+            302,
+            303,
+            EOS_TOKEN_ID,
+            BOS_TOKEN_ID,
+            304,
+            305,
+            306,
+            307,
+            EOS_TOKEN_ID,
+        ]
+    }
+
+    #[test]
+    fn production_attention_backward_preserves_v1_affine_feature_contract() {
+        assert_eq!(production_linear_attention_phi_i64(i16::MIN), 1);
+        assert_eq!(production_linear_attention_phi_i64(-1), 32_768);
+        assert_eq!(production_linear_attention_phi_i64(0), 32_769);
+        assert_eq!(production_linear_attention_phi_i64(7), 32_776);
+        assert_eq!(production_linear_attention_phi_derivative_i64(-1), 1);
+        assert_eq!(production_linear_attention_phi_derivative_i64(0), 1);
+        assert_eq!(production_linear_attention_phi_derivative_i64(1), 1);
+    }
+
+    #[test]
+    fn direct_train_dev_surfaces_are_document_disjoint_when_possible() {
+        let windows =
+            super::super::alignment::document_windows_with_coordinates(&token_fixture(), 2);
+        let (train, dev) = select_direct_train_dev_surfaces(&windows, 2, 2, "insufficient")
+            .expect("separated direct train/dev surfaces");
+        assert!(train.iter().all(|source| {
+            dev.iter()
+                .all(|held_out| source.document != held_out.document)
+        }));
+    }
+
+    #[test]
+    fn direct_search_parameter_evaluation_always_restores_the_model() {
+        let mut model = tiny_model();
+        model.output_weights[0] = i16::MIN + 32;
+        let initial_hash = model.model_hash();
+        evaluate_parameter_delta(&mut model, 11, 0, 64, &one_window())
+            .expect("positive in-range probe");
+        assert_eq!(model.model_hash(), initial_hash);
+
+        assert!(evaluate_parameter_delta(&mut model, 11, 0, -64, &one_window()).is_err());
+        assert_eq!(model.model_hash(), initial_hash);
+
+        let invalid_window = vec![DocumentWindow {
+            document: 0,
+            context_start: 0,
+            context: vec![300, 301],
+            target: model.config.vocab_size as u32,
+        }];
+        assert!(evaluate_parameter_delta(&mut model, 11, 0, 1, &invalid_window).is_err());
+        assert_eq!(model.model_hash(), initial_hash);
+    }
+
+    #[test]
+    fn head_candidate_ranking_reads_output_and_bias_residual_ranges() {
+        let model = tiny_model();
+        let windows = one_window();
+        let config = DirectHeadTrainConfig {
+            context_tokens: 2,
+            train_windows: 1,
+            dev_windows: 1,
+            candidates_per_round: 24,
+            max_rounds: 1,
+            ..DirectHeadTrainConfig::default()
+        };
+        let output_weight_count = model.output_weights.len();
+        let actual = select_top_gradient_candidates(&model, &windows, &config, output_weight_count)
+            .expect("head candidates");
+
+        let training = ProductionFullTrainConfig {
+            context_tokens: config.context_tokens,
+            max_windows: windows.len(),
+            epochs: 1,
+            probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
+            probability_normalization: config.probability_normalization,
+            batch_windows: 1,
+            max_optimizer_steps: 1,
+            evaluation_windows: 0,
+            ..ProductionFullTrainConfig::default()
+        };
+        let spec = GradientProposalSpec::lane(
+            ProductionGradientProposalLane::MassCorrectedNormalized,
+            splitmix64(
+                config
+                    .sample_seed
+                    .wrapping_add(model.model_hash())
+                    .wrapping_add(0x9e37_79b9_7f4a_7c15),
+            ),
+        );
+        let mut working = model.clone();
+        let snapshot = coarse_gradients_for_window_with_spec(
+            &mut working,
+            &windows[0].context,
+            windows[0].target as usize,
+            training,
+            spec,
+        )
+        .expect("coarse gradient snapshot");
+        let ranges = ParameterRanges::new(&model);
+        let mut expected = snapshot.residuals[ranges.output.clone()]
+            .iter()
+            .copied()
+            .chain(snapshot.residuals[ranges.bias.clone()].iter().copied())
+            .enumerate()
+            .filter(|&(_, value)| value != 0)
+            .collect::<Vec<_>>();
+        expected.sort_unstable_by_key(|&(_, value)| {
+            -(value.unsigned_abs() as i128).min(i64::MAX as i128) as i64
+        });
+        expected.truncate(config.candidates_per_round);
+
+        assert!(!expected.is_empty());
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn direct_trainers_preserve_full_train_descent_and_initial_metrics() {
+        let tokens = token_fixture();
+        let windows = super::super::alignment::document_windows_with_coordinates(&tokens, 2);
+
+        let mut head_model = tiny_model();
+        let head_trace = train_production_direct_head_search(
+            &mut head_model,
+            &tokens,
+            0x1111,
+            DirectHeadTrainConfig {
+                context_tokens: 2,
+                train_windows: 2,
+                dev_windows: 2,
+                candidates_per_round: 8,
+                max_rounds: 2,
+                ..DirectHeadTrainConfig::default()
+            },
+        )
+        .expect("direct head train");
+        assert!(head_trace.final_train_nll_q20 <= head_trace.initial_train_nll_q20);
+        assert_eq!(
+            head_trace.total_candidates_evaluated,
+            head_trace
+                .round_traces
+                .iter()
+                .map(|round| round.candidates_evaluated)
+                .sum()
+        );
+        assert_eq!(head_trace.train_bindings[0].document, 0);
+        assert_eq!(head_trace.dev_bindings[0].document, 1);
+        assert!(head_trace.to_json_line().contains(
+            "\"window_selection\":\"different_document_else_nonoverlap_context_plus_target\""
+        ));
+
+        let mut feature_model = tiny_model();
+        let initial_dev_mistakes =
+            count_mistakes(&feature_model, &windows[2..4]).expect("initial dev mistakes");
+        let feature_trace = train_production_direct_feature(
+            &mut feature_model,
+            &tokens,
+            0x2222,
+            DirectFeatureTrainConfig {
+                context_tokens: 2,
+                train_windows: 2,
+                dev_windows: 2,
+                head_candidates_per_round: 8,
+                final_rms_candidates_per_round: 4,
+                max_rounds: 3,
+                ..DirectFeatureTrainConfig::default()
+            },
+        )
+        .expect("direct feature train");
+        assert!(feature_trace.final_train_nll_q20 <= feature_trace.initial_train_nll_q20);
+        assert_eq!(feature_trace.initial_dev_mistakes, initial_dev_mistakes);
+        assert_eq!(feature_trace.head_candidates_per_round, 8);
+        assert_eq!(feature_trace.final_rms_candidates_per_round, 4);
+        assert_eq!(feature_trace.max_rounds, 3);
+        let json = feature_trace.to_json_line();
+        assert!(json.contains("\"final_rms_candidates_per_round\":4"));
+        assert!(json.contains("\"max_rounds\":3"));
+        assert!(json.contains("\"gradient_use\":\"candidate_ranking_only_not_update_rule\""));
+        assert!(json.contains(
+            "\"window_selection\":\"different_document_else_nonoverlap_context_plus_target\""
+        ));
+        assert_eq!(feature_trace.train_bindings[0].document, 0);
+        assert_eq!(feature_trace.dev_bindings[0].document, 1);
+        assert!(!json.contains("no_backprop"));
+        assert!(!json.contains("residual_feature"));
+    }
+
+    #[test]
+    fn direct_mistake_count_uses_canonical_lowest_index_tie_break() {
+        let mut model = tiny_model();
+        model.output_weights.fill(0);
+        model.output_bias_q8.fill(0);
+        let correct_tie = vec![DocumentWindow {
+            document: 0,
+            context_start: 0,
+            context: vec![300, 301],
+            target: 0,
+        }];
+        let wrong_tie = vec![DocumentWindow {
+            target: (model.config.vocab_size - 1) as u32,
+            ..correct_tie[0].clone()
+        }];
+        assert_eq!(count_mistakes(&model, &correct_tie).expect("tie count"), 0);
+        assert_eq!(count_mistakes(&model, &wrong_tie).expect("tie count"), 1);
+    }
+
+    #[test]
+    fn signed_nll_improvement_reports_regressions() {
+        assert_eq!(signed_nll_improvement(10, 7), 3);
+        assert_eq!(signed_nll_improvement(7, 10), -3);
+        assert_eq!(signed_nll_improvement(9, 9), 0);
+        assert_eq!(signed_nll_improvement(u64::MAX, 0), i64::MAX);
+        assert_eq!(signed_nll_improvement(0, u64::MAX), -i64::MAX);
+    }
+
+    #[test]
+    fn direct_search_uses_a_stable_direction_when_both_neighbors_tie_on_descent() {
+        assert_eq!(best_dir(10, 9, 9, 4), (4, 1));
+        assert_eq!(best_dir(10, 10, 10, 4), (0, 0));
     }
 }

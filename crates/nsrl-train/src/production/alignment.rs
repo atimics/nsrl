@@ -1518,26 +1518,84 @@ fn parameter_group_ranges(model: &ProductionModelV1) -> Result<[Range<usize>; 13
     Ok(ranges)
 }
 
-pub(super) fn can_perturb_both(model: &ProductionModelV1, group: usize, index: usize) -> bool {
+pub(super) fn can_perturb(
+    model: &ProductionModelV1,
+    group: usize,
+    index: usize,
+    delta: i8,
+) -> bool {
     match group {
-        0 => model.embeddings[index] > i16::MIN && model.embeddings[index] < i16::MAX,
-        1 => {
-            model.attention_rms_weights[index] > i16::MIN
-                && model.attention_rms_weights[index] < i16::MAX
-        }
-        2 => model.mlp_rms_weights[index] > i16::MIN && model.mlp_rms_weights[index] < i16::MAX,
-        3 => model.final_rms_weights[index] > i16::MIN && model.final_rms_weights[index] < i16::MAX,
-        4 => model.q_weights[index] > i8::MIN && model.q_weights[index] < i8::MAX,
-        5 => model.k_weights[index] > i8::MIN && model.k_weights[index] < i8::MAX,
-        6 => model.v_weights[index] > i8::MIN && model.v_weights[index] < i8::MAX,
-        7 => model.o_weights[index] > i8::MIN && model.o_weights[index] < i8::MAX,
-        8 => model.up_weights[index] > i8::MIN && model.up_weights[index] < i8::MAX,
-        9 => model.gate_weights[index] > i8::MIN && model.gate_weights[index] < i8::MAX,
-        10 => model.down_weights[index] > i8::MIN && model.down_weights[index] < i8::MAX,
-        11 => model.output_weights[index] > i16::MIN && model.output_weights[index] < i16::MAX,
-        12 => model.output_bias_q8[index] > i32::MIN && model.output_bias_q8[index] < i32::MAX,
+        0 => model
+            .embeddings
+            .get(index)
+            .and_then(|value| value.checked_add(i16::from(delta)))
+            .is_some(),
+        1 => model
+            .attention_rms_weights
+            .get(index)
+            .and_then(|value| value.checked_add(i16::from(delta)))
+            .is_some(),
+        2 => model
+            .mlp_rms_weights
+            .get(index)
+            .and_then(|value| value.checked_add(i16::from(delta)))
+            .is_some(),
+        3 => model
+            .final_rms_weights
+            .get(index)
+            .and_then(|value| value.checked_add(i16::from(delta)))
+            .is_some(),
+        4 => model
+            .q_weights
+            .get(index)
+            .and_then(|value| value.checked_add(delta))
+            .is_some(),
+        5 => model
+            .k_weights
+            .get(index)
+            .and_then(|value| value.checked_add(delta))
+            .is_some(),
+        6 => model
+            .v_weights
+            .get(index)
+            .and_then(|value| value.checked_add(delta))
+            .is_some(),
+        7 => model
+            .o_weights
+            .get(index)
+            .and_then(|value| value.checked_add(delta))
+            .is_some(),
+        8 => model
+            .up_weights
+            .get(index)
+            .and_then(|value| value.checked_add(delta))
+            .is_some(),
+        9 => model
+            .gate_weights
+            .get(index)
+            .and_then(|value| value.checked_add(delta))
+            .is_some(),
+        10 => model
+            .down_weights
+            .get(index)
+            .and_then(|value| value.checked_add(delta))
+            .is_some(),
+        11 => model
+            .output_weights
+            .get(index)
+            .and_then(|value| value.checked_add(i16::from(delta)))
+            .is_some(),
+        12 => model
+            .output_bias_q8
+            .get(index)
+            .and_then(|value| value.checked_add(i32::from(delta)))
+            .is_some(),
         _ => false,
     }
+}
+
+pub(super) fn can_perturb_both(model: &ProductionModelV1, group: usize, index: usize) -> bool {
+    can_perturb(model, group, index, 1) && can_perturb(model, group, index, -1)
 }
 
 pub(super) fn set_parameter_delta(

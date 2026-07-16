@@ -125,7 +125,10 @@ Known facts from the status command:
 - no `release-proof.json` or completed Solomon `pipeline-complete.json` is
   present under `data/`,
 - raw/free-running attention text is still diagnostic-only,
-- coherent Solomon text currently comes from prompted or memory-assisted paths.
+- coherent Solomon text currently comes from prompted or memory-assisted paths,
+- `NSRLPM1` now has a tokenizer-bound native generation command with greedy and
+  deterministic top-k replay, but it has not passed `open-generation-v1` and
+  still uses full-window replay rather than an incremental serving cache.
 
 ## Headline Eval
 
@@ -156,22 +159,24 @@ must be born into the integer/base-2 attention contract.
 The practical sequence is:
 
 1. Keep `node scripts/nsrl-status.mjs` green enough that project state is obvious.
-2. Produce `data/processed/nsrl-mme-v0.json` with:
+2. Use `nsrl-production-model generate` to bind the first unassisted p10m text
+   candidate to generation traces, then score it under `open-generation-v1`.
+3. Produce `data/processed/nsrl-mme-v0.json` with:
 
    ```bash
    node scripts/check-nsrl-mme-v0.mjs --out data/processed/nsrl-mme-v0.json
    ```
 
-3. Feed the scorer a measured `quality-report.json` with confidence-trace
+4. Feed the scorer a measured `quality-report.json` with confidence-trace
    evidence plus objective coverage.
-4. Repair the failing product-proof/self-test surface.
-5. Run the Graviton product path:
+5. Repair the failing product-proof/self-test surface.
+6. Run the Graviton product path:
 
    ```bash
    NSRL_S3_URI=s3://BUCKET/PREFIX scripts/aws/run-solomon-end-to-end.sh
    ```
 
-6. Prove the completed run:
+7. Prove the completed run:
 
    ```bash
    scripts/aws/prove-solomon-product-run.sh \
@@ -180,5 +185,5 @@ The practical sequence is:
      --require-launch-dir
    ```
 
-7. Promote the first narrow NSRL-born `NSRLLMM1` expert before scaling outward
+8. Promote the first narrow NSRL-born `NSRLLMM1` expert before scaling outward
    into routed expert swarms.

@@ -28,8 +28,8 @@
     {
       "evidence_id": "evaluation-evidence",
       "source_uri": "benchmarks/integer-transformer-proof-v1/successor-v2-evidence.json",
-      "source_sha256": "5a67581388751a68a049f8fec728051aeb1539b6769fd4c43b0ac783594e0f87",
-      "content_sha256": "5a67581388751a68a049f8fec728051aeb1539b6769fd4c43b0ac783594e0f87",
+      "source_sha256": "29546fca1eab45e592489ce6e6b0b6f352c7a2a740558c7de4e016e23c2f1428",
+      "content_sha256": "29546fca1eab45e592489ce6e6b0b6f352c7a2a740558c7de4e016e23c2f1428",
       "retrieved_at": "2026-07-15T21:25:00Z",
       "summary": "Five-system frozen evaluation showing 25,347,655 millibits, zero zero-probability windows, and exact replay hashes.",
       "claim_ids": ["heldout-nll", "zero-probability", "baseline-comparison"],

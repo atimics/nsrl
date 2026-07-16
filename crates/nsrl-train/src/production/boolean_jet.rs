@@ -3167,6 +3167,11 @@ mod tests {
             context_tokens: 16,
         };
         let mut model = ProductionModelV1::new_initial(config, 0x1234, 11).expect("model");
+        // Keep repeated saturation margins in this tiny fixture so the
+        // matched-control search exercises visibility matching rather than
+        // failing because randomized production RMS initialization gives all
+        // sixteen coordinates distinct margins.
+        model.final_rms_weights.fill(30_000);
         model.initialize_output_weights(2).expect("output weights");
         let original = model.clone();
         let tokens = vec![

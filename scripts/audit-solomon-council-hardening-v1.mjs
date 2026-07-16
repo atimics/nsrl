@@ -118,8 +118,26 @@ const soloToolObservations = soloInvocationRecords.filter(
 const receiptRecords = readJsonl(paths.council_receipts).filter(
   (record) => record.value?.schema === "nsrl.wisdom_receipt.v0");
 for (const record of receiptRecords) verifyReceiptIdentity(record.value);
-const councilPermissionBudgetDeclarations = receiptRecords.reduce(
-  (sum, record) => sum + record.value.permissions_and_budget.length, 0);
+const episodeIds = casebook.cases.map((entry) => entry.episode_id);
+const soloToolProfiles = toolObservationProfiles(soloInvocationRecords);
+const councilToolProfiles = toolObservationProfiles(councilInvocationRecords);
+const soloPermissionBudgetDeclarations = permissionBudgetDeclarations(soloInvocationRecords);
+const councilPermissionBudgetDeclarations = permissionBudgetDeclarations(receiptRecords);
+const equivalentToolObservations = equivalentLaneProfiles(
+  soloToolProfiles, councilToolProfiles, episodeIds);
+const equivalentToolPermissions = equivalentLaneProfiles(
+  permissionProfiles(soloPermissionBudgetDeclarations),
+  permissionProfiles(councilPermissionBudgetDeclarations),
+  episodeIds,
+);
+const equivalentToolBudgets = equivalentLaneProfiles(
+  budgetProfiles(soloPermissionBudgetDeclarations),
+  budgetProfiles(councilPermissionBudgetDeclarations),
+  episodeIds,
+);
+const actualSameModel = soloBundle.underlying_model_sha256
+  === councilBundle.underlying_model_sha256;
+const actualSamePublicCasebook = soloBundle.casebook_sha256 === councilBundle.casebook_sha256;
 
 const adversarialEvidence = {
   misleading: publicEvidence.filter(
@@ -138,8 +156,11 @@ const toolBoundaries = {
     (observation) => observation.status === "permission_denied").length,
   actual_solo_tool_observations: soloToolObservations.length,
   actual_council_tool_observations: councilToolObservations.length,
-  actual_solo_permission_budget_declarations: 0,
-  actual_council_permission_budget_declarations: councilPermissionBudgetDeclarations,
+  actual_solo_permission_budget_declarations: soloPermissionBudgetDeclarations.length,
+  actual_council_permission_budget_declarations: councilPermissionBudgetDeclarations.length,
+  actual_equivalent_tool_observations: equivalentToolObservations,
+  actual_equivalent_tool_permissions: equivalentToolPermissions,
+  actual_equivalent_tool_budgets: equivalentToolBudgets,
   counterfactual_parity_solo_decisions: parityPredictions.size,
 };
 const humanAmbiguity = {
@@ -173,11 +194,11 @@ const transfer = {
 };
 
 const gates = {
-  actual_tool_parity_baseline: toolBoundaries.actual_solo_tool_observations
-      >= casebook.cases.length
-    && toolBoundaries.actual_council_tool_observations >= casebook.cases.length
-    && toolBoundaries.actual_solo_permission_budget_declarations >= casebook.cases.length
-    && toolBoundaries.actual_council_permission_budget_declarations >= casebook.cases.length,
+  actual_tool_parity_baseline: actualSameModel
+    && actualSamePublicCasebook
+    && equivalentToolObservations
+    && equivalentToolPermissions
+    && equivalentToolBudgets,
   strict_council_outperformance: Object.values(dimensions).every(
     (dimension) => dimension.council_strictly_outperforms_tool_parity_solo),
   adversarial_evidence_coverage: meetsMinimums(
@@ -216,15 +237,17 @@ const result = {
   },
   sources: Object.fromEntries(sourcePaths.map((relative) => [sourceKey(relative), binding(relative)])),
   baseline_fairness: {
-    actual_same_model: soloBundle.underlying_model_sha256
-      === councilBundle.underlying_model_sha256,
-    actual_same_public_casebook: soloBundle.casebook_sha256 === councilBundle.casebook_sha256,
+    actual_same_model: actualSameModel,
+    actual_same_public_casebook: actualSamePublicCasebook,
     actual_solo_tool_observations: toolBoundaries.actual_solo_tool_observations,
     actual_council_tool_observations: toolBoundaries.actual_council_tool_observations,
     actual_solo_permission_budget_declarations:
       toolBoundaries.actual_solo_permission_budget_declarations,
     actual_council_permission_budget_declarations:
       toolBoundaries.actual_council_permission_budget_declarations,
+    actual_equivalent_tool_observations: equivalentToolObservations,
+    actual_equivalent_tool_permissions: equivalentToolPermissions,
+    actual_equivalent_tool_budgets: equivalentToolBudgets,
     actual_equivalent_tool_access: gates.actual_tool_parity_baseline,
     counterfactual_tool_parity_cases: parityPredictions.size,
     counterfactual_role: "diagnostic_only_because_it_was_computed_after_v0_gold_opening",
@@ -404,6 +427,58 @@ function strictlyOutperforms(dimension, council, baseline) {
 
 function meetsMinimums(observed, minimums) {
   return Object.entries(minimums).every(([key, minimum]) => observed[key] >= minimum);
+}
+
+function recordEpisodeId(record) {
+  return record.value?.episode_id
+    ?? record.value?.request?.request_id
+    ?? record.value?.request_id
+    ?? null;
+}
+
+function toolObservationProfiles(records) {
+  return records.flatMap((record) => {
+    const episodeId = recordEpisodeId(record);
+    const observation = record.value?.tool_observation;
+    return episodeId && observation ? [{episode_id: episodeId, observation}] : [];
+  });
+}
+
+function permissionBudgetDeclarations(records) {
+  return records.flatMap((record) => {
+    const episodeId = recordEpisodeId(record);
+    if (!episodeId) return [];
+    const declarations = Array.isArray(record.value?.permissions_and_budget)
+      ? record.value.permissions_and_budget
+      : record.value?.circle ? [record.value.circle] : [];
+    return declarations.map((declaration) => ({episode_id: episodeId, declaration}));
+  });
+}
+
+function permissionProfiles(declarations) {
+  return declarations.map(({episode_id: episodeId, declaration}) => ({
+    episode_id: episodeId,
+    permissions: [...(declaration.permissions ?? [])].sort(),
+    tools: [...(declaration.tools ?? [])].sort(),
+  }));
+}
+
+function budgetProfiles(declarations) {
+  return declarations.map(({episode_id: episodeId, declaration}) => ({
+    episode_id: episodeId,
+    budget: declaration.budget ?? null,
+  }));
+}
+
+function equivalentLaneProfiles(left, right, requiredEpisodeIds) {
+  const leftEpisodes = new Set(left.map((profile) => profile.episode_id));
+  const rightEpisodes = new Set(right.map((profile) => profile.episode_id));
+  if (!requiredEpisodeIds.every(
+    (episodeId) => leftEpisodes.has(episodeId) && rightEpisodes.has(episodeId))) {
+    return false;
+  }
+  const canonical = (profiles) => profiles.map(stableJson).sort();
+  return stableJson(canonical(left)) === stableJson(canonical(right));
 }
 
 function sourceKey(relative) {

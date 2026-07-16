@@ -8,12 +8,12 @@ use std::path::PathBuf;
 use nsrl_core::SoftmaxNormalization;
 use nsrl_corpus::subword::SubwordTokenizer;
 use nsrl_train::production::{
-    ProductionAtomicSourceBinding, ProductionBooleanJetAnalysisRole,
-    ProductionBooleanJetConfirmationConfig, ProductionBooleanJetConfirmationV2Config,
-    ProductionBooleanJetMatchedControlV2Config, ProductionBooleanJetMove,
-    ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
+    DirectFeatureTrainConfig, DirectHeadTrainConfig, ProductionAtomicSourceBinding,
+    ProductionBooleanJetAnalysisRole, ProductionBooleanJetConfirmationConfig,
+    ProductionBooleanJetConfirmationV2Config, ProductionBooleanJetMatchedControlV2Config,
+    ProductionBooleanJetMove, ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
     ProductionBooleanJetProtocolBindings, ProductionBooleanJetProtocolVersion,
-    ProductionBooleanJetRankTwoConfig, ProductionFullTrainConfig,
+    ProductionBooleanJetRankTwoConfig, ProductionFullTrainConfig, ProductionGenerationConfig,
     ProductionGradientAlignmentConfig, ProductionModelConfig, ProductionModelV1,
     ProductionNumericContract, ProductionOptimizerStateV2, ProductionProjectionScales,
     ProductionSmokeConfig, ProductionTrainingNumericContract, audit_production_atomic_structure,
@@ -24,8 +24,10 @@ use nsrl_train::production::{
     audit_production_probability_resolution, compare_production_models, decode_bound_token_stream,
     evaluate_production_model, evaluate_production_model_canonical_nll_default_floor,
     freeze_production_atomic_structure_contract, freeze_production_boolean_jet_matched_control,
-    production_boolean_jet_binary_fnv64, production_boolean_jet_source_fnv64,
-    train_production_full_smoke, train_production_output_smoke,
+    generate_production_model, production_boolean_jet_binary_fnv64,
+    production_boolean_jet_source_fnv64, train_production_direct_feature,
+    train_production_direct_head_search, train_production_full_smoke,
+    train_production_output_smoke,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -51,6 +53,7 @@ struct Config {
     model: Option<PathBuf>,
     candidate_model: Option<PathBuf>,
     model_out: Option<PathBuf>,
+    generated_out: Option<PathBuf>,
     trace: Option<PathBuf>,
     optimizer_state: Option<PathBuf>,
     optimizer_state_out: Option<PathBuf>,
@@ -59,6 +62,12 @@ struct Config {
     output_forward_shift: Option<u8>,
     up_forward_shift: Option<u8>,
     context_tokens: usize,
+    context_tokens_explicit: bool,
+    prompt: Option<String>,
+    prompt_file: Option<PathBuf>,
+    max_new_tokens: usize,
+    top_k: usize,
+    stop_on_eos: bool,
     max_windows: usize,
     epochs: usize,
     feature_shift: u8,
@@ -73,6 +82,7 @@ struct Config {
     gate_learning_rate_shift: Option<u8>,
     down_learning_rate_shift: Option<u8>,
     vector_learning_rate_shift: u8,
+    final_rms_learning_rate_shift: Option<u8>,
     embedding_learning_rate_shift: u8,
     output_learning_rate_shift: u8,
     output_backward_shift: Option<u8>,
@@ -121,6 +131,7 @@ impl Default for Config {
             model: None,
             candidate_model: None,
             model_out: None,
+            generated_out: None,
             trace: None,
             optimizer_state: None,
             optimizer_state_out: None,
@@ -129,6 +140,12 @@ impl Default for Config {
             output_forward_shift: None,
             up_forward_shift: None,
             context_tokens: smoke.context_tokens,
+            context_tokens_explicit: false,
+            prompt: None,
+            prompt_file: None,
+            max_new_tokens: 64,
+            top_k: 1,
+            stop_on_eos: true,
             max_windows: smoke.max_windows,
             epochs: smoke.epochs,
             feature_shift: smoke.feature_shift,
@@ -143,6 +160,7 @@ impl Default for Config {
             gate_learning_rate_shift: full.gate_learning_rate_shift,
             down_learning_rate_shift: full.down_learning_rate_shift,
             vector_learning_rate_shift: full.vector_learning_rate_shift,
+            final_rms_learning_rate_shift: full.final_rms_learning_rate_shift,
             embedding_learning_rate_shift: full.embedding_learning_rate_shift,
             output_learning_rate_shift: full.output_learning_rate_shift,
             output_backward_shift: full.output_backward_shift,
@@ -195,6 +213,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "numeric-contract" => numeric_contract(config),
         "smoke-train" => smoke_train(config),
         "full-train-smoke" => full_train_smoke(config),
+        "direct-head-train" => direct_head_train(config),
+        "direct-feature-train" => direct_feature_train(config),
+        "generate" => generate(config),
         "evaluate" => evaluate(config),
         "evaluate-canonical" => evaluate_canonical(config),
         "gradient-alignment-audit" => gradient_alignment_audit(config),
@@ -217,10 +238,54 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         _ => Err(
-            "expected init, inspect, numeric-contract, smoke-train, full-train-smoke, evaluate, evaluate-canonical, gradient-alignment-audit, boolean-jet-rank-two-audit, boolean-jet-audit, boolean-jet-freeze-matched-control, boolean-jet-confirmation-audit, boolean-jet-stability-confirmation-v2, boolean-jet-protocol-bindings, boolean-jet-atomic-structure-contract, boolean-jet-atomic-structure-audit, compare-evaluate, probability-resolution-audit, probability-normalization-audit, or probability-normalization-signal-attribution-audit"
+            "expected init, inspect, numeric-contract, smoke-train, full-train-smoke, direct-head-train, direct-feature-train, generate, evaluate, evaluate-canonical, gradient-alignment-audit, boolean-jet-rank-two-audit, boolean-jet-audit, boolean-jet-freeze-matched-control, boolean-jet-confirmation-audit, boolean-jet-stability-confirmation-v2, boolean-jet-protocol-bindings, boolean-jet-atomic-structure-contract, boolean-jet-atomic-structure-audit, compare-evaluate, probability-resolution-audit, probability-normalization-audit, or probability-normalization-signal-attribution-audit"
                 .into(),
         ),
     }
+}
+
+fn generate(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
+    let model_path = required(config.model, "--model")?;
+    let trace_path = required(config.trace, "--trace")?;
+    let prompt_bytes = match (config.prompt, config.prompt_file) {
+        (Some(prompt), None) => prompt.into_bytes(),
+        (None, Some(path)) => fs::read(path)?,
+        (Some(_), Some(_)) => return Err("use only one of --prompt or --prompt-file".into()),
+        (None, None) => return Err("generate requires --prompt or --prompt-file".into()),
+    };
+    let tokenizer = SubwordTokenizer::from_bytes(&fs::read(tokenizer_path)?)?;
+    let model = ProductionModelV1::from_bytes(&fs::read(model_path)?)?;
+    if tokenizer.tokenizer_hash() != model.tokenizer_hash
+        || tokenizer.vocab_size() != model.config.vocab_size
+    {
+        return Err("model and tokenizer binding mismatch".into());
+    }
+    let prompt_tokens = tokenizer.encode(&prompt_bytes);
+    let context_tokens = if config.context_tokens_explicit {
+        config.context_tokens
+    } else {
+        model.config.context_tokens
+    };
+    let trace = generate_production_model(
+        &model,
+        &prompt_tokens,
+        ProductionGenerationConfig {
+            context_tokens,
+            max_new_tokens: config.max_new_tokens,
+            top_k: config.top_k,
+            sample_seed: config.seed,
+            stop_on_eos: config.stop_on_eos,
+        },
+    )?;
+    let generated_bytes = tokenizer.decode(&trace.generated_tokens)?;
+    fs::write(trace_path, trace.to_json_line())?;
+    if let Some(path) = config.generated_out {
+        fs::write(path, generated_bytes)?;
+    } else {
+        println!("{}", String::from_utf8_lossy(&generated_bytes));
+    }
+    Ok(())
 }
 
 fn numeric_contract(config: Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -943,6 +1008,79 @@ fn production_gradient_alignment_config(config: &Config) -> ProductionGradientAl
     }
 }
 
+fn direct_head_train(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
+    let tokens_path = required(config.tokens, "--tokens")?;
+    let model_path = required(config.model, "--model")?;
+    let model_out = required(config.model_out, "--model-out")?;
+    let trace_path = required(config.trace, "--trace")?;
+    let tokenizer = SubwordTokenizer::from_bytes(&fs::read(tokenizer_path)?)?;
+    let mut model = ProductionModelV1::from_bytes(&fs::read(model_path)?)?;
+    if tokenizer.tokenizer_hash() != model.tokenizer_hash
+        || tokenizer.vocab_size() != model.config.vocab_size
+    {
+        return Err("model and tokenizer binding mismatch".into());
+    }
+    let (tokens, token_stream_hash) = decode_bound_token_stream(
+        &fs::read(tokens_path)?,
+        model.tokenizer_hash,
+        model.config.vocab_size,
+    )?;
+    let head_config = DirectHeadTrainConfig {
+        context_tokens: config.context_tokens,
+        train_windows: config.max_windows,
+        dev_windows: config.evaluation_windows,
+        candidates_per_round: config.alignment_coordinates_per_group,
+        max_rounds: config.max_optimizer_steps,
+        min_train_nll_delta: 0,
+        probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
+        probability_normalization: config.probability_normalization,
+        sample_seed: config.seed,
+    };
+    let trace =
+        train_production_direct_head_search(&mut model, &tokens, token_stream_hash, head_config)?;
+    fs::write(model_out, model.try_to_bytes()?)?;
+    fs::write(trace_path, trace.to_json_line())?;
+    Ok(())
+}
+
+fn direct_feature_train(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
+    let tokens_path = required(config.tokens, "--tokens")?;
+    let model_path = required(config.model, "--model")?;
+    let model_out = required(config.model_out, "--model-out")?;
+    let trace_path = required(config.trace, "--trace")?;
+    let tokenizer = SubwordTokenizer::from_bytes(&fs::read(tokenizer_path)?)?;
+    let mut model = ProductionModelV1::from_bytes(&fs::read(model_path)?)?;
+    if tokenizer.tokenizer_hash() != model.tokenizer_hash
+        || tokenizer.vocab_size() != model.config.vocab_size
+    {
+        return Err("model and tokenizer binding mismatch".into());
+    }
+    let (tokens, token_stream_hash) = decode_bound_token_stream(
+        &fs::read(tokens_path)?,
+        model.tokenizer_hash,
+        model.config.vocab_size,
+    )?;
+    let feature_config = DirectFeatureTrainConfig {
+        context_tokens: config.context_tokens,
+        train_windows: config.max_windows,
+        dev_windows: config.evaluation_windows,
+        head_candidates_per_round: config.alignment_coordinates_per_group,
+        final_rms_candidates_per_round: config.alignment_coordinates_per_group.clamp(8, 64),
+        max_rounds: config.max_optimizer_steps,
+        min_train_nll_delta: 0,
+        probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
+        probability_normalization: config.probability_normalization,
+        sample_seed: config.seed,
+    };
+    let trace =
+        train_production_direct_feature(&mut model, &tokens, token_stream_hash, feature_config)?;
+    fs::write(model_out, model.try_to_bytes()?)?;
+    fs::write(trace_path, trace.to_json_line())?;
+    Ok(())
+}
+
 fn full_train_smoke(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let training_config = production_full_train_config(&config);
     let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
@@ -996,6 +1134,7 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
         gate_learning_rate_shift: config.gate_learning_rate_shift,
         down_learning_rate_shift: config.down_learning_rate_shift,
         vector_learning_rate_shift: config.vector_learning_rate_shift,
+        final_rms_learning_rate_shift: config.final_rms_learning_rate_shift,
         embedding_learning_rate_shift: config.embedding_learning_rate_shift,
         output_learning_rate_shift: config.output_learning_rate_shift,
         output_backward_shift: config.output_backward_shift,
@@ -1126,10 +1265,14 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "init"
+            | "help"
             | "inspect"
             | "numeric-contract"
             | "smoke-train"
             | "full-train-smoke"
+            | "direct-head-train"
+            | "direct-feature-train"
+            | "generate"
             | "evaluate"
             | "evaluate-canonical"
             | "gradient-alignment-audit"
@@ -1164,6 +1307,9 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--model-out" => {
                 config.model_out = Some(PathBuf::from(next(&mut args, "--model-out")?))
             }
+            "--generated-out" => {
+                config.generated_out = Some(PathBuf::from(next(&mut args, "--generated-out")?))
+            }
             "--trace" => config.trace = Some(PathBuf::from(next(&mut args, "--trace")?)),
             "--optimizer-state" => {
                 config.optimizer_state = Some(PathBuf::from(next(&mut args, "--optimizer-state")?))
@@ -1185,8 +1331,18 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 config.up_forward_shift = Some(next(&mut args, "--up-forward-shift")?.parse()?)
             }
             "--context-tokens" => {
-                config.context_tokens = next(&mut args, "--context-tokens")?.parse()?
+                config.context_tokens = next(&mut args, "--context-tokens")?.parse()?;
+                config.context_tokens_explicit = true;
             }
+            "--prompt" => config.prompt = Some(next(&mut args, "--prompt")?),
+            "--prompt-file" => {
+                config.prompt_file = Some(PathBuf::from(next(&mut args, "--prompt-file")?))
+            }
+            "--max-new-tokens" => {
+                config.max_new_tokens = next(&mut args, "--max-new-tokens")?.parse()?
+            }
+            "--top-k" => config.top_k = next(&mut args, "--top-k")?.parse()?,
+            "--no-stop-on-eos" => config.stop_on_eos = false,
             "--max-windows" => config.max_windows = next(&mut args, "--max-windows")?.parse()?,
             "--epochs" => config.epochs = next(&mut args, "--epochs")?.parse()?,
             "--feature-shift" => {
@@ -1237,6 +1393,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--output-learning-rate-shift" => {
                 config.output_learning_rate_shift =
                     next(&mut args, "--output-learning-rate-shift")?.parse()?
+            }
+            "--final-rms-learning-rate-shift" => {
+                config.final_rms_learning_rate_shift =
+                    Some(next(&mut args, "--final-rms-learning-rate-shift")?.parse()?)
             }
             "--output-backward-shift" => {
                 config.output_backward_shift =
@@ -1423,6 +1583,61 @@ fn print_help() {
         "Prospective confirmation:\n  nsrl-production-model boolean-jet-confirmation-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH --expected-base-model-hash U64 --expected-tokenizer-hash U64 --expected-token-stream-hash U64 --expected-move-fingerprint U64 --expected-manifest-hash U64 --trunk-move GROUP:COORDINATE:DELTA... --head-move GROUP:COORDINATE:DELTA... --control-move GROUP:COORDINATE:DELTA... [--proposal-document-start N] [--proposal-documents N] [--transfer-document-start N] [--transfer-documents N] [--windows-per-document N] [--minimum-documents N]\n"
     );
     println!(
-        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model numeric-contract [--profile p10m|p20m|p30m | --model PATH] [--trace PATH] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model evaluate-canonical --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model gradient-alignment-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N] [--transfer-windows N] [--documents-per-surface N] [--rescue-stratified-sampling] [--include-mass-corrected-no-rescue] [--coordinates-per-group N] [--seed N] [training numeric options]\n  nsrl-production-model compare-evaluate --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-resolution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-signal-attribution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N] [--output-backward-shift N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division]"
+        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model numeric-contract [--profile p10m|p20m|p30m | --model PATH] [--trace PATH] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model generate --tokenizer PATH --model PATH (--prompt TEXT | --prompt-file PATH) --trace PATH [--generated-out PATH] [--context-tokens N] [--max-new-tokens N] [--top-k N] [--seed N] [--no-stop-on-eos]\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model evaluate-canonical --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model gradient-alignment-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N] [--transfer-windows N] [--documents-per-surface N] [--rescue-stratified-sampling] [--include-mass-corrected-no-rescue] [--coordinates-per-group N] [--seed N] [training numeric options]\n  nsrl-production-model compare-evaluate --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-resolution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-signal-attribution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N] [--output-backward-shift N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division]
+  nsrl-production-model direct-head-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]
+  nsrl-production-model direct-feature-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> impl Iterator<Item = String> {
+        values.iter().map(|value| (*value).to_string())
+    }
+
+    #[test]
+    fn generation_arguments_are_distinct_from_training_limits() {
+        let config = parse_args(args(&[
+            "generate",
+            "--tokenizer",
+            "tokenizer.nsrlbpe",
+            "--model",
+            "model.nsrlpm",
+            "--prompt",
+            "The king",
+            "--trace",
+            "trace.json",
+            "--generated-out",
+            "continuation.txt",
+            "--context-tokens",
+            "128",
+            "--max-new-tokens",
+            "512",
+            "--top-k",
+            "32",
+            "--seed",
+            "19",
+            "--no-stop-on-eos",
+        ]))
+        .expect("generation arguments");
+        assert_eq!(config.command, "generate");
+        assert_eq!(config.prompt.as_deref(), Some("The king"));
+        assert_eq!(config.context_tokens, 128);
+        assert!(config.context_tokens_explicit);
+        assert_eq!(config.max_new_tokens, 512);
+        assert_eq!(config.top_k, 32);
+        assert_eq!(config.seed, 19);
+        assert!(!config.stop_on_eos);
+        assert_eq!(
+            config.max_windows,
+            ProductionSmokeConfig::default().max_windows
+        );
+    }
+
+    #[test]
+    fn help_is_a_parseable_command() {
+        assert_eq!(parse_args(args(&["help"])).expect("help").command, "help");
+    }
 }
