@@ -452,6 +452,14 @@ function collectCouncilEvidence() {
     receipt: "benchmarks/solomon-council-v0/fixtures/select-receipt.json",
     observation: "benchmarks/solomon-council-v0/fixtures/select-observation.json",
     revised_receipt: "benchmarks/solomon-council-v0/fixtures/select-revised-receipt.json",
+    wisdom_casebook: "benchmarks/solomon-council-v0/production-v0/casebook.json",
+    wisdom_solo_bundle: "benchmarks/solomon-council-v0/production-v0/solo-bundle.json",
+    wisdom_council_bundle: "benchmarks/solomon-council-v0/production-v0/council-bundle.json",
+    wisdom_gold_opening: "benchmarks/solomon-council-v0/production-v0/gold-opening.json",
+    wisdom_generation_integrity:
+      "benchmarks/solomon-council-v0/production-v0/generation-integrity.json",
+    wisdom_provenance: "benchmarks/solomon-council-v0/production-v0/provenance.json",
+    wisdom_eval_input: "benchmarks/solomon-council-v0/production-v0/eval-input.json",
     adaptive_preregistration:
       "protocol/examples/p10m-adaptive-composition-v1-preregistration.json",
     adaptive_theory:
@@ -466,7 +474,12 @@ function collectCouncilEvidence() {
     "mathematician", "engineer", "historian", "skeptic", "consequence_planner", "judge",
   ].map((faculty) => `council/seals/${faculty}.json`);
   const requiredPaths = Object.entries(paths).filter(
-    ([key]) => !["wisdom_eval_result", "decision_regret_result", "decision_regret_publication"].includes(key));
+    ([key]) => ![
+      "wisdom_casebook", "wisdom_solo_bundle", "wisdom_council_bundle",
+      "wisdom_gold_opening", "wisdom_generation_integrity", "wisdom_provenance",
+      "wisdom_eval_input", "wisdom_eval_result", "decision_regret_result",
+      "decision_regret_publication",
+    ].includes(key));
   const files = Object.fromEntries(requiredPaths.map(([key, value]) => [key, fileInfo(value)]));
   const seals = sealPaths.map(fileInfo);
   const receipt = maybeReadJson(paths.receipt);
@@ -510,6 +523,27 @@ function collectCouncilEvidence() {
     && wisdomEval.authorization?.product_release_authorized === false;
   const wisdomState = !wisdomEval ? "not_measured"
     : wisdomGatePassed ? "passed" : "failed_or_invalid";
+  const wisdomArtifacts = Object.fromEntries([
+    "wisdom_casebook", "wisdom_solo_bundle", "wisdom_council_bundle",
+    "wisdom_gold_opening", "wisdom_generation_integrity", "wisdom_provenance",
+    "wisdom_eval_input", "wisdom_eval_result",
+  ].map((key) => [key, fileInfo(paths[key])]));
+  const wisdomPipelineStage = !wisdomArtifacts.wisdom_casebook.present
+    ? "casebook_not_frozen"
+    : !wisdomArtifacts.wisdom_solo_bundle.present
+      ? "awaiting_solo_bundle"
+      : !wisdomArtifacts.wisdom_council_bundle.present
+        ? "awaiting_council_bundle"
+        : !wisdomArtifacts.wisdom_gold_opening.present
+          ? "awaiting_gold_opening"
+          : !(wisdomArtifacts.wisdom_generation_integrity.present
+              && wisdomArtifacts.wisdom_provenance.present)
+            ? "awaiting_integrity_reports"
+            : !wisdomArtifacts.wisdom_eval_input.present
+              ? "awaiting_compilation"
+              : !wisdomArtifacts.wisdom_eval_result.present
+                ? "awaiting_evaluation"
+                : "measured";
   const regretEvidenceOk = regretResult?.schema === "nsrl.solomonic_judgment_result.v1"
     && regretPublication?.schema === "nsrl.solomonic_judgment_publication.v1"
     && regretPublication.verdict?.status === "supported"
@@ -538,7 +572,9 @@ function collectCouncilEvidence() {
       && receipt?.shadow_execution?.action_executed === false,
     wisdom_evaluation: {
       state: wisdomState,
+      pipeline_stage: wisdomPipelineStage,
       path: paths.wisdom_eval_result,
+      artifacts: wisdomArtifacts,
       dimensions: wisdomEval?.dimensions ?? {},
       all_dimensions_outperform: wisdomEval?.verdict?.all_dimensions_outperform === true,
       promotion_gate_passed: wisdomGatePassed,
@@ -1332,7 +1368,8 @@ function deriveStatus(report) {
     councilBlockers.push("Solomon Council v0 core or its exact receipt replay is missing/invalid");
   }
   if (report.council.wisdom_evaluation.state === "not_measured") {
-    councilBlockers.push("same-model frozen wisdom evaluation is not measured");
+    councilBlockers.push(
+      `same-model frozen wisdom evaluation is not measured (${report.council.wisdom_evaluation.pipeline_stage})`);
   } else if (!report.council.wisdom_evaluation.promotion_gate_passed) {
     councilBlockers.push(
       "Council does not strictly outperform the same underlying model on every wisdom dimension");
@@ -1506,7 +1543,7 @@ function renderMarkdown(report) {
   lines.push(`- Wisdom receipt: \`${report.council.receipt_sha256 || "missing"}\`; revised receipt: \`${report.council.revised_receipt_sha256 || "missing"}\``);
   lines.push(`- Bounded decision-regret experiment: publication **${report.council.bounded_decision_regret_evidence.publication_status}** with ${report.council.bounded_decision_regret_evidence.fired_passages} favorable fired passages and signed regret ${report.council.bounded_decision_regret_evidence.signed_regret_q32 || "missing"} Q32; MJ-20 falsifies the marginal-to-conditional bridge, so the non-crossing e-process does not establish sequential safety`);
   lines.push(`- Adaptive replacement: ${report.council.adaptive_composition.theory_check_ok ? "checked" : "invalid"}; requires ${report.council.adaptive_composition.calibration_sources_per_family} calibration source panels per family; execution and optimizer promotion remain unauthorized`);
-  lines.push(`- Same-model wisdom gate: **${report.council.wisdom_evaluation.state}**; promotion ${report.council.wisdom_evaluation.promotion_gate_passed ? "passed" : "not authorized"}`);
+  lines.push(`- Same-model wisdom gate: **${report.council.wisdom_evaluation.state}** at stage **${report.council.wisdom_evaluation.pipeline_stage}**; promotion ${report.council.wisdom_evaluation.promotion_gate_passed ? "passed" : "not authorized"}`);
   lines.push(`- Wisdom ceremony: ${report.council.wisdom_ceremony_check_ok ? "byte-bound compiler/replay self-check green" : "invalid"}; no production casebook or paired lanes are inferred from this self-test`);
   for (const blocker of report.status.council_blockers) {
     lines.push(`- Council blocker: ${blocker}`);

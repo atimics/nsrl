@@ -207,7 +207,11 @@ though the commitment hashes still replay.
 
 No production same-model wisdom result is currently frozen. The canonical
 status therefore reports the council core as `shadow_ready` and the wisdom gate
-as `not_measured`.
+as `not_measured`. The canonical production ceremony directory is
+`benchmarks/solomon-council-v0/production-v0/`; the status surface advances its
+pipeline stage only as the casebook, both lane bundles, opening, integrity
+reports, and compiled input appear. At present it truthfully reports
+`casebook_not_frozen`.
 
 ## Relationship to the bounded regret experiment
 
