@@ -152,7 +152,7 @@ Production input cannot be assembled as one self-attested JSON file. It must be
 compiled from a four-stage ceremony:
 
 1. Freeze and publish a public casebook before either lane runs. Each case binds
-   its evidence bytes, allowed decision IDs, and a salted canonical-JSON
+   its exact public question, evidence bytes, allowed decision IDs, and a salted canonical-JSON
    commitment to still-hidden gold. The freezer writes the public casebook and
    a separate mode-0600 private gold vault; the draft and vault must never be
    published with the casebook.
@@ -171,6 +171,11 @@ compiled from a four-stage ceremony:
 
 The production evaluator deterministically recompiles those byte-bound ceremony
 artifacts before scoring; a hand-written production input is rejected. The
+compiler parses every invocation input and requires both lanes to receive the
+identical casebook question and evidence set. Every solo decision must also
+have an equivalent council action or one of the shared terminal routes
+(`request_evidence`, `ask_user`, or `abstain`), preventing a lane-specific
+action space from manufacturing lower council regret. The
 integrity contract requires no oracle target lookup, hidden memory, retrieval
 target leakage, or generation-integrity failure. It also byte-verifies green
 `nsrl.wisdom_generation_integrity.v0` and `nsrl.wisdom_provenance_gate.v0`

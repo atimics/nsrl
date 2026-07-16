@@ -74,7 +74,8 @@ permissions/budgets, outcome, and append-only revision history. The core and its
 adversarial replay checks pass. Its production scorer now requires a pre-lane
 public casebook with hidden-gold commitments, byte-bound solo and five-faculty
 council traces, a post-lane gold opening bound to both bundles, exact receipt
-replay, and exact provenance sets; self-test or hand-authored aggregates cannot
+replay, identical question/evidence inputs, a shared decision surface, and exact
+provenance sets; self-test or hand-authored aggregates cannot
 promote. Promotion does not: the frozen same-model wisdom evaluation across all
 eight required dimensions has not yet been produced.
 

@@ -71,14 +71,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "episode_id", "dimension", "source_family", "unfamiliar_source", "evidence",
-        "decision_ids", "gold_commitment_sha256"
+        "episode_id", "dimension", "source_family", "unfamiliar_source", "question",
+        "evidence", "decision_ids", "gold_commitment_sha256"
       ],
       "properties": {
         "episode_id": {"type": "string", "minLength": 1},
         "dimension": {"$ref": "#/$defs/dimension"},
         "source_family": {"type": "string", "minLength": 1},
         "unfamiliar_source": {"type": "boolean"},
+        "question": {"type": "string", "minLength": 1},
         "evidence": {
           "type": "array", "minItems": 1, "uniqueItems": true,
           "items": {"$ref": "#/$defs/artifact"}

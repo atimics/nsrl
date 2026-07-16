@@ -445,6 +445,7 @@ function collectCouncilEvidence() {
     wisdom_gold_vault_schema: "protocol/solomon-wisdom-gold-vault-v0.schema.json",
     wisdom_lane_bundle_schema: "protocol/solomon-wisdom-lane-bundle-v0.schema.json",
     wisdom_lane_trace_schema: "protocol/solomon-wisdom-lane-trace-v0.schema.json",
+    wisdom_model_input_schema: "protocol/solomon-wisdom-model-input-v0.schema.json",
     wisdom_gold_opening_schema: "protocol/solomon-wisdom-gold-opening-v0.schema.json",
     generation_integrity_schema: "protocol/wisdom-generation-integrity-v0.schema.json",
     provenance_gate_schema: "protocol/wisdom-provenance-gate-v0.schema.json",

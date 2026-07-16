@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.local/protocol/solomon-wisdom-model-input-v0.schema.json",
+  "title": "Gold-blind same-task Solomon model invocation input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "ceremony_id", "episode_id", "role", "model_sha256", "question",
+    "evidence", "gold_accessed"
+  ],
+  "properties": {
+    "schema": {"const": "nsrl.solomon_wisdom_model_input.v0"},
+    "ceremony_id": {"type": "string", "minLength": 1},
+    "episode_id": {"type": "string", "minLength": 1},
+    "role": {
+      "enum": ["solo", "mathematician", "engineer", "historian", "skeptic", "consequence_planner"]
+    },
+    "model_sha256": {"$ref": "#/$defs/sha256"},
+    "question": {"type": "string", "minLength": 1},
+    "evidence": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "gold_accessed": {"const": false}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

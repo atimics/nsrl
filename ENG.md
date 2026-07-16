@@ -58,8 +58,9 @@ commitment ceremony rather than trusting post-hoc booleans: a public casebook
 commits hidden gold, separately byte-bound solo and five-faculty council traces
 freeze before opening, and the opening binds both lane hashes. Production
 scoring deterministically recompiles those artifacts, verifies exact same-model
-invocations and receipt/output equality, and rejects hand-authored aggregate
-inputs. The ceremony self-check exercises commitment, model, trace, receipt,
+invocations, identical question/evidence inputs, a shared decision surface, and
+receipt/output equality, and rejects hand-authored aggregate inputs. The
+ceremony self-check exercises commitment, model, trace, receipt, task-asymmetry,
 and provenance tampering.
 
 Prior work already establishes integer and quantized training as a field. The

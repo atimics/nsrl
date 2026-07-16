@@ -92,6 +92,12 @@ try {
     request.request_id = episodeId;
     request.recorded_at = `2026-07-15T22:${String(index).padStart(2, "0")}:00Z`;
     request.models[0].artifact_uri = modelPath;
+    request.actions.push({
+      ...clone(request.actions[0]),
+      action_id: "solo-bad",
+      summary: "A deliberately inferior but controller-visible self-test action.",
+    });
+    request.controller.allowed_action_ids.push("solo-bad");
     for (const invocation of request.invocations) {
       invocation.invocation_id = `${episodeId}:${invocation.faculty_id}`;
     }
@@ -99,13 +105,15 @@ try {
     const receipt = deliberate(request);
     const councilDecisionId = receipt.decision.kind === "select"
       ? receipt.decision.selected_action_id : receipt.decision.kind;
-    const decisionIds = ["solo-bad", councilDecisionId].filter(
-      (value, position, values) => values.indexOf(value) === position);
+    const decisionIds = [...request.actions.map((action) => action.action_id), "abstain"];
     const gold = {
       expected_label: expected,
       should_abstain: shouldAbstain,
-      decision_costs_milli: Object.fromEntries(decisionIds.map(
-        (decisionId) => [decisionId, decisionId === councilDecisionId ? 100 : 900])),
+      decision_costs_milli: Object.fromEntries(decisionIds.map((decisionId) => [
+        decisionId,
+        decisionId === (shouldAbstain ? "abstain" : councilDecisionId)
+          ? 100 : decisionId === "solo-bad" ? 900 : 600,
+      ])),
     };
     const nonce = sha256Json({self_test_nonce: index + 1});
     cases.push({
@@ -113,6 +121,7 @@ try {
       dimension,
       source_family: dimension === "unfamiliar_source_transfer" ? "unseen-self-test" : "self-test",
       unfamiliar_source: dimension === "unfamiliar_source_transfer",
+      question: request.question,
       evidence,
       decision_ids: decisionIds,
       gold_commitment_sha256: goldCommitment(episodeId, nonce, gold),
@@ -122,12 +131,18 @@ try {
     const soloPrediction = {
       prediction_label: !expected,
       confidence_milli: 900,
-      abstained: !shouldAbstain,
+      abstained: false,
       decision_id: "solo-bad",
     };
     const soloInput = writeJson(`${index}-solo-input.json`, {
-      schema: "nsrl.solomon_solo_model_input.v0", episode_id: episodeId,
-      evidence_sha256: evidence.map((binding) => binding.sha256),
+      schema: "nsrl.solomon_wisdom_model_input.v0",
+      ceremony_id: "solomon-wisdom-ceremony-self-test-v0",
+      episode_id: episodeId,
+      role: "solo",
+      model_sha256: modelHash,
+      question: request.question,
+      evidence,
+      gold_accessed: false,
     });
     const soloOutput = writeJson(`${index}-solo-output.json`, {
       schema: "nsrl.solomon_solo_model_output.v0",
@@ -167,11 +182,21 @@ try {
         model_sha256: modelHash,
         recommendation: facultyInvocation.recommendation,
       });
+      const input = writeJson(`${index}-${facultyId}-input.json`, {
+        schema: "nsrl.solomon_wisdom_model_input.v0",
+        ceremony_id: "solomon-wisdom-ceremony-self-test-v0",
+        episode_id: episodeId,
+        role: facultyId,
+        model_sha256: modelHash,
+        question: request.question,
+        evidence,
+        gold_accessed: false,
+      });
       invocations.push({
         invocation_id: `${episodeId}:${facultyId}`,
         role: facultyId,
         model_sha256: modelHash,
-        input: requestBinding,
+        input,
         output,
       });
     }
@@ -268,6 +293,7 @@ try {
         dimension: entry.dimension,
         source_family: entry.source_family,
         unfamiliar_source: entry.unfamiliar_source,
+        question: entry.question,
         evidence: entry.evidence,
         decision_ids: entry.decision_ids,
         nonce: secret.nonce,
@@ -380,6 +406,45 @@ try {
     "bad-provenance.json", badProvenance);
   expectFailure(() => compileWisdomCeremony(provenanceMismatch, {baseDir: repoRoot}),
     /trace set differs/);
+  const differentQuestion = clone(ceremony);
+  delete differentQuestion.ceremonyBindings;
+  const questionTrace = JSON.parse(fs.readFileSync(
+    differentQuestion.soloBundle.episodes[0].trace.path, "utf8"));
+  const questionInput = JSON.parse(fs.readFileSync(questionTrace.invocations[0].input.path, "utf8"));
+  questionInput.question = "A different and easier question.";
+  questionTrace.invocations[0].input = writeJson("different-question-input.json", questionInput);
+  differentQuestion.soloBundle.episodes[0].trace = writeJson(
+    "different-question-trace.json", questionTrace);
+  expectFailure(() => compileWisdomCeremony(differentQuestion, {baseDir: repoRoot}),
+    /different question/);
+  const differentEvidence = clone(ceremony);
+  delete differentEvidence.ceremonyBindings;
+  const evidenceTrace = JSON.parse(fs.readFileSync(
+    differentEvidence.soloBundle.episodes[0].trace.path, "utf8"));
+  const evidenceInput = JSON.parse(fs.readFileSync(evidenceTrace.invocations[0].input.path, "utf8"));
+  evidenceInput.evidence = evidenceInput.evidence.slice(0, 1);
+  evidenceTrace.invocations[0].input = writeJson("different-evidence-input.json", evidenceInput);
+  differentEvidence.soloBundle.episodes[0].trace = writeJson(
+    "different-evidence-trace.json", evidenceTrace);
+  expectFailure(() => compileWisdomCeremony(differentEvidence, {baseDir: repoRoot}),
+    /different evidence/);
+  const missingCouncilRoute = clone(ceremony);
+  delete missingCouncilRoute.ceremonyBindings;
+  const routeEntry = missingCouncilRoute.councilBundle.episodes[0];
+  const routeRequest = JSON.parse(fs.readFileSync(routeEntry.request.path, "utf8"));
+  routeRequest.actions = routeRequest.actions.filter((action) => action.action_id !== "solo-bad");
+  routeRequest.controller.allowed_action_ids = routeRequest.controller.allowed_action_ids.filter(
+    (actionId) => actionId !== "solo-bad");
+  const routeReceipt = deliberate(routeRequest);
+  routeEntry.request = writeJson("missing-route-request.json", routeRequest);
+  const routeReceiptArtifact = writeJson("missing-route-receipt.json", routeReceipt);
+  routeEntry.receipt = {
+    path: routeReceiptArtifact.path,
+    artifact_sha256: routeReceiptArtifact.sha256,
+    receipt_sha256: routeReceipt.identity.receipt_sha256,
+  };
+  expectFailure(() => compileWisdomCeremony(missingCouncilRoute, {baseDir: repoRoot}),
+    /frozen decision has no council route/);
 
   process.stdout.write(`${JSON.stringify({
     schema: "nsrl.solomon_wisdom_ceremony_self_check.v0",
@@ -392,6 +457,8 @@ try {
     gold_opening_binds_both_lane_bundles: true,
     provenance_sets_exact: true,
     casebook_freeze_and_gold_opening_replay: true,
+    identical_question_and_evidence_enforced: true,
+    shared_decision_surface_enforced: true,
     self_test_cannot_authorize_promotion: true,
   }, null, 2)}\n`);
 } finally {

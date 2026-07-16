@@ -72,8 +72,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "episode_id", "dimension", "source_family", "unfamiliar_source", "evidence",
-        "decision_ids", "nonce", "gold"
+        "episode_id", "dimension", "source_family", "unfamiliar_source", "question",
+        "evidence", "decision_ids", "nonce", "gold"
       ],
       "properties": {
         "episode_id": {"type": "string", "minLength": 1},
@@ -86,6 +86,7 @@
         },
         "source_family": {"type": "string", "minLength": 1},
         "unfamiliar_source": {"type": "boolean"},
+        "question": {"type": "string", "minLength": 1},
         "evidence": {
           "type": "array", "minItems": 1, "uniqueItems": true,
           "items": {"$ref": "#/$defs/artifact"}

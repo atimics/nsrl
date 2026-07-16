@@ -110,12 +110,13 @@ function validateCasebook(casebook, baseDir) {
   const byId = new Map();
   for (const entry of casebook.cases) {
     exactKeys(entry, [
-      "episode_id", "dimension", "source_family", "unfamiliar_source", "evidence",
-      "decision_ids", "gold_commitment_sha256",
+      "episode_id", "dimension", "source_family", "unfamiliar_source", "question",
+      "evidence", "decision_ids", "gold_commitment_sha256",
     ], [], `casebook case ${entry?.episode_id ?? "unknown"}`);
     nonempty(entry.episode_id, "casebook episode id");
     assert(WISDOM_DIMENSIONS.includes(entry.dimension), `unknown wisdom dimension ${entry.dimension}`);
     nonempty(entry.source_family, `casebook ${entry.episode_id} source family`);
+    nonempty(entry.question, `casebook ${entry.episode_id} question`);
     assert(typeof entry.unfamiliar_source === "boolean",
       `casebook ${entry.episode_id} unfamiliar-source flag must be boolean`);
     if (entry.dimension === "unfamiliar_source_transfer") {
@@ -176,7 +177,26 @@ function validateTrace(trace, lane, caseEntry, modelHash, baseDir, label) {
     invocationIds.push(invocation.invocation_id);
     assert(expectedRoles.includes(invocation.role), `${label} has unauthorized role ${invocation.role}`);
     assert(invocation.model_sha256 === modelHash, `${label} invocation used another model`);
-    verifyArtifact(invocation.input, baseDir, `${label} ${invocation.role} input`);
+    const input = parseJsonArtifact(invocation.input, baseDir,
+      `${label} ${invocation.role} input`);
+    exactKeys(input.value, [
+      "schema", "ceremony_id", "episode_id", "role", "model_sha256", "question",
+      "evidence", "gold_accessed",
+    ], [], `${label} ${invocation.role} model input`);
+    assert(input.value.schema === "nsrl.solomon_wisdom_model_input.v0",
+      `${label} ${invocation.role} input schema changed`);
+    assert(input.value.ceremony_id === trace.ceremony_id
+      && input.value.episode_id === caseEntry.episode_id
+      && input.value.role === invocation.role,
+    `${label} ${invocation.role} input binding changed`);
+    assert(input.value.model_sha256 === modelHash,
+      `${label} ${invocation.role} input model changed`);
+    assert(input.value.question === caseEntry.question,
+      `${label} ${invocation.role} received a different question`);
+    assert(stableJson(input.value.evidence) === stableJson(caseEntry.evidence),
+      `${label} ${invocation.role} received different evidence`);
+    assert(input.value.gold_accessed === false,
+      `${label} ${invocation.role} input exposed gold`);
     const output = parseJsonArtifact(invocation.output, baseDir, `${label} ${invocation.role} output`);
     outputs.set(invocation.role, output.value);
   }
@@ -242,6 +262,15 @@ function validateBundle(bundle, lane, casebook, casebookHash, casesById, baseDir
         `council bundle ${entry.episode_id} receipt identity changed`);
       assert(receiptArtifact.value.request.request_sha256 === sha256Json(requestArtifact.value),
         `council bundle ${entry.episode_id} request binding changed`);
+      assert(requestArtifact.value.question === caseEntry.question,
+        `council bundle ${entry.episode_id} request question differs from casebook`);
+      const requestActionIds = requestArtifact.value.actions.map((action) => action.action_id);
+      const terminalDecisionIds = new Set(["request_evidence", "ask_user", "abstain"]);
+      assert(requestActionIds.every((actionId) => caseEntry.decision_ids.includes(actionId)),
+        `council bundle ${entry.episode_id} request action is outside the frozen decision set`);
+      assert(caseEntry.decision_ids.every((decisionId) => requestActionIds.includes(decisionId)
+          || terminalDecisionIds.has(decisionId)),
+      `council bundle ${entry.episode_id} frozen decision has no council route`);
       const models = receiptArtifact.value.bindings.models;
       assert(Array.isArray(models) && models.length === 1 && models[0].artifact_sha256 === modelHash,
         `council bundle ${entry.episode_id} receipt is not bound to exactly the frozen model`);
@@ -432,8 +461,8 @@ export function freezeWisdomCasebook(draft, {baseDir = process.cwd()} = {}) {
   const gold = [];
   for (const entry of draft.cases) {
     exactKeys(entry, [
-      "episode_id", "dimension", "source_family", "unfamiliar_source", "evidence",
-      "decision_ids", "nonce", "gold",
+      "episode_id", "dimension", "source_family", "unfamiliar_source", "question",
+      "evidence", "decision_ids", "nonce", "gold",
     ], [], `wisdom casebook draft ${entry?.episode_id ?? "unknown"}`);
     hash(entry.nonce, `wisdom casebook draft ${entry.episode_id} nonce`);
     const publicEntry = {
@@ -441,6 +470,7 @@ export function freezeWisdomCasebook(draft, {baseDir = process.cwd()} = {}) {
       dimension: entry.dimension,
       source_family: entry.source_family,
       unfamiliar_source: entry.unfamiliar_source,
+      question: entry.question,
       evidence: entry.evidence,
       decision_ids: entry.decision_ids,
       gold_commitment_sha256: goldCommitment(entry.episode_id, entry.nonce, entry.gold),
