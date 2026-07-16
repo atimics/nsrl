@@ -69,6 +69,7 @@ struct Config {
     top_k: usize,
     stop_on_eos: bool,
     spread_windows: bool,
+    targets_per_window: usize,
     max_windows: usize,
     epochs: usize,
     feature_shift: u8,
@@ -85,6 +86,7 @@ struct Config {
     vector_learning_rate_shift: u8,
     final_rms_learning_rate_shift: Option<u8>,
     embedding_learning_rate_shift: u8,
+    embedding_learning_rate_boost_shift: u8,
     output_learning_rate_shift: u8,
     output_backward_shift: Option<u8>,
     probability_gradient_fractional_bits: u8,
@@ -148,6 +150,7 @@ impl Default for Config {
             top_k: 1,
             stop_on_eos: true,
             spread_windows: false,
+            targets_per_window: full.targets_per_window,
             max_windows: smoke.max_windows,
             epochs: smoke.epochs,
             feature_shift: smoke.feature_shift,
@@ -164,6 +167,7 @@ impl Default for Config {
             vector_learning_rate_shift: full.vector_learning_rate_shift,
             final_rms_learning_rate_shift: full.final_rms_learning_rate_shift,
             embedding_learning_rate_shift: full.embedding_learning_rate_shift,
+            embedding_learning_rate_boost_shift: full.embedding_learning_rate_boost_shift,
             output_learning_rate_shift: full.output_learning_rate_shift,
             output_backward_shift: full.output_backward_shift,
             probability_gradient_fractional_bits: full.probability_gradient_fractional_bits,
@@ -1127,6 +1131,7 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
         context_tokens: config.context_tokens,
         max_windows: config.max_windows,
         spread_windows: config.spread_windows,
+        targets_per_window: config.targets_per_window,
         epochs: config.epochs,
         matrix_learning_rate_shift: config.matrix_learning_rate_shift,
         q_learning_rate_shift: config.q_learning_rate_shift,
@@ -1139,6 +1144,7 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
         vector_learning_rate_shift: config.vector_learning_rate_shift,
         final_rms_learning_rate_shift: config.final_rms_learning_rate_shift,
         embedding_learning_rate_shift: config.embedding_learning_rate_shift,
+        embedding_learning_rate_boost_shift: config.embedding_learning_rate_boost_shift,
         output_learning_rate_shift: config.output_learning_rate_shift,
         output_backward_shift: config.output_backward_shift,
         probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
@@ -1348,6 +1354,9 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--top-k" => config.top_k = next(&mut args, "--top-k")?.parse()?,
             "--no-stop-on-eos" => config.stop_on_eos = false,
             "--spread-windows" => config.spread_windows = true,
+            "--targets-per-window" => {
+                config.targets_per_window = next(&mut args, "--targets-per-window")?.parse()?
+            }
             "--max-windows" => config.max_windows = next(&mut args, "--max-windows")?.parse()?,
             "--epochs" => config.epochs = next(&mut args, "--epochs")?.parse()?,
             "--feature-shift" => {
@@ -1394,6 +1403,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--embedding-learning-rate-shift" => {
                 config.embedding_learning_rate_shift =
                     next(&mut args, "--embedding-learning-rate-shift")?.parse()?
+            }
+            "--embedding-learning-rate-boost-shift" => {
+                config.embedding_learning_rate_boost_shift =
+                    next(&mut args, "--embedding-learning-rate-boost-shift")?.parse()?
             }
             "--output-learning-rate-shift" => {
                 config.output_learning_rate_shift =
@@ -1579,7 +1592,7 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream.\n"
+        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor.\n"
     );
     println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
@@ -1591,7 +1604,7 @@ fn print_help() {
         "Prospective confirmation:\n  nsrl-production-model boolean-jet-confirmation-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH --expected-base-model-hash U64 --expected-tokenizer-hash U64 --expected-token-stream-hash U64 --expected-move-fingerprint U64 --expected-manifest-hash U64 --trunk-move GROUP:COORDINATE:DELTA... --head-move GROUP:COORDINATE:DELTA... --control-move GROUP:COORDINATE:DELTA... [--proposal-document-start N] [--proposal-documents N] [--transfer-document-start N] [--transfer-documents N] [--windows-per-document N] [--minimum-documents N]\n"
     );
     println!(
-        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model numeric-contract [--profile p10m|p20m|p30m | --model PATH] [--trace PATH] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model generate --tokenizer PATH --model PATH (--prompt TEXT | --prompt-file PATH) --trace PATH [--generated-out PATH] [--context-tokens N] [--max-new-tokens N] [--top-k N] [--seed N] [--no-stop-on-eos]\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model evaluate-canonical --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model gradient-alignment-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N] [--transfer-windows N] [--documents-per-surface N] [--rescue-stratified-sampling] [--include-mass-corrected-no-rescue] [--coordinates-per-group N] [--seed N] [training numeric options]\n  nsrl-production-model compare-evaluate --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-resolution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-signal-attribution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--output-learning-rate-shift N] [--output-backward-shift N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division]
+        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model numeric-contract [--profile p10m|p20m|p30m | --model PATH] [--trace PATH] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model generate --tokenizer PATH --model PATH (--prompt TEXT | --prompt-file PATH) --trace PATH [--generated-out PATH] [--context-tokens N] [--max-new-tokens N] [--top-k N] [--seed N] [--no-stop-on-eos]\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model evaluate-canonical --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model gradient-alignment-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N] [--transfer-windows N] [--documents-per-surface N] [--rescue-stratified-sampling] [--include-mass-corrected-no-rescue] [--coordinates-per-group N] [--seed N] [training numeric options]\n  nsrl-production-model compare-evaluate --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-resolution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-signal-attribution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--targets-per-window N] [--spread-windows] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--embedding-learning-rate-boost-shift N] [--output-learning-rate-shift N] [--output-backward-shift N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division]
   nsrl-production-model direct-head-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]
   nsrl-production-model direct-feature-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]"
     );
@@ -1661,9 +1674,15 @@ mod tests {
             "--trace",
             "trace.json",
             "--spread-windows",
+            "--targets-per-window",
+            "4",
+            "--embedding-learning-rate-boost-shift",
+            "1",
         ]))
         .expect("spread training arguments");
         assert!(config.spread_windows);
+        assert_eq!(config.targets_per_window, 4);
+        assert_eq!(config.embedding_learning_rate_boost_shift, 1);
     }
 
     #[test]

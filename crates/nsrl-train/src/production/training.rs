@@ -209,6 +209,7 @@ pub struct ProductionFullTrainConfig {
     pub context_tokens: usize,
     pub max_windows: usize,
     pub spread_windows: bool,
+    pub targets_per_window: usize,
     pub epochs: usize,
     pub matrix_learning_rate_shift: u8,
     pub q_learning_rate_shift: Option<u8>,
@@ -220,6 +221,7 @@ pub struct ProductionFullTrainConfig {
     pub down_learning_rate_shift: Option<u8>,
     pub vector_learning_rate_shift: u8,
     pub embedding_learning_rate_shift: u8,
+    pub embedding_learning_rate_boost_shift: u8,
     pub output_learning_rate_shift: u8,
     pub final_rms_learning_rate_shift: Option<u8>,
     pub output_backward_shift: Option<u8>,
@@ -236,6 +238,7 @@ impl Default for ProductionFullTrainConfig {
             context_tokens: 4,
             max_windows: 8,
             spread_windows: false,
+            targets_per_window: 1,
             epochs: 2,
             matrix_learning_rate_shift: 16,
             q_learning_rate_shift: None,
@@ -247,6 +250,7 @@ impl Default for ProductionFullTrainConfig {
             down_learning_rate_shift: None,
             vector_learning_rate_shift: 10,
             embedding_learning_rate_shift: 4,
+            embedding_learning_rate_boost_shift: 0,
             output_learning_rate_shift: 24,
             final_rms_learning_rate_shift: None,
             output_backward_shift: None,
@@ -421,6 +425,9 @@ pub struct ProductionFullTrainTrace {
     pub context_tokens: usize,
     pub windows: usize,
     pub spread_windows: bool,
+    pub targets_per_window: usize,
+    pub supervised_targets: usize,
+    pub embedding_learning_rate_boost_shift: u8,
     pub epochs: usize,
     pub initial_mistakes: usize,
     pub final_mistakes: usize,
@@ -560,6 +567,26 @@ impl ProductionFullTrainTrace {
                 ",\"window_selection\":\"deterministic_uniform_target_rank_over_all_documents\",\"evaluation_windows\"",
             );
         }
+        if self.targets_per_window > 1 {
+            output = output.replace(
+                ",\"evaluation_windows\"",
+                &format!(
+                    ",\"target_policy\":\"causal_suffix_mean_v1\",\"targets_per_window\":{},\"target_mean_shift\":{},\"mean_reduction\":\"parameter_update_power_of_two_shift\",\"supervised_targets\":{},\"evaluation_windows\"",
+                    self.targets_per_window,
+                    self.targets_per_window.trailing_zeros(),
+                    self.supervised_targets,
+                ),
+            );
+        }
+        if self.embedding_learning_rate_boost_shift > 0 {
+            output = output.replace(
+                ",\"learning_rate_shifts\"",
+                &format!(
+                    ",\"embedding_learning_rate_boost_shift\":{},\"learning_rate_shifts\"",
+                    self.embedding_learning_rate_boost_shift,
+                ),
+            );
+        }
         output
     }
 }
@@ -582,6 +609,7 @@ struct LayerCache {
 struct ForwardCache {
     layers: Vec<LayerCache>,
     final_hidden: Vec<i16>,
+    target_rows: usize,
     features: Vec<i16>,
     logits: Vec<i32>,
     probabilities: Vec<i32>,
@@ -769,6 +797,13 @@ pub fn train_production_full_smoke(
     if config.context_tokens == 0
         || config.context_tokens > model.config.context_tokens
         || config.max_windows == 0
+        || config.targets_per_window == 0
+        || config.targets_per_window > config.context_tokens
+        || !config.targets_per_window.is_power_of_two()
+        || config.embedding_learning_rate_boost_shift
+            > config
+                .embedding_learning_rate_shift
+                .saturating_add(target_mean_shift(config))
         || config.epochs == 0
         || config.batch_windows == 0
         || config.max_optimizer_steps == 0
@@ -783,10 +818,12 @@ pub fn train_production_full_smoke(
         || config
             .output_learning_rate_shift
             .saturating_add(config.probability_gradient_fractional_bits - 15)
+            .saturating_add(target_mean_shift(config))
             > 62
         || config
             .vector_learning_rate_shift
             .saturating_add(config.probability_gradient_fractional_bits - 15)
+            .saturating_add(target_mean_shift(config))
             > 62
         || effective_learning_rate_shifts(config)
             .iter()
@@ -821,22 +858,25 @@ pub fn train_production_full_smoke(
     let ranges = ParameterRanges::new(model);
     let mut stats = UpdateStats::default();
     let mut optimizer_steps = 0_usize;
+    let mut supervised_targets = 0_usize;
     while state.next_epoch < config.epochs as u64 && optimizer_steps < config.max_optimizer_steps {
         let batch_start = state.next_window as usize;
         let batch_end = batch_start
             .saturating_add(config.batch_windows)
             .min(windows.len());
         for (index, (context, target)) in windows[batch_start..batch_end].iter().enumerate() {
-            let cache = forward_cache(
+            let targets = causal_suffix_targets(context, *target, config.targets_per_window)?;
+            let cache = forward_cache_for_target_rows(
                 model,
                 context,
+                targets.len(),
                 config.probability_gradient_fractional_bits,
                 config.probability_normalization,
             )?;
-            backward_update(
+            backward_update_targets(
                 model,
                 context,
-                *target as usize,
+                &targets,
                 cache,
                 config,
                 &ranges,
@@ -844,6 +884,7 @@ pub fn train_production_full_smoke(
                 index + 1 == batch_end - batch_start,
                 &mut stats,
             )?;
+            supervised_targets = supervised_targets.saturating_add(targets.len());
         }
         state.step = state.step.checked_add(1).ok_or(TrainError::InvalidConfig)?;
         optimizer_steps = optimizer_steps.saturating_add(1);
@@ -864,6 +905,9 @@ pub fn train_production_full_smoke(
         context_tokens: config.context_tokens,
         windows: windows.len(),
         spread_windows: config.spread_windows,
+        targets_per_window: config.targets_per_window,
+        supervised_targets,
+        embedding_learning_rate_boost_shift: config.embedding_learning_rate_boost_shift,
         epochs: config.epochs,
         initial_mistakes,
         final_mistakes,
@@ -890,10 +934,12 @@ pub fn train_production_full_smoke(
             .saturating_add(config.probability_gradient_fractional_bits - 15),
         effective_output_learning_rate_shift: config
             .output_learning_rate_shift
-            .saturating_add(config.probability_gradient_fractional_bits - 15),
+            .saturating_add(config.probability_gradient_fractional_bits - 15)
+            .saturating_add(target_mean_shift(config)),
         effective_bias_learning_rate_shift: config
             .vector_learning_rate_shift
-            .saturating_add(config.probability_gradient_fractional_bits - 15),
+            .saturating_add(config.probability_gradient_fractional_bits - 15)
+            .saturating_add(target_mean_shift(config)),
         gradient_saturation_count: stats.gradient_saturation,
         residual_saturation_count: stats.residual_saturation,
         weight_saturation_count: stats.weight_saturation,
@@ -918,9 +964,27 @@ fn forward_cache(
     probability_gradient_fractional_bits: u8,
     probability_normalization: SoftmaxNormalization,
 ) -> Result<ForwardCache, TrainError> {
+    forward_cache_for_target_rows(
+        model,
+        context_tokens,
+        1,
+        probability_gradient_fractional_bits,
+        probability_normalization,
+    )
+}
+
+fn forward_cache_for_target_rows(
+    model: &ProductionModelV1,
+    context_tokens: &[u32],
+    target_rows: usize,
+    probability_gradient_fractional_bits: u8,
+    probability_normalization: SoftmaxNormalization,
+) -> Result<ForwardCache, TrainError> {
     let config = model.config;
     if context_tokens.is_empty()
         || context_tokens.len() > config.context_tokens
+        || target_rows == 0
+        || target_rows > context_tokens.len()
         || context_tokens
             .iter()
             .any(|&token| token as usize >= config.vocab_size)
@@ -1066,36 +1130,41 @@ fn forward_cache(
         });
     }
     let final_hidden = hidden;
-    let last = (seq_len - 1) * config.d_model;
-    let mut features = vec![0_i16; config.d_model];
-    rms_norm_i16_q15_checked(
-        &final_hidden[last..last + config.d_model],
+    let first_target_row = seq_len - target_rows;
+    let features = rms_rows(
+        &final_hidden[first_target_row * config.d_model..],
         &model.final_rms_weights,
-        PRODUCTION_RMS_EPSILON,
-        &mut features,
-    )
-    .ok_or(TrainError::CoreRejected("production_training_final_rms"))?;
-    let logits = output_logits(model, &features);
-    let probabilities = if probability_gradient_fractional_bits == 15
-        && probability_normalization == SoftmaxNormalization::LegacyQ31Lut
-    {
-        let mut q15 = vec![0_i16; config.vocab_size];
-        base2_softmax_i32_q15(&logits, &mut q15)
-            .ok_or(TrainError::CoreRejected("production_training_softmax"))?;
-        q15.into_iter().map(i32::from).collect()
-    } else {
-        let mut q31 = vec![0_u32; config.vocab_size];
-        base2_softmax_i32_q31_with_normalization(&logits, &mut q31, probability_normalization)
+        config.d_model,
+    )?;
+    let mut logits = Vec::with_capacity(target_rows * config.vocab_size);
+    let mut probabilities = Vec::with_capacity(target_rows * config.vocab_size);
+    for feature_row in features.chunks_exact(config.d_model) {
+        let row_logits = output_logits(model, feature_row);
+        if probability_gradient_fractional_bits == 15
+            && probability_normalization == SoftmaxNormalization::LegacyQ31Lut
+        {
+            let mut q15 = vec![0_i16; config.vocab_size];
+            base2_softmax_i32_q15(&row_logits, &mut q15)
+                .ok_or(TrainError::CoreRejected("production_training_softmax"))?;
+            probabilities.extend(q15.into_iter().map(i32::from));
+        } else {
+            let mut q31 = vec![0_u32; config.vocab_size];
+            base2_softmax_i32_q31_with_normalization(
+                &row_logits,
+                &mut q31,
+                probability_normalization,
+            )
             .ok_or(TrainError::CoreRejected("production_training_softmax_wide"))?;
-        q31.into_iter()
-            .map(|probability| {
+            probabilities.extend(q31.into_iter().map(|probability| {
                 quantize_probability_q31(probability, probability_gradient_fractional_bits)
-            })
-            .collect()
-    };
+            }));
+        }
+        logits.extend(row_logits);
+    }
     Ok(ForwardCache {
         layers,
         final_hidden,
+        target_rows,
         features,
         logits,
         probabilities,
@@ -1109,12 +1178,36 @@ fn output_gradient(
     source: GradientSource,
     stochastic_seed: u64,
 ) -> Result<(Vec<i32>, u8), TrainError> {
-    if target >= cache.probabilities.len() || cache.logits.len() != cache.probabilities.len() {
+    if cache.target_rows != 1 {
         return Err(TrainError::InvalidConfig);
     }
+    output_gradient_row(cache, 0, target, config, source, stochastic_seed)
+}
+
+fn output_gradient_row(
+    cache: &ForwardCache,
+    row: usize,
+    target: usize,
+    config: ProductionFullTrainConfig,
+    source: GradientSource,
+    stochastic_seed: u64,
+) -> Result<(Vec<i32>, u8), TrainError> {
+    if row >= cache.target_rows
+        || cache.logits.len() != cache.probabilities.len()
+        || !cache.logits.len().is_multiple_of(cache.target_rows)
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let vocabulary = cache.logits.len() / cache.target_rows;
+    if target >= vocabulary {
+        return Err(TrainError::InvalidConfig);
+    }
+    let range = row * vocabulary..(row + 1) * vocabulary;
+    let logits = &cache.logits[range.clone()];
+    let probabilities = &cache.probabilities[range];
     match source {
         GradientSource::NormalizedProbability => {
-            let mut gradient = cache.probabilities.clone();
+            let mut gradient = probabilities.to_vec();
             let gradient_scale = ((1_u64 << config.probability_gradient_fractional_bits) - 1)
                 .try_into()
                 .map_err(|_| TrainError::InvalidConfig)?;
@@ -1122,7 +1215,7 @@ fn output_gradient(
             Ok((gradient, config.probability_gradient_fractional_bits - 15))
         }
         GradientSource::MassCorrectedNormalizedProbability => {
-            let mut gradient = cache.probabilities.clone();
+            let mut gradient = probabilities.to_vec();
             let non_target_mass = gradient
                 .iter()
                 .enumerate()
@@ -1139,14 +1232,12 @@ fn output_gradient(
             Ok((gradient, config.probability_gradient_fractional_bits - 15))
         }
         GradientSource::ReciprocalFreeWeights => {
-            let maximum = cache
-                .logits
+            let maximum = logits
                 .iter()
                 .copied()
                 .max()
                 .ok_or(TrainError::InvalidConfig)?;
-            let mut gradient = cache
-                .logits
+            let mut gradient = logits
                 .iter()
                 .map(|&logit| i32::from(base2_exp_neg_q15(logit.saturating_sub(maximum))))
                 .collect::<Vec<_>>();
@@ -1172,13 +1263,13 @@ fn output_gradient(
             Ok((gradient, vocabulary_shift as u8))
         }
         GradientSource::SystematicFixedMassK15 => {
-            systematic_fixed_mass_gradient(&cache.logits, target, 1_u32 << 15, stochastic_seed)
+            systematic_fixed_mass_gradient(logits, target, 1_u32 << 15, stochastic_seed)
         }
         GradientSource::SystematicFixedMassK16 => {
-            systematic_fixed_mass_gradient(&cache.logits, target, 1_u32 << 16, stochastic_seed)
+            systematic_fixed_mass_gradient(logits, target, 1_u32 << 16, stochastic_seed)
         }
         GradientSource::SystematicFixedMassK18 => {
-            systematic_fixed_mass_gradient(&cache.logits, target, 1_u32 << 18, stochastic_seed)
+            systematic_fixed_mass_gradient(logits, target, 1_u32 << 18, stochastic_seed)
         }
     }
 }
@@ -1292,7 +1383,7 @@ pub(super) fn coarse_gradients_for_window_with_spec(
     backward_update_with_spec(
         model,
         context_tokens,
-        target,
+        &[target],
         cache,
         config,
         &ranges,
@@ -1317,10 +1408,10 @@ pub(super) fn coarse_gradients_for_window_with_spec(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn backward_update(
+fn backward_update_targets(
     model: &mut ProductionModelV1,
     context_tokens: &[u32],
-    target: usize,
+    targets: &[usize],
     cache: ForwardCache,
     config: ProductionFullTrainConfig,
     ranges: &ParameterRanges,
@@ -1333,7 +1424,7 @@ fn backward_update(
     backward_update_with_spec(
         model,
         context_tokens,
-        target,
+        targets,
         cache,
         config,
         ranges,
@@ -1349,7 +1440,7 @@ fn backward_update(
 fn backward_update_with_spec(
     model: &mut ProductionModelV1,
     context_tokens: &[u32],
-    target: usize,
+    targets: &[usize],
     cache: ForwardCache,
     config: ProductionFullTrainConfig,
     ranges: &ParameterRanges,
@@ -1362,46 +1453,87 @@ fn backward_update_with_spec(
     let c = model.config;
     let seq_len = context_tokens.len();
     let total = seq_len * c.d_model;
-    let (grad_logits, precision_shift) =
-        output_gradient(&cache, target, config, spec.source, spec.stochastic_seed)?;
-    let mut grad_features = vec![0_i16; c.d_model];
-    for (dim, grad_feature) in grad_features.iter_mut().enumerate() {
-        let mut acc = 0_i64;
-        for (token, &grad) in grad_logits.iter().enumerate() {
-            acc = acc.saturating_add(
-                i64::from(grad) * i64::from(model.output_weights[token * c.d_model + dim]),
+    if targets.is_empty()
+        || targets.len() != cache.target_rows
+        || targets.len() > seq_len
+        || cache.features.len() != targets.len() * c.d_model
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut gradients = Vec::with_capacity(targets.len());
+    let mut precision_shift = None;
+    for (row, &target) in targets.iter().enumerate() {
+        let (gradient, row_precision_shift) = output_gradient_row(
+            &cache,
+            row,
+            target,
+            config,
+            spec.source,
+            spec.stochastic_seed.wrapping_add(row as u64),
+        )?;
+        if precision_shift
+            .replace(row_precision_shift)
+            .is_some_and(|value| value != row_precision_shift)
+        {
+            return Err(TrainError::InvalidConfig);
+        }
+        gradients.push(gradient);
+    }
+    let precision_shift = precision_shift.ok_or(TrainError::InvalidConfig)?;
+    let mut grad_features = vec![0_i16; targets.len() * c.d_model];
+    for (row, grad_logits) in gradients.iter().enumerate() {
+        for dim in 0..c.d_model {
+            let mut acc = 0_i64;
+            for (token, &grad) in grad_logits.iter().enumerate() {
+                acc = acc.saturating_add(
+                    i64::from(grad) * i64::from(model.output_weights[token * c.d_model + dim]),
+                );
+            }
+            grad_features[row * c.d_model + dim] = saturate_i16(
+                quantizer.shift(
+                    acc,
+                    config
+                        .output_backward_shift
+                        .unwrap_or(model.scales.output_shift)
+                        .saturating_add(precision_shift),
+                    stats,
+                ),
             );
         }
-        *grad_feature = saturate_i16(
-            quantizer.shift(
-                acc,
-                config
-                    .output_backward_shift
-                    .unwrap_or(model.scales.output_shift)
-                    .saturating_add(precision_shift),
-                stats,
-            ),
-        );
     }
-    for (token, &grad) in grad_logits.iter().enumerate() {
+    for token in 0..c.vocab_size {
+        let bias_gradient = gradients
+            .iter()
+            .fold(0_i64, |sum, row| sum.saturating_add(i64::from(row[token])));
         update_i32(
             &mut model.output_bias_q8[token],
-            i64::from(grad),
+            bias_gradient,
             config
                 .vector_learning_rate_shift
-                .saturating_add(precision_shift),
+                .saturating_add(precision_shift)
+                .saturating_add(target_mean_shift(config)),
             &mut residuals[ranges.bias.start + token],
             apply_updates,
             12,
             stats,
         );
-        for (dim, &feature) in cache.features.iter().enumerate() {
+        for dim in 0..c.d_model {
+            let gradient = gradients
+                .iter()
+                .enumerate()
+                .fold(0_i64, |sum, (row, grad_logits)| {
+                    sum.saturating_add(
+                        i64::from(grad_logits[token])
+                            * i64::from(cache.features[row * c.d_model + dim]),
+                    )
+                });
             update_i16(
                 &mut model.output_weights[token * c.d_model + dim],
-                i64::from(grad) * i64::from(feature),
+                gradient,
                 config
                     .output_learning_rate_shift
-                    .saturating_add(precision_shift),
+                    .saturating_add(precision_shift)
+                    .saturating_add(target_mean_shift(config)),
                 &mut residuals[ranges.output.start + token * c.d_model + dim],
                 apply_updates,
                 11,
@@ -1409,13 +1541,14 @@ fn backward_update_with_spec(
             );
         }
     }
-    let final_start = total - c.d_model;
+    let final_start = (seq_len - targets.len()) * c.d_model;
     let mut grad_hidden = vec![0_i16; total];
     let mut final_gamma_grad = vec![0_i64; c.d_model];
-    rms_backward_row(
+    rms_backward_rows(
         &cache.final_hidden[final_start..],
         &model.final_rms_weights,
         &grad_features,
+        c.d_model,
         &mut grad_hidden[final_start..],
         &mut final_gamma_grad,
         stats,
@@ -1423,7 +1556,8 @@ fn backward_update_with_spec(
     update_i16_slice(
         &mut model.final_rms_weights,
         &final_gamma_grad,
-        vector_group_shift(config.vector_learning_rate_shift, 3),
+        vector_group_shift(config.vector_learning_rate_shift, 3)
+            .saturating_add(target_mean_shift(config)),
         &mut residuals[ranges.final_rms.clone()],
         apply_updates,
         3,
@@ -1567,7 +1701,8 @@ fn backward_update_with_spec(
         update_i16_slice(
             &mut model.mlp_rms_weights[rms_range.clone()],
             &mlp_gamma_grad,
-            vector_group_shift(config.vector_learning_rate_shift, 2),
+            vector_group_shift(config.vector_learning_rate_shift, 2)
+                .saturating_add(target_mean_shift(config)),
             &mut residuals[mlp_rms_residual_range],
             apply_updates,
             2,
@@ -1697,7 +1832,8 @@ fn backward_update_with_spec(
         update_i16_slice(
             &mut model.attention_rms_weights[rms_range],
             &attention_gamma_grad,
-            vector_group_shift(config.vector_learning_rate_shift, 1),
+            vector_group_shift(config.vector_learning_rate_shift, 1)
+                .saturating_add(target_mean_shift(config)),
             &mut residuals[attention_rms_residual_range],
             apply_updates,
             1,
@@ -1712,7 +1848,10 @@ fn backward_update_with_spec(
             update_i16(
                 &mut embedding[dim],
                 i64::from(grad_hidden[row * c.d_model + dim]),
-                config.embedding_learning_rate_shift,
+                config
+                    .embedding_learning_rate_shift
+                    .saturating_add(target_mean_shift(config))
+                    .saturating_sub(config.embedding_learning_rate_boost_shift),
                 &mut residuals[ranges.embeddings.start + token as usize * c.d_model + dim],
                 apply_updates,
                 0,
@@ -2198,6 +2337,25 @@ fn evaluate_mistakes(
     }
     Ok(n)
 }
+
+fn causal_suffix_targets(
+    context: &[u32],
+    final_target: u32,
+    targets_per_window: usize,
+) -> Result<Vec<usize>, TrainError> {
+    if targets_per_window == 0 || targets_per_window > context.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let first_context_target = context.len() - targets_per_window + 1;
+    let mut targets = context[first_context_target..]
+        .iter()
+        .map(|&token| token as usize)
+        .collect::<Vec<_>>();
+    targets.push(final_target as usize);
+    debug_assert_eq!(targets.len(), targets_per_window);
+    Ok(targets)
+}
+
 fn document_windows(tokens: &[u32], context: usize, max: usize) -> Vec<(Vec<u32>, u32)> {
     let mut windows = Vec::new();
     let mut doc = Vec::new();
@@ -2256,6 +2414,13 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     }
     if c.spread_windows {
         bytes.extend_from_slice(&[0xfd, 1]);
+    }
+    if c.targets_per_window > 1 {
+        bytes.extend_from_slice(&[0xfc]);
+        bytes.extend_from_slice(&(c.targets_per_window as u64).to_le_bytes());
+    }
+    if c.embedding_learning_rate_boost_shift > 0 {
+        bytes.extend_from_slice(&[0xfb, c.embedding_learning_rate_boost_shift]);
     }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
@@ -2326,17 +2491,24 @@ fn matrix_learning_rate_shift(config: ProductionFullTrainConfig, group: usize) -
         10 => config.down_learning_rate_shift,
         _ => None,
     };
-    explicit.unwrap_or_else(|| matrix_group_shift(config.matrix_learning_rate_shift, group))
+    explicit
+        .unwrap_or_else(|| matrix_group_shift(config.matrix_learning_rate_shift, group))
+        .saturating_add(target_mean_shift(config))
 }
 
 pub(super) fn effective_learning_rate_shifts(config: ProductionFullTrainConfig) -> [u8; 13] {
+    let mean_shift = target_mean_shift(config);
     [
-        config.embedding_learning_rate_shift,
-        vector_group_shift(config.vector_learning_rate_shift, 1),
-        vector_group_shift(config.vector_learning_rate_shift, 2),
+        config
+            .embedding_learning_rate_shift
+            .saturating_add(mean_shift)
+            .saturating_sub(config.embedding_learning_rate_boost_shift),
+        vector_group_shift(config.vector_learning_rate_shift, 1).saturating_add(mean_shift),
+        vector_group_shift(config.vector_learning_rate_shift, 2).saturating_add(mean_shift),
         config
             .final_rms_learning_rate_shift
-            .unwrap_or_else(|| vector_group_shift(config.vector_learning_rate_shift, 3)),
+            .unwrap_or_else(|| vector_group_shift(config.vector_learning_rate_shift, 3))
+            .saturating_add(mean_shift),
         matrix_learning_rate_shift(config, 4),
         matrix_learning_rate_shift(config, 5),
         matrix_learning_rate_shift(config, 6),
@@ -2344,9 +2516,13 @@ pub(super) fn effective_learning_rate_shifts(config: ProductionFullTrainConfig) 
         matrix_learning_rate_shift(config, 8),
         matrix_learning_rate_shift(config, 9),
         matrix_learning_rate_shift(config, 10),
-        config.output_learning_rate_shift,
-        config.vector_learning_rate_shift,
+        config.output_learning_rate_shift.saturating_add(mean_shift),
+        config.vector_learning_rate_shift.saturating_add(mean_shift),
     ]
+}
+
+fn target_mean_shift(config: ProductionFullTrainConfig) -> u8 {
+    config.targets_per_window.max(1).trailing_zeros() as u8
 }
 
 fn vector_group_shift(base: u8, group: usize) -> u8 {
@@ -2363,7 +2539,7 @@ mod tests {
 
     use super::{
         BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME,
-        ProductionFullTrainConfig, UpdateStats, accumulate_residual,
+        ProductionFullTrainConfig, UpdateStats, accumulate_residual, causal_suffix_targets,
         effective_learning_rate_shifts, schedule_hash, spread_document_windows,
         systematic_fixed_mass_gradient,
     };
@@ -2452,6 +2628,39 @@ mod tests {
             ..base
         };
         assert_ne!(schedule_hash(base), schedule_hash(spread));
+        let sequence = ProductionFullTrainConfig {
+            targets_per_window: 4,
+            ..base
+        };
+        assert_ne!(schedule_hash(base), schedule_hash(sequence));
+        assert_eq!(
+            effective_learning_rate_shifts(sequence),
+            [6, 8, 2, 8, 18, 22, 26, 18, 18, 18, 10, 26, 12]
+        );
+        let boosted_embedding = ProductionFullTrainConfig {
+            targets_per_window: 8,
+            embedding_learning_rate_shift: 0,
+            embedding_learning_rate_boost_shift: 1,
+            ..base
+        };
+        assert_eq!(effective_learning_rate_shifts(boosted_embedding)[0], 2);
+        assert_ne!(schedule_hash(sequence), schedule_hash(boosted_embedding));
+    }
+
+    #[test]
+    fn causal_suffix_targets_align_each_selected_row_with_its_next_token() {
+        let context = [10, 11, 12, 13];
+        assert_eq!(causal_suffix_targets(&context, 14, 1).unwrap(), [14]);
+        assert_eq!(
+            causal_suffix_targets(&context, 14, 3).unwrap(),
+            [12, 13, 14]
+        );
+        assert_eq!(
+            causal_suffix_targets(&context, 14, 4).unwrap(),
+            [11, 12, 13, 14]
+        );
+        assert!(causal_suffix_targets(&context, 14, 0).is_err());
+        assert!(causal_suffix_targets(&context, 14, 5).is_err());
     }
 
     #[test]

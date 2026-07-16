@@ -1,0 +1,143 @@
+{
+  "schema": "nsrl.open_generation_development_checkpoint.v1",
+  "contract": "open-generation-v1",
+  "partition": "development",
+  "candidate": {
+    "model_fnv64": "0x5144efe093d39404",
+    "tokenizer_fnv64": "0xf4fe71d93c438c1a"
+  },
+  "execution": {
+    "decoder": "incremental_linear_attention_cache_v1",
+    "sampling": {
+      "greedy": true,
+      "top_k": 40,
+      "seeds": [
+        7,
+        19,
+        43,
+        97
+      ]
+    },
+    "counts": {
+      "prompts": 12,
+      "samples": 60,
+      "generated_tokens": 30720,
+      "samples_beyond_training_context": 60
+    },
+    "cache": {
+      "maximum_state_bytes": 405504,
+      "maximum_workspace_bytes": 10240,
+      "maximum_tokens_processed": 568
+    },
+    "residual_saturation_count": 0,
+    "forbidden_assistance": {
+      "retrieval": false,
+      "corpus_prior": false,
+      "memory_injection": false,
+      "target_lookup": false,
+      "routing_oracle": false
+    }
+  },
+  "modeling": {
+    "sequence_policy": "reset_per_prompt_bos_then_score_candidate_tokens_no_eos",
+    "original_utf8_bytes": 1580,
+    "candidate_tokens": 448,
+    "total_nll_millibits": 5729015,
+    "millibits_per_original_utf8_byte": 3626,
+    "required_baselines_measured": false
+  },
+  "generation": {
+    "thresholds": {
+      "retained_improvement_per_mille": 900,
+      "max_repeat_4gram_share_per_mille": 150,
+      "min_unique_4gram_share_per_mille": 600,
+      "min_entropy_q10": 2048,
+      "min_utf8_valid_per_mille": 1000,
+      "min_context_use_per_mille": 750,
+      "min_distractor_resistance_per_mille": 700,
+      "min_human_preference_delta_per_mille": -100
+    },
+    "metrics": {
+      "max_repeat_4gram_share_per_mille": 999,
+      "min_unique_4gram_share_per_mille": 1,
+      "aggregate_unique_4gram_share_per_mille": 802,
+      "min_entropy_q10": 0,
+      "utf8_valid_per_mille": 1000,
+      "context_use_per_mille": 0,
+      "distractor_resistance_per_mille": 0
+    },
+    "gates": {
+      "complete_generation_matrix": true,
+      "incremental_cached_decoding": true,
+      "no_residual_saturation": true,
+      "repeat_4gram_health": false,
+      "unique_4gram_health": false,
+      "entropy_health": false,
+      "utf8_validity": true,
+      "context_use": false,
+      "distractor_resistance": false,
+      "forbidden_assistance_absent": true,
+      "development_generation_passed": false
+    }
+  },
+  "evidence_layers": {
+    "generation_health_measured": true,
+    "candidate_modeling_measured": true,
+    "modeling_measured": false,
+    "blinded_human_product_quality_measured": false,
+    "hidden_panel_measured": false,
+    "integer_transformer_proof_v1_bound": false
+  },
+  "missing_evidence": [
+    "required_baseline_bits_per_original_utf8_byte",
+    "retained_float_twin_improvement",
+    "blinded_human_preference",
+    "hidden_panel_generation",
+    "candidate_integer_transformer_proof_v1"
+  ],
+  "promotion_passed": false,
+  "artifacts": {
+    "run": {
+      "path": "data/experiments/open-generation-v1/p10m-causal-sequence-scale-v2/run.json",
+      "bytes": 935,
+      "fnv64": "0x599a2a1020a2001b",
+      "sha256": "2cbf638fb838b4f086aa9488c006e99639a6afc53da0b4f919f755243dae499a"
+    },
+    "modeling": {
+      "path": "data/experiments/open-generation-v1/p10m-causal-sequence-scale-v2/modeling.json",
+      "bytes": 3445,
+      "fnv64": "0xaeb12b8314944ba2",
+      "sha256": "ba32b012481789cf32bdb302df1f204e0e580c9a78f24664792a17b69b87e902"
+    },
+    "samples": {
+      "path": "data/experiments/open-generation-v1/p10m-causal-sequence-scale-v2/samples.jsonl",
+      "bytes": 278699,
+      "fnv64": "0xdc14deb2988fbcc3",
+      "sha256": "1248a617ae43cc7d1861389323b80c85c64cd276b14a095b459a7f75f7ba2851"
+    },
+    "decoder_traces": {
+      "path": "data/experiments/open-generation-v1/p10m-causal-sequence-scale-v2/decoder-traces.jsonl",
+      "bytes": 6578160,
+      "fnv64": "0x7b13f644fb73566e",
+      "sha256": "c2110130bfb49e2601a427286ff22c2a3a96f6202c165d26fae3144105194835"
+    },
+    "result": {
+      "path": "data/experiments/open-generation-v1/p10m-causal-sequence-scale-v2/result.json",
+      "bytes": 4087,
+      "fnv64": "0xeb59749d2dad5af6",
+      "sha256": "3292fb7dd5f107ad162ee7f1412bb943ce631fab6b9a982d15b2166cf5eb699e"
+    }
+  },
+  "runner_bindings": {
+    "generation_source_fnv64": "0x58cac41c3627f65c",
+    "generation_binary_fnv64": "0x6e1366a430b3e81c",
+    "modeling_source_fnv64": "0x577a8c661ecda0a4",
+    "modeling_binary_fnv64": "0xca68c2cba7944d37"
+  },
+  "known_non_claims": [
+    "development_baseline_not_model_promotion",
+    "required_modeling_baselines_not_measured",
+    "human_preference_not_measured",
+    "hidden_panel_not_opened_or_scored"
+  ]
+}

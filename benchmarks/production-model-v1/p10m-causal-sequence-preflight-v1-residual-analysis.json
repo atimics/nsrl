@@ -1,0 +1,183 @@
+{
+  "schema": "nsrl.production_optimizer_residual_analysis.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "optimizer_bytes": 74541140,
+    "optimizer_sha256": "67da27d0e1f88cd5fa66612f50ffd3bb26fac3c1df48006527f81566b35dcedf",
+    "optimizer_state_hash": "0x7c13b47896a764e7",
+    "trace_final_model_hash": "0xf72c406da5c09556",
+    "optimizer_step": 16
+  },
+  "groups": [
+    {
+      "group": "embeddings",
+      "parameters": 2097152,
+      "gradient_nonzero_count": 269,
+      "update_nonzero_count": 0,
+      "current_shift": 8,
+      "residual_nonzero_parameters": 501,
+      "maximum_absolute_residual": "2",
+      "boundary_shift": 2,
+      "required_shift_reduction": 6,
+      "predicted_parameter_crossings_at_boundary": 9
+    },
+    {
+      "group": "attention_rms",
+      "parameters": 1536,
+      "gradient_nonzero_count": 5497,
+      "update_nonzero_count": 0,
+      "current_shift": 16,
+      "residual_nonzero_parameters": 1466,
+      "maximum_absolute_residual": "151",
+      "boundary_shift": 8,
+      "required_shift_reduction": 8,
+      "predicted_parameter_crossings_at_boundary": 1
+    },
+    {
+      "group": "mlp_rms",
+      "parameters": 1536,
+      "gradient_nonzero_count": 2904,
+      "update_nonzero_count": 0,
+      "current_shift": 10,
+      "residual_nonzero_parameters": 1347,
+      "maximum_absolute_residual": "12",
+      "boundary_shift": 4,
+      "required_shift_reduction": 6,
+      "predicted_parameter_crossings_at_boundary": 52
+    },
+    {
+      "group": "final_rms",
+      "parameters": 256,
+      "gradient_nonzero_count": 8114,
+      "update_nonzero_count": 0,
+      "current_shift": 18,
+      "residual_nonzero_parameters": 256,
+      "maximum_absolute_residual": "3656",
+      "boundary_shift": 12,
+      "required_shift_reduction": 6,
+      "predicted_parameter_crossings_at_boundary": 24
+    },
+    {
+      "group": "q",
+      "parameters": 393216,
+      "gradient_nonzero_count": 1497068,
+      "update_nonzero_count": 0,
+      "current_shift": 26,
+      "residual_nonzero_parameters": 393215,
+      "maximum_absolute_residual": "449939",
+      "boundary_shift": 19,
+      "required_shift_reduction": 7,
+      "predicted_parameter_crossings_at_boundary": 1371
+    },
+    {
+      "group": "k",
+      "parameters": 393216,
+      "gradient_nonzero_count": 1457540,
+      "update_nonzero_count": 0,
+      "current_shift": 24,
+      "residual_nonzero_parameters": 393216,
+      "maximum_absolute_residual": "3355325",
+      "boundary_shift": 22,
+      "required_shift_reduction": 2,
+      "predicted_parameter_crossings_at_boundary": 512
+    },
+    {
+      "group": "v",
+      "parameters": 393216,
+      "gradient_nonzero_count": 331776,
+      "update_nonzero_count": 0,
+      "current_shift": 27,
+      "residual_nonzero_parameters": 285696,
+      "maximum_absolute_residual": "42365230",
+      "boundary_shift": 26,
+      "required_shift_reduction": 1,
+      "predicted_parameter_crossings_at_boundary": 42
+    },
+    {
+      "group": "o",
+      "parameters": 393216,
+      "gradient_nonzero_count": 331740,
+      "update_nonzero_count": 0,
+      "current_shift": 21,
+      "residual_nonzero_parameters": 285595,
+      "maximum_absolute_residual": "14046",
+      "boundary_shift": 14,
+      "required_shift_reduction": 7,
+      "predicted_parameter_crossings_at_boundary": 318
+    },
+    {
+      "group": "up",
+      "parameters": 1179648,
+      "gradient_nonzero_count": 6012356,
+      "update_nonzero_count": 0,
+      "current_shift": 25,
+      "residual_nonzero_parameters": 1179641,
+      "maximum_absolute_residual": "484220",
+      "boundary_shift": 19,
+      "required_shift_reduction": 6,
+      "predicted_parameter_crossings_at_boundary": 11664
+    },
+    {
+      "group": "gate",
+      "parameters": 1179648,
+      "gradient_nonzero_count": 6014519,
+      "update_nonzero_count": 0,
+      "current_shift": 26,
+      "residual_nonzero_parameters": 1179645,
+      "maximum_absolute_residual": "489790",
+      "boundary_shift": 19,
+      "required_shift_reduction": 7,
+      "predicted_parameter_crossings_at_boundary": 12059
+    },
+    {
+      "group": "down",
+      "parameters": 1179648,
+      "gradient_nonzero_count": 786677,
+      "update_nonzero_count": 0,
+      "current_shift": 13,
+      "residual_nonzero_parameters": 761471,
+      "maximum_absolute_residual": "94",
+      "boundary_shift": 7,
+      "required_shift_reduction": 6,
+      "predicted_parameter_crossings_at_boundary": 15
+    },
+    {
+      "group": "output",
+      "parameters": 2097152,
+      "gradient_nonzero_count": 67108864,
+      "update_nonzero_count": 0,
+      "current_shift": 44,
+      "residual_nonzero_parameters": 2097152,
+      "maximum_absolute_residual": "1204479433542",
+      "boundary_shift": 41,
+      "required_shift_reduction": 3,
+      "predicted_parameter_crossings_at_boundary": 2
+    },
+    {
+      "group": "bias",
+      "parameters": 8192,
+      "gradient_nonzero_count": 262144,
+      "update_nonzero_count": 0,
+      "current_shift": 28,
+      "residual_nonzero_parameters": 8192,
+      "maximum_absolute_residual": "41419904",
+      "boundary_shift": 26,
+      "required_shift_reduction": 2,
+      "predicted_parameter_crossings_at_boundary": 1
+    }
+  ],
+  "recommendation": {
+    "policy": "minimum_single_group_boundary_reduction_v1",
+    "group": "v",
+    "source_shift": 27,
+    "candidate_shift": 26,
+    "shift_reduction": 1,
+    "predicted_parameter_crossings": 42
+  },
+  "known_limitations": [
+    "boundary_is_inferred_from_accumulated_residual_state_not_a_loss_optimizer",
+    "candidate_requires_fresh_run_with_liveness_and_heldout_gates",
+    "single_group_action_is_a_bounded_policy_bootstrap_not_a_learned_controller"
+  ]
+}

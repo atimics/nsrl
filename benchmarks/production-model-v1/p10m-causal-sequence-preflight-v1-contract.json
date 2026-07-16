@@ -1,0 +1,83 @@
+{
+  "schema": "nsrl.production_causal_sequence_preflight_contract.v1",
+  "objective": "mean_integer_base2_next_token_nll_over_causal_suffix",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-kv-scaling-readiness/integer-model-7.nsrlpm",
+    "model_hash": "0xf72c406da5c09556",
+    "artifact_sha256": "2a4fd00f95dabbb9cf0083d3e3e0f21bbd56892dd54158ad8fa2698ef7513d58"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "training": {
+    "context_tokens": 8,
+    "targets_per_window": 8,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "optimizer_steps": 16,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "learning_rate_shifts": {
+      "embeddings": 8,
+      "attention_rms": 16,
+      "mlp_rms": 10,
+      "final_rms": 18,
+      "q": 26,
+      "k": 24,
+      "v": 27,
+      "o": 21,
+      "up": 25,
+      "gate": 26,
+      "down": 13,
+      "output": 36,
+      "bias": 20
+    },
+    "shift_derivation": "preexisting_integer_residual_boundaries_and_precontract_development_diagnostics_only"
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 8,
+    "windows": 512,
+    "selection_partition": "development",
+    "single_use_confirmation_partition": "test",
+    "source_dev_total_nll_millibits": 6652129,
+    "source_test_total_nll_millibits": 6657935,
+    "test_candidate_must_not_be_scored_unless_development_improves": true
+  },
+  "gates": {
+    "development_total_nll_strictly_improves": true,
+    "test_total_nll_strictly_improves": true,
+    "all_eleven_trunk_groups_move": true,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "exact_restart_replay": true
+  },
+  "authorization": {
+    "local_preflight": true,
+    "open_generation_rerun": false,
+    "open_generation_rerun_requires_development_and_test_improvement": true,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_64_window_preflight_not_language_quality",
+    "test_is_confirmation_only_not_model_selection",
+    "preflight_success_does_not_pass_open_generation_v1"
+  ]
+}

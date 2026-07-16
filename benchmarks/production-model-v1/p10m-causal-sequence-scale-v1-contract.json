@@ -1,0 +1,120 @@
+{
+  "schema": "nsrl.production_causal_sequence_preflight_contract.v1",
+  "objective": "mean_integer_base2_next_token_nll_over_causal_suffix",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-sequence-preflight-v3/candidate.nsrlpm",
+    "model_hash": "0xebdd4fb6246c3b9d",
+    "artifact_sha256": "737eb059b954b3e21295bd5dc01b94b366f889474e2fbaad37a93ede5acb863e"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "derivation": {
+    "policy": "context_length_scale_after_all_gate_causal_preflight_and_frozen_generation_diagnostic",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-sequence-preflight-v3.json",
+        "sha256": "b4335f4817f7994c50b1528ac97761a4dde64b60e8c0cc2cc3d20f39d6aad964"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-sequence-v3.json",
+        "sha256": "9bddb21316071780b14a7895457e1874576cc76feee0c1b6fb402b21d3b2288f"
+      }
+    ],
+    "context_length_reason": "frozen_generation_prompts_span_30_to_57_candidate_tokens_and_context_use_is_zero",
+    "supervision_scale_over_v3": 16,
+    "test_loss_not_used_to_choose_scale_schedule": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 64,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "windows": 512,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_optimizer_steps": 64,
+    "optimizer_steps": 128,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "embedding_learning_rate_boost_shift": 1,
+    "cli_learning_rate_shifts": {
+      "matrix": 23,
+      "embeddings": 0,
+      "vector": 9,
+      "final_rms": 9,
+      "q": 16,
+      "k": 19,
+      "v": 23,
+      "o": 11,
+      "up": 16,
+      "gate": 16,
+      "down": 4,
+      "output": 30
+    },
+    "learning_rate_shifts": {
+      "embeddings": 5,
+      "attention_rms": 11,
+      "mlp_rms": 8,
+      "final_rms": 15,
+      "q": 22,
+      "k": 25,
+      "v": 29,
+      "o": 17,
+      "up": 22,
+      "gate": 22,
+      "down": 10,
+      "output": 36,
+      "bias": 15
+    },
+    "effective_probability_adjusted_shifts": {
+      "output": 44,
+      "bias": 23
+    },
+    "shift_derivation": "same_cli_learning_rates_as_passing_v3_with_exact_64_target_mean_shift"
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 512,
+    "selection_partition": "development",
+    "confirmation_partition": "test",
+    "source_dev_total_nll_millibits": 6631993,
+    "source_test_total_nll_millibits": 6634718,
+    "test_candidate_must_not_be_scored_unless_development_improves": true
+  },
+  "gates": {
+    "development_total_nll_strictly_improves": true,
+    "test_total_nll_strictly_improves": true,
+    "all_eleven_trunk_groups_move": true,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "exact_restart_replay": true
+  },
+  "authorization": {
+    "local_scale": true,
+    "open_generation_rerun": false,
+    "open_generation_rerun_requires_development_and_test_improvement": true,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_512_window_scale_run_not_full_corpus_training",
+    "public_test_has_prior_confirmatory_reads",
+    "scale_success_does_not_pass_open_generation_v1"
+  ]
+}

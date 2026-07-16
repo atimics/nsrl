@@ -254,6 +254,23 @@ gates fail. Candidate modeling is 3,687 millibits per original UTF-8 byte, but
 the required baseline matrix, float-twin retention, blinded human comparison,
 hidden-panel run, and candidate proof binding remain absent.
 
+The production trainer now has a causal-suffix mean objective. For a
+power-of-two suffix, it evaluates every selected causal row, keeps full-scale
+integer gradients through the transformer, and applies the exact mean as an
+additional parameter-update shift. Target count and the optional embedding
+learning-rate boost are bound into resumable optimizer state. The legacy
+one-target path remains byte-identical to the pre-change model, optimizer, and
+trace artifacts.
+
+The prospectively frozen context-64 scale row is
+`benchmarks/production-model-v1/p10m-causal-sequence-scale-v2.json`. It
+supervises 32,768 targets across 512 corpus-spread windows, improves canonical
+512-window development NLL by 41,675 millibits and test NLL by 38,691, moves all
+eleven trunk groups, records zero saturation, and byte-replays its second half
+from the midpoint. This is valid generalization and restart evidence, not a
+language-quality promotion: the corresponding generation checkpoint remains
+red, so materially broader corpus coverage is still required.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

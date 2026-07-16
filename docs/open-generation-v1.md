@@ -83,3 +83,30 @@ The hidden panel was not opened or used for selection. The next modeling work is
 the required byte-ngram, retrieval, best-smaller-NSRL, and same-shape float-twin
 matrix plus a prospectively frozen full-trunk candidate that improves both
 development and untouched test evidence before generation is rerun.
+
+## Context-64 causal scale diagnostic
+
+The full-trunk prerequisite has now been met by
+`benchmarks/production-model-v1/p10m-causal-sequence-scale-v2.json`: development
+and test canonical NLL both improve, every trunk group moves, saturation is
+zero, and midpoint replay is byte-identical. Its complete generation rerun is
+frozen at
+`benchmarks/open-generation-v1/p10m-causal-sequence-scale-v2.json`.
+
+| Surface | Scale-v2 result | Gate |
+| --- | ---: | --- |
+| Candidate modeling | 3,626 millibits/original UTF-8 byte | baselines missing |
+| Incremental cache | 405,504 state bytes; 10,240 workspace bytes | pass |
+| Complete generation matrix | 12 prompts; 60 samples; 30,720 tokens | pass |
+| Worst repeated four-gram share | 999 per mille | fail (`<= 150`) |
+| Minimum unique four-gram share | 1 per mille | fail (`>= 600`) |
+| Minimum entropy | 0 Q10 | fail (`>= 2048`) |
+| Valid UTF-8 | 1,000 per mille | pass |
+| Context use | 0 per mille | fail (`>= 750`) |
+| Distractor resistance | 0 per mille | fail (`>= 700`) |
+
+The greedy surface emits the space token for all 512 continuation steps. The
+sampled surfaces are varied but not yet structured language. This isolates the
+remaining quality gap to training scale and learned context conditioning; the
+incremental serving path, artifact bindings, matrix completeness, saturation,
+and UTF-8 gates are already green. The hidden panel remains unopened.

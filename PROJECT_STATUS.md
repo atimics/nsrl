@@ -137,11 +137,22 @@ Known facts from the status command:
   gates fail: worst-sample four-gram repetition is 989 per mille, minimum
   unique share is 11 per mille, minimum entropy is 431 Q10, UTF-8 validity is
   166 per mille, and context use plus distractor resistance are both zero,
-- a bounded corpus-spread training diagnostic rejected output-head-only repair.
-  A V-only row improved 512-window development NLL by 407 millibits but worsened
-  the untouched test stream by 11, so no training candidate was promoted. The
-  next LLM gate is a prospectively defined full-trunk objective that improves
-  both development and untouched test evidence before another generation run.
+- production training now supports an exact power-of-two causal-suffix mean:
+  one forward window supervises every selected next-token row while parameter
+  residuals apply the mean shift without quantizing internal trunk gradients.
+  The optimizer schedule binds target count, per-group shifts, embedding boost,
+  cursor, and source model; legacy one-target training remains byte-identical,
+- the prospectively frozen context-64 `p10m-causal-sequence-scale-v2` row trains
+  32,768 causal targets over 512 corpus-spread windows. It improves 512-window
+  development NLL by 41,675 millibits and test NLL by 38,691, moves all eleven
+  trunk groups, has zero saturation, and byte-replays from its midpoint,
+- that scale candidate still does not pass `open-generation-v1`. Candidate
+  modeling improves to 3,626 millibits/original UTF-8 byte and UTF-8 validity
+  reaches 1,000 per mille, but worst repetition is 999 per mille, minimum unique
+  share is 1 per mille, minimum entropy is zero, and context use plus distractor
+  resistance remain zero. Its greedy continuation emits the space token for all
+  512 steps. The next LLM gate is materially larger context-64 corpus coverage,
+  not another decoder-cache or output-format repair.
 
 ## Headline Eval
 
@@ -177,18 +188,21 @@ The practical sequence is:
 3. Add the required byte-ngram, retrieval, best-smaller-NSRL, and same-shape
    float-twin bits-per-original-byte rows; keep the modeling gate red until the
    full matrix exists.
-4. Train a prospectively frozen full-trunk candidate that improves both
-   development and untouched test NLL before rerunning the generation panel.
-5. Produce `data/processed/nsrl-mme-v0.json` with:
+4. Scale the passing context-64 causal-suffix schedule beyond the current 512
+   windows until greedy generation stops collapsing and the frozen repetition,
+   entropy, context-use, and distractor gates pass.
+5. Add the required byte-ngram, retrieval, best-smaller-NSRL, and same-shape
+   float-twin modeling rows without opening the hidden generation panel.
+6. Produce `data/processed/nsrl-mme-v0.json` with:
 
    ```bash
    node scripts/check-nsrl-mme-v0.mjs --out data/processed/nsrl-mme-v0.json
    ```
 
-6. Feed the scorer a measured `quality-report.json` with confidence-trace
+7. Feed the scorer a measured `quality-report.json` with confidence-trace
    evidence plus objective coverage.
-7. Repair the failing product-proof/self-test surface.
-8. Run the Graviton product path:
+8. Repair the failing product-proof/self-test surface.
+9. Run the Graviton product path:
 
    ```bash
    NSRL_S3_URI=s3://BUCKET/PREFIX scripts/aws/run-solomon-end-to-end.sh

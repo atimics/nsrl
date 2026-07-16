@@ -3303,6 +3303,7 @@ mod tests {
             context_tokens: 4,
             max_windows: 4,
             spread_windows: true,
+            targets_per_window: 2,
             epochs: 2,
             q_learning_rate_shift: Some(17),
             k_learning_rate_shift: Some(21),
@@ -3323,13 +3324,20 @@ mod tests {
         );
         assert!(uninterrupted_trace.schedule_complete);
         assert!(uninterrupted_trace.spread_windows);
+        assert_eq!(uninterrupted_trace.targets_per_window, 2);
+        assert!(uninterrupted_trace.supervised_targets > 0);
         assert!(uninterrupted_trace.to_json_line().contains(
             "\"window_selection\":\"deterministic_uniform_target_rank_over_all_documents\""
         ));
+        assert!(
+            uninterrupted_trace
+                .to_json_line()
+                .contains("\"target_policy\":\"causal_suffix_mean_v1\"")
+        );
         assert_eq!(uninterrupted_trace.output_backward_shift, 8);
-        assert_eq!(uninterrupted_trace.learning_rate_shifts[4], 17);
-        assert_eq!(uninterrupted_trace.learning_rate_shifts[5], 21);
-        assert_eq!(uninterrupted_trace.learning_rate_shifts[10], 16);
+        assert_eq!(uninterrupted_trace.learning_rate_shifts[4], 18);
+        assert_eq!(uninterrupted_trace.learning_rate_shifts[5], 22);
+        assert_eq!(uninterrupted_trace.learning_rate_shifts[10], 17);
         assert_ne!(
             uninterrupted_trace.initial_model_hash,
             uninterrupted_trace.final_model_hash
