@@ -1,0 +1,234 @@
+{
+  "schema": "nsrl.production_cross_source_exchange_contract.v1",
+  "analysis_role": "prospective_pre_calibration_evaluation_outcome",
+  "experiment_binding": {
+    "journal_entry": "MJ-2026-07-15-17",
+    "extends_theory_entry": "MJ-2026-07-15-16"
+  },
+  "theory_binding": {
+    "journal_entry": "MJ-2026-07-15-16",
+    "propositions": [
+      "16.1",
+      "16.2",
+      "16.4",
+      "16.5"
+    ],
+    "guarantee": "marginal simultaneous source-panel residual coverage and marginal unsafe-action control conditional on exchangeability",
+    "conditional_correctness_among_firings_claimed": false
+  },
+  "bindings": {
+    "source_frame": {
+      "path": "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-source-frame.json",
+      "sha256": "3cf38860568320257a7af77fb615054925fb816ba98adc016ab60ddbeae01738"
+    },
+    "predictor": {
+      "path": "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-predictor.json",
+      "sha256": "07712a0a5071e89dc217aa0c00de63beda27e058c9da3ce68d5a553485eddfac"
+    },
+    "raw_structure_contract": {
+      "path": "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-calibration-evaluation-structure-contract.json",
+      "sha256": "568cf3ad5bf7873fb7df452c9d262d7b66aa6eb29c5412d7e0dc5f782569d6b7",
+      "manifest_hash": "0xe255bc3ccaa1be4a",
+      "token_stream_hash": "0x0d0b501899ceb4f1",
+      "source_index_hash": "0x29e323f2ad28f15f"
+    },
+    "analyzer": {
+      "path": "scripts/analyze-production-cross-source-exchange-v1.mjs",
+      "sha256": "3a9e35aa35eb0d0be87722418079e4fe8e44c74bb965a7b9a44253e4166031a1"
+    },
+    "checker": {
+      "path": "scripts/check-production-cross-source-exchange-v1.mjs",
+      "sha256": "d450bb382caec220ceada5ce41a0ac8008cf1eb0a9fc1f3584123485c5e91899"
+    }
+  },
+  "population": {
+    "source_unit": "one Project Gutenberg ebook from one distinct normalized author",
+    "intended_population": "the frozen distinct-author English Project Gutenberg acquisition frame; no claim to arbitrary web or SimpleWiki sources",
+    "independence_design": "one ebook per distinct normalized author; entire sources assigned to exactly one role",
+    "exchangeability_assumption": "calibration and evaluation panels are exchangeable within the frozen distinct-author English Project Gutenberg frame conditional on the fitting sources",
+    "fitting_source_panels": 16,
+    "calibration_source_panels": 39,
+    "evaluation_source_panels": 16,
+    "fitting_source_ids": [
+      "gutenberg-408",
+      "gutenberg-131",
+      "gutenberg-3300",
+      "gutenberg-1998",
+      "gutenberg-27827",
+      "gutenberg-236",
+      "gutenberg-64317",
+      "gutenberg-132",
+      "gutenberg-161",
+      "gutenberg-74",
+      "gutenberg-311",
+      "gutenberg-244",
+      "gutenberg-880",
+      "gutenberg-205",
+      "gutenberg-863",
+      "gutenberg-1322"
+    ],
+    "calibration_source_ids": [
+      "gutenberg-110",
+      "gutenberg-2680",
+      "gutenberg-19810",
+      "gutenberg-160",
+      "gutenberg-996",
+      "gutenberg-7178",
+      "gutenberg-2084",
+      "gutenberg-769",
+      "gutenberg-33",
+      "gutenberg-28054",
+      "gutenberg-1399",
+      "gutenberg-2775",
+      "gutenberg-209",
+      "gutenberg-2147",
+      "gutenberg-155",
+      "gutenberg-55",
+      "gutenberg-16",
+      "gutenberg-829",
+      "gutenberg-45",
+      "gutenberg-5200",
+      "gutenberg-514",
+      "gutenberg-2527",
+      "gutenberg-2892",
+      "gutenberg-6761",
+      "gutenberg-10007",
+      "gutenberg-2500",
+      "gutenberg-768",
+      "gutenberg-20203",
+      "gutenberg-8800",
+      "gutenberg-120",
+      "gutenberg-3207",
+      "gutenberg-145",
+      "gutenberg-61",
+      "gutenberg-1497",
+      "gutenberg-174",
+      "gutenberg-1184",
+      "gutenberg-3825",
+      "gutenberg-4705",
+      "gutenberg-23"
+    ],
+    "evaluation_source_ids": [
+      "gutenberg-1245",
+      "gutenberg-1260",
+      "gutenberg-2701",
+      "gutenberg-215",
+      "gutenberg-32449",
+      "gutenberg-1232",
+      "gutenberg-394",
+      "gutenberg-98",
+      "gutenberg-41",
+      "gutenberg-1228",
+      "gutenberg-3600",
+      "gutenberg-7370",
+      "gutenberg-11",
+      "gutenberg-1292",
+      "gutenberg-2542",
+      "gutenberg-140"
+    ],
+    "documents_200_212_are_not_sources": true
+  },
+  "panel_sampling": {
+    "seed": "nsrl-m3-source-panel-passage-2026-07-15-v1",
+    "panel_documents_per_source": 1,
+    "sampled_utf8_bytes_before_normalization": 16384,
+    "model_windows_per_panel_document": 2,
+    "model_context_tokens": 64,
+    "byte_offset_algorithm": "SHA256(seed, ebook_id, raw_sha256, ordinal) modulo available cleaned body bytes, advanced to UTF-8 and whitespace boundary",
+    "missing_source_policy": "abort before outcome evaluation; no source replacement after freeze",
+    "score_scope": "maximum over every frozen exchange and panel document",
+    "source_failure_policy": "abort; do not replace or drop a frozen source after this contract"
+  },
+  "exchange_set": [
+    {
+      "id": "base43_atom2_to_atom4",
+      "base_mask": 43,
+      "outgoing_atom": 2,
+      "incoming_atom": 4,
+      "control_mask": 47,
+      "candidate_mask": 59,
+      "singleton_margin_q32": "loss(mask16)-loss(mask0) minus loss(mask4)-loss(mask0)",
+      "exact_contrast_q32": "loss(mask59)-loss(mask47)",
+      "interaction_residual_q32": "exact_contrast minus singleton_margin"
+    }
+  ],
+  "probe_features": {
+    "ordered_features": [
+      "singleton_effect_atom_0_loss_mask_1_minus_mask_0",
+      "singleton_effect_atom_1_loss_mask_2_minus_mask_0",
+      "singleton_effect_atom_2_loss_mask_4_minus_mask_0",
+      "singleton_effect_atom_3_loss_mask_8_minus_mask_0",
+      "singleton_effect_atom_4_loss_mask_16_minus_mask_0",
+      "singleton_effect_atom_5_loss_mask_32_minus_mask_0"
+    ],
+    "representation": "Q32 signed integers",
+    "candidate_multi_atom_outcomes_excluded": true,
+    "allowed_router_inputs": [
+      "six Q32 singleton effects",
+      "frozen fitted predictor",
+      "frozen conformal correction"
+    ]
+  },
+  "predictor": {
+    "name": "three_nearest_fitting_source_median_residual_v1",
+    "fitting_source_panels": 16,
+    "neighbors": 3,
+    "distance": "sum over six features of floor(abs(x_j-train_j)*2^20/max(1,fitting_MAD_j))",
+    "tie_break": "ascending source_id",
+    "output": "lower median Q32 interaction residual of the three nearest fitting sources",
+    "q32_conversion": "already exact Q32 integer; no floating-point conversion",
+    "fitted_parameters_sha256": "07712a0a5071e89dc217aa0c00de63beda27e058c9da3ce68d5a553485eddfac"
+  },
+  "conformal": {
+    "alpha_numerator": 1,
+    "alpha_denominator": 20,
+    "calibration_units": "independent source panels",
+    "calibration_source_panels": 39,
+    "simultaneous_score": "A_u=max over panel documents d and frozen exchanges e of rho_d(e)-q_e(phi_d)",
+    "ties": "included on covered side",
+    "order_statistic_rank": 38,
+    "insufficient_resolution_rule": "positive_infinity_if_rank_exceeds_calibration_count",
+    "evaluation_may_not_recalibrate_threshold": true
+  },
+  "router": {
+    "selection": "minimum certified upper contrast among the frozen exchange set; exchange-id tie break",
+    "strict_firing_rule": "lambda_e+q_e(phi)+Q_alpha < 0",
+    "abstention_rule": "retain control mask 47 on equality or positive certified upper contrast",
+    "candidate_multi_atom_outcomes_hidden_until_after_action": true
+  },
+  "falsifiers": {
+    "coverage": {
+      "test": "one-sided exact binomial test of source-panel failure probability greater than 1/20",
+      "evaluation_source_panels": 16,
+      "exact_binomial_rejection_failures": 3,
+      "exact_binomial_alpha": "1/20",
+      "maximum_failures_for_support": 1,
+      "two_failures_decision": "inconclusive_no_promotion"
+    },
+    "unsafe_action": {
+      "falsifier": "one or more fired evaluation source panels with nonnegative exact exchange contrast",
+      "maximum_unsafe_firings_for_support": 0
+    },
+    "nonvacuity": {
+      "falsifier": "no evaluation source panel fires",
+      "minimum_fired_source_panels": 1
+    },
+    "incremental_value": {
+      "falsifier": "aggregate Q32 contrast over fired evaluation source panels is nonnegative",
+      "strict_negative_aggregate_required": true
+    }
+  },
+  "decision_rule": {
+    "support_requires": "at most one envelope failure, zero unsafe firings, at least one firing, and negative aggregate fired contrast",
+    "scope_if_supported": "bounded prospective source-transfer evidence on the frozen distinct-author English Project Gutenberg frame",
+    "scope_if_falsified": "record failure without changing thresholds or opening same-source documents 200--212"
+  },
+  "authorization": {
+    "execute_calibration_evaluation_cube": true,
+    "alter_source_roles_after_outcomes": false,
+    "alter_exchange_features_predictor_score_or_falsifiers_after_outcomes": false,
+    "read_documents_200_212": false,
+    "optimizer_change": false,
+    "paid_scaling": false
+  }
+}

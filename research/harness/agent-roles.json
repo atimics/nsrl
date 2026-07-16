@@ -1,0 +1,37 @@
+{
+  "schema": "nsrl.research_agent_roles.v1",
+  "roles": {
+    "scout": {
+      "may": ["inspect public literature and historical artifacts", "submit typed experiment proposals"],
+      "must_not": ["review, freeze, execute, audit, or decide their own proposal"]
+    },
+    "theorist": {
+      "may": ["define hypotheses, estimands, derivations, and falsifiers", "submit typed experiment proposals"],
+      "must_not": ["review, freeze, execute, audit, or decide their own proposal"]
+    },
+    "statistician": {
+      "may": ["review power, controls, multiplicity, independent units, and evidence partitions"],
+      "must_not": ["approve a proposal under the same actor identity that submitted it"]
+    },
+    "protocol": {
+      "may": ["freeze an approved proposal and its exact input and runner-policy hashes"],
+      "must_not": ["freeze a proposal submitted under the same actor identity"]
+    },
+    "runner": {
+      "may": ["execute an allowlisted runner against a frozen contract", "import an already completed run"],
+      "must_not": ["modify the frozen contract", "audit or decide a run under the same actor identity"]
+    },
+    "auditor": {
+      "may": ["run the frozen independent checker and bind its result digest"],
+      "must_not": ["audit an experiment proposed or run under the same actor identity", "curate its final decision"]
+    },
+    "curator": {
+      "may": ["apply structured frozen decision rules and record the terminal scientific outcome"],
+      "must_not": ["decide an experiment proposed, run, or audited under the same actor identity"]
+    },
+    "human": {
+      "may": ["occupy any one lifecycle role with an explicit actor identity", "provide runtime authorization for reserved evidence or paid compute"],
+      "must_not": ["bypass actor-separation rules", "change a frozen contract in place"]
+    }
+  }
+}

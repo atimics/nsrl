@@ -1,0 +1,810 @@
+{
+  "schema": "nsrl.production_multifamily_exchange_predictor.v1",
+  "analysis_role": "fitting_only_frozen_before_calibration_evaluation",
+  "source_sha256": {
+    "source_frame": "21e60c4d47fa91bd458342ce8ebe865950d475c1101f778252153a1bb5781666",
+    "fitting_structure_contract": "b9d68fa917550a8a40e7b027439cd5fe5431aec3c3bc58ea49aabf07220275eb",
+    "fitting_structure": "6f10129bcab6274212a13252008b45eedba364059aa25a69646f6cf8de407c8d",
+    "fitter": "38b31a7900467c83620ba7dca421f2d2fb08fd629e1ca0a6f24cce3119790c19"
+  },
+  "training_population": {
+    "independent_source_panels": 12,
+    "passage_documents": 48,
+    "passages_per_source_panel": 4,
+    "source_ids": [
+      "federal-register-2025-21482",
+      "federal-register-2025-21966",
+      "federal-register-2025-23268",
+      "gutenberg-53739",
+      "gutenberg-60151",
+      "gutenberg-71907",
+      "rfc-2244",
+      "rfc-3499",
+      "rfc-4031",
+      "europe-pmc-pmc11685355",
+      "europe-pmc-pmc11687792",
+      "europe-pmc-pmc11923378"
+    ],
+    "families": {
+      "federal_register": 3,
+      "gutenberg": 3,
+      "rfc": 3,
+      "science": 3
+    }
+  },
+  "exchange": {
+    "id": "base43_atom2_to_atom4",
+    "base_mask": 43,
+    "outgoing_atom": 2,
+    "incoming_atom": 4,
+    "control_mask": 47,
+    "candidate_mask": 59
+  },
+  "probe_features": {
+    "representation": "Q32 signed integers",
+    "ordered_features": [
+      "singleton_effect_atom_0_loss_mask_1_minus_mask_0",
+      "singleton_effect_atom_1_loss_mask_2_minus_mask_0",
+      "singleton_effect_atom_2_loss_mask_4_minus_mask_0",
+      "singleton_effect_atom_3_loss_mask_8_minus_mask_0",
+      "singleton_effect_atom_4_loss_mask_16_minus_mask_0",
+      "singleton_effect_atom_5_loss_mask_32_minus_mask_0"
+    ],
+    "available_before_candidate_multi_atom_outcome": true,
+    "medians_q32": [
+      "0",
+      "0",
+      "0",
+      "0",
+      "42",
+      "-4060"
+    ],
+    "median_absolute_deviation_scales_q32": [
+      "1",
+      "1",
+      "1",
+      "1",
+      "3967",
+      "109"
+    ]
+  },
+  "algorithm": {
+    "name": "three_nearest_fitting_source_panel_median_residual_v1",
+    "neighbors": 3,
+    "within_source_match": "minimum normalized L1 distance over the four fitting passages",
+    "distance": "sum over six features of floor(abs(x_j-train_j)*2^20/max(1,fitting_passage_MAD_j))",
+    "within_source_tie_break": "ascending passage ordinal",
+    "source_tie_break": "ascending source_id",
+    "prediction": "lower median Q32 residual of the nearest matched passage from each of three distinct fitting source panels",
+    "internal_fractional_bits": 20,
+    "output_conversion": "already exact Q32 integer; no floating-point conversion",
+    "hyperparameters_selected_before_fitting_outcomes": true
+  },
+  "fitted_rows": [
+    {
+      "source_id": "federal-register-2025-21482",
+      "family": "federal_register",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "-4135"
+      ],
+      "lambda_q32": "0",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-21482",
+      "family": "federal_register",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "8",
+        "-4122"
+      ],
+      "lambda_q32": "8",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-21482",
+      "family": "federal_register",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-4125",
+        "-3871"
+      ],
+      "lambda_q32": "-4125",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-21482",
+      "family": "federal_register",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "0",
+        "1957",
+        "0",
+        "0",
+        "-8491",
+        "-4231"
+      ],
+      "lambda_q32": "-8491",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-21966",
+      "family": "federal_register",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "7961",
+        "-3879"
+      ],
+      "lambda_q32": "7961",
+      "interaction_residual_q32": "-1"
+    },
+    {
+      "source_id": "federal-register-2025-21966",
+      "family": "federal_register",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "1980",
+        "-4331"
+      ],
+      "lambda_q32": "1980",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-21966",
+      "family": "federal_register",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-4099",
+        "-4263"
+      ],
+      "lambda_q32": "-4099",
+      "interaction_residual_q32": "1"
+    },
+    {
+      "source_id": "federal-register-2025-21966",
+      "family": "federal_register",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "2076",
+        "1964",
+        "0",
+        "0",
+        "-3984",
+        "-4097"
+      ],
+      "lambda_q32": "-3984",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-23268",
+      "family": "federal_register",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "77",
+        "-3896"
+      ],
+      "lambda_q32": "77",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-23268",
+      "family": "federal_register",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "1928",
+        "-8018",
+        "-3951"
+      ],
+      "lambda_q32": "-8018",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-23268",
+      "family": "federal_register",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "4241",
+        "-4146"
+      ],
+      "lambda_q32": "4241",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "federal-register-2025-23268",
+      "family": "federal_register",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-8268",
+        "-4401"
+      ],
+      "lambda_q32": "-8268",
+      "interaction_residual_q32": "1"
+    },
+    {
+      "source_id": "gutenberg-53739",
+      "family": "gutenberg",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "1863",
+        "1863",
+        "1891",
+        "0",
+        "2077",
+        "-3849"
+      ],
+      "lambda_q32": "186",
+      "interaction_residual_q32": "1862"
+    },
+    {
+      "source_id": "gutenberg-53739",
+      "family": "gutenberg",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "2032",
+        "0",
+        "0",
+        "0",
+        "200",
+        "-3871"
+      ],
+      "lambda_q32": "200",
+      "interaction_residual_q32": "-1"
+    },
+    {
+      "source_id": "gutenberg-53739",
+      "family": "gutenberg",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-321",
+        "-4145"
+      ],
+      "lambda_q32": "-321",
+      "interaction_residual_q32": "-1"
+    },
+    {
+      "source_id": "gutenberg-53739",
+      "family": "gutenberg",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "0",
+        "-1904",
+        "-1904",
+        "0",
+        "-4321",
+        "-4149"
+      ],
+      "lambda_q32": "-2417",
+      "interaction_residual_q32": "-1904"
+    },
+    {
+      "source_id": "gutenberg-60151",
+      "family": "gutenberg",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "2034",
+        "-2190",
+        "0",
+        "2034",
+        "0",
+        "-4112"
+      ],
+      "lambda_q32": "0",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-60151",
+      "family": "gutenberg",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "-2111",
+        "-75",
+        "-4117"
+      ],
+      "lambda_q32": "-75",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-60151",
+      "family": "gutenberg",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "3972",
+        "4009",
+        "-4220"
+      ],
+      "lambda_q32": "4009",
+      "interaction_residual_q32": "1943"
+    },
+    {
+      "source_id": "gutenberg-60151",
+      "family": "gutenberg",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "2160",
+        "-4368"
+      ],
+      "lambda_q32": "2160",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-71907",
+      "family": "gutenberg",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "8025",
+        "-3844"
+      ],
+      "lambda_q32": "8025",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-71907",
+      "family": "gutenberg",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "-1972",
+        "2000",
+        "-4067"
+      ],
+      "lambda_q32": "2000",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-71907",
+      "family": "gutenberg",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "5957",
+        "-4047"
+      ],
+      "lambda_q32": "5957",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "gutenberg-71907",
+      "family": "gutenberg",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-4099",
+        "-4262"
+      ],
+      "lambda_q32": "-4099",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "rfc-2244",
+      "family": "rfc",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "4112",
+        "-4215"
+      ],
+      "lambda_q32": "4112",
+      "interaction_residual_q32": "1"
+    },
+    {
+      "source_id": "rfc-2244",
+      "family": "rfc",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "1985",
+        "0",
+        "2109",
+        "-3981"
+      ],
+      "lambda_q32": "124",
+      "interaction_residual_q32": "1"
+    },
+    {
+      "source_id": "rfc-2244",
+      "family": "rfc",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "6228",
+        "-3998"
+      ],
+      "lambda_q32": "6228",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "rfc-2244",
+      "family": "rfc",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "2064",
+        "-3810"
+      ],
+      "lambda_q32": "2064",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "rfc-3499",
+      "family": "rfc",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "-261",
+        "-261",
+        "0",
+        "0",
+        "159",
+        "-3930"
+      ],
+      "lambda_q32": "159",
+      "interaction_residual_q32": "-1"
+    },
+    {
+      "source_id": "rfc-3499",
+      "family": "rfc",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "2094",
+        "4248",
+        "0",
+        "-3918"
+      ],
+      "lambda_q32": "-2094",
+      "interaction_residual_q32": "2035"
+    },
+    {
+      "source_id": "rfc-3499",
+      "family": "rfc",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "2149",
+        "0",
+        "0",
+        "0",
+        "8607",
+        "-3737"
+      ],
+      "lambda_q32": "8607",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "rfc-3499",
+      "family": "rfc",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "-2165",
+        "0",
+        "0",
+        "0",
+        "8413",
+        "-4037"
+      ],
+      "lambda_q32": "8413",
+      "interaction_residual_q32": "-2166"
+    },
+    {
+      "source_id": "rfc-4031",
+      "family": "rfc",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "6177",
+        "-3948"
+      ],
+      "lambda_q32": "6177",
+      "interaction_residual_q32": "1"
+    },
+    {
+      "source_id": "rfc-4031",
+      "family": "rfc",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "-344",
+        "-3987"
+      ],
+      "lambda_q32": "-344",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "rfc-4031",
+      "family": "rfc",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "42",
+        "-4060"
+      ],
+      "lambda_q32": "42",
+      "interaction_residual_q32": "1"
+    },
+    {
+      "source_id": "rfc-4031",
+      "family": "rfc",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "-2132",
+        "0",
+        "-1988",
+        "0",
+        "5841",
+        "-4096"
+      ],
+      "lambda_q32": "7829",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "europe-pmc-pmc11685355",
+      "family": "science",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "2012",
+        "4109",
+        "0",
+        "2012",
+        "-6044",
+        "-4169"
+      ],
+      "lambda_q32": "-6044",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "europe-pmc-pmc11685355",
+      "family": "science",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "2148",
+        "0",
+        "-3781",
+        "-4015"
+      ],
+      "lambda_q32": "-5929",
+      "interaction_residual_q32": "2062"
+    },
+    {
+      "source_id": "europe-pmc-pmc11685355",
+      "family": "science",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "11",
+        "-4123"
+      ],
+      "lambda_q32": "11",
+      "interaction_residual_q32": "2"
+    },
+    {
+      "source_id": "europe-pmc-pmc11685355",
+      "family": "science",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "1921",
+        "1921",
+        "0",
+        "0",
+        "-2115",
+        "-3918"
+      ],
+      "lambda_q32": "-2115",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "europe-pmc-pmc11687792",
+      "family": "science",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "0",
+        "-4008",
+        "0",
+        "0",
+        "6442",
+        "-3965"
+      ],
+      "lambda_q32": "6442",
+      "interaction_residual_q32": "-1"
+    },
+    {
+      "source_id": "europe-pmc-pmc11687792",
+      "family": "science",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "1963",
+        "0",
+        "-1663",
+        "-4173"
+      ],
+      "lambda_q32": "-3626",
+      "interaction_residual_q32": "-1"
+    },
+    {
+      "source_id": "europe-pmc-pmc11687792",
+      "family": "science",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "-2142",
+        "1939",
+        "0",
+        "1910",
+        "-8621",
+        "-4166"
+      ],
+      "lambda_q32": "-8621",
+      "interaction_residual_q32": "-2142"
+    },
+    {
+      "source_id": "europe-pmc-pmc11687792",
+      "family": "science",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "0",
+        "2008",
+        "0",
+        "0",
+        "-1982",
+        "-4033"
+      ],
+      "lambda_q32": "-1982",
+      "interaction_residual_q32": "2009"
+    },
+    {
+      "source_id": "europe-pmc-pmc11923378",
+      "family": "science",
+      "passage_ordinal": 0,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "-169",
+        "-2221",
+        "-4099",
+        "-4014"
+      ],
+      "lambda_q32": "-3930",
+      "interaction_residual_q32": "2052"
+    },
+    {
+      "source_id": "europe-pmc-pmc11923378",
+      "family": "science",
+      "passage_ordinal": 1,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "8591",
+        "-3925"
+      ],
+      "lambda_q32": "8591",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "europe-pmc-pmc11923378",
+      "family": "science",
+      "passage_ordinal": 2,
+      "singleton_features_q32": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "8532",
+        "-3930"
+      ],
+      "lambda_q32": "8532",
+      "interaction_residual_q32": "0"
+    },
+    {
+      "source_id": "europe-pmc-pmc11923378",
+      "family": "science",
+      "passage_ordinal": 3,
+      "singleton_features_q32": [
+        "-2058",
+        "0",
+        "2144",
+        "-2058",
+        "1768",
+        "-4312"
+      ],
+      "lambda_q32": "-376",
+      "interaction_residual_q32": "-1"
+    }
+  ],
+  "firewall": {
+    "calibration_outcomes_read": false,
+    "evaluation_outcomes_read": false,
+    "documents_200_212_read": false
+  }
+}

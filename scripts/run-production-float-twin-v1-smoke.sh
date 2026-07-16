@@ -13,6 +13,7 @@ if [[ ! -f "$integer_dir/initial.nsrlpm" ]]; then
 fi
 
 python3 scripts/production-float-twin-v1.py \
+  --math-contract legacy-v1 \
   --model "$integer_dir/initial.nsrlpm" \
   --tokens "$tokens" \
   --out "$out_dir/trained.npz" \

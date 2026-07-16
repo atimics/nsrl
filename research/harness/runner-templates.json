@@ -1,0 +1,23 @@
+{
+  "schema": "nsrl.research_runner_templates.v1",
+  "templates": {
+    "boolean-jet-confirmation-v1": {
+      "command": [
+        "bash",
+        "scripts/run-production-boolean-jet-confirmation-v1.sh"
+      ],
+      "checker": [
+        "node",
+        "scripts/check-production-boolean-jet-confirmation-v1.mjs"
+      ],
+      "allowed_partitions": [
+        "proposal-diagnostic",
+        "transfer-confirmation-v1"
+      ],
+      "expected_outputs": [
+        "benchmarks/production-model-v1/p10m-boolean-jet-confirmation-v1.json"
+      ],
+      "paid_compute": false
+    }
+  }
+}

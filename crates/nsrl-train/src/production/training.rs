@@ -2,16 +2,17 @@ use core::ops::Range;
 
 use nsrl_core::{
     GatedMlpI16Params, GatedMlpWorkspace, LinearAttentionWorkspace, RmsNormBackwardWorkspace,
-    SelfAttentionI16Params, base2_softmax_i32_q15, gated_activation_backward_i16_q15,
-    gated_mlp_i16_q15_checked, hard_silu_derivative_q15, hard_silu_q15,
-    linear_attention_i16_q15_checked, rms_norm_backward_i16_q15_checked, rms_norm_i16_q15_checked,
-    round_shift_rhu_i64, saturate_i8, saturate_i16,
+    SelfAttentionI16Params, SoftmaxNormalization, base2_exp_neg_q15, base2_exp_neg_q47,
+    base2_softmax_i32_q15, base2_softmax_i32_q31_with_normalization,
+    gated_activation_backward_i16_q15, gated_mlp_i16_q15_checked, hard_silu_derivative_q15,
+    hard_silu_q15, linear_attention_i16_q15_checked, rms_norm_backward_i16_q15_checked,
+    rms_norm_i16_q15_checked, round_shift_rhu_i64, saturate_i8, saturate_i16,
 };
 use nsrl_corpus::subword::{BOS_TOKEN_ID, EOS_TOKEN_ID};
 
 use super::{
     FNV_OFFSET, FNV_PRIME, PRODUCTION_RMS_EPSILON, ProductionModelV1, TrainError, checked_product,
-    fnv1a, linear_params, scales,
+    fnv1a, linear_params, scale_shifts, scales,
 };
 
 const OPTIMIZER_MAGIC: &[u8; 8] = b"NSRLPO2\n";
@@ -33,6 +34,173 @@ const GROUP_NAMES: [&str; 13] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductionGradientProposalLane {
+    NormalizedRescued,
+    MassCorrectedNormalized,
+    ReciprocalFreeRescued,
+    ReciprocalFreeLateRhu,
+    ReciprocalFreeLateStochastic,
+    SystematicFixedMassK15,
+    SystematicFixedMassK16,
+    SystematicFixedMassK18,
+    MassCorrectedNormalizedNoRescue,
+}
+
+impl ProductionGradientProposalLane {
+    // Keep the original public audit set stable so v1/v2 traces and coordinate
+    // selection remain byte-replayable.
+    pub const ALL: [Self; 5] = [
+        Self::NormalizedRescued,
+        Self::MassCorrectedNormalized,
+        Self::ReciprocalFreeRescued,
+        Self::ReciprocalFreeLateRhu,
+        Self::ReciprocalFreeLateStochastic,
+    ];
+    pub const WITH_CAUSAL_NO_RESCUE: [Self; 6] = [
+        Self::NormalizedRescued,
+        Self::MassCorrectedNormalized,
+        Self::ReciprocalFreeRescued,
+        Self::ReciprocalFreeLateRhu,
+        Self::ReciprocalFreeLateStochastic,
+        Self::MassCorrectedNormalizedNoRescue,
+    ];
+    pub const WITH_SYSTEMATIC: [Self; 8] = [
+        Self::NormalizedRescued,
+        Self::MassCorrectedNormalized,
+        Self::ReciprocalFreeRescued,
+        Self::ReciprocalFreeLateRhu,
+        Self::ReciprocalFreeLateStochastic,
+        Self::SystematicFixedMassK15,
+        Self::SystematicFixedMassK16,
+        Self::SystematicFixedMassK18,
+    ];
+    pub const WITH_SYSTEMATIC_AND_CAUSAL_NO_RESCUE: [Self; 9] = [
+        Self::NormalizedRescued,
+        Self::MassCorrectedNormalized,
+        Self::ReciprocalFreeRescued,
+        Self::ReciprocalFreeLateRhu,
+        Self::ReciprocalFreeLateStochastic,
+        Self::SystematicFixedMassK15,
+        Self::SystematicFixedMassK16,
+        Self::SystematicFixedMassK18,
+        Self::MassCorrectedNormalizedNoRescue,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NormalizedRescued => "normalized-rescued-rhu",
+            Self::MassCorrectedNormalized => "mass-corrected-normalized-rhu",
+            Self::ReciprocalFreeRescued => "reciprocal-free-rescued-rhu",
+            Self::ReciprocalFreeLateRhu => "reciprocal-free-late-rhu",
+            Self::ReciprocalFreeLateStochastic => "reciprocal-free-late-stochastic",
+            Self::SystematicFixedMassK15 => "systematic-fixed-mass-k15-token-id-rhu",
+            Self::SystematicFixedMassK16 => "systematic-fixed-mass-k16-token-id-rhu",
+            Self::SystematicFixedMassK18 => "systematic-fixed-mass-k18-token-id-rhu",
+            Self::MassCorrectedNormalizedNoRescue => "mass-corrected-normalized-no-rescue-rhu",
+        }
+    }
+
+    pub(super) const fn stable_index(self) -> usize {
+        match self {
+            Self::NormalizedRescued => 0,
+            Self::MassCorrectedNormalized => 1,
+            Self::ReciprocalFreeRescued => 2,
+            Self::ReciprocalFreeLateRhu => 3,
+            Self::ReciprocalFreeLateStochastic => 4,
+            Self::SystematicFixedMassK15 => 5,
+            Self::SystematicFixedMassK16 => 6,
+            Self::SystematicFixedMassK18 => 7,
+            Self::MassCorrectedNormalizedNoRescue => 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum GradientSource {
+    NormalizedProbability,
+    MassCorrectedNormalizedProbability,
+    ReciprocalFreeWeights,
+    SystematicFixedMassK15,
+    SystematicFixedMassK16,
+    SystematicFixedMassK18,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BackwardQuantizationMode {
+    RescuedRhu,
+    PlainRhu,
+    LateRhu,
+    LateStochastic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct GradientProposalSpec {
+    pub source: GradientSource,
+    pub quantization: BackwardQuantizationMode,
+    pub stochastic_seed: u64,
+}
+
+impl GradientProposalSpec {
+    pub const fn lane(lane: ProductionGradientProposalLane, stochastic_seed: u64) -> Self {
+        match lane {
+            ProductionGradientProposalLane::NormalizedRescued => Self {
+                source: GradientSource::NormalizedProbability,
+                quantization: BackwardQuantizationMode::RescuedRhu,
+                stochastic_seed,
+            },
+            ProductionGradientProposalLane::MassCorrectedNormalized => Self {
+                source: GradientSource::MassCorrectedNormalizedProbability,
+                quantization: BackwardQuantizationMode::RescuedRhu,
+                stochastic_seed,
+            },
+            ProductionGradientProposalLane::ReciprocalFreeRescued => Self {
+                source: GradientSource::ReciprocalFreeWeights,
+                quantization: BackwardQuantizationMode::RescuedRhu,
+                stochastic_seed,
+            },
+            ProductionGradientProposalLane::ReciprocalFreeLateRhu => Self {
+                source: GradientSource::ReciprocalFreeWeights,
+                quantization: BackwardQuantizationMode::LateRhu,
+                stochastic_seed,
+            },
+            ProductionGradientProposalLane::ReciprocalFreeLateStochastic => Self {
+                source: GradientSource::ReciprocalFreeWeights,
+                quantization: BackwardQuantizationMode::LateStochastic,
+                stochastic_seed,
+            },
+            ProductionGradientProposalLane::SystematicFixedMassK15 => Self {
+                source: GradientSource::SystematicFixedMassK15,
+                quantization: BackwardQuantizationMode::PlainRhu,
+                stochastic_seed,
+            },
+            ProductionGradientProposalLane::SystematicFixedMassK16 => Self {
+                source: GradientSource::SystematicFixedMassK16,
+                quantization: BackwardQuantizationMode::PlainRhu,
+                stochastic_seed,
+            },
+            ProductionGradientProposalLane::SystematicFixedMassK18 => Self {
+                source: GradientSource::SystematicFixedMassK18,
+                quantization: BackwardQuantizationMode::PlainRhu,
+                stochastic_seed,
+            },
+            ProductionGradientProposalLane::MassCorrectedNormalizedNoRescue => Self {
+                source: GradientSource::MassCorrectedNormalizedProbability,
+                quantization: BackwardQuantizationMode::PlainRhu,
+                stochastic_seed,
+            },
+        }
+    }
+
+    pub const fn natural_reference(source: GradientSource) -> Self {
+        Self {
+            source,
+            quantization: BackwardQuantizationMode::PlainRhu,
+            stochastic_seed: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductionFullTrainConfig {
     pub context_tokens: usize,
     pub max_windows: usize,
@@ -49,6 +217,8 @@ pub struct ProductionFullTrainConfig {
     pub embedding_learning_rate_shift: u8,
     pub output_learning_rate_shift: u8,
     pub output_backward_shift: Option<u8>,
+    pub probability_gradient_fractional_bits: u8,
+    pub probability_normalization: SoftmaxNormalization,
     pub batch_windows: usize,
     pub max_optimizer_steps: usize,
     pub evaluation_windows: usize,
@@ -72,6 +242,8 @@ impl Default for ProductionFullTrainConfig {
             embedding_learning_rate_shift: 4,
             output_learning_rate_shift: 24,
             output_backward_shift: None,
+            probability_gradient_fractional_bits: 15,
+            probability_normalization: SoftmaxNormalization::LegacyQ31Lut,
             batch_windows: 4,
             max_optimizer_steps: usize::MAX,
             evaluation_windows: usize::MAX,
@@ -253,7 +425,14 @@ pub struct ProductionFullTrainTrace {
     pub next_window: u64,
     pub schedule_complete: bool,
     pub learning_rate_shifts: [u8; 13],
+    pub forward_shifts: [u8; 6],
     pub output_backward_shift: u8,
+    pub probability_gradient_fractional_bits: u8,
+    pub probability_normalization: SoftmaxNormalization,
+    pub probability_gradient_shift_delta: u8,
+    pub effective_output_backward_shift: u8,
+    pub effective_output_learning_rate_shift: u8,
+    pub effective_bias_learning_rate_shift: u8,
     pub gradient_saturation_count: usize,
     pub residual_saturation_count: usize,
     pub weight_saturation_count: usize,
@@ -304,7 +483,8 @@ impl ProductionFullTrainTrace {
                 "{{\"schema\":\"nsrl.production_full_train_smoke.v1\",",
                 "\"profile\":\"{}\",\"parameter_count\":{},",
                 "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",\"token_stream_hash\":\"0x{:016x}\"}},",
-                "\"training\":{{\"optimizer\":\"integer_residual_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"evaluation_windows\":{},\"epochs\":{},\"batch_windows\":{},\"optimizer_steps\":{},\"total_optimizer_step\":{},\"initial_mistakes\":{},\"final_mistakes\":{},\"learning_rate_shifts\":{{{}}},\"output_backward_shift\":{}}},",
+                "\"training\":{{\"optimizer\":\"integer_residual_sgd\",\"backward\":\"full_quantized_straight_through\",\"context_tokens\":{},\"windows\":{},\"evaluation_windows\":{},\"epochs\":{},\"batch_windows\":{},\"optimizer_steps\":{},\"total_optimizer_step\":{},\"initial_mistakes\":{},\"final_mistakes\":{},\"learning_rate_shifts\":{{{}}},\"output_backward_shift\":{},\"probability_gradient_fractional_bits\":{},\"probability_normalization\":\"{}\",\"probability_gradient_shift_delta\":{},\"effective_output_backward_shift\":{},\"effective_output_learning_rate_shift\":{},\"effective_bias_learning_rate_shift\":{}}},",
+                "\"forward_shifts\":{{\"qkv\":{},\"o\":{},\"up\":{},\"gate\":{},\"down\":{},\"output\":{}}},",
                 "\"cursor\":{{\"start_epoch\":{},\"start_window\":{},\"next_epoch\":{},\"next_window\":{},\"schedule_complete\":{}}},",
                 "\"movement_l1\":{{{}}},\"moved_parameter_groups\":[{}],",
                 "\"diagnostics\":{{\"gradient_nonzero_count\":{{{}}},\"residual_carry_count\":{{{}}},\"update_nonzero_count\":{{{}}},\"saturation_by_group\":{{{}}},\"residual_saturation_by_group\":{{{}}},\"backward_ste_rescue_count\":{},\"backward_quantization_count\":{},\"backward_ste_rescue_per_million\":{}}},",
@@ -328,6 +508,18 @@ impl ProductionFullTrainTrace {
             self.final_mistakes,
             learning_rate_shifts,
             self.output_backward_shift,
+            self.probability_gradient_fractional_bits,
+            self.probability_normalization.as_str(),
+            self.probability_gradient_shift_delta,
+            self.effective_output_backward_shift,
+            self.effective_output_learning_rate_shift,
+            self.effective_bias_learning_rate_shift,
+            self.forward_shifts[0],
+            self.forward_shifts[1],
+            self.forward_shifts[2],
+            self.forward_shifts[3],
+            self.forward_shifts[4],
+            self.forward_shifts[5],
             self.start_epoch,
             self.start_window,
             self.next_epoch,
@@ -375,7 +567,21 @@ struct ForwardCache {
     layers: Vec<LayerCache>,
     final_hidden: Vec<i16>,
     features: Vec<i16>,
-    probabilities: Vec<i16>,
+    logits: Vec<i32>,
+    probabilities: Vec<i32>,
+}
+
+pub(super) struct CoarseGradientSnapshot {
+    pub residuals: Vec<i64>,
+    pub output_gradient_vector_hash: u64,
+    pub output_gradient_sum: i64,
+    pub output_gradient_l1: u64,
+    pub output_gradient_max_abs: u64,
+    pub backward_ste_rescue_count: u64,
+    pub backward_quantization_count: u64,
+    pub stochastic_round_up_count: u64,
+    pub gradient_saturation_count: usize,
+    pub residual_saturation_count: usize,
 }
 
 #[derive(Default)]
@@ -391,6 +597,105 @@ struct UpdateStats {
     gradient_saturation: usize,
     residual_saturation: usize,
     weight_saturation: usize,
+}
+
+struct BackwardQuantizer {
+    mode: BackwardQuantizationMode,
+    seed: u64,
+    operation: u64,
+    stochastic_round_up_count: u64,
+}
+
+impl BackwardQuantizer {
+    const fn new(mode: BackwardQuantizationMode, seed: u64) -> Self {
+        Self {
+            mode,
+            seed,
+            operation: 0,
+            stochastic_round_up_count: 0,
+        }
+    }
+
+    const fn late_quantization(&self) -> bool {
+        matches!(
+            self.mode,
+            BackwardQuantizationMode::LateRhu | BackwardQuantizationMode::LateStochastic
+        )
+    }
+
+    fn shift(&mut self, value: i64, shift: u8, stats: &mut UpdateStats) -> i64 {
+        stats.backward_quantization = stats.backward_quantization.saturating_add(1);
+        let rounded = if self.mode == BackwardQuantizationMode::LateStochastic {
+            self.stochastic_shift(value, shift)
+        } else {
+            round_shift_rhu_i64(value, shift)
+        };
+        if self.mode == BackwardQuantizationMode::RescuedRhu && rounded == 0 && value != 0 {
+            stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
+            value.signum()
+        } else {
+            rounded
+        }
+    }
+
+    fn ratio(
+        &mut self,
+        numerator: i64,
+        denominator: i64,
+        stats: &mut UpdateStats,
+    ) -> Result<i64, TrainError> {
+        stats.backward_quantization = stats.backward_quantization.saturating_add(1);
+        if denominator <= 0 {
+            return Err(TrainError::InvalidConfig);
+        }
+        let rounded = if self.mode == BackwardQuantizationMode::LateStochastic {
+            self.stochastic_ratio(numerator, denominator)?
+        } else {
+            nearest_ratio(numerator, denominator)?
+        };
+        if self.mode == BackwardQuantizationMode::RescuedRhu && rounded == 0 && numerator != 0 {
+            stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
+            Ok(numerator.signum())
+        } else {
+            Ok(rounded)
+        }
+    }
+
+    fn stochastic_shift(&mut self, value: i64, shift: u8) -> i64 {
+        if shift == 0 {
+            return value;
+        }
+        let shift = shift.min(62);
+        let denominator = 1_u64 << shift;
+        let quotient = value >> shift;
+        let remainder = (value & ((1_i64 << shift) - 1)) as u64;
+        quotient + i64::from(self.choose_round_up(remainder, denominator))
+    }
+
+    fn stochastic_ratio(&mut self, numerator: i64, denominator: i64) -> Result<i64, TrainError> {
+        let quotient = numerator.div_euclid(denominator);
+        let remainder = numerator.rem_euclid(denominator) as u64;
+        let denominator = denominator as u64;
+        quotient
+            .checked_add(i64::from(self.choose_round_up(remainder, denominator)))
+            .ok_or(TrainError::CoreRejected(
+                "production_training_stochastic_ratio",
+            ))
+    }
+
+    fn choose_round_up(&mut self, remainder: u64, denominator: u64) -> bool {
+        let operation = self.operation;
+        self.operation = self.operation.wrapping_add(1);
+        if remainder == 0 {
+            return false;
+        }
+        let sample = sample_below(self.seed, operation, denominator);
+        let round_up = sample < remainder;
+        self.stochastic_round_up_count = self
+            .stochastic_round_up_count
+            .saturating_add(u64::from(round_up));
+        round_up
+    }
 }
 
 struct ParameterRanges {
@@ -453,6 +758,20 @@ pub fn train_production_full_smoke(
         || config.max_optimizer_steps == 0
         || config.evaluation_windows == 0
         || config.output_backward_shift.is_some_and(|shift| shift > 30)
+        || !(15..=31).contains(&config.probability_gradient_fractional_bits)
+        || config
+            .output_backward_shift
+            .unwrap_or(model.scales.output_shift)
+            .saturating_add(config.probability_gradient_fractional_bits - 15)
+            > 62
+        || config
+            .output_learning_rate_shift
+            .saturating_add(config.probability_gradient_fractional_bits - 15)
+            > 62
+        || config
+            .vector_learning_rate_shift
+            .saturating_add(config.probability_gradient_fractional_bits - 15)
+            > 62
         || effective_learning_rate_shifts(config)
             .iter()
             .any(|&shift| shift > 62)
@@ -488,7 +807,12 @@ pub fn train_production_full_smoke(
             .saturating_add(config.batch_windows)
             .min(windows.len());
         for (index, (context, target)) in windows[batch_start..batch_end].iter().enumerate() {
-            let cache = forward_cache(model, context)?;
+            let cache = forward_cache(
+                model,
+                context,
+                config.probability_gradient_fractional_bits,
+                config.probability_normalization,
+            )?;
             backward_update(
                 model,
                 context,
@@ -532,9 +856,23 @@ pub fn train_production_full_smoke(
         next_window: state.next_window,
         schedule_complete: state.next_epoch == config.epochs as u64,
         learning_rate_shifts: effective_learning_rate_shifts(config),
+        forward_shifts: scale_shifts(model.scales),
         output_backward_shift: config
             .output_backward_shift
             .unwrap_or(model.scales.output_shift),
+        probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
+        probability_normalization: config.probability_normalization,
+        probability_gradient_shift_delta: config.probability_gradient_fractional_bits - 15,
+        effective_output_backward_shift: config
+            .output_backward_shift
+            .unwrap_or(model.scales.output_shift)
+            .saturating_add(config.probability_gradient_fractional_bits - 15),
+        effective_output_learning_rate_shift: config
+            .output_learning_rate_shift
+            .saturating_add(config.probability_gradient_fractional_bits - 15),
+        effective_bias_learning_rate_shift: config
+            .vector_learning_rate_shift
+            .saturating_add(config.probability_gradient_fractional_bits - 15),
         gradient_saturation_count: stats.gradient_saturation,
         residual_saturation_count: stats.residual_saturation,
         weight_saturation_count: stats.weight_saturation,
@@ -556,6 +894,8 @@ pub fn train_production_full_smoke(
 fn forward_cache(
     model: &ProductionModelV1,
     context_tokens: &[u32],
+    probability_gradient_fractional_bits: u8,
+    probability_normalization: SoftmaxNormalization,
 ) -> Result<ForwardCache, TrainError> {
     let config = model.config;
     if context_tokens.is_empty()
@@ -715,14 +1055,243 @@ fn forward_cache(
     )
     .ok_or(TrainError::CoreRejected("production_training_final_rms"))?;
     let logits = output_logits(model, &features);
-    let mut probabilities = vec![0_i16; config.vocab_size];
-    base2_softmax_i32_q15(&logits, &mut probabilities)
-        .ok_or(TrainError::CoreRejected("production_training_softmax"))?;
+    let probabilities = if probability_gradient_fractional_bits == 15
+        && probability_normalization == SoftmaxNormalization::LegacyQ31Lut
+    {
+        let mut q15 = vec![0_i16; config.vocab_size];
+        base2_softmax_i32_q15(&logits, &mut q15)
+            .ok_or(TrainError::CoreRejected("production_training_softmax"))?;
+        q15.into_iter().map(i32::from).collect()
+    } else {
+        let mut q31 = vec![0_u32; config.vocab_size];
+        base2_softmax_i32_q31_with_normalization(&logits, &mut q31, probability_normalization)
+            .ok_or(TrainError::CoreRejected("production_training_softmax_wide"))?;
+        q31.into_iter()
+            .map(|probability| {
+                quantize_probability_q31(probability, probability_gradient_fractional_bits)
+            })
+            .collect()
+    };
     Ok(ForwardCache {
         layers,
         final_hidden,
         features,
+        logits,
         probabilities,
+    })
+}
+
+fn output_gradient(
+    cache: &ForwardCache,
+    target: usize,
+    config: ProductionFullTrainConfig,
+    source: GradientSource,
+    stochastic_seed: u64,
+) -> Result<(Vec<i32>, u8), TrainError> {
+    if target >= cache.probabilities.len() || cache.logits.len() != cache.probabilities.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    match source {
+        GradientSource::NormalizedProbability => {
+            let mut gradient = cache.probabilities.clone();
+            let gradient_scale = ((1_u64 << config.probability_gradient_fractional_bits) - 1)
+                .try_into()
+                .map_err(|_| TrainError::InvalidConfig)?;
+            gradient[target] = gradient[target].saturating_sub(gradient_scale);
+            Ok((gradient, config.probability_gradient_fractional_bits - 15))
+        }
+        GradientSource::MassCorrectedNormalizedProbability => {
+            let mut gradient = cache.probabilities.clone();
+            let non_target_mass = gradient
+                .iter()
+                .enumerate()
+                .filter(|&(index, _)| index != target)
+                .try_fold(0_i64, |sum, (_, &value)| {
+                    sum.checked_add(i64::from(value))
+                        .ok_or(TrainError::CoreRejected(
+                            "production_probability_mass_overflow",
+                        ))
+                })?;
+            gradient[target] = i32::try_from(-non_target_mass).map_err(|_| {
+                TrainError::CoreRejected("production_mass_corrected_gradient_exceeds_i32")
+            })?;
+            Ok((gradient, config.probability_gradient_fractional_bits - 15))
+        }
+        GradientSource::ReciprocalFreeWeights => {
+            let maximum = cache
+                .logits
+                .iter()
+                .copied()
+                .max()
+                .ok_or(TrainError::InvalidConfig)?;
+            let mut gradient = cache
+                .logits
+                .iter()
+                .map(|&logit| i32::from(base2_exp_neg_q15(logit.saturating_sub(maximum))))
+                .collect::<Vec<_>>();
+            let non_target_mass = gradient
+                .iter()
+                .enumerate()
+                .filter(|&(index, _)| index != target)
+                .try_fold(0_i64, |sum, (_, &value)| {
+                    sum.checked_add(i64::from(value))
+                        .ok_or(TrainError::CoreRejected(
+                            "production_exponent_weight_mass_overflow",
+                        ))
+                })?;
+            gradient[target] = i32::try_from(-non_target_mass).map_err(|_| {
+                TrainError::CoreRejected("production_reciprocal_free_gradient_exceeds_i32")
+            })?;
+            // The raw exponent residual is approximately vocab_size times a
+            // normalized Q15 residual on a uniform surface. A fixed power-of-
+            // two shift prevents downstream i16 saturation without introducing
+            // a per-example reciprocal. The remaining exponent mass variation
+            // is intentionally measured as sample reweighting by the audit.
+            let vocabulary_shift = usize::BITS - (gradient.len() - 1).leading_zeros();
+            Ok((gradient, vocabulary_shift as u8))
+        }
+        GradientSource::SystematicFixedMassK15 => {
+            systematic_fixed_mass_gradient(&cache.logits, target, 1_u32 << 15, stochastic_seed)
+        }
+        GradientSource::SystematicFixedMassK16 => {
+            systematic_fixed_mass_gradient(&cache.logits, target, 1_u32 << 16, stochastic_seed)
+        }
+        GradientSource::SystematicFixedMassK18 => {
+            systematic_fixed_mass_gradient(&cache.logits, target, 1_u32 << 18, stochastic_seed)
+        }
+    }
+}
+
+fn systematic_fixed_mass_gradient(
+    logits: &[i32],
+    target: usize,
+    mass: u32,
+    stochastic_seed: u64,
+) -> Result<(Vec<i32>, u8), TrainError> {
+    let maximum = logits
+        .iter()
+        .copied()
+        .max()
+        .ok_or(TrainError::InvalidConfig)?;
+    let weights = logits
+        .iter()
+        .map(|&logit| base2_exp_neg_q47(logit.saturating_sub(maximum)))
+        .collect::<Vec<_>>();
+    let total = weights.iter().try_fold(0_u64, |sum, &weight| {
+        sum.checked_add(weight).ok_or(TrainError::CoreRejected(
+            "production_systematic_fixed_mass_weight_overflow",
+        ))
+    })?;
+    if total == 0 || target >= weights.len() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let phase = sample_below(stochastic_seed, 0x5359_5354_454d_4154, total);
+    let mut prefix = 0_u64;
+    let mut previous = 0_u64;
+    let mut apportioned = Vec::with_capacity(weights.len());
+    for weight in weights {
+        prefix = prefix.checked_add(weight).ok_or(TrainError::CoreRejected(
+            "production_systematic_fixed_mass_prefix_overflow",
+        ))?;
+        let cumulative =
+            (u128::from(mass) * u128::from(prefix) + u128::from(phase)) / u128::from(total);
+        let cumulative = u64::try_from(cumulative).map_err(|_| {
+            TrainError::CoreRejected("production_systematic_fixed_mass_cumulative_overflow")
+        })?;
+        apportioned.push(i32::try_from(cumulative - previous).map_err(|_| {
+            TrainError::CoreRejected("production_systematic_fixed_mass_coordinate_overflow")
+        })?);
+        previous = cumulative;
+    }
+    if previous != u64::from(mass) {
+        return Err(TrainError::CoreRejected(
+            "production_systematic_fixed_mass_mass_mismatch",
+        ));
+    }
+    apportioned[target] = apportioned[target]
+        .checked_sub(i32::try_from(mass).map_err(|_| TrainError::InvalidConfig)?)
+        .ok_or(TrainError::CoreRejected(
+            "production_systematic_fixed_mass_target_overflow",
+        ))?;
+    if apportioned
+        .iter()
+        .map(|&value| i64::from(value))
+        .sum::<i64>()
+        != 0
+    {
+        return Err(TrainError::CoreRejected(
+            "production_systematic_fixed_mass_zero_sum_mismatch",
+        ));
+    }
+    let fractional_bits = mass.trailing_zeros() as u8;
+    Ok((apportioned, fractional_bits.saturating_sub(15)))
+}
+
+pub(super) fn coarse_gradients_for_window_with_spec(
+    model: &mut ProductionModelV1,
+    context_tokens: &[u32],
+    target: usize,
+    config: ProductionFullTrainConfig,
+    spec: GradientProposalSpec,
+) -> Result<CoarseGradientSnapshot, TrainError> {
+    let cache = forward_cache(
+        model,
+        context_tokens,
+        config.probability_gradient_fractional_bits,
+        config.probability_normalization,
+    )?;
+    let (output_gradient, _) =
+        output_gradient(&cache, target, config, spec.source, spec.stochastic_seed)?;
+    let output_gradient_vector_hash = output_gradient.iter().fold(FNV_OFFSET, |hash, value| {
+        value.to_le_bytes().into_iter().fold(hash, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+        })
+    });
+    let output_gradient_sum = output_gradient.iter().try_fold(0_i64, |sum, &value| {
+        sum.checked_add(i64::from(value))
+            .ok_or(TrainError::CoreRejected(
+                "production_output_gradient_sum_overflow",
+            ))
+    })?;
+    let output_gradient_l1 = output_gradient.iter().try_fold(0_u64, |sum, &value| {
+        sum.checked_add(i64::from(value).unsigned_abs())
+            .ok_or(TrainError::CoreRejected(
+                "production_output_gradient_l1_overflow",
+            ))
+    })?;
+    let output_gradient_max_abs = output_gradient
+        .iter()
+        .map(|&value| i64::from(value).unsigned_abs())
+        .max()
+        .unwrap_or(0);
+    let ranges = ParameterRanges::new(model);
+    let mut residuals = vec![0_i64; model.parameter_count()];
+    let mut stats = UpdateStats::default();
+    let mut quantizer = BackwardQuantizer::new(spec.quantization, spec.stochastic_seed);
+    backward_update_with_spec(
+        model,
+        context_tokens,
+        target,
+        cache,
+        config,
+        &ranges,
+        &mut residuals,
+        false,
+        &mut stats,
+        spec,
+        &mut quantizer,
+    )?;
+    Ok(CoarseGradientSnapshot {
+        residuals,
+        output_gradient_vector_hash,
+        output_gradient_sum,
+        output_gradient_l1,
+        output_gradient_max_abs,
+        backward_ste_rescue_count: stats.backward_ste_rescue,
+        backward_quantization_count: stats.backward_quantization,
+        stochastic_round_up_count: quantizer.stochastic_round_up_count,
+        gradient_saturation_count: stats.gradient_saturation,
+        residual_saturation_count: stats.residual_saturation,
     })
 }
 
@@ -738,11 +1307,42 @@ fn backward_update(
     apply_updates: bool,
     stats: &mut UpdateStats,
 ) -> Result<(), TrainError> {
+    let spec = GradientProposalSpec::lane(ProductionGradientProposalLane::NormalizedRescued, 0);
+    let mut quantizer = BackwardQuantizer::new(spec.quantization, spec.stochastic_seed);
+    backward_update_with_spec(
+        model,
+        context_tokens,
+        target,
+        cache,
+        config,
+        ranges,
+        residuals,
+        apply_updates,
+        stats,
+        spec,
+        &mut quantizer,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn backward_update_with_spec(
+    model: &mut ProductionModelV1,
+    context_tokens: &[u32],
+    target: usize,
+    cache: ForwardCache,
+    config: ProductionFullTrainConfig,
+    ranges: &ParameterRanges,
+    residuals: &mut [i64],
+    apply_updates: bool,
+    stats: &mut UpdateStats,
+    spec: GradientProposalSpec,
+    quantizer: &mut BackwardQuantizer,
+) -> Result<(), TrainError> {
     let c = model.config;
     let seq_len = context_tokens.len();
     let total = seq_len * c.d_model;
-    let mut grad_logits = cache.probabilities;
-    grad_logits[target] = grad_logits[target].saturating_sub(i16::MAX);
+    let (grad_logits, precision_shift) =
+        output_gradient(&cache, target, config, spec.source, spec.stochastic_seed)?;
     let mut grad_features = vec![0_i16; c.d_model];
     for (dim, grad_feature) in grad_features.iter_mut().enumerate() {
         let mut acc = 0_i64;
@@ -751,19 +1351,24 @@ fn backward_update(
                 i64::from(grad) * i64::from(model.output_weights[token * c.d_model + dim]),
             );
         }
-        *grad_feature = saturate_i16(quantized_nonzero(
-            acc,
-            config
-                .output_backward_shift
-                .unwrap_or(model.scales.output_shift),
-            stats,
-        ));
+        *grad_feature = saturate_i16(
+            quantizer.shift(
+                acc,
+                config
+                    .output_backward_shift
+                    .unwrap_or(model.scales.output_shift)
+                    .saturating_add(precision_shift),
+                stats,
+            ),
+        );
     }
     for (token, &grad) in grad_logits.iter().enumerate() {
         update_i32(
             &mut model.output_bias_q8[token],
             i64::from(grad),
-            config.vector_learning_rate_shift,
+            config
+                .vector_learning_rate_shift
+                .saturating_add(precision_shift),
             &mut residuals[ranges.bias.start + token],
             apply_updates,
             12,
@@ -773,7 +1378,9 @@ fn backward_update(
             update_i16(
                 &mut model.output_weights[token * c.d_model + dim],
                 i64::from(grad) * i64::from(feature),
-                config.output_learning_rate_shift,
+                config
+                    .output_learning_rate_shift
+                    .saturating_add(precision_shift),
                 &mut residuals[ranges.output.start + token * c.d_model + dim],
                 apply_updates,
                 11,
@@ -819,33 +1426,45 @@ fn backward_update(
             c.d_model,
             model.scales.down_shift,
             stats,
+            quantizer,
         );
         let mut grad_up = vec![0_i16; seq_len * c.hidden_dim];
         let mut grad_gate = vec![0_i16; seq_len * c.hidden_dim];
         for index in 0..grad_gated.len() {
-            stats.backward_quantization = stats.backward_quantization.saturating_add(2);
-            let grad = gated_activation_backward_i16_q15(
-                item.up[index],
-                item.gate[index],
-                grad_gated[index],
-            );
             let up_numerator =
                 i64::from(grad_gated[index]) * i64::from(hard_silu_q15(item.gate[index]));
-            grad_up[index] = if grad.up == 0 && up_numerator != 0 {
-                stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
-                saturate_i16(up_numerator.signum())
-            } else {
-                grad.up
-            };
             let gate_numerator = i64::from(grad_gated[index])
                 * i64::from(item.up[index])
                 * i64::from(hard_silu_derivative_q15(item.gate[index]));
-            grad_gate[index] = if grad.gate == 0 && gate_numerator != 0 {
-                stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
-                saturate_i16(gate_numerator.signum())
+            if quantizer.late_quantization() {
+                grad_up[index] = saturate_i16(quantizer.shift(up_numerator, 15, stats));
+                grad_gate[index] = saturate_i16(quantizer.shift(gate_numerator, 30, stats));
             } else {
-                grad.gate
-            };
+                stats.backward_quantization = stats.backward_quantization.saturating_add(2);
+                let grad = gated_activation_backward_i16_q15(
+                    item.up[index],
+                    item.gate[index],
+                    grad_gated[index],
+                );
+                grad_up[index] = if quantizer.mode == BackwardQuantizationMode::RescuedRhu
+                    && grad.up == 0
+                    && up_numerator != 0
+                {
+                    stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
+                    saturate_i16(up_numerator.signum())
+                } else {
+                    grad.up
+                };
+                grad_gate[index] = if quantizer.mode == BackwardQuantizationMode::RescuedRhu
+                    && grad.gate == 0
+                    && gate_numerator != 0
+                {
+                    stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
+                    saturate_i16(gate_numerator.signum())
+                } else {
+                    grad.gate
+                };
+            }
         }
         let up_range = layer * up_matrix..(layer + 1) * up_matrix;
         let up_residual_range = ranges.up.start + up_range.start..ranges.up.start + up_range.end;
@@ -858,6 +1477,7 @@ fn backward_update(
             c.hidden_dim,
             model.scales.up_shift,
             stats,
+            quantizer,
         );
         let gate_input = linear_backward_input(
             &grad_gate,
@@ -866,6 +1486,7 @@ fn backward_update(
             c.hidden_dim,
             model.scales.gate_shift,
             stats,
+            quantizer,
         );
         let grad_mlp_input = add_rows(&up_input, &gate_input);
         let rms_range = layer * c.d_model..(layer + 1) * c.d_model;
@@ -948,6 +1569,7 @@ fn backward_update(
             c.d_model,
             model.scales.o_shift,
             stats,
+            quantizer,
         );
         let grad_context = scale_gradient(&grad_context, 8, stats);
         let (grad_q, grad_k, grad_v) = linear_attention_backward(
@@ -959,6 +1581,7 @@ fn backward_update(
             &item.context,
             &grad_context,
             stats,
+            quantizer,
         )?;
         let q_input = linear_backward_input(
             &grad_q,
@@ -967,6 +1590,7 @@ fn backward_update(
             c.d_model,
             model.scales.qkv_shift,
             stats,
+            quantizer,
         );
         let k_input = linear_backward_input(
             &grad_k,
@@ -975,6 +1599,7 @@ fn backward_update(
             c.d_model,
             model.scales.qkv_shift,
             stats,
+            quantizer,
         );
         let v_input = linear_backward_input(
             &grad_v,
@@ -983,6 +1608,7 @@ fn backward_update(
             c.d_model,
             model.scales.qkv_shift,
             stats,
+            quantizer,
         );
         let grad_attention_input = add_rows(&add_rows(&q_input, &k_input), &v_input);
         let mut grad_input_norm = vec![0_i16; total];
@@ -1083,6 +1709,7 @@ fn linear_backward_input(
     output_dim: usize,
     shift: u8,
     stats: &mut UpdateStats,
+    quantizer: &mut BackwardQuantizer,
 ) -> Vec<i16> {
     let rows = grad.len() / output_dim;
     let mut result = vec![0_i16; rows * input_dim];
@@ -1095,7 +1722,7 @@ fn linear_backward_input(
                         * i64::from(weights[output * input_dim + input]),
                 );
             }
-            let wide = quantized_nonzero(acc, shift, stats);
+            let wide = quantizer.shift(acc, shift, stats);
             result[row * input_dim + input] = saturate_i16(wide);
             stats.gradient_saturation +=
                 usize::from(wide < i64::from(i16::MIN) || wide > i64::from(i16::MAX));
@@ -1230,6 +1857,7 @@ fn linear_attention_backward(
     context: &[i16],
     grad_context: &[i16],
     stats: &mut UpdateStats,
+    quantizer: &mut BackwardQuantizer,
 ) -> Result<AttentionGradients, TrainError> {
     let seq_len = q.len() / d_model;
     let head_dim = d_model / heads;
@@ -1287,7 +1915,7 @@ fn linear_attention_backward(
                     dot_grad_context.saturating_mul(prefix_sums[token * head_dim + kd]),
                 );
                 gq[base + kd] =
-                    gq[base + kd].saturating_add(round_ratio(numerator, denominator, stats)?);
+                    gq[base + kd].saturating_add(quantizer.ratio(numerator, denominator, stats)?);
             }
             for kd in 0..head_dim {
                 let phi_q = i64::from(q[base + kd]) + 32769;
@@ -1296,33 +1924,57 @@ fn linear_attention_backward(
                         .saturating_mul(phi_q)
                         .saturating_mul(1_i64 << 15);
                     grad_state[kd * head_dim + vd] = grad_state[kd * head_dim + vd]
-                        .saturating_add(round_ratio(product, denominator, stats)?);
+                        .saturating_add(quantizer.ratio(product, denominator, stats)?);
                 }
-                grad_sums[kd] = grad_sums[kd].saturating_add(round_ratio(
+                grad_sums[kd] = grad_sums[kd].saturating_add(quantizer.ratio(
                     dot_grad_context.saturating_mul(phi_q).saturating_neg(),
                     denominator,
                     stats,
                 )?);
             }
-            for kd in 0..head_dim {
-                let phi_k = i64::from(k[base + kd]) + 32769;
-                let mut key_grad = 0_i64;
+            if quantizer.late_quantization() {
                 for vd in 0..head_dim {
-                    let sg = grad_state[kd * head_dim + vd];
-                    gv[base + vd] = gv[base + vd].saturating_add(quantized_nonzero(
-                        sg.saturating_mul(phi_k),
-                        15,
-                        stats,
-                    ));
-                    key_grad = key_grad.saturating_add(quantized_nonzero(
-                        sg.saturating_mul(i64::from(v[base + vd])),
-                        15,
-                        stats,
-                    ));
+                    let mut value_numerator = 0_i64;
+                    for kd in 0..head_dim {
+                        let phi_k = i64::from(k[base + kd]) + 32769;
+                        value_numerator = value_numerator
+                            .saturating_add(grad_state[kd * head_dim + vd].saturating_mul(phi_k));
+                    }
+                    gv[base + vd] =
+                        gv[base + vd].saturating_add(quantizer.shift(value_numerator, 15, stats));
                 }
-                gk[base + kd] = gk[base + kd]
-                    .saturating_add(key_grad)
-                    .saturating_add(grad_sums[kd]);
+                for kd in 0..head_dim {
+                    let mut key_numerator = 0_i64;
+                    for vd in 0..head_dim {
+                        key_numerator = key_numerator.saturating_add(
+                            grad_state[kd * head_dim + vd].saturating_mul(i64::from(v[base + vd])),
+                        );
+                    }
+                    gk[base + kd] = gk[base + kd]
+                        .saturating_add(quantizer.shift(key_numerator, 15, stats))
+                        .saturating_add(grad_sums[kd]);
+                }
+            } else {
+                for kd in 0..head_dim {
+                    let phi_k = i64::from(k[base + kd]) + 32769;
+                    let mut key_grad = 0_i64;
+                    for vd in 0..head_dim {
+                        let sg = grad_state[kd * head_dim + vd];
+                        gv[base + vd] = gv[base + vd].saturating_add(quantizer.shift(
+                            sg.saturating_mul(phi_k),
+                            15,
+                            stats,
+                        ));
+                        key_grad = key_grad.saturating_add(quantizer.shift(
+                            sg.saturating_mul(i64::from(v[base + vd])),
+                            15,
+                            stats,
+                        ));
+                    }
+                    gk[base + kd] = gk[base + kd]
+                        .saturating_add(key_grad)
+                        .saturating_add(grad_sums[kd]);
+                }
             }
         }
     }
@@ -1333,12 +1985,7 @@ fn linear_attention_backward(
     ))
 }
 
-fn round_ratio(
-    numerator: i64,
-    denominator: i64,
-    stats: &mut UpdateStats,
-) -> Result<i64, TrainError> {
-    stats.backward_quantization = stats.backward_quantization.saturating_add(1);
+fn nearest_ratio(numerator: i64, denominator: i64) -> Result<i64, TrainError> {
     if denominator <= 0 {
         return Err(TrainError::InvalidConfig);
     }
@@ -1352,12 +1999,7 @@ fn round_ratio(
             .map(|v| -(v / denominator))
     }
     .ok_or(TrainError::CoreRejected("production_training_ratio"))?;
-    Ok(if rounded == 0 && numerator != 0 {
-        stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
-        numerator.signum()
-    } else {
-        rounded
-    })
+    Ok(rounded)
 }
 
 fn update_i16_slice(
@@ -1506,7 +2148,7 @@ fn evaluate_mistakes(
 ) -> Result<usize, TrainError> {
     let mut n = 0;
     for (context, target) in windows {
-        let cache = forward_cache(model, context)?;
+        let cache = forward_cache(model, context, 15, SoftmaxNormalization::LegacyQ31Lut)?;
         let predicted = cache
             .probabilities
             .iter()
@@ -1561,6 +2203,18 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
         bytes.extend_from_slice(&effective_learning_rate_shifts(c));
         bytes.push(c.output_backward_shift.unwrap_or(u8::MAX));
     }
+    if c.probability_gradient_fractional_bits != 15 {
+        bytes.extend_from_slice(&[0xff, c.probability_gradient_fractional_bits]);
+    }
+    if c.probability_normalization != SoftmaxNormalization::LegacyQ31Lut {
+        let method = match c.probability_normalization {
+            SoftmaxNormalization::LegacyQ31Lut => 0,
+            SoftmaxNormalization::Q47Lut => 1,
+            SoftmaxNormalization::Q47Newton1 => 2,
+            SoftmaxNormalization::Q47Exact => 3,
+        };
+        bytes.extend_from_slice(&[0xfe, method]);
+    }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
         hash.wrapping_mul(FNV_PRIME)
@@ -1579,15 +2233,34 @@ fn projection_shift_overrides(config: ProductionFullTrainConfig) -> [Option<u8>;
     ]
 }
 
-fn quantized_nonzero(value: i64, shift: u8, stats: &mut UpdateStats) -> i64 {
-    stats.backward_quantization = stats.backward_quantization.saturating_add(1);
-    let rounded = round_shift_rhu_i64(value, shift);
-    if rounded == 0 && value != 0 {
-        stats.backward_ste_rescue = stats.backward_ste_rescue.saturating_add(1);
-        value.signum()
-    } else {
-        rounded
+fn sample_below(seed: u64, operation: u64, upper: u64) -> u64 {
+    debug_assert!(upper > 0);
+    let rejection_ceiling = u64::MAX - (u64::MAX % upper);
+    let mut attempt = 0_u64;
+    loop {
+        let sample = splitmix64(
+            seed ^ operation.rotate_left(23) ^ attempt.wrapping_mul(0xd134_2543_de82_ef95),
+        );
+        if sample < rejection_ceiling {
+            return sample % upper;
+        }
+        attempt = attempt.wrapping_add(1);
     }
+}
+
+fn splitmix64(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    let mut mixed = value;
+    mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    mixed ^ (mixed >> 31)
+}
+
+fn quantize_probability_q31(probability_q31: u32, fractional_bits: u8) -> i32 {
+    let shift = 31_u8.saturating_sub(fractional_bits);
+    let rounded = round_shift_rhu_i64(i64::from(probability_q31), shift);
+    let maximum = (1_u64 << fractional_bits) - 1;
+    u64::try_from(rounded).unwrap_or(0).min(maximum) as i32
 }
 
 fn matrix_group_shift(base: u8, group: usize) -> u8 {
@@ -1614,7 +2287,7 @@ fn matrix_learning_rate_shift(config: ProductionFullTrainConfig, group: usize) -
     explicit.unwrap_or_else(|| matrix_group_shift(config.matrix_learning_rate_shift, group))
 }
 
-fn effective_learning_rate_shifts(config: ProductionFullTrainConfig) -> [u8; 13] {
+pub(super) fn effective_learning_rate_shifts(config: ProductionFullTrainConfig) -> [u8; 13] {
     [
         config.embedding_learning_rate_shift,
         vector_group_shift(config.vector_learning_rate_shift, 1),
@@ -1642,10 +2315,35 @@ fn vector_group_shift(base: u8, group: usize) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use nsrl_core::SoftmaxNormalization;
+
     use super::{
-        FNV_OFFSET, FNV_PRIME, ProductionFullTrainConfig, UpdateStats, accumulate_residual,
-        effective_learning_rate_shifts, quantized_nonzero, schedule_hash,
+        BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME,
+        ProductionFullTrainConfig, UpdateStats, accumulate_residual,
+        effective_learning_rate_shifts, schedule_hash, systematic_fixed_mass_gradient,
     };
+
+    #[test]
+    fn systematic_fixed_mass_lanes_are_exact_replayable_and_zero_sum() {
+        let logits = [0_i32, -1, -256, -4096, -8192];
+        for mass in [1_u32 << 15, 1_u32 << 16, 1_u32 << 18] {
+            let (left, shift) =
+                systematic_fixed_mass_gradient(&logits, 2, mass, 0x1234).expect("systematic");
+            let (right, _) =
+                systematic_fixed_mass_gradient(&logits, 2, mass, 0x1234).expect("replay");
+            assert_eq!(left, right);
+            assert_eq!(left.iter().map(|&value| i64::from(value)).sum::<i64>(), 0);
+            assert_eq!(shift, mass.trailing_zeros() as u8 - 15);
+            assert_eq!(
+                left.iter()
+                    .enumerate()
+                    .filter(|(index, _)| *index != 2)
+                    .map(|(_, &value)| i64::from(value))
+                    .sum::<i64>(),
+                -i64::from(left[2]),
+            );
+        }
+    }
 
     #[test]
     fn default_effective_learning_rate_shifts_preserve_legacy_schedule() {
@@ -1690,13 +2388,28 @@ mod tests {
             ..base
         };
         assert_ne!(schedule_hash(base), schedule_hash(backward_tuned));
+        let wide_probability = ProductionFullTrainConfig {
+            probability_gradient_fractional_bits: 19,
+            ..base
+        };
+        assert_ne!(schedule_hash(base), schedule_hash(wide_probability));
+        let normalized_probability = ProductionFullTrainConfig {
+            probability_gradient_fractional_bits: 23,
+            probability_normalization: SoftmaxNormalization::Q47Newton1,
+            ..base
+        };
+        assert_ne!(
+            schedule_hash(wide_probability),
+            schedule_hash(normalized_probability)
+        );
     }
 
     #[test]
     fn output_backward_dead_zone_rescue_preserves_nonzero_signal() {
         let mut stats = UpdateStats::default();
-        assert_eq!(quantized_nonzero(1, 12, &mut stats), 1);
-        assert_eq!(quantized_nonzero(-1, 12, &mut stats), -1);
+        let mut quantizer = BackwardQuantizer::new(BackwardQuantizationMode::RescuedRhu, 0);
+        assert_eq!(quantizer.shift(1, 12, &mut stats), 1);
+        assert_eq!(quantizer.shift(-1, 12, &mut stats), -1);
         assert_eq!(stats.backward_quantization, 2);
         assert_eq!(stats.backward_ste_rescue, 2);
     }

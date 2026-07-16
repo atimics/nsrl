@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import childProcess from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -272,6 +273,384 @@ function collectGit() {
     sample_changes: changes.slice(0, 12),
     status_error: status.ok ? "" : status.stderr || status.error,
   };
+}
+
+function sha256File(relativePath) {
+  try {
+    return crypto.createHash("sha256").update(fs.readFileSync(resolvePath(relativePath))).digest("hex");
+  } catch {
+    return "";
+  }
+}
+
+function fnv64Bytes(bytes) {
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of bytes) {
+    hash = ((hash ^ BigInt(byte)) * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return `0x${hash.toString(16).padStart(16, "0")}`;
+}
+
+function fnv64File(relativePath) {
+  try {
+    return fnv64Bytes(fs.readFileSync(resolvePath(relativePath)));
+  } catch {
+    return "";
+  }
+}
+
+function parseTsv(text) {
+  const lines = String(text || "").trimEnd().split("\n").filter(Boolean);
+  if (lines.length < 2) return [];
+  const header = lines[0].split("\t");
+  return lines.slice(1).map((line) => Object.fromEntries(
+    header.map((field, index) => [field, line.split("\t")[index] ?? ""]),
+  ));
+}
+
+function collectNativeModelEvidence() {
+  const paths = {
+    candidate: "benchmarks/integer-transformer-proof-v1/successor-v2-candidate.nsrlmt",
+    evidence: "benchmarks/integer-transformer-proof-v1/successor-v2-evidence.json",
+    manifest: "benchmarks/integer-transformer-proof-v1/successor-v2-manifest.tsv",
+    matrix: "benchmarks/integer-transformer-proof-v1/successor-v2-matrix.tsv",
+  };
+  const files = Object.fromEntries(Object.entries(paths).map(([key, value]) => [key, fileInfo(value)]));
+  const evidence = maybeReadJson(paths.evidence);
+  const manifestRows = parseTsv(maybeReadText(paths.manifest));
+  const matrixRows = parseTsv(maybeReadText(paths.matrix));
+  const manifest = manifestRows.length === 1 ? manifestRows[0] : null;
+  const candidate = matrixRows.find((row) => row.system === "transformer-only") || null;
+  const baselines = matrixRows.filter((row) => row.system !== "transformer-only");
+  const evidenceSystems = new Map(
+    (evidence?.systems || []).map((system) => [system.system, system]),
+  );
+  const allFilesPresent = Object.values(files).every((file) => file.present);
+  const artifactIdentityOk = Boolean(manifest && allFilesPresent
+    && manifest.candidate_artifact_hash === fnv64File(paths.candidate)
+    && manifest.matrix_hash === fnv64File(paths.matrix)
+    && manifest.evidence_hash === fnv64File(paths.evidence)
+    && evidence?.bindings?.candidate_artifact_hash === manifest.candidate_artifact_hash);
+  const replayFields = [
+    ["transformer-only", "transformer_replay_hash"],
+    ["uniform", "uniform_replay_hash"],
+    ["retrieval", "retrieval_replay_hash"],
+    ["byte-ngram", "byte_ngram_replay_hash"],
+    ["float-transformer", "float_transformer_replay_hash"],
+  ];
+  const bindingsOk = Boolean(manifest && candidate && matrixRows.length === 5
+    && evidence?.schema === "nsrl.integer_transformer_successor_evidence.v2"
+    && evidence.contract === manifest.contract
+    && evidence.bindings?.dataset_hash === manifest.dataset_hash
+    && String(evidence.bindings?.targets) === manifest.targets
+    && evidence.bindings?.candidate_model_hash === manifest.candidate_model_hash
+    && matrixRows.every((row) => row.contract === manifest.contract
+      && row.dataset_hash === manifest.dataset_hash
+      && row.tokenizer_hash === manifest.tokenizer_hash
+      && row.candidate_model_hash === manifest.candidate_model_hash
+      && row.evaluator_hash === manifest.evaluator_hash
+      && row.runner_hash === manifest.runner_hash
+      && row.targets === manifest.targets)
+    && matrixRows.every((row) => {
+      const system = evidenceSystems.get(row.system);
+      return system
+        && String(system.total_nll_millibits) === row.total_nll_millibits
+        && String(system.zero_probability_windows) === row.zero_probability_windows
+        && system.replay_hash === row.replay_hash;
+    })
+    && replayFields.every(([system, field]) => matrixRows.find((row) => row.system === system)?.replay_hash
+      === manifest[field]));
+  const assistanceAbsent = Boolean(candidate
+    && candidate.suffix_memory === "false"
+    && candidate.retrieval_assistance === "false"
+    && candidate.routing_oracle === "false"
+    && evidence?.candidate_assistance?.suffix_memory_present === false
+    && evidence?.candidate_assistance?.retrieval_assistance_present === false
+    && evidence?.candidate_assistance?.routing_oracle_present === false
+    && evidence?.candidate_assistance?.position_storage_all_zero === true);
+  const candidateNll = candidate ? Number(candidate.total_nll_millibits) : null;
+  const zeroProbabilityWindows = candidate ? Number(candidate.zero_probability_windows) : null;
+  const baselineNll = Object.fromEntries(baselines.map((row) => [row.system,
+    Number(row.total_nll_millibits)]));
+  const gaps = candidateNll === null ? {} : Object.fromEntries(
+    Object.entries(baselineNll).map(([system, nll]) => [system, candidateNll - nll]),
+  );
+  const zeroProbabilityGate = zeroProbabilityWindows === 0;
+  const uniformGate = candidateNll !== null && Number.isFinite(baselineNll.uniform)
+    && candidateNll < baselineNll.uniform;
+  const promotionGate = candidateNll !== null && baselines.length === 4
+    && baselines.every((row) => candidateNll < Number(row.total_nll_millibits));
+  const integrityOk = artifactIdentityOk && bindingsOk && assistanceAbsent;
+  const state = !allFilesPresent ? "missing"
+    : !integrityOk ? "invalid"
+      : !zeroProbabilityGate ? "falsified_zero_probability"
+        : !uniformGate ? "falsified_uniform"
+          : !promotionGate ? "falsified_frozen_baselines"
+            : "promotion_gate_passed";
+  return {
+    present: allFilesPresent,
+    ok: integrityOk,
+    contract: manifest?.contract || "integer-transformer-successor-v2",
+    state,
+    files,
+    dataset_hash: manifest?.dataset_hash || "",
+    candidate_model_hash: manifest?.candidate_model_hash || "",
+    candidate_artifact_hash: manifest?.candidate_artifact_hash || "",
+    candidate_nll_millibits: candidateNll,
+    zero_probability_windows: zeroProbabilityWindows,
+    target_count: candidate ? Number(candidate.targets) : null,
+    baseline_nll_millibits: baselineNll,
+    gap_to_baseline_millibits: gaps,
+    assistance_absent: assistanceAbsent,
+    artifact_identity_ok: artifactIdentityOk,
+    replay_bindings_ok: bindingsOk,
+    zero_probability_gate: zeroProbabilityGate,
+    beats_uniform_gate: uniformGate,
+    beats_all_frozen_baselines_gate: promotionGate,
+  };
+}
+
+function collectIsingEvidence() {
+  const paths = {
+    audit_contract: "benchmarks/production-model-v1/p10m-atomic-ising-audit-v1-contract.json",
+    audit_result: "benchmarks/production-model-v1/p10m-atomic-ising-audit-v1.json",
+    document_ising: "benchmarks/production-model-v1/p10m-atomic-ising-proposal-v1.json",
+    confirmation_contract:
+      "benchmarks/production-model-v1/p10m-atomic-ising-confirmation-v1-contract.json",
+    confirmation_source:
+      "benchmarks/production-model-v1/p10m-atomic-structure-confirmation-v1.json",
+    confirmation_result:
+      "benchmarks/production-model-v1/p10m-atomic-ising-confirmation-v1.json",
+    cross_source_contract:
+      "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-contract.json",
+    cross_source_result:
+      "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-result.json",
+    cross_source_publication:
+      "benchmarks/production-model-v1/p10m-cross-source-exchange-v1-publication.json",
+    multifamily_contract:
+      "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-contract.json",
+    multifamily_result:
+      "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-result.json",
+  };
+  const auditContract = maybeReadJson(paths.audit_contract);
+  const auditResult = maybeReadJson(paths.audit_result);
+  const documentIsing = maybeReadJson(paths.document_ising);
+  const confirmationContract = maybeReadJson(paths.confirmation_contract);
+  const confirmationSource = maybeReadJson(paths.confirmation_source);
+  const confirmationResult = maybeReadJson(paths.confirmation_result);
+  const crossSourceContract = maybeReadJson(paths.cross_source_contract);
+  const crossSourceResult = maybeReadJson(paths.cross_source_result);
+  const crossSourcePublication = maybeReadJson(paths.cross_source_publication);
+  const multifamilyContract = maybeReadJson(paths.multifamily_contract);
+  const multifamilyResult = maybeReadJson(paths.multifamily_result);
+  const auditContractSha256 = sha256File(paths.audit_contract);
+  const auditResultSha256 = sha256File(paths.audit_result);
+  const confirmationContractSha256 = sha256File(paths.confirmation_contract);
+  const confirmationSourceSha256 = sha256File(paths.confirmation_source);
+  const confirmationResultSha256 = sha256File(paths.confirmation_result);
+  const crossSourceContractSha256 = sha256File(paths.cross_source_contract);
+  const crossSourceResultSha256 = sha256File(paths.cross_source_result);
+  const crossSourcePublicationSha256 = sha256File(paths.cross_source_publication);
+  const multifamilyContractSha256 = sha256File(paths.multifamily_contract);
+  const multifamilyResultSha256 = sha256File(paths.multifamily_result);
+  const endpointSupport = confirmationResult?.mechanism_support || {};
+  const endpointValues = Object.values(endpointSupport);
+  const confirmationVerdict = endpointValues.length === 0
+    ? "inconclusive"
+    : endpointValues.every((value) => value === true)
+      ? "supported_within_source"
+      : "falsified_or_partially_supported";
+  const authorizationSafe = auditResult?.decision?.optimizer_change_authorized === false
+    && auditResult?.decision?.paid_scaling_authorized === false
+    && documentIsing?.decision?.optimizer_change_authorized === false
+    && documentIsing?.decision?.paid_scaling_authorized === false
+    && confirmationResult?.decision?.optimizer_change_authorized === false
+    && confirmationResult?.decision?.paid_scaling_authorized === false
+    && crossSourceContract?.authorization?.optimizer_change === false
+    && crossSourceContract?.authorization?.paid_scaling === false
+    && crossSourceResult?.decision?.optimizer_change_authorized === false
+    && crossSourceResult?.decision?.paid_scaling_authorized === false
+    && crossSourcePublication?.verdict?.optimizer_change_authorized === false
+    && crossSourcePublication?.verdict?.paid_scaling_authorized === false
+    && multifamilyContract?.authorization?.optimizer_change === false
+    && multifamilyContract?.authorization?.paid_scaling === false
+    && multifamilyResult?.decision?.optimizer_change_authorized === false
+    && multifamilyResult?.decision?.paid_scaling_authorized === false;
+  const auditOk = auditContract?.schema === "nsrl.production_atomic_ising_audit_contract.v1"
+    && auditResult?.schema === "nsrl.production_atomic_ising_audit.v1"
+    && auditResult.audit_contract_sha256 === auditContractSha256;
+  const documentIsingOk = documentIsing?.schema === "nsrl.production_atomic_ising_proposal.v1"
+    && documentIsing?.analysis_role === "proposal_only_calibration";
+  const confirmationOk = confirmationContract?.schema
+      === "nsrl.production_atomic_ising_confirmation_contract.v1"
+    && confirmationSource?.schema === "nsrl.production_atomic_structure.v1"
+    && confirmationSource?.analysis_role === "untouched_confirmation"
+    && confirmationResult?.schema === "nsrl.production_atomic_ising_confirmation.v1"
+    && confirmationResult.confirmation_contract_sha256 === confirmationContractSha256
+    && confirmationResult.source_result_sha256 === confirmationSourceSha256;
+  const crossSourceOk = crossSourceContract?.schema
+      === "nsrl.production_cross_source_exchange_contract.v1"
+    && crossSourceResult?.schema === "nsrl.production_cross_source_exchange_result.v1"
+    && crossSourceResult.source_sha256?.contract === crossSourceContractSha256
+    && crossSourceResult.decision?.documents_200_212_read === false;
+  const crossSourcePublicationOk = crossSourcePublication?.schema
+      === "nsrl.production_cross_source_exchange_publication.v1"
+    && crossSourcePublication.source_sha256?.frozen_prospective_contract
+      === crossSourceContractSha256
+    && crossSourcePublication.source_sha256?.checked_prospective_result
+      === crossSourceResultSha256
+    && ["supported", "falsified", "inconclusive"].includes(
+      crossSourcePublication.verdict?.status)
+    && crossSourcePublication.verdict?.vacuous_envelope_status === "inconclusive"
+    && crossSourcePublication.sealed_material?.read === false;
+  const multifamilyOk = multifamilyContract?.schema
+      === "nsrl.production_multifamily_exchange_contract.v1"
+    && multifamilyResult?.schema === "nsrl.production_multifamily_exchange_result.v1"
+    && multifamilyResult.source_sha256?.contract === multifamilyContractSha256
+    && multifamilyResult.decision?.documents_200_212_read === false
+    && ["supported_on_frozen_four_family_multipassage_frame",
+      "coverage_inconclusive_no_promotion",
+      "prospective_multifamily_certificate_falsified_or_vacuous"].includes(
+      multifamilyResult.decision?.status);
+  return {
+    present: Boolean(auditContract && auditResult && documentIsing
+      && confirmationContract && confirmationSource && confirmationResult
+      && crossSourceContract && crossSourceResult && crossSourcePublication
+      && multifamilyContract && multifamilyResult),
+    ok: auditOk && documentIsingOk && confirmationOk && crossSourceOk
+      && crossSourcePublicationOk && multifamilyOk && authorizationSafe,
+    audit: {
+      state: auditOk ? "replayable" : "missing_or_invalid",
+      contract_path: paths.audit_contract,
+      contract_sha256: auditContractSha256,
+      result_path: paths.audit_result,
+      result_sha256: auditResultSha256,
+      sigma_delta_scope: "Gray-ordered high-order Walsh loss residual; not optimizer time dynamics",
+    },
+    document_ising: {
+      state: documentIsingOk ? "proposal_frozen" : "missing_or_invalid",
+      result_path: paths.document_ising,
+      source_clusters: documentIsing?.source_population?.proposal_source_clusters ?? 1,
+    },
+    confirmation: {
+      state: confirmationOk ? "replayable" : "missing_or_invalid",
+      verdict: confirmationVerdict,
+      contract_path: paths.confirmation_contract,
+      contract_sha256: confirmationContractSha256,
+      result_path: paths.confirmation_result,
+      result_sha256: confirmationResultSha256,
+      endpoints_supported: endpointValues.filter((value) => value === true).length,
+      endpoints_total: endpointValues.length,
+    },
+    cross_source: {
+      state: crossSourceOk && crossSourcePublicationOk ? "replayable" : "missing_or_invalid",
+      verdict: crossSourcePublication?.verdict?.status ?? "missing",
+      contract_path: paths.cross_source_contract,
+      contract_sha256: crossSourceContractSha256,
+      result_path: paths.cross_source_result,
+      result_sha256: crossSourceResultSha256,
+      publication_path: paths.cross_source_publication,
+      publication_sha256: crossSourcePublicationSha256,
+      fitting_source_panels: crossSourceResult?.population?.fitting_source_panels ?? 0,
+      calibration_source_panels: crossSourceResult?.population?.calibration_source_panels ?? 0,
+      evaluation_source_panels: crossSourceResult?.population?.evaluation_source_panels ?? 0,
+      envelope_covered: crossSourceResult?.untouched_evaluation?.envelope_covered ?? 0,
+      fired_source_panels: crossSourceResult?.untouched_evaluation?.fired_source_panels ?? 0,
+      unsafe_firings: crossSourceResult?.untouched_evaluation?.unsafe_firings ?? 0,
+      unsafe_action_rate:
+        crossSourcePublication?.untouched_evaluation_metrics?.unsafe_action_rate?.exact ?? "",
+      firing_rate:
+        crossSourcePublication?.untouched_evaluation_metrics?.firing_rate?.exact ?? "",
+      coverage_rate:
+        crossSourcePublication?.untouched_evaluation_metrics?.source_panel_coverage?.exact ?? "",
+      aggregate_signed_regret_relative_to_abstention_q32:
+        crossSourcePublication?.untouched_evaluation_metrics?.regret_relative_to_abstention
+          ?.aggregate_signed_q32 ?? "",
+      aggregate_positive_regret_relative_to_abstention_q32:
+        crossSourcePublication?.untouched_evaluation_metrics?.regret_relative_to_abstention
+          ?.aggregate_positive_part_q32 ?? "",
+    },
+    multifamily_cross_source: {
+      state: multifamilyOk ? "replayable" : "missing_or_invalid",
+      verdict: multifamilyResult?.decision?.status ?? "missing",
+      contract_path: paths.multifamily_contract,
+      contract_sha256: multifamilyContractSha256,
+      result_path: paths.multifamily_result,
+      result_sha256: multifamilyResultSha256,
+      families: multifamilyResult?.population?.families ?? [],
+      fitting_source_panels: multifamilyResult?.population?.fitting_source_panels ?? 0,
+      calibration_source_panels: multifamilyResult?.population?.calibration_source_panels ?? 0,
+      evaluation_source_panels: multifamilyResult?.population?.evaluation_source_panels ?? 0,
+      passages_per_source_panel:
+        multifamilyContract?.panel_sampling?.passage_documents_per_source ?? 0,
+      envelope_covered: multifamilyResult?.untouched_evaluation?.envelope_covered ?? 0,
+      fired_source_panels:
+        multifamilyResult?.untouched_evaluation?.fired_source_panels ?? 0,
+      fired_passages: multifamilyResult?.untouched_evaluation?.fired_passages ?? 0,
+      firing_families: multifamilyResult?.untouched_evaluation?.firing_families ?? [],
+      unsafe_firings: multifamilyResult?.untouched_evaluation?.unsafe_firings ?? 0,
+      net_heldout_improvement_q32:
+        multifamilyResult?.untouched_evaluation?.net_heldout_improvement_q32 ?? "",
+      family_promotions: multifamilyResult?.untouched_evaluation?.family_promotions ?? {},
+    },
+    boundaries: {
+      default_optimizer: "integer_residual_sgd",
+      optimizer_change_authorized: authorizationSafe ? false : null,
+      paid_scaling_authorized: authorizationSafe ? false : null,
+      same_source_document_evidence_only: false,
+      cross_source_certificate_scope: crossSourceOk
+        ? "frozen_distinct_author_english_gutenberg_frame"
+        : "unidentified",
+      multifamily_certificate_scope: multifamilyOk
+        ? "overall_inconclusive_with_federal_register_and_rfc_family_promotion"
+        : "unidentified",
+      arbitrary_source_generalization_identified: false,
+      sealed_documents: "200--212",
+      frozen_structure_cube_reexecuted_in_clean_check: false,
+    },
+  };
+}
+
+function collectResearchHarness() {
+  const eventsPath = resolvePath("data/research-harness/events.jsonl");
+  if (!fs.existsSync(eventsPath)) {
+    return {
+      present: false,
+      ok: true,
+      state_root: "data/research-harness",
+      experiment_count: 0,
+      event_count: 0,
+      experiments: [],
+    };
+  }
+  const command = runCommand(
+    process.execPath,
+    ["scripts/research-harness.mjs", "status", "--json"],
+    { timeoutMs: 30_000, maxBuffer: 1024 * 1024 * 8 },
+  );
+  if (!command.ok) {
+    return {
+      present: true,
+      ok: false,
+      state_root: "data/research-harness",
+      error: command.stderr || command.error || "research harness status failed",
+      experiments: [],
+    };
+  }
+  try {
+    return {
+      present: true,
+      ...JSON.parse(command.stdout),
+    };
+  } catch (error) {
+    return {
+      present: true,
+      ok: false,
+      state_root: "data/research-harness",
+      error: `research harness emitted invalid JSON: ${error.message}`,
+      experiments: [],
+    };
+  }
 }
 
 function collectHygiene(runHygiene) {
@@ -773,6 +1152,27 @@ function deriveStatus(report) {
   if (report.git.dirty) {
     warnings.push(`working tree is dirty (${report.git.change_count} changed paths)`);
   }
+  if (report.research_harness.present && !report.research_harness.ok) {
+    warnings.push("agentic research harness ledger is not valid");
+  }
+  if (!report.ising_evidence.ok) {
+    warnings.push("Ising audit/confirmation evidence is missing or invalid");
+  }
+  if (!report.native_model.present) {
+    blockers.push("native successor-v2 evidence is missing");
+  } else if (!report.native_model.ok) {
+    blockers.push("native successor-v2 artifact identity or replay bindings are invalid");
+  } else {
+    if (!report.native_model.zero_probability_gate) {
+      blockers.push(`native successor-v2 has ${report.native_model.zero_probability_windows} zero-probability windows`);
+    }
+    if (!report.native_model.beats_uniform_gate) {
+      blockers.push("native successor-v2 does not beat canonical uniform NLL");
+    }
+    if (!report.native_model.beats_all_frozen_baselines_gate) {
+      blockers.push("native successor-v2 has not beaten every frozen promotion baseline");
+    }
+  }
   if (report.hygiene.run && !report.hygiene.ok) {
     blockers.push("hygiene checks are not green");
   }
@@ -832,6 +1232,9 @@ function buildReport(config) {
     generated_at: new Date().toISOString(),
     repo_root: repoRoot,
     git: collectGit(),
+    native_model: collectNativeModelEvidence(),
+    ising_evidence: collectIsingEvidence(),
+    research_harness: collectResearchHarness(),
     hygiene: collectHygiene(config.runHygiene),
     prompts: collectPromptEvidence(),
     artifacts: collectArtifacts(),
@@ -854,6 +1257,19 @@ function nextCommands(report) {
   }
   if (!report.diagnostic.path) {
     commands.push("node scripts/nsrl-status.mjs --refresh-fast-diagnostic");
+  }
+  if (report.research_harness.present && !report.research_harness.ok) {
+    commands.push("node scripts/research-harness.mjs verify");
+  }
+  if (!report.ising_evidence.ok) {
+    commands.push("node scripts/check-production-atomic-ising-v1.mjs");
+    commands.push("node scripts/check-production-atomic-ising-confirmation-v1.mjs");
+    commands.push("node scripts/check-production-cross-source-exchange-v1.mjs");
+    commands.push("node scripts/check-production-cross-source-exchange-publication-v1.mjs");
+    commands.push("node scripts/check-production-multifamily-exchange-v1.mjs");
+  }
+  if (!report.native_model.ok) {
+    commands.push("node scripts/run-integer-transformer-successor-v2.mjs --check");
   }
   if (report.diagnostic.failed_checks?.some((check) => check.name === "release-candidate-self-test")) {
     commands.push("node scripts/check-solomon-release-candidate-self-test.mjs");
@@ -884,11 +1300,37 @@ function renderMarkdown(report) {
   lines.push(`- Branch: \`${report.git.branch || "unknown"}\``);
   lines.push(`- HEAD: \`${report.git.head || "unknown"}\``);
   lines.push(`- Working tree: ${report.git.dirty ? `${report.git.change_count} changed paths` : "clean"}`);
+  lines.push(`- Native model: ${renderNativeModelOneLine(report.native_model)}`);
+  lines.push(`- Ising evidence: ${renderIsingEvidenceOneLine(report.ising_evidence)}`);
+  lines.push(`- Research harness: ${renderResearchHarnessOneLine(report.research_harness)}`);
   lines.push(`- Hygiene: ${renderHygiene(report.hygiene)}`);
   lines.push(`- Product diagnostic: ${renderDiagnosticOneLine(report.diagnostic)}`);
   lines.push(`- Headline eval: ${renderHeadlineOneLine(report.headline_eval)}`);
   lines.push(`- Product proof files: ${report.product_evidence.files.length} found`);
   lines.push(`- Held-out prompt rows: ${report.prompts.expanded_prompts.rows ?? "missing"} expanded, ${report.prompts.prompts.rows ?? "missing"} base`);
+  lines.push("");
+
+  lines.push("## Native Model Promotion");
+  lines.push("");
+  lines.push(`- Contract: \`${report.native_model.contract}\`; state **${report.native_model.state}**`);
+  lines.push(`- Identity: artifact ${report.native_model.artifact_identity_ok ? "verified" : "invalid"}; replay bindings ${report.native_model.replay_bindings_ok ? "verified" : "invalid"}; forbidden assistance ${report.native_model.assistance_absent ? "absent" : "present or unverified"}`);
+  lines.push(`- Candidate: ${report.native_model.candidate_nll_millibits ?? "missing"} canonical NLL millibits over ${report.native_model.target_count ?? "missing"} targets; ${report.native_model.zero_probability_windows ?? "missing"} zero-probability windows`);
+  for (const [system, nll] of Object.entries(report.native_model.baseline_nll_millibits)) {
+    const gap = report.native_model.gap_to_baseline_millibits[system];
+    lines.push(`- Gap to ${system}: ${gap >= 0 ? "+" : ""}${gap} millibits (baseline ${nll})`);
+  }
+  lines.push(`- Gates: zero-probability ${report.native_model.zero_probability_gate ? "green" : "red"}; beats uniform ${report.native_model.beats_uniform_gate ? "green" : "red"}; beats every frozen baseline ${report.native_model.beats_all_frozen_baselines_gate ? "green" : "red"}`);
+  lines.push("");
+
+  lines.push("## Ising Evidence");
+  lines.push("");
+  lines.push(`- Audit: **${report.ising_evidence.audit.state}**; contract \`${report.ising_evidence.audit.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.audit.result_sha256 || "missing"}\``);
+  lines.push(`- Document Ising: **${report.ising_evidence.document_ising.state}**; ${report.ising_evidence.document_ising.source_clusters} source cluster`);
+  lines.push(`- Confirmation: **${report.ising_evidence.confirmation.verdict}** (${report.ising_evidence.confirmation.endpoints_supported}/${report.ising_evidence.confirmation.endpoints_total} endpoints); contract \`${report.ising_evidence.confirmation.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.confirmation.result_sha256 || "missing"}\``);
+  lines.push(`- Cross-source exchange: **${report.ising_evidence.cross_source.verdict}**; ${report.ising_evidence.cross_source.envelope_covered}/${report.ising_evidence.cross_source.evaluation_source_panels} panels covered, ${report.ising_evidence.cross_source.fired_source_panels} fired, ${report.ising_evidence.cross_source.unsafe_firings} unsafe; contract \`${report.ising_evidence.cross_source.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.cross_source.result_sha256 || "missing"}\``);
+  lines.push(`- Multi-family exchange: **${report.ising_evidence.multifamily_cross_source.verdict}**; ${report.ising_evidence.multifamily_cross_source.envelope_covered}/${report.ising_evidence.multifamily_cross_source.evaluation_source_panels} panels covered, ${report.ising_evidence.multifamily_cross_source.fired_passages} passages fired across ${report.ising_evidence.multifamily_cross_source.firing_families.length} families, ${report.ising_evidence.multifamily_cross_source.unsafe_firings} unsafe; net improvement ${report.ising_evidence.multifamily_cross_source.net_heldout_improvement_q32 || "missing"} Q32; contract \`${report.ising_evidence.multifamily_cross_source.contract_sha256 || "missing"}\`; result \`${report.ising_evidence.multifamily_cross_source.result_sha256 || "missing"}\``);
+  lines.push(`- Boundary: default \`${report.ising_evidence.boundaries.default_optimizer}\`; optimizer change ${report.ising_evidence.boundaries.optimizer_change_authorized === false ? "not authorized" : "unknown"}; paid scaling ${report.ising_evidence.boundaries.paid_scaling_authorized === false ? "not authorized" : "unknown"}; cross-source certificate bounded to ${report.ising_evidence.boundaries.cross_source_certificate_scope}; arbitrary-source generalization unidentified; documents ${report.ising_evidence.boundaries.sealed_documents} sealed`);
+  lines.push(`- Sigma--delta scope: ${report.ising_evidence.audit.sigma_delta_scope}`);
   lines.push("");
 
   lines.push("## Headline Eval");
@@ -1036,6 +1478,29 @@ function renderDiagnosticOneLine(diagnostic) {
     : "";
   const skipped = diagnostic.skipped?.length ? `; skipped: ${diagnostic.skipped.join(", ")}` : "";
   return `${state} at \`${diagnostic.path}\`${failed}${skipped}`;
+}
+
+function renderResearchHarnessOneLine(harness) {
+  if (!harness.present) return "not initialized";
+  if (!harness.ok) return `invalid (${harness.error || "verification failed"})`;
+  const outcomes = (harness.experiments || [])
+    .filter((experiment) => experiment.outcome)
+    .map((experiment) => `${experiment.id}=${experiment.outcome}`)
+    .join(", ");
+  return `${harness.experiment_count} experiments, ${harness.event_count} events${outcomes ? `; ${outcomes}` : ""}`;
+}
+
+function renderIsingEvidenceOneLine(evidence) {
+  if (!evidence.present) return "missing";
+  const state = evidence.ok ? "replayable" : "invalid";
+  return `${state}; confirmation ${evidence.confirmation.verdict}; cross-source ${evidence.cross_source.verdict}; multi-family ${evidence.multifamily_cross_source.verdict}; optimizer change not authorized`;
+}
+
+function renderNativeModelOneLine(model) {
+  if (!model.present) return "missing";
+  const nll = model.candidate_nll_millibits ?? "unscored";
+  const zeros = model.zero_probability_windows ?? "unknown";
+  return `${model.state}; NLL ${nll} millibits; ${zeros} zero-probability windows; replay ${model.ok ? "bound" : "invalid"}`;
 }
 
 function writeOutput(config, text) {

@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsrl.dev/schemas/research-experiment-v1.schema.json",
+  "title": "NSRL Agentic Research Experiment v1",
+  "description": "A typed, predeclared experiment proposal consumed by the NSRL research harness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "summary",
+    "parents",
+    "claim",
+    "bindings",
+    "evidence_access",
+    "design",
+    "execution",
+    "decision",
+    "authorization"
+  ],
+  "properties": {
+    "schema": { "const": "nsrl.research_experiment.v1" },
+    "id": { "$ref": "#/$defs/slug" },
+    "title": { "$ref": "#/$defs/nonempty" },
+    "summary": { "$ref": "#/$defs/nonempty" },
+    "parents": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/slug" },
+      "uniqueItems": true
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hypothesis", "estimand", "falsifier", "evidence_level"],
+      "properties": {
+        "hypothesis": { "$ref": "#/$defs/nonempty" },
+        "estimand": { "$ref": "#/$defs/nonempty" },
+        "falsifier": { "$ref": "#/$defs/nonempty" },
+        "evidence_level": {
+          "enum": ["diagnostic", "calibration", "confirmation", "replication"]
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "role"],
+            "properties": {
+              "path": { "$ref": "#/$defs/relativePath" },
+              "role": {
+                "enum": [
+                  "source",
+                  "model",
+                  "tokenizer",
+                  "dataset",
+                  "evaluator",
+                  "scientific-contract",
+                  "control"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "evidence_access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed_partitions", "excluded_partitions", "consumes_reserved_evidence"],
+      "properties": {
+        "allowed_partitions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/slug" },
+          "uniqueItems": true
+        },
+        "excluded_partitions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/slug" },
+          "uniqueItems": true
+        },
+        "consumes_reserved_evidence": { "type": "boolean" }
+      }
+    },
+    "design": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["independent_unit", "planned_units", "minimum_informative_units", "family_size", "controls"],
+      "properties": {
+        "independent_unit": { "$ref": "#/$defs/nonempty" },
+        "planned_units": { "type": "integer", "minimum": 1 },
+        "minimum_informative_units": { "type": "integer", "minimum": 0 },
+        "family_size": { "type": "integer", "minimum": 1 },
+        "controls": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonempty" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runner_template", "expected_outputs", "max_seconds", "max_output_bytes"],
+      "properties": {
+        "runner_template": { "$ref": "#/$defs/slug" },
+        "expected_outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/relativePath" },
+          "uniqueItems": true
+        },
+        "max_seconds": { "type": "integer", "minimum": 1 },
+        "max_output_bytes": { "type": "integer", "minimum": 1024 }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checker_template", "result_path", "rules", "default_outcome"],
+      "properties": {
+        "checker_template": { "$ref": "#/$defs/slug" },
+        "result_path": { "$ref": "#/$defs/relativePath" },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["outcome", "all"],
+            "properties": {
+              "outcome": { "$ref": "#/$defs/outcome" },
+              "all": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "#/$defs/condition" }
+              }
+            }
+          }
+        },
+        "default_outcome": { "$ref": "#/$defs/outcome" }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_execution",
+        "reserved_evidence",
+        "optimizer_change",
+        "paid_compute"
+      ],
+      "properties": {
+        "local_execution": { "type": "boolean" },
+        "reserved_evidence": { "type": "boolean" },
+        "optimizer_change": { "type": "boolean" },
+        "paid_compute": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": { "type": "string", "minLength": 1 },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
+    "outcome": {
+      "enum": ["supported", "falsified", "inconclusive"]
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "operator", "value"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$"
+        },
+        "operator": { "enum": ["eq", "neq", "lt", "lte", "gt", "gte"] },
+        "value": {}
+      }
+    }
+  }
+}

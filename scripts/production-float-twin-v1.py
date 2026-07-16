@@ -14,6 +14,9 @@ FNV_OFFSET = 0xCBF29CE484222325
 FNV_PRIME = 0x100000001B3
 BOS = 256
 EOS = 257
+MATH_CONTRACT = "integer-relaxation-v2"
+INTEGER_RMS_EPSILON = np.float32(2 ** -30)
+LEGACY_RMS_EPSILON = np.float32(1e-6)
 
 
 def fnv1a(data):
@@ -129,7 +132,12 @@ def document_windows(tokens, context_tokens, max_windows):
 
 
 def rms_forward(x, gamma):
-    inv = np.reciprocal(np.sqrt(np.mean(x * x, axis=-1, keepdims=True) + np.float32(1e-6)))
+    epsilon = (
+        LEGACY_RMS_EPSILON
+        if MATH_CONTRACT == "legacy-v1"
+        else INTEGER_RMS_EPSILON
+    )
+    inv = np.reciprocal(np.sqrt(np.mean(x * x, axis=-1, keepdims=True) + epsilon))
     return x * inv * gamma, (x, gamma, inv)
 
 
@@ -289,9 +297,18 @@ def forward(model, tokens, config):
 
 def loss_and_gradient(logits, target):
     shifted = logits - np.max(logits)
-    probabilities = np.exp(shifted)
+    probabilities = (
+        np.exp(shifted)
+        if MATH_CONTRACT == "legacy-v1"
+        else np.exp2(shifted)
+    )
     probabilities /= np.sum(probabilities)
-    loss = -np.log(max(float(probabilities[target]), 1e-30))
+    target_probability = max(float(probabilities[target]), 1e-30)
+    loss = (
+        -np.log(target_probability)
+        if MATH_CONTRACT == "legacy-v1"
+        else -np.log2(target_probability)
+    )
     gradient = probabilities
     gradient[target] -= 1
     return loss, gradient.astype(np.float32)
@@ -357,7 +374,11 @@ def evaluate(model, windows, config):
     return {
         "windows": len(windows),
         "loss_millionths": round(mean_loss * 1_000_000),
-        "mean_millibits": round(mean_loss * 1_000 / math.log(2)),
+        "mean_millibits": round(
+            mean_loss * 1_000 / math.log(2)
+            if MATH_CONTRACT == "legacy-v1"
+            else mean_loss * 1_000
+        ),
         "mistakes": mistakes,
     }
 
@@ -407,6 +428,7 @@ def parameter_count(model):
 
 
 def main():
+    global MATH_CONTRACT
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
     parser.add_argument("--resume")
@@ -423,7 +445,13 @@ def main():
     parser.add_argument("--learning-rate-millionths", type=int, default=1000)
     parser.add_argument("--batch-windows", type=int, default=4)
     parser.add_argument("--allow-partial-gates", action="store_true")
+    parser.add_argument(
+        "--math-contract",
+        choices=["integer-relaxation-v2", "legacy-v1"],
+        default="integer-relaxation-v2",
+    )
     args = parser.parse_args()
+    MATH_CONTRACT = args.math_contract
 
     validate_recurrent_attention()
 
@@ -484,9 +512,24 @@ def main():
     np.savez(out_path, **model)
     moved_groups = result["moved_parameter_groups"]
     trace = {
-        "schema": "nsrl.production_float_twin_smoke.v1",
+        "schema": (
+            "nsrl.production_float_twin_smoke.v1"
+            if MATH_CONTRACT == "legacy-v1"
+            else "nsrl.production_float_relaxation.v2"
+        ),
         "profile": "p10m",
         "parameter_count": parameter_count(model),
+        "math_contract": {
+            "id": MATH_CONTRACT,
+            "softmax_base": "e" if MATH_CONTRACT == "legacy-v1" else "2",
+            "nll_unit": "nats" if MATH_CONTRACT == "legacy-v1" else "bits",
+            "rms_epsilon": float(
+                LEGACY_RMS_EPSILON
+                if MATH_CONTRACT == "legacy-v1"
+                else INTEGER_RMS_EPSILON
+            ),
+            "mapped_integer_rms_epsilon": float(INTEGER_RMS_EPSILON),
+        },
         "bindings": {
             "integer_initial_model_hash": f"0x{config['integer_model_hash']:016x}",
             "integer_artifact_sha256": config["artifact_sha256"],

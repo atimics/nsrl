@@ -1,0 +1,108 @@
+{
+  "schema": "nsrl.research_experiment.v1",
+  "id": "p10m-boolean-jet-confirmation-v1",
+  "title": "Prospective p10m Boolean-jet confirmation",
+  "summary": "Golden harness import of the frozen 64-document confirmation that rejected the post-hoc trunk-after-head transfer effect.",
+  "parents": [
+    "p10m-boolean-jet-rank-two-v1"
+  ],
+  "claim": {
+    "hypothesis": "The frozen trunk-plus-head move beats the head-only move on unused transfer documents.",
+    "estimand": "The document-level conditional Q20 NLL contrast loss(trunk_head)-loss(head), evaluated by the predeclared exact paired sign test.",
+    "falsifier": "The transfer direction is not favorable, the exact test misses its threshold, or fewer than 32 documents are non-ties.",
+    "evidence_level": "confirmation"
+  },
+  "bindings": {
+    "files": [
+      {
+        "path": "crates/nsrl-train/src/production/boolean_jet.rs",
+        "role": "source"
+      },
+      {
+        "path": "scripts/run-production-boolean-jet-confirmation-v1.sh",
+        "role": "source"
+      },
+      {
+        "path": "scripts/check-production-boolean-jet-confirmation-v1.mjs",
+        "role": "evaluator"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-boolean-jet-confirmation-v1-contract.json",
+        "role": "scientific-contract"
+      },
+      {
+        "path": "data/experiments/production-model-v1/p10m-normalized-wide-gradient-preflight/model-q23-newton-output33.nsrlpm",
+        "role": "model"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+        "role": "tokenizer"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/dev.nsrltok",
+        "role": "dataset"
+      }
+    ]
+  },
+  "evidence_access": {
+    "allowed_partitions": [
+      "proposal-diagnostic",
+      "transfer-confirmation-v1"
+    ],
+    "excluded_partitions": [
+      "replication-136-212"
+    ],
+    "consumes_reserved_evidence": false
+  },
+  "design": {
+    "independent_unit": "document",
+    "planned_units": 64,
+    "minimum_informative_units": 32,
+    "family_size": 1,
+    "controls": [
+      "head-only vertex",
+      "proposal diagnostic kept separate from the primary transfer endpoint"
+    ]
+  },
+  "execution": {
+    "runner_template": "boolean-jet-confirmation-v1",
+    "expected_outputs": [
+      "benchmarks/production-model-v1/p10m-boolean-jet-confirmation-v1.json"
+    ],
+    "max_seconds": 3600,
+    "max_output_bytes": 16777216
+  },
+  "decision": {
+    "checker_template": "boolean-jet-confirmation-v1",
+    "result_path": "benchmarks/production-model-v1/p10m-boolean-jet-confirmation-v1.json",
+    "rules": [
+      {
+        "outcome": "supported",
+        "all": [
+          {
+            "path": "decision.prospective_transfer_synergy_supported",
+            "operator": "eq",
+            "value": true
+          }
+        ]
+      },
+      {
+        "outcome": "falsified",
+        "all": [
+          {
+            "path": "decision.prospective_transfer_synergy_supported",
+            "operator": "eq",
+            "value": false
+          }
+        ]
+      }
+    ],
+    "default_outcome": "inconclusive"
+  },
+  "authorization": {
+    "local_execution": true,
+    "reserved_evidence": false,
+    "optimizer_change": false,
+    "paid_compute": false
+  }
+}

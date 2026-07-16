@@ -1,0 +1,371 @@
+{
+  "schema": "nsrl.production_multifamily_exchange_contract.v1",
+  "analysis_role": "prospective_pre_calibration_evaluation_outcome",
+  "theory_binding": {
+    "journal_entry": "MJ-2026-07-15-16",
+    "propositions": [
+      "16.1",
+      "16.2",
+      "16.4",
+      "16.5"
+    ],
+    "guarantee": "marginal simultaneous source-panel residual coverage and marginal unsafe-action control conditional on source-panel exchangeability",
+    "conditional_correctness_among_firings_claimed": false
+  },
+  "bindings": {
+    "source_frame": {
+      "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-source-frame.json",
+      "sha256": "21e60c4d47fa91bd458342ce8ebe865950d475c1101f778252153a1bb5781666"
+    },
+    "predictor": {
+      "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-predictor.json",
+      "sha256": "42744fb0a7bbd70b254d385d7717f586905af0a90ae4784b201ce2c6fbcea078"
+    },
+    "raw_structure_contracts": [
+      {
+        "passage_ordinal": 0,
+        "shard": 0,
+        "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-0-shard-0-structure-contract.json",
+        "sha256": "83bfb06f2c7920365e0424b825035c57043ce8a3ffae1d73dc67aa0758049571",
+        "manifest_hash": "0xfb9c1064af562ee5",
+        "token_stream_hash": "0xa4611e992623e83d",
+        "source_index_hash": "0x12debfae713cfe59",
+        "result_path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-0-shard-0-structure.json"
+      },
+      {
+        "passage_ordinal": 0,
+        "shard": 1,
+        "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-0-shard-1-structure-contract.json",
+        "sha256": "244c445a6b3a6d4e580717e9904a5880335d64dbcb3701e2adfc9afee3f05c62",
+        "manifest_hash": "0x8befd9d41495d353",
+        "token_stream_hash": "0x6d791842c54d1200",
+        "source_index_hash": "0x73754544bfb6013a",
+        "result_path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-0-shard-1-structure.json"
+      },
+      {
+        "passage_ordinal": 1,
+        "shard": 0,
+        "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-1-shard-0-structure-contract.json",
+        "sha256": "d58579d908ccacd3d66a67b91acaae0717bc39e318b43e1010540e6338dfd0af",
+        "manifest_hash": "0xee29cba67c158edd",
+        "token_stream_hash": "0x4788573422a23ab4",
+        "source_index_hash": "0x2c89ebdf354df24c",
+        "result_path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-1-shard-0-structure.json"
+      },
+      {
+        "passage_ordinal": 1,
+        "shard": 1,
+        "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-1-shard-1-structure-contract.json",
+        "sha256": "baa69c70fbdab30968fca2c8eb4e788cd2f5606a9b391f304a40b06a76c96687",
+        "manifest_hash": "0xb612dc65b4332dba",
+        "token_stream_hash": "0x21be1ccc8de66ddf",
+        "source_index_hash": "0x014148506f753e4a",
+        "result_path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-1-shard-1-structure.json"
+      },
+      {
+        "passage_ordinal": 2,
+        "shard": 0,
+        "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-2-shard-0-structure-contract.json",
+        "sha256": "0bf0b40c46bd944ae77fa3dac51aecbfbe076ed32b860791059eb04bea63860b",
+        "manifest_hash": "0x13f3ff87ea7e4b44",
+        "token_stream_hash": "0xb97695f384932f1c",
+        "source_index_hash": "0x5742f2d882655c9a",
+        "result_path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-2-shard-0-structure.json"
+      },
+      {
+        "passage_ordinal": 2,
+        "shard": 1,
+        "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-2-shard-1-structure-contract.json",
+        "sha256": "11ff705e47eb4327c2596bfaa2689041370ed691190e30cba6b136df3b04a045",
+        "manifest_hash": "0x3f8125ae4f117b36",
+        "token_stream_hash": "0xae0e73ae0a290371",
+        "source_index_hash": "0x811462389d067b1d",
+        "result_path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-2-shard-1-structure.json"
+      },
+      {
+        "passage_ordinal": 3,
+        "shard": 0,
+        "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-3-shard-0-structure-contract.json",
+        "sha256": "f5307b06791dc2026935c53011e21caeef46a9a14f615c5333aa62fb5cbe4e0f",
+        "manifest_hash": "0xcf2d8d9a1d90edd6",
+        "token_stream_hash": "0x4c47cfd7c007aae2",
+        "source_index_hash": "0x2ab2aa688bd47083",
+        "result_path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-3-shard-0-structure.json"
+      },
+      {
+        "passage_ordinal": 3,
+        "shard": 1,
+        "path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-3-shard-1-structure-contract.json",
+        "sha256": "8d8cecdbdcc6a9810165de202788a4c5346c93aba89fbe89b570f20cba5f5937",
+        "manifest_hash": "0xc721c95d89bea1a3",
+        "token_stream_hash": "0x5e1feafe24ca5832",
+        "source_index_hash": "0x0f2d3a323658979d",
+        "result_path": "benchmarks/production-model-v1/p10m-multifamily-exchange-v1-confirmation-passage-3-shard-1-structure.json"
+      }
+    ],
+    "analyzer": {
+      "path": "scripts/analyze-production-multifamily-exchange-v1.mjs",
+      "sha256": "1bc22b7c0b47965c03851818de93f9b9e47ef10d2eaa7eea373157691c0758f1"
+    },
+    "checker": {
+      "path": "scripts/check-production-multifamily-exchange-v1.mjs",
+      "sha256": "a149f869579bcb52eb7d9b9290b9fa91f3026dc129db414c0cd6a1f12c576bcf"
+    }
+  },
+  "population": {
+    "source_unit": "one complete publication assigned wholly to one experimental role",
+    "intended_population": "the frozen four-family acquisition frame only; no claim to arbitrary text, authors, agencies, standards, journals, or future publications",
+    "families": [
+      "federal_register",
+      "gutenberg",
+      "rfc",
+      "science"
+    ],
+    "independence_design": "within-family unique author, first-listed author, most-specific agency, or first-author/journal key; whole publications assigned to exactly one role",
+    "exchangeability_assumption": "calibration and evaluation source panels are exchangeable within each stratum of the frozen four-family acquisition frame conditional on fitting sources",
+    "stratified_role_counts_per_family": {
+      "fitting": 3,
+      "calibration": 19,
+      "evaluation": 4
+    },
+    "fitting_source_panels": 12,
+    "calibration_source_panels": 76,
+    "evaluation_source_panels": 16,
+    "fitting_source_ids": [
+      "federal-register-2025-21482",
+      "federal-register-2025-21966",
+      "federal-register-2025-23268",
+      "gutenberg-60151",
+      "gutenberg-71907",
+      "gutenberg-53739",
+      "rfc-3499",
+      "rfc-2244",
+      "rfc-4031",
+      "europe-pmc-pmc11687792",
+      "europe-pmc-pmc11923378",
+      "europe-pmc-pmc11685355"
+    ],
+    "calibration_source_ids": [
+      "federal-register-2025-20606",
+      "federal-register-2025-22014",
+      "federal-register-2025-23953",
+      "federal-register-2025-23704",
+      "federal-register-2025-23017",
+      "federal-register-2025-19268",
+      "federal-register-2025-19729",
+      "federal-register-2025-21626",
+      "federal-register-2025-19365",
+      "federal-register-2025-22643",
+      "federal-register-2025-19982",
+      "federal-register-2025-19687",
+      "federal-register-2025-20721",
+      "federal-register-2025-18992",
+      "federal-register-2025-22289",
+      "federal-register-2025-22020",
+      "federal-register-2025-19732",
+      "federal-register-2025-20132",
+      "federal-register-2025-24050",
+      "gutenberg-56063",
+      "gutenberg-40534",
+      "gutenberg-51634",
+      "gutenberg-43349",
+      "gutenberg-39705",
+      "gutenberg-58662",
+      "gutenberg-3283",
+      "gutenberg-58589",
+      "gutenberg-13556",
+      "gutenberg-13304",
+      "gutenberg-41361",
+      "gutenberg-19966",
+      "gutenberg-19822",
+      "gutenberg-67978",
+      "gutenberg-46701",
+      "gutenberg-47478",
+      "gutenberg-62589",
+      "gutenberg-20698",
+      "gutenberg-30737",
+      "rfc-2630",
+      "rfc-8030",
+      "rfc-9317",
+      "rfc-5763",
+      "rfc-4011",
+      "rfc-2025",
+      "rfc-7241",
+      "rfc-4718",
+      "rfc-5978",
+      "rfc-2975",
+      "rfc-6234",
+      "rfc-3208",
+      "rfc-7429",
+      "rfc-5190",
+      "rfc-7399",
+      "rfc-6073",
+      "rfc-9397",
+      "rfc-9788",
+      "rfc-2157",
+      "europe-pmc-pmc11720140",
+      "europe-pmc-pmc11723598",
+      "europe-pmc-pmc11685102",
+      "europe-pmc-pmc11761867",
+      "europe-pmc-pmc11765043",
+      "europe-pmc-pmc11761591",
+      "europe-pmc-pmc11685183",
+      "europe-pmc-pmc11760459",
+      "europe-pmc-pmc11796386",
+      "europe-pmc-pmc11787465",
+      "europe-pmc-pmc11684234",
+      "europe-pmc-pmc11754517",
+      "europe-pmc-pmc11686019",
+      "europe-pmc-pmc11723185",
+      "europe-pmc-pmc11751246",
+      "europe-pmc-pmc11947620",
+      "europe-pmc-pmc11739947",
+      "europe-pmc-pmc11757228",
+      "europe-pmc-pmc11686937"
+    ],
+    "evaluation_source_ids": [
+      "federal-register-2025-19655",
+      "federal-register-2025-19945",
+      "federal-register-2025-23316",
+      "federal-register-2025-19428",
+      "gutenberg-39559",
+      "gutenberg-19164",
+      "gutenberg-41891",
+      "gutenberg-1170",
+      "rfc-2020",
+      "rfc-2801",
+      "rfc-6665",
+      "rfc-8362",
+      "europe-pmc-pmc11703377",
+      "europe-pmc-pmc11724835",
+      "europe-pmc-pmc11768170",
+      "europe-pmc-pmc11686037"
+    ],
+    "documents_200_212_are_not_sources": true
+  },
+  "panel_sampling": {
+    "seed": "nsrl-m4-quartile-passage-sampling-2026-07-15-v1",
+    "passage_documents_per_source": 4,
+    "passage_bytes_before_normalization": 12288,
+    "strata": "four consecutive source-body byte quartiles; one hashed passage wholly inside each quartile",
+    "passages_nonoverlapping": true,
+    "model_windows_per_passage_document": 2,
+    "model_context_tokens": 64,
+    "source_panel_score_scope": "maximum over all four passages and every frozen exchange",
+    "missing_source_policy": "abort before outcome evaluation; no source or passage replacement after freeze",
+    "score_scope": "maximum over all four frozen nonoverlapping passage documents and every frozen exchange",
+    "source_failure_policy": "abort; do not replace or drop a frozen source or passage after this contract"
+  },
+  "exchange_set": [
+    {
+      "id": "base43_atom2_to_atom4",
+      "base_mask": 43,
+      "outgoing_atom": 2,
+      "incoming_atom": 4,
+      "control_mask": 47,
+      "candidate_mask": 59,
+      "singleton_margin_q32": "loss(mask16)-loss(mask0) minus loss(mask4)-loss(mask0)",
+      "exact_contrast_q32": "loss(mask59)-loss(mask47)",
+      "interaction_residual_q32": "exact_contrast minus singleton_margin"
+    }
+  ],
+  "probe_features": {
+    "ordered_features": [
+      "singleton_effect_atom_0_loss_mask_1_minus_mask_0",
+      "singleton_effect_atom_1_loss_mask_2_minus_mask_0",
+      "singleton_effect_atom_2_loss_mask_4_minus_mask_0",
+      "singleton_effect_atom_3_loss_mask_8_minus_mask_0",
+      "singleton_effect_atom_4_loss_mask_16_minus_mask_0",
+      "singleton_effect_atom_5_loss_mask_32_minus_mask_0"
+    ],
+    "representation": "Q32 signed integers",
+    "candidate_multi_atom_outcomes_excluded": true,
+    "allowed_router_inputs": [
+      "six Q32 singleton effects",
+      "frozen fitting-source predictor",
+      "frozen conformal correction"
+    ]
+  },
+  "predictor": {
+    "name": "three_nearest_fitting_source_panel_median_residual_v1",
+    "fitting_source_panels": 12,
+    "fitting_passage_documents": 48,
+    "neighbors": 3,
+    "within_source_match": "minimum normalized L1 distance over the four fitting passages",
+    "distance": "sum over six features of floor(abs(x_j-train_j)*2^20/max(1,fitting_passage_MAD_j))",
+    "within_source_tie_break": "ascending passage ordinal",
+    "source_tie_break": "ascending source_id",
+    "output": "lower median Q32 residual of the nearest matched passage from each of three distinct fitting source panels",
+    "q32_conversion": "already exact Q32 integer; no floating-point conversion",
+    "fitted_parameters_sha256": "42744fb0a7bbd70b254d385d7717f586905af0a90ae4784b201ce2c6fbcea078"
+  },
+  "conformal": {
+    "alpha_numerator": 1,
+    "alpha_denominator": 20,
+    "calibration_units": "independent whole-source panels calibrated separately within each of four families",
+    "calibration_source_panels": 76,
+    "simultaneous_score": "A_u=max over the four passage documents d and frozen exchanges e of rho_d(e)-q_e(phi_d)",
+    "ties": "included on covered side",
+    "order_statistic_rank_per_family": 19,
+    "insufficient_resolution_rule": "positive_infinity_if_rank_exceeds_calibration_count",
+    "evaluation_may_not_recalibrate_threshold": true
+  },
+  "router": {
+    "selection": "minimum certified upper contrast among the frozen exchange set; exchange-id tie break",
+    "strict_firing_rule": "for each passage, lambda_e+q_e(phi)+Q_alpha,family < 0",
+    "abstention_rule": "retain control mask 47 on equality or positive certified upper contrast",
+    "candidate_multi_atom_outcomes_hidden_until_after_action": true
+  },
+  "sequence": {
+    "unit": "one fired conditional parameter exchange on one untouched evaluation passage",
+    "proposal_order_seed": "nsrl-m4-heldout-exchange-sequence-2026-07-15-v1",
+    "proposal_order": "ascending SHA256(seed, family, source_id, passage_ordinal), fixed before outcomes",
+    "state_scope": "each proposal compares candidate mask 59 with control mask 47 on its passage-local frozen model state; the next proposal cannot use prior held-out outcomes",
+    "minimum_fired_exchanges_for_support": 8,
+    "cumulative_net_improvement": "negative cumulative sum of exact fired candidate-minus-control Q32 contrasts"
+  },
+  "falsifiers": {
+    "coverage": {
+      "test": "one-sided exact binomial test of source-panel failure probability greater than 1/20",
+      "evaluation_source_panels": 16,
+      "evaluation_source_panels_per_family": 4,
+      "exact_binomial_rejection_failures": 3,
+      "exact_binomial_alpha": "1/20",
+      "maximum_failures_for_support": 1,
+      "maximum_failures_per_family_for_support": 1,
+      "two_failures_decision": "inconclusive_no_promotion"
+    },
+    "unsafe_action": {
+      "falsifier": "one or more fired evaluation passages with nonnegative exact exchange contrast",
+      "maximum_unsafe_firings_for_support": 0
+    },
+    "nonvacuity": {
+      "falsifier": "fewer than eight evaluation passages fire or firings occur in fewer than two source families",
+      "minimum_fired_passages": 8,
+      "minimum_firing_families": 2
+    },
+    "incremental_value": {
+      "falsifier": "aggregate fired contrast is nonnegative overall or within any family containing a firing",
+      "strict_negative_aggregate_required": true,
+      "strict_negative_aggregate_in_every_firing_family_required": true
+    },
+    "family_promotion": {
+      "rule": "a source family may be promoted only when it fires, has no unsafe firing, has negative aggregate fired contrast, and remains within its frozen coverage gate",
+      "falsifier": "one or more source families with an unsafe firing is marked promoted",
+      "maximum_unsafe_promoted_families": 0
+    }
+  },
+  "decision_rule": {
+    "support_requires": "at most one total envelope failure and at most one per family, zero unsafe passage firings, at least eight ordered conditional exchanges across at least two families, no unsafe family promotion, and strictly positive net held-out improvement overall and within every firing family",
+    "scope_if_supported": "bounded prospective multi-family, four-passage source-transfer evidence on the frozen acquisition frame",
+    "scope_if_falsified": "record failure without changing thresholds, families, passages, or opening same-source documents 200--212"
+  },
+  "authorization": {
+    "execute_calibration_evaluation_cubes": true,
+    "alter_source_roles_after_outcomes": false,
+    "alter_exchange_features_predictor_score_or_falsifiers_after_outcomes": false,
+    "read_documents_200_212": false,
+    "optimizer_change": false,
+    "paid_scaling": false
+  }
+}

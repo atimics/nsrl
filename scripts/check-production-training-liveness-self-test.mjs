@@ -14,19 +14,22 @@ const groups = [
 
 function traceFor(interval, { outputMoved = false, fullGradientPath = false,
   trunkMoved = false, biasMoved = false, residualSaturation = 0,
-  initialModel = `model-${interval}` } = {}) {
+  initialModel = null, trunkMovedGroups = null } = {}) {
   const active = new Set(fullGradientPath ? groups : ["final_rms", "output", "bias"]);
+  const moved = new Set([
+    ...(outputMoved ? ["output"] : []),
+    ...(biasMoved ? ["bias"] : []),
+    ...(trunkMovedGroups ?? (trunkMoved ? ["q"] : [])),
+  ]);
   return {
     training: { optimizer_steps: 4 },
     cursor: { start_window: interval * 16, next_window: (interval + 1) * 16 },
-    movement_l1: { output: outputMoved ? 1 : 0 },
-    moved_parameter_groups: [
-      ...(outputMoved ? ["output"] : []),
-      ...(biasMoved ? ["bias"] : []),
-      ...(trunkMoved ? ["q"] : []),
-    ],
+    movement_l1: Object.fromEntries(groups.map((group) => [group, moved.has(group) ? 1 : 0])),
+    moved_parameter_groups: [...moved],
     diagnostics: {
       gradient_nonzero_count: Object.fromEntries(groups.map((group) => [group, active.has(group) ? 1 : 0])),
+      residual_carry_count: Object.fromEntries(groups.map((group) => [group, active.has(group) ? 1 : 0])),
+      update_nonzero_count: Object.fromEntries(groups.map((group) => [group, moved.has(group) ? 1 : 0])),
       saturation_by_group: Object.fromEntries(groups.map((group) => [group, 0])),
       residual_saturation_by_group: Object.fromEntries(groups.map((group) => [group, 0])),
     },
@@ -35,7 +38,10 @@ function traceFor(interval, { outputMoved = false, fullGradientPath = false,
       residual_saturation_count: residualSaturation,
       weight_saturation_count: 0,
     },
-    hashes: { initial_model: initialModel, final_model: `model-${interval + 1}` },
+    hashes: {
+      initial_model: initialModel,
+      final_model: null,
+    },
   };
 }
 
@@ -43,6 +49,14 @@ async function runInterval(directory, interval, trace, extraArgs = []) {
   const tracePath = path.join(directory, `trace-${interval}.json`);
   const statePath = path.join(directory, `state-${interval}.json`);
   const eventPath = path.join(directory, `event-${interval}.json`);
+  if (trace.hashes.initial_model === null) {
+    trace.hashes.initial_model = interval === 0
+      ? "model-0"
+      : JSON.parse(await readFile(path.join(directory, `state-${interval - 1}.json`))).model_hash;
+  }
+  trace.hashes.final_model = trace.moved_parameter_groups.length > 0
+    ? `${trace.hashes.initial_model}:updated-${interval}`
+    : trace.hashes.initial_model;
   await writeFile(tracePath, `${JSON.stringify(trace)}\n`);
   const args = [checker, "--trace", tracePath, "--state-out", statePath,
     "--event-out", eventPath, "--interval", String(interval),
@@ -98,6 +112,40 @@ try {
   assert.equal(headOnly.event.classification, "trunk_update_timeout");
   assert.deepEqual(headOnly.event.moved_trunk_groups, []);
 
+  const wrongTrunkDir = path.join(root, "wrong-trunk");
+  await mkdir(wrongTrunkDir);
+  let wrongTrunk;
+  for (let interval = 0; interval < 8; interval += 1) {
+    wrongTrunk = await runInterval(wrongTrunkDir, interval, traceFor(interval, {
+      outputMoved: interval === 3,
+      trunkMoved: interval === 7,
+      fullGradientPath: interval >= 6,
+    }), ["--require-trunk-update-by-interval", "7", "--required-trunk-group", "k"]);
+  }
+  assert.equal(wrongTrunk.status, 3);
+  assert.equal(wrongTrunk.event.classification, "required_trunk_group_update_timeout");
+  assert.equal(wrongTrunk.event.trunk_update_observed, true);
+  assert.equal(wrongTrunk.event.required_trunk_group_observed, false);
+
+  const multipleTrunkDir = path.join(root, "multiple-trunk");
+  await mkdir(multipleTrunkDir);
+  const multipleArgs = ["--require-trunk-update-by-interval", "1",
+    "--required-trunk-group", "k", "--required-trunk-group", "v"];
+  const onlyK = await runInterval(multipleTrunkDir, 0, traceFor(0, {
+    outputMoved: true,
+    fullGradientPath: true,
+    trunkMovedGroups: ["k"],
+  }), multipleArgs);
+  assert.equal(onlyK.status, 0, onlyK.stderr);
+  assert.deepEqual(onlyK.event.required_trunk_group_observations, { k: true, v: false });
+  const kAndV = await runInterval(multipleTrunkDir, 1, traceFor(1, {
+    fullGradientPath: true,
+    trunkMovedGroups: ["v"],
+  }), multipleArgs);
+  assert.equal(kAndV.status, 0, kAndV.stderr);
+  assert.equal(kAndV.event.required_trunk_group_observed, true);
+  assert.deepEqual(kAndV.event.required_trunk_group_observations, { k: true, v: true });
+
   const continued = await runInterval(starvationDir, 8,
     traceFor(8, { fullGradientPath: true }), ["--require-trunk-update-by-interval", "7"]);
   assert.notEqual(continued.status, 0);
@@ -118,6 +166,14 @@ try {
   assert.equal(saturation.status, 3);
   assert.equal(saturation.event.classification, "saturation");
 
+  const inconsistentDir = path.join(root, "inconsistent-update");
+  await mkdir(inconsistentDir);
+  const inconsistentTrace = traceFor(0, { outputMoved: true });
+  inconsistentTrace.diagnostics.update_nonzero_count.output = 0;
+  const inconsistent = await runInterval(inconsistentDir, 0, inconsistentTrace);
+  assert.notEqual(inconsistent.status, 0);
+  assert.match(inconsistent.stderr, /inconsistent with exact reachable updates/);
+
   const staleDir = path.join(root, "stale");
   await mkdir(staleDir);
   const first = await runInterval(staleDir, 0, traceFor(0));
@@ -135,7 +191,7 @@ try {
   assert.notEqual(changedPolicy.status, 0);
   assert.match(changedPolicy.stderr, /does not bind the next model interval/);
 
-  console.log(JSON.stringify({ passed: true, checks: 32 }));
+  console.log(JSON.stringify({ passed: true, checks: 43 }));
 } finally {
   await rm(root, { recursive: true, force: true });
 }

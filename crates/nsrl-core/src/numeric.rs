@@ -52,8 +52,11 @@ pub fn round_shift_rhu_i64(value: i64, right_shift: u8) -> i64 {
     debug_assert!(right_shift <= MAX_RIGHT_SHIFT);
 
     let shift = right_shift.min(MAX_RIGHT_SHIFT);
-    let bias = 1_i64 << (shift - 1);
-    value.saturating_add(bias) >> shift
+    let half = 1_i64 << (shift - 1);
+    let remainder_mask = (1_i64 << shift) - 1;
+    let quotient = value >> shift;
+    let remainder = value & remainder_mask;
+    quotient + i64::from(remainder >= half)
 }
 
 pub fn requantize_i32_to_i16(accumulator: i32, scale: FixedScale) -> i16 {
@@ -103,6 +106,16 @@ mod tests {
         assert_eq!(round_shift_rhu_i64(-3, 1), -1);
         assert_eq!(round_shift_rhu_i64(-5, 1), -2);
         assert_eq!(round_shift_rhu_i64(123, 0), 123);
+    }
+
+    #[test]
+    fn round_shift_rhu_matches_formula_at_i64_boundaries() {
+        for value in [i64::MIN, i64::MIN + 1, -1, 0, 1, i64::MAX - 1, i64::MAX] {
+            for shift in 1..=MAX_RIGHT_SHIFT {
+                let reference = ((i128::from(value) + (1_i128 << (shift - 1))) >> shift) as i64;
+                assert_eq!(round_shift_rhu_i64(value, shift), reference);
+            }
+        }
     }
 
     #[test]
@@ -159,6 +172,19 @@ mod tests {
         ) {
             let scale = FixedScale { multiplier, right_shift };
             let _ = requantize_i32_to_i16(acc, scale);
+        }
+
+        #[test]
+        fn round_shift_rhu_matches_i128_formula(
+            value in any::<i64>(),
+            right_shift in 0_u8..=MAX_RIGHT_SHIFT,
+        ) {
+            let reference = if right_shift == 0 {
+                value
+            } else {
+                ((i128::from(value) + (1_i128 << (right_shift - 1))) >> right_shift) as i64
+            };
+            prop_assert_eq!(round_shift_rhu_i64(value, right_shift), reference);
         }
 
         #[test]

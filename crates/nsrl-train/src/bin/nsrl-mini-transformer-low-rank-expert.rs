@@ -42,6 +42,31 @@ struct TrainStats {
     weight_delta_l1: u64,
     weight_saturation_count: usize,
     hidden_saturation_count: usize,
+    residual_carry_event_count: usize,
+    final_residual_carry_nonzero_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UpdateFingerprint {
+    element_count: usize,
+    nonzero_count: usize,
+    delta_l1: u64,
+    delta_linf: u64,
+    hash: u64,
+}
+
+impl UpdateFingerprint {
+    fn to_json(self) -> String {
+        format!(
+            "{{\"element_count\":{},\"nonzero_count\":{},\"zero_count\":{},\"delta_l1\":{},\"delta_linf\":{},\"hash\":\"0x{:016x}\"}}",
+            self.element_count,
+            self.nonzero_count,
+            self.element_count.saturating_sub(self.nonzero_count),
+            self.delta_l1,
+            self.delta_linf,
+            self.hash,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -115,6 +140,7 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
     let mut teacher_model_path = None;
     let mut token_offset = 0_usize;
     let mut resume_expert_path = None;
+    let mut error_feedback = true;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--tokens" => tokens_path = Some(PathBuf::from(required(&mut args, "--tokens")?)),
@@ -144,6 +170,7 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
             "--resume-expert" => {
                 resume_expert_path = Some(PathBuf::from(required(&mut args, "--resume-expert")?))
             }
+            "--no-error-feedback" => error_feedback = false,
             other => return Err(format!("unknown train argument: {other}").into()),
         }
     }
@@ -202,6 +229,7 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
     };
     rank = expert.rank;
     projection_seed = expert.projection_seed;
+    let initial_expert = expert.clone();
     let initial = evaluate_expert(&records, tokens, &model, &expert)?;
     let initial_teacher_probability_l1 = teacher_probabilities
         .as_deref()
@@ -218,8 +246,15 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         batch_windows,
         learning_rate,
         learning_rate_shift,
+        error_feedback,
         teacher_probabilities.as_deref(),
     )?;
+    let parameter_update = update_fingerprint(
+        &initial_expert.expansion_weights_q15,
+        &expert.expansion_weights_q15,
+    )?;
+    let functional_update = functional_update_fingerprint(&records, &initial_expert, &expert)?;
+    let active_rank = active_update_rank(&initial_expert, &expert)?;
     let final_metrics = evaluate_expert(&records, tokens, &model, &expert)?;
     let final_teacher_probability_l1 = teacher_probabilities
         .as_deref()
@@ -252,7 +287,7 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
     fs::write(
         trace_out.ok_or("--trace is required")?,
         format!(
-            "{{\"schema\":\"nsrl.mini_transformer_low_rank_expert_train.v3\",\"expert_type\":{},\"trunk_model_hash\":\"0x{:016x}\",\"artifact_hash\":\"0x{:016x}\",\"resumed_from_hash\":{},\"parameter_count\":{},\"trainable_parameter_count\":{},\"config\":{{\"rank\":{},\"projection_seed\":{},\"epochs\":{},\"token_offset\":{},\"stride\":{},\"max_windows\":{},\"batch_windows\":{},\"learning_rate\":{},\"learning_rate_shift\":{},\"objective\":{}}},\"teacher\":{},\"initial\":{},\"final\":{},\"updates\":{{\"optimizer_steps\":{},\"weight_delta_l1\":{},\"weight_saturation_count\":{},\"hidden_saturation_count\":{}}}}}\n",
+            "{{\"schema\":\"nsrl.mini_transformer_low_rank_expert_train.v4\",\"expert_type\":{},\"trunk_model_hash\":\"0x{:016x}\",\"artifact_hash\":\"0x{:016x}\",\"resumed_from_hash\":{},\"parameter_count\":{},\"trainable_parameter_count\":{},\"config\":{{\"rank\":{},\"projection_seed\":{},\"epochs\":{},\"token_offset\":{},\"stride\":{},\"max_windows\":{},\"batch_windows\":{},\"learning_rate\":{},\"learning_rate_shift\":{},\"error_feedback\":{},\"objective\":{}}},\"teacher\":{},\"initial\":{},\"final\":{},\"updates\":{{\"optimizer_steps\":{},\"weight_delta_l1\":{},\"weight_saturation_count\":{},\"hidden_saturation_count\":{},\"residual_carry_event_count\":{},\"final_residual_carry_nonzero_count\":{},\"active_rank\":{},\"parameter_update\":{},\"functional_update\":{}}}}}\n",
             json_string(if expert.has_base_gains() {
                 "diagonal_plus_fixed_projection_low_rank_hidden_residual_q15"
             } else {
@@ -273,6 +308,7 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
             batch_windows.min(records.len()),
             learning_rate,
             learning_rate_shift,
+            error_feedback,
             json_string(objective),
             teacher_json,
             metrics_json(initial),
@@ -281,6 +317,11 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
             stats.weight_delta_l1,
             stats.weight_saturation_count,
             stats.hidden_saturation_count,
+            stats.residual_carry_event_count,
+            stats.final_residual_carry_nonzero_count,
+            active_rank,
+            parameter_update.to_json(),
+            functional_update.to_json(),
         ),
     )?;
     Ok(())
@@ -615,7 +656,7 @@ fn run_score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
 fn print_help() {
     println!("Usage:");
     println!(
-        "  nsrl-mini-transformer-low-rank-expert train --tokens PATH --model PATH --out PATH --trace PATH [--teacher-model PATH] [--resume-expert PATH] [--base-hidden-expert PATH] [--rank N] [--projection-seed N] [--epochs N] [--token-offset N] [--stride N] [--max-windows N] [--batch-windows N] [--learning-rate N] [--learning-rate-shift N]"
+        "  nsrl-mini-transformer-low-rank-expert train --tokens PATH --model PATH --out PATH --trace PATH [--teacher-model PATH] [--resume-expert PATH] [--base-hidden-expert PATH] [--rank N] [--projection-seed N] [--epochs N] [--token-offset N] [--stride N] [--max-windows N] [--batch-windows N] [--learning-rate N] [--learning-rate-shift N] [--no-error-feedback]"
     );
     println!(
         "  nsrl-mini-transformer-low-rank-expert eval --tokens PATH --model PATH --expert PATH --trace PATH [--stride N] [--max-windows N]"
@@ -810,6 +851,70 @@ fn adapted_hidden(
     (output, latent, saturation_count)
 }
 
+fn update_fingerprint(
+    before: &[i16],
+    after: &[i16],
+) -> Result<UpdateFingerprint, Box<dyn std::error::Error>> {
+    if before.len() != after.len() {
+        return Err("update fingerprint shape mismatch".into());
+    }
+    let mut hash = 0xcbf29ce484222325_u64;
+    let mut nonzero_count = 0_usize;
+    let mut delta_l1 = 0_u64;
+    let mut delta_linf = 0_u64;
+    for (&before, &after) in before.iter().zip(after) {
+        let delta = i64::from(after) - i64::from(before);
+        let magnitude = delta.unsigned_abs();
+        nonzero_count = nonzero_count.saturating_add(usize::from(delta != 0));
+        delta_l1 = delta_l1.saturating_add(magnitude);
+        delta_linf = delta_linf.max(magnitude);
+        for byte in delta.to_le_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    Ok(UpdateFingerprint {
+        element_count: before.len(),
+        nonzero_count,
+        delta_l1,
+        delta_linf,
+        hash,
+    })
+}
+
+fn functional_update_fingerprint(
+    records: &[MiniTransformerMlpWindowEvalRecord],
+    before: &LowRankExpert,
+    after: &LowRankExpert,
+) -> Result<UpdateFingerprint, Box<dyn std::error::Error>> {
+    let mut before_hidden = Vec::with_capacity(records.len() * MINI_TRANSFORMER_D_MODEL);
+    let mut after_hidden = Vec::with_capacity(records.len() * MINI_TRANSFORMER_D_MODEL);
+    for record in records {
+        before_hidden.extend_from_slice(&adapted_hidden(&record.last_hidden_q15, before).0);
+        after_hidden.extend_from_slice(&adapted_hidden(&record.last_hidden_q15, after).0);
+    }
+    update_fingerprint(&before_hidden, &after_hidden)
+}
+
+fn active_update_rank(
+    before: &LowRankExpert,
+    after: &LowRankExpert,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    if before.rank != after.rank
+        || before.expansion_weights_q15.len() != after.expansion_weights_q15.len()
+    {
+        return Err("active rank shape mismatch".into());
+    }
+    Ok((0..after.rank)
+        .filter(|&rank_index| {
+            (0..MINI_TRANSFORMER_D_MODEL).any(|dim| {
+                let index = dim * after.rank + rank_index;
+                before.expansion_weights_q15[index] != after.expansion_weights_q15[index]
+            })
+        })
+        .count())
+}
+
 fn evaluate_expert(
     records: &[MiniTransformerMlpWindowEvalRecord],
     tokens: &[u8],
@@ -894,6 +999,7 @@ fn train_expert(
     batch_windows: usize,
     learning_rate: i64,
     learning_rate_shift: u8,
+    error_feedback: bool,
     teacher_probabilities: Option<&[[i16; VOCAB]]>,
 ) -> Result<TrainStats, Box<dyn std::error::Error>> {
     if teacher_probabilities.is_some_and(|probabilities| probabilities.len() != records.len()) {
@@ -905,6 +1011,8 @@ fn train_expert(
         weight_delta_l1: 0,
         weight_saturation_count: 0,
         hidden_saturation_count: 0,
+        residual_carry_event_count: 0,
+        final_residual_carry_nonzero_count: 0,
     };
     for _ in 0..epochs {
         for (batch_number, batch) in records.chunks(batch_windows).enumerate() {
@@ -959,9 +1067,20 @@ fn train_expert(
                 .checked_shl(u32::from(learning_rate_shift))
                 .ok_or("low-rank denominator overflow")?;
             for index in 0..expert.expansion_weights_q15.len() {
-                let numerator = gradients[index].saturating_add(residuals[index]);
+                let numerator = gradients[index].saturating_add(if error_feedback {
+                    residuals[index]
+                } else {
+                    0
+                });
                 let update = round_div_signed(numerator, denominator)?;
-                residuals[index] = numerator.saturating_sub(update.saturating_mul(denominator));
+                residuals[index] = if error_feedback {
+                    numerator.saturating_sub(update.saturating_mul(denominator))
+                } else {
+                    0
+                };
+                stats.residual_carry_event_count = stats
+                    .residual_carry_event_count
+                    .saturating_add(usize::from(residuals[index] != 0));
                 let update = update.saturating_mul(learning_rate);
                 let previous = expert.expansion_weights_q15[index];
                 let raw = i64::from(previous).saturating_sub(update);
@@ -978,6 +1097,8 @@ fn train_expert(
             stats.optimizer_steps += 1;
         }
     }
+    stats.final_residual_carry_nonzero_count =
+        residuals.iter().filter(|&&residual| residual != 0).count();
     Ok(stats)
 }
 
@@ -1273,6 +1394,31 @@ mod tests {
     }
 
     #[test]
+    fn update_fingerprint_records_exact_delta_geometry() {
+        let before = [0_i16, -2, 7, i16::MAX];
+        let after = [0_i16, 3, 4, i16::MIN];
+        let fingerprint = update_fingerprint(&before, &after).expect("fingerprint");
+        assert_eq!(fingerprint.element_count, 4);
+        assert_eq!(fingerprint.nonzero_count, 3);
+        assert_eq!(fingerprint.delta_l1, 65_543);
+        assert_eq!(fingerprint.delta_linf, 65_535);
+        assert_ne!(
+            fingerprint.hash,
+            update_fingerprint(&before, &before).expect("identity").hash
+        );
+    }
+
+    #[test]
+    fn active_update_rank_counts_only_changed_columns() {
+        let before =
+            LowRankExpert::new_with_base(1, 4, 7, [0; MINI_TRANSFORMER_D_MODEL]).expect("expert");
+        let mut after = before.clone();
+        after.expansion_weights_q15[1] = 1;
+        after.expansion_weights_q15[MINI_TRANSFORMER_D_MODEL + 3] = -1;
+        assert_eq!(active_update_rank(&before, &after).expect("rank"), 2);
+    }
+
+    #[test]
     fn version_one_artifacts_decode_with_zero_base() {
         let expert =
             LowRankExpert::new_with_base(9, 4, 11, [0; MINI_TRANSFORMER_D_MODEL]).expect("expert");
@@ -1312,6 +1458,7 @@ mod tests {
             records.len(),
             16_384,
             0,
+            true,
             Some(&teacher),
         )
         .expect("distill");

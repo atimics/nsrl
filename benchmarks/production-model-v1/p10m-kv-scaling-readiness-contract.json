@@ -1,0 +1,100 @@
+{
+  "schema": "nsrl.production_kv_scaling_readiness_contract.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_pilot": {
+    "contract_path": "benchmarks/production-model-v1/p10m-kv-boundary-pilot-contract.json",
+    "contract_sha256": "c708e71de982386f3b3ab8bb774f4f1a635f54f875eadbbaad9ade38a9e2084d",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-kv-boundary-pilot.json",
+    "checkpoint_sha256": "26211428eed36265c7d720b227aae30eda2f29bcbb491a41af29ba8aabdb92c3"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "initialization": {
+    "seed": 7,
+    "output_init_amplitude": 1,
+    "output_forward_shift": 14,
+    "model_hash": "0x0e808e354809141d",
+    "artifact_sha256": "43df409e725654f51d2f30328ef2723ea141d3cb60465433c254b86180023320"
+  },
+  "schedule": {
+    "context_tokens": 64,
+    "train_windows": 2048,
+    "dev_windows": 256,
+    "epochs": 1,
+    "batch_windows": 4,
+    "chunks": 8,
+    "windows_per_chunk": 256,
+    "optimizer_steps_per_integer_chunk": 64,
+    "midpoint_window": 1024,
+    "integer_replay_optimizer_steps": 256,
+    "integer_evaluation_windows_per_chunk": 64,
+    "integer_learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 25,
+      "gate": 25,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    },
+    "output_backward_shift": 8,
+    "float_learning_rate_millionths": 1000,
+    "float_training_evaluation_windows_per_chunk": 64,
+    "float_replay_windows": 1024
+  },
+  "matching_policy": {
+    "same_integer_initialization_mapped_to_float": true,
+    "same_train_and_dev_token_streams": true,
+    "same_context_batch_and_window_order": true,
+    "same_2048_window_budget": true,
+    "optimizer_families": {
+      "integer": "integer_residual_sgd",
+      "float": "float32_sgd_reference"
+    }
+  },
+  "early_stop_gates": {
+    "heldout_nonincreasing_vs_lane_initial": true,
+    "all_13_gradient_paths_active_after_unlock": true,
+    "k_and_v_move_by_window_256": true,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "exact_reachable_update_consistency": true,
+    "float_all_parameters_finite": true
+  },
+  "completion_gates": {
+    "integer_and_float_dev_loss_nonincreasing": true,
+    "integer_float_dev_regression_max_per_mille": 150,
+    "k_and_v_move_after_midpoint": true,
+    "integer_midpoint_restart_byte_identical": true,
+    "float_midpoint_restart_tensor_identical": true,
+    "remaining_group_residual_analysis_complete": true
+  },
+  "authorization": {
+    "local_execution": true,
+    "paid_cloud_execution": false,
+    "paid_scale_requires_separate_contract": true
+  },
+  "known_non_claims": [
+    "p10m_readiness_run_not_p20m_or_p30m_scaling_evidence",
+    "float32_sgd_reference_is_not_optimizer_identical_to_integer_residual_sgd",
+    "dev_split_not_hidden_test",
+    "token_millibits_not_bits_per_byte",
+    "residual_boundary_recommendation_not_a_learned_optimizer",
+    "not_open_generation_quality"
+  ]
+}

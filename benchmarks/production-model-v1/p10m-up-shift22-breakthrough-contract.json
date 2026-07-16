@@ -1,0 +1,154 @@
+{
+  "schema": "nsrl.production_up_shift_breakthrough_contract.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source_up_useful_update": {
+    "contract_path": "benchmarks/production-model-v1/p10m-up-useful-update-contract.json",
+    "contract_sha256": "0d2b406a18b5d0281b62e63dbaadea1f810a8e12fc314921dab9be5a65c0c9d5",
+    "checkpoint_path": "benchmarks/production-model-v1/p10m-up-useful-update.json",
+    "checkpoint_sha256": "35a8b0a605ccf33880575d1414f7b01e5f4e6985013395ef6f1c96c4ae382a84",
+    "required_outcome": "safe_reachability_without_source_gain"
+  },
+  "source_artifacts": {
+    "model_path": "data/experiments/production-model-v1/p10m-up-useful-update/model-7.nsrlpm",
+    "model_sha256": "74cfdbf67621ba0491607abdd612cd3d62ed4ae85260920810bf831ac3fc6498",
+    "model_hash": "0x07b9bd5bd67be648",
+    "optimizer_path": "data/experiments/production-model-v1/p10m-up-useful-update/optimizer-7.nsrlpo",
+    "optimizer_sha256": "0aaf142df291861174f17dcd517a6aba04fccea5869ef10d363cc778ac5df08d",
+    "optimizer_state_hash": "0x3c43fbbc848123c1",
+    "optimizer_step": 512
+  },
+  "source_dev": {
+    "context_tokens": 64,
+    "windows": 256,
+    "mistakes": 256,
+    "total_millibits": 3339391,
+    "mean_millibits": 13044
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03"
+  },
+  "initialization": {
+    "seed": 7,
+    "output_init_amplitude": 1,
+    "output_forward_shift": 14,
+    "model_hash": "0x0e808e354809141d",
+    "artifact_sha256": "43df409e725654f51d2f30328ef2723ea141d3cb60465433c254b86180023320"
+  },
+  "candidate": {
+    "id": "up_shift22_quality_density_probe",
+    "group": "up",
+    "source_shift": 23,
+    "candidate_shift": 22,
+    "shift_reduction": 1,
+    "source_update_count": 26,
+    "predicted_parameter_crossings": 22983,
+    "crossing_density_per_million_parameters": 19483,
+    "selection_rationale": "first_up_boundary_with_material_crossing_density_after_safe_shift23_no_gain"
+  },
+  "schedule": {
+    "context_tokens": 64,
+    "interval_windows": 256,
+    "interval_optimizer_steps": 64,
+    "intervals": 8,
+    "train_windows": 2048,
+    "dev_windows": 256,
+    "test_windows": 256,
+    "integer_evaluation_windows_per_interval": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "output_backward_shift": 8,
+    "learning_rate_shifts": {
+      "embeddings": 17,
+      "attention_rms": 19,
+      "mlp_rms": 13,
+      "final_rms": 19,
+      "q": 29,
+      "k": 26,
+      "v": 30,
+      "o": 25,
+      "up": 22,
+      "gate": 23,
+      "down": 25,
+      "output": 34,
+      "bias": 23
+    }
+  },
+  "selection_policy": {
+    "metric": "dev_total_millibits",
+    "direction": "minimize",
+    "candidate_intervals": 8,
+    "tie_break": "earliest_interval",
+    "test_split_opened_after_selection": true,
+    "test_evaluations": {
+      "source": 1,
+      "selected_candidate": 1
+    },
+    "exact_selected_checkpoint_replay_required": true
+  },
+  "liveness_policy": {
+    "output_unlock_deadline_intervals": 1,
+    "trunk_activation_deadline_intervals": 1,
+    "require_up_update_by_interval": 3,
+    "post_activation_gradient_path_loss_is_fatal": true,
+    "heldout_regression_vs_lane_initial_is_fatal": true,
+    "any_gradient_residual_or_weight_saturation_is_fatal": true
+  },
+  "safety_gates": {
+    "source_safe_no_gain_outcome_matches": true,
+    "source_artifacts_and_residual_evidence_match": true,
+    "up_is_only_modified_shift": true,
+    "all_eight_intervals_complete": true,
+    "up_crosses_exact_integer_boundaries_by_window_1024": true,
+    "only_k_v_up_gate_and_output_move": true,
+    "all_13_gradient_paths_active": true,
+    "all_saturation_zero": true,
+    "heldout_total_millibits_nonincreasing_vs_lane_initial": true,
+    "selected_checkpoint_is_deterministic_dev_minimum": true,
+    "selected_checkpoint_replay_byte_identical": true,
+    "test_split_binding_and_single_open_policy_match": true,
+    "selected_residual_analysis_complete": true
+  },
+  "quality_gates": {
+    "discovery": {
+      "candidate_dev_total_millibits_max": 3339135,
+      "candidate_dev_mean_millibits_max": 13043,
+      "minimum_mean_millibit_improvement_vs_source": 1
+    },
+    "confirmation": {
+      "candidate_test_total_millibits_margin": 256,
+      "minimum_test_mean_millibit_improvement_vs_source": 1,
+      "source_relative_test_improvement_required": true
+    }
+  },
+  "outcome_policy": {
+    "confirmed_quality_breakthrough": "all_safety_discovery_and_confirmation_gates_pass",
+    "dev_discovery_not_test_confirmed": "safety_and_discovery_pass_but_confirmation_fails",
+    "no_dev_discovery": "safety_passes_but_discovery_fails",
+    "failed_safety": "any_safety_gate_fails"
+  },
+  "authorization": {
+    "local_execution": true,
+    "paid_cloud_execution": false,
+    "paid_scale_requires_separate_contract": true
+  },
+  "known_non_claims": [
+    "single_seed_test_confirmation_not_cross_seed_replication",
+    "one_mean_millibit_gain_not_open_generation_quality",
+    "dev_checkpoint_selection_requires_test_confirmation",
+    "bounded_p10m_projection_experiment_not_p20m_scaling_evidence",
+    "crossing_density_is_not_a_loss_optimizer",
+    "not_open_generation_quality"
+  ]
+}

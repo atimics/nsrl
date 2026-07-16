@@ -13,15 +13,18 @@ pub mod rms_norm;
 pub mod tensor;
 
 pub use attention::{
-    AttentionResidualWorkspace, LOGIT_FRAC_BITS, LinearAttentionState,
+    AttentionResidualWorkspace, Base2SoftmaxNllQ47Components,
+    DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS, LOGIT_FRAC_BITS, LinearAttentionState,
     LinearAttentionStepWorkspace, LinearAttentionTttStepWorkspace, LinearAttentionWorkspace,
     MASKED_LOGIT, PreNormAttentionResidualWorkspace, Q15_SHIFT, SelfAttentionI16Params,
-    SelfAttentionWorkspace, attention_dot_q_k_i16_i32_checked,
+    SelfAttentionWorkspace, SoftmaxNormalization, attention_dot_q_k_i16_i32_checked,
     attention_residual_block_i16_q15_checked,
     attention_residual_block_i16_q15_with_linear_kernel_checked, attention_row_i16_q15_checked,
-    attention_weight_v_i16_q15_checked, base2_exp_neg_q15, base2_softmax_i32_q15,
-    clear_linear_attention_state_checked, decay_linear_attention_state_i16_checked,
-    is_power_of_four, linear_attention_i16_q15_checked,
+    attention_weight_v_i16_q15_checked, base2_exp_neg_q15, base2_exp_neg_q47,
+    base2_softmax_i32_q15, base2_softmax_i32_q31, base2_softmax_i32_q31_with_normalization,
+    base2_softmax_nll_millibits, base2_softmax_nll_q20, base2_softmax_nll_q47_components,
+    base2_softmax_nll_q47_q20, base2_softmax_nll_q47_q32, clear_linear_attention_state_checked,
+    decay_linear_attention_state_i16_checked, is_power_of_four, linear_attention_i16_q15_checked,
     linear_attention_i16_q15_with_linear_kernel_checked, linear_attention_state_lengths,
     linear_attention_step_i16_q15_checked,
     linear_attention_step_i16_q15_with_linear_kernel_checked,
@@ -29,6 +32,7 @@ pub use attention::{
     linear_attention_ttt_step_i16_q15_with_linear_kernel_checked,
     prenorm_attention_residual_block_i16_q15_checked,
     prenorm_attention_residual_block_i16_q15_with_linear_kernel_checked, reciprocal_sum_q31,
+    reciprocal_sum_q47_exact, reciprocal_sum_q47_lut, reciprocal_sum_q47_newton1,
     self_attention_i16_q15_checked, self_attention_i16_q15_with_linear_kernel_checked,
     sqrt_power_of_four_shift,
 };

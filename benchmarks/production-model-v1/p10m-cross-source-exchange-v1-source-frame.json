@@ -1,0 +1,2146 @@
+{
+  "schema": "nsrl.production_cross_source_exchange_source_frame.v1",
+  "analysis_role": "prospective_pre_outcome_source_frame",
+  "acquisition_manifest_sha256": "e7ff8a34336e836505b9adc9fe5b0e66e2a280551915b86bd7c7fe1c6819e047",
+  "source_definition": {
+    "unit": "one Project Gutenberg ebook from one distinct normalized author",
+    "candidate_ebook_ids_frozen_in_acquisition_script": true,
+    "eligibility": {
+      "language": "English",
+      "author_required": true,
+      "unknown_author_excluded": true,
+      "minimum_raw_bytes": 32768,
+      "one_lowest_ebook_id_per_normalized_author_before_hash_selection": true
+    },
+    "selection_seed": "nsrl-m3-source-selection-2026-07-15-v1",
+    "selected_sources": 71,
+    "distinct_authors_required": true,
+    "intended_population": "the frozen distinct-author English Project Gutenberg acquisition frame; no claim to arbitrary web or SimpleWiki sources"
+  },
+  "role_partition": {
+    "seed": "nsrl-m3-source-role-permutation-2026-07-15-v1",
+    "algorithm": "ascending SHA256(seed, ebook_id, raw_sha256)",
+    "fitting_sources": 16,
+    "calibration_sources": 39,
+    "evaluation_sources": 16,
+    "entire_sources_disjoint_across_roles": true
+  },
+  "panel_sampling": {
+    "seed": "nsrl-m3-source-panel-passage-2026-07-15-v1",
+    "panel_documents_per_source": 1,
+    "sampled_utf8_bytes_before_normalization": 16384,
+    "model_windows_per_panel_document": 2,
+    "model_context_tokens": 64,
+    "byte_offset_algorithm": "SHA256(seed, ebook_id, raw_sha256, ordinal) modulo available cleaned body bytes, advanced to UTF-8 and whitespace boundary",
+    "missing_source_policy": "abort before outcome evaluation; no source replacement after freeze"
+  },
+  "sources": [
+    {
+      "source_id": "gutenberg-408",
+      "ebook_id": 408,
+      "title": "The Souls of Black Folk",
+      "author": "W. E. B. Du Bois",
+      "author_key": "w e b du bois",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/408/pg408.txt",
+      "raw_sha256": "f5a231cbe6a8eb942369203e0c69c65090d689ce05feeb416cf05e24c5fa4da1",
+      "raw_bytes": 428743,
+      "cleaned_body_bytes": 402220,
+      "panel_byte_offset": 199719,
+      "panel_bytes": 16384,
+      "panel_sha256": "940c3993dcb8511c5f4de91f2e1f21943c858fb789ff0614ab4bce34995ea6cf"
+    },
+    {
+      "source_id": "gutenberg-131",
+      "ebook_id": 131,
+      "title": "The Pilgrim's Progress from this world to that which is to come",
+      "author": "John Bunyan",
+      "author_key": "john bunyan",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/131/pg131.txt",
+      "raw_sha256": "13188e0d8cdc003befb5f70a41234c7b619c142cbbe4871564fd06406bda94bb",
+      "raw_bytes": 331509,
+      "cleaned_body_bytes": 305240,
+      "panel_byte_offset": 198764,
+      "panel_bytes": 16384,
+      "panel_sha256": "678bfb86e653bb1c24909bae12198d562b7f49a55b259eec34f0422f3d6b9395"
+    },
+    {
+      "source_id": "gutenberg-3300",
+      "ebook_id": 3300,
+      "title": "An Inquiry into the Nature and Causes of the Wealth of Nations",
+      "author": "Adam Smith",
+      "author_key": "adam smith",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/3300/pg3300.txt",
+      "raw_sha256": "e91d52dca43fd0fd69baf7776b00a5d8e74b69675b6b608ca8a0378aaf3ae58d",
+      "raw_bytes": 2468951,
+      "cleaned_body_bytes": 2414310,
+      "panel_byte_offset": 1823008,
+      "panel_bytes": 16384,
+      "panel_sha256": "0658c7e4f7235933e82a1214cc48f836876de213e0714fd4a707b258c5257263"
+    },
+    {
+      "source_id": "gutenberg-1998",
+      "ebook_id": 1998,
+      "title": "Thus Spake Zarathustra: A Book for All and None",
+      "author": "Friedrich Wilhelm Nietzsche",
+      "author_key": "friedrich wilhelm nietzsche",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/1998/pg1998.txt",
+      "raw_sha256": "b15af49b26b9329c52b8de3567d047312360d9afde964182e70ce260e125a72c",
+      "raw_bytes": 682923,
+      "cleaned_body_bytes": 647136,
+      "panel_byte_offset": 553607,
+      "panel_bytes": 16383,
+      "panel_sha256": "d9207180412d58509803e8bfc542eeaf0a2989b63f5a514856c50dbf6730d800"
+    },
+    {
+      "source_id": "gutenberg-27827",
+      "ebook_id": 27827,
+      "title": "The Kama Sutra of Vatsyayana",
+      "author": "Vatsyayana",
+      "author_key": "vatsyayana",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/27827/pg27827.txt",
+      "raw_sha256": "8f8442034e4e2a293f21b5a87f4aa01545357f4e4ea7cfb73e6255470539e14f",
+      "raw_bytes": 359581,
+      "cleaned_body_bytes": 332000,
+      "panel_byte_offset": 281624,
+      "panel_bytes": 16384,
+      "panel_sha256": "9c3d5af67cebc5811102d2efe989a2ccbfdbeb3bd8bfc7938266fdf16e8784a5"
+    },
+    {
+      "source_id": "gutenberg-236",
+      "ebook_id": 236,
+      "title": "The Jungle Book",
+      "author": "Rudyard Kipling",
+      "author_key": "rudyard kipling",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/236/pg236.txt",
+      "raw_sha256": "571353c4c69d127020fb16cd6a566f1d80101bc0fc3cf2b0c2ea5678bf4c769f",
+      "raw_bytes": 303640,
+      "cleaned_body_bytes": 278493,
+      "panel_byte_offset": 212255,
+      "panel_bytes": 16383,
+      "panel_sha256": "0a34a5cc056c9f882ae80acfd63b3537228764c5995179a47323d0202f2d76d5"
+    },
+    {
+      "source_id": "gutenberg-64317",
+      "ebook_id": 64317,
+      "title": "The Great Gatsby",
+      "author": "F. Scott Fitzgerald",
+      "author_key": "f scott fitzgerald",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/64317/pg64317.txt",
+      "raw_sha256": "ce760ec377accd352b41bb8f64504a72d7aa18ab3afb42ded2b56cecacf29e35",
+      "raw_bytes": 306553,
+      "cleaned_body_bytes": 280240,
+      "panel_byte_offset": 71532,
+      "panel_bytes": 16384,
+      "panel_sha256": "bf709edb3d18fd3863ea5ca882fe3f11e8d2f3ec76e8c875aeab28dd15ae68ff"
+    },
+    {
+      "source_id": "gutenberg-132",
+      "ebook_id": 132,
+      "title": "The Art of War",
+      "author": "active 6th century B.C. Sunzi",
+      "author_key": "active 6th century b c sunzi",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/132/pg132.txt",
+      "raw_sha256": "c478f7e05a07bf190585fcea0bc4658ce22e47949ac18444eca53fb274878ffe",
+      "raw_bytes": 342105,
+      "cleaned_body_bytes": 315525,
+      "panel_byte_offset": 256581,
+      "panel_bytes": 16384,
+      "panel_sha256": "c345c9af9017e363e90074c13fc24ff2404a09c20b30f5b201e88f5664f02109"
+    },
+    {
+      "source_id": "gutenberg-161",
+      "ebook_id": 161,
+      "title": "Sense and Sensibility",
+      "author": "Jane Austen",
+      "author_key": "jane austen",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/161/pg161.txt",
+      "raw_sha256": "22272ec4d4da2f50cda51edf34ab8486b325c4a99580120db565fb8917228a22",
+      "raw_bytes": 712842,
+      "cleaned_body_bytes": 680308,
+      "panel_byte_offset": 2475,
+      "panel_bytes": 16384,
+      "panel_sha256": "1a5f5301a4163cb27320812df0f793223f2f7eadb58332530f162a682297babe"
+    },
+    {
+      "source_id": "gutenberg-74",
+      "ebook_id": 74,
+      "title": "The Adventures of Tom Sawyer, Complete",
+      "author": "Mark Twain",
+      "author_key": "mark twain",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/74/pg74.txt",
+      "raw_sha256": "74d77384b123a6360db9ab58463cff8b38df8525fbdc6000c81ee388e1f3cf10",
+      "raw_bytes": 434357,
+      "cleaned_body_bytes": 405549,
+      "panel_byte_offset": 285464,
+      "panel_bytes": 16384,
+      "panel_sha256": "983b8058cadf46f3cce74a3dd40fa16299b1da91a6d5c66d9d4d5213f6a26a18"
+    },
+    {
+      "source_id": "gutenberg-311",
+      "ebook_id": 311,
+      "title": "Bunner Sisters",
+      "author": "Edith Wharton",
+      "author_key": "edith wharton",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/311/pg311.txt",
+      "raw_sha256": "04a17713f216e65e4a0937f82af63be86971def335e833e974cec55590d58eec",
+      "raw_bytes": 197276,
+      "cleaned_body_bytes": 173934,
+      "panel_byte_offset": 123036,
+      "panel_bytes": 16384,
+      "panel_sha256": "1852edb1dcc7f0d4a131f19bc6ff377deddfadbaa71d3a524b710e44461c2da0"
+    },
+    {
+      "source_id": "gutenberg-244",
+      "ebook_id": 244,
+      "title": "A Study in Scarlet",
+      "author": "Arthur Conan Doyle",
+      "author_key": "arthur conan doyle",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/244/pg244.txt",
+      "raw_sha256": "b1ce37ab30c24d470681c3c2bc746be7555d2a9b63d64eb7f477fe73e09d1a8f",
+      "raw_bytes": 268776,
+      "cleaned_body_bytes": 244206,
+      "panel_byte_offset": 9971,
+      "panel_bytes": 16384,
+      "panel_sha256": "e2c549f325ec4311d1536d30714f076260c107adcf04da9514c3ae3ee81a8582"
+    },
+    {
+      "source_id": "gutenberg-880",
+      "ebook_id": 880,
+      "title": "My Garden Acquaintance",
+      "author": "James Russell Lowell",
+      "author_key": "james russell lowell",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/880/pg880.txt",
+      "raw_sha256": "c3b253c74e9b7c4a131f7f9492bc935b1ca0d7b68a05c24daf1b2c6e954b710e",
+      "raw_bytes": 62824,
+      "cleaned_body_bytes": 42307,
+      "panel_byte_offset": 21523,
+      "panel_bytes": 16384,
+      "panel_sha256": "c2430f489f031d452f62d21874bec2808058f394ef9f06e202e459525c6de027"
+    },
+    {
+      "source_id": "gutenberg-205",
+      "ebook_id": 205,
+      "title": "Walden, and On The Duty Of Civil Disobedience",
+      "author": "Henry David Thoreau",
+      "author_key": "henry david thoreau",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/205/pg205.txt",
+      "raw_sha256": "2d9a76a2e3e8195c69430516ebd33c4d0757a53ad432ff6186b7b794e6fe99f9",
+      "raw_bytes": 667957,
+      "cleaned_body_bytes": 637798,
+      "panel_byte_offset": 340487,
+      "panel_bytes": 16384,
+      "panel_sha256": "5818a2f0692bd002978d17dda6893c6503d999c373db260d7c855609a610f357"
+    },
+    {
+      "source_id": "gutenberg-863",
+      "ebook_id": 863,
+      "title": "The Mysterious Affair at Styles",
+      "author": "Agatha Christie",
+      "author_key": "agatha christie",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/863/pg863.txt",
+      "raw_sha256": "1faa63bb31d418523417dda0227d29f78e71aec474db5a18021e41fab1dc2d57",
+      "raw_bytes": 361540,
+      "cleaned_body_bytes": 333174,
+      "panel_byte_offset": 83293,
+      "panel_bytes": 16384,
+      "panel_sha256": "2b473e82e5dc1c724d4676236dd3c5b275464db2d2e92afdfa3207e82c418f6c"
+    },
+    {
+      "source_id": "gutenberg-1322",
+      "ebook_id": 1322,
+      "title": "Leaves of Grass",
+      "author": "Walt Whitman",
+      "author_key": "walt whitman",
+      "role": "fitting",
+      "source_url": "https://www.gutenberg.org/cache/epub/1322/pg1322.txt",
+      "raw_sha256": "77c066a8774e2b04d8bfbc570d9aa5131410355cd6062ab5962ac773240f3140",
+      "raw_bytes": 780492,
+      "cleaned_body_bytes": 742092,
+      "panel_byte_offset": 612169,
+      "panel_bytes": 16384,
+      "panel_sha256": "67ed2cddf88b933ae47188ea89425e2d1a48802bb3427900ed0e5aeaff32b4e5"
+    },
+    {
+      "source_id": "gutenberg-110",
+      "ebook_id": 110,
+      "title": "Tess of the d'Urbervilles: A Pure Woman",
+      "author": "Thomas Hardy",
+      "author_key": "thomas hardy",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/110/pg110.txt",
+      "raw_sha256": "503e08df0ca12fb21f4db9df75cfa97f9ba31b4d136add695b9e3e350b1699b1",
+      "raw_bytes": 895508,
+      "cleaned_body_bytes": 858388,
+      "panel_byte_offset": 521483,
+      "panel_bytes": 16384,
+      "panel_sha256": "7b630f1516713c1935e6456a3da6d08dccd31dfb81b8f1e45ce5d37de8412ec9"
+    },
+    {
+      "source_id": "gutenberg-2680",
+      "ebook_id": 2680,
+      "title": "Meditations",
+      "author": "Emperor of Rome Marcus Aurelius",
+      "author_key": "emperor of rome marcus aurelius",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/2680/pg2680.txt",
+      "raw_sha256": "6977474f82a39dd88a4af31a59504821658174d33c177732c54357e4d680b96c",
+      "raw_bytes": 425304,
+      "cleaned_body_bytes": 398642,
+      "panel_byte_offset": 71623,
+      "panel_bytes": 16383,
+      "panel_sha256": "c0aa8ade8332de55de5a2150eaef69a7d6dfa76844317b4d8e903252fea6bb3a"
+    },
+    {
+      "source_id": "gutenberg-19810",
+      "ebook_id": 19810,
+      "title": "My Ántonia",
+      "author": "Willa Cather",
+      "author_key": "willa cather",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/19810/pg19810.txt",
+      "raw_sha256": "1d0e8fc74be8e4f47a5c938bc03e1f0548a85afee9e81acd4151ee11d8312d38",
+      "raw_bytes": 477306,
+      "cleaned_body_bytes": 449308,
+      "panel_byte_offset": 247094,
+      "panel_bytes": 16383,
+      "panel_sha256": "150b47f7e0466d188ba7031a2841b6f6715e567bad69bbe43bf881714904b0b4"
+    },
+    {
+      "source_id": "gutenberg-160",
+      "ebook_id": 160,
+      "title": "The Awakening, and Selected Short Stories",
+      "author": "Kate Chopin",
+      "author_key": "kate chopin",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/160/pg160.txt",
+      "raw_sha256": "b7cd9e6401ef604b2c931fd10135c09b51172edcc7d9c899e622c0c02e5ab41d",
+      "raw_bytes": 392866,
+      "cleaned_body_bytes": 365614,
+      "panel_byte_offset": 74741,
+      "panel_bytes": 16384,
+      "panel_sha256": "48b8eac8d8f4bf2f9a264d3e7f115092d1f9d988d44ff1324d0d1104d4abb2b5"
+    },
+    {
+      "source_id": "gutenberg-996",
+      "ebook_id": 996,
+      "title": "Don Quixote",
+      "author": "Miguel de Cervantes Saavedra",
+      "author_key": "miguel de cervantes saavedra",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/996/pg996.txt",
+      "raw_sha256": "2864143e9addf498c1c5fd585db4a1ff3e06651c344cddf0931342f1a0ce24d4",
+      "raw_bytes": 2391678,
+      "cleaned_body_bytes": 2327867,
+      "panel_byte_offset": 1229807,
+      "panel_bytes": 16384,
+      "panel_sha256": "49788d56a297a230c99102be9369f58228d2dd61c9f3d70ebcdc777d9820efa9"
+    },
+    {
+      "source_id": "gutenberg-7178",
+      "ebook_id": 7178,
+      "title": "Swann's Way",
+      "author": "Marcel Proust",
+      "author_key": "marcel proust",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/7178/pg7178.txt",
+      "raw_sha256": "4a153b759c2b5af3b32d06408596309284435958597e02a483fc71d80f90835e",
+      "raw_bytes": 1122283,
+      "cleaned_body_bytes": 1085399,
+      "panel_byte_offset": 785665,
+      "panel_bytes": 16384,
+      "panel_sha256": "678403ddaf8fa5881fce149ca50002ea7cd5f9d7ced0d3f96a1033b6ee1b7d2d"
+    },
+    {
+      "source_id": "gutenberg-2084",
+      "ebook_id": 2084,
+      "title": "The Way of All Flesh",
+      "author": "Samuel Butler",
+      "author_key": "samuel butler",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/2084/pg2084.txt",
+      "raw_sha256": "940d8fb5f848632188e084c052c85941e43c6fb0b8078932f13d0276bf9789b9",
+      "raw_bytes": 917657,
+      "cleaned_body_bytes": 882321,
+      "panel_byte_offset": 23429,
+      "panel_bytes": 16383,
+      "panel_sha256": "a4264c8be190978b47e3d557ef4df3f89c5b6d99286069b976eef5b57a3483b0"
+    },
+    {
+      "source_id": "gutenberg-769",
+      "ebook_id": 769,
+      "title": "The Book of Tea",
+      "author": "Kakuzo Okakura",
+      "author_key": "kakuzo okakura",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/769/pg769.txt",
+      "raw_sha256": "a7464287f9b431a55ff50d05e48dec31db050eb4a88554425961c6699ea6fcd7",
+      "raw_bytes": 126670,
+      "cleaned_body_bytes": 105108,
+      "panel_byte_offset": 81943,
+      "panel_bytes": 16383,
+      "panel_sha256": "a9c079baac86e21ac6d98e271aeb4193f56eafceb28d976742045220a97d38ea"
+    },
+    {
+      "source_id": "gutenberg-33",
+      "ebook_id": 33,
+      "title": "The Scarlet Letter",
+      "author": "Nathaniel Hawthorne",
+      "author_key": "nathaniel hawthorne",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/33/pg33.txt",
+      "raw_sha256": "ae8d5a2d55a7b5d2b4b37497338892dab5ff6cc535bf523698da4ba6abe15ee7",
+      "raw_bytes": 513732,
+      "cleaned_body_bytes": 485686,
+      "panel_byte_offset": 277577,
+      "panel_bytes": 16383,
+      "panel_sha256": "e5619da9779bc59364fc2535992bf018146aac5c482fa3fe6d946879d11ea0ad"
+    },
+    {
+      "source_id": "gutenberg-28054",
+      "ebook_id": 28054,
+      "title": "The Brothers Karamazov",
+      "author": "Fyodor Dostoyevsky",
+      "author_key": "fyodor dostoyevsky",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/28054/pg28054.txt",
+      "raw_sha256": "a8bda7296fbdcab50c97e3ccd6dde2c10c3bf9d5725fdfeb2b4dc78b62823ce5",
+      "raw_bytes": 2039159,
+      "cleaned_body_bytes": 1981850,
+      "panel_byte_offset": 902303,
+      "panel_bytes": 16383,
+      "panel_sha256": "227305083a2b4d24b2a67246f1da0f314724e60d4bec546ef2bc849b2c572bbd"
+    },
+    {
+      "source_id": "gutenberg-1399",
+      "ebook_id": 1399,
+      "title": "Anna Karenina",
+      "author": "graf Leo Tolstoy",
+      "author_key": "graf leo tolstoy",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/1399/pg1399.txt",
+      "raw_sha256": "a3e29e08c15c63bb22069f4256316c2ebebd422ecb5c33462ddc00ae00b27571",
+      "raw_bytes": 2067952,
+      "cleaned_body_bytes": 2008256,
+      "panel_byte_offset": 1946934,
+      "panel_bytes": 16383,
+      "panel_sha256": "569371f2f58bf3e51f617631f7cc119eb734d9cb7a38f1b01658737bcaa64d9f"
+    },
+    {
+      "source_id": "gutenberg-2775",
+      "ebook_id": 2775,
+      "title": "The Good Soldier",
+      "author": "Ford Madox Ford",
+      "author_key": "ford madox ford",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/2775/pg2775.txt",
+      "raw_sha256": "80ed3a52380354e5d1e64f53733c77ba34fb891d05f9d0395b0708c3ce1f0689",
+      "raw_bytes": 438512,
+      "cleaned_body_bytes": 411652,
+      "panel_byte_offset": 249125,
+      "panel_bytes": 16383,
+      "panel_sha256": "29ad5e40abad95dfc1b5519c0cabb393e09133e6461061d6d81b027160e15a03"
+    },
+    {
+      "source_id": "gutenberg-209",
+      "ebook_id": 209,
+      "title": "The Turn of the Screw",
+      "author": "Henry James",
+      "author_key": "henry james",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/209/pg209.txt",
+      "raw_sha256": "151f2e831adb6cd189edfb688b8e85df6aef44b89924a29e0fc92d319f959995",
+      "raw_bytes": 259199,
+      "cleaned_body_bytes": 234868,
+      "panel_byte_offset": 107931,
+      "panel_bytes": 16384,
+      "panel_sha256": "d998c154bec3cc5f07e7ce9677097c8e383984a289a90bd07ffa0525d6f51827"
+    },
+    {
+      "source_id": "gutenberg-2147",
+      "ebook_id": 2147,
+      "title": "The Works of Edgar Allan Poe — Volume 1",
+      "author": "Edgar Allan Poe",
+      "author_key": "edgar allan poe",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/2147/pg2147.txt",
+      "raw_sha256": "dcb6babf421714ccbdd42862987081134873861ba4ce5135d01c6d84ffd4feaf",
+      "raw_bytes": 606479,
+      "cleaned_body_bytes": 576929,
+      "panel_byte_offset": 523733,
+      "panel_bytes": 16384,
+      "panel_sha256": "af7fb16a8d292af59ef7901e04c7651b804eba7b131387e64ccceaf679bb11c8"
+    },
+    {
+      "source_id": "gutenberg-155",
+      "ebook_id": 155,
+      "title": "The Moonstone",
+      "author": "Wilkie Collins",
+      "author_key": "wilkie collins",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/155/pg155.txt",
+      "raw_sha256": "e2f9023a41c388fa2b0d2a21d71a363e603b33860d8d964e314b5f4da7e6f837",
+      "raw_bytes": 1135528,
+      "cleaned_body_bytes": 1094761,
+      "panel_byte_offset": 1024199,
+      "panel_bytes": 16382,
+      "panel_sha256": "008ca74df90d55782ca1c368356a2110bfc503843409be895250f035bf16d7c4"
+    },
+    {
+      "source_id": "gutenberg-55",
+      "ebook_id": 55,
+      "title": "The Wonderful Wizard of Oz",
+      "author": "L. Frank Baum",
+      "author_key": "l frank baum",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/55/pg55.txt",
+      "raw_sha256": "969bffab7740d4d8a0bac332d78bd0152ad4a40a2efc52f06c74a9bb6120be75",
+      "raw_bytes": 237232,
+      "cleaned_body_bytes": 212650,
+      "panel_byte_offset": 145013,
+      "panel_bytes": 16384,
+      "panel_sha256": "e33b47cbb1a39bea6c6b873bbc553ba2b5117e6c6c3a51f1c4ae1f2ba31cbd3e"
+    },
+    {
+      "source_id": "gutenberg-16",
+      "ebook_id": 16,
+      "title": "Peter Pan",
+      "author": "J. M. Barrie",
+      "author_key": "j m barrie",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/16/pg16.txt",
+      "raw_sha256": "6b08714281fe38266a756741e4c62915cda7536c2f78cca501f7fd53f3f445ae",
+      "raw_bytes": 288769,
+      "cleaned_body_bytes": 262711,
+      "panel_byte_offset": 84263,
+      "panel_bytes": 16384,
+      "panel_sha256": "402abe68af0f4a8f211df43259518a85d6e527f6a4aff3180549bc8901dc892f"
+    },
+    {
+      "source_id": "gutenberg-829",
+      "ebook_id": 829,
+      "title": "Gulliver's Travels into Several Remote Nations of the World",
+      "author": "Jonathan Swift",
+      "author_key": "jonathan swift",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/829/pg829.txt",
+      "raw_sha256": "fca36de3de0d8b831b7588cf1df84639ccf4c503172d6444ee61d1c1b2036edd",
+      "raw_bytes": 613946,
+      "cleaned_body_bytes": 584470,
+      "panel_byte_offset": 549351,
+      "panel_bytes": 16383,
+      "panel_sha256": "323081dfe361850dc60804faf09d0ab4f7bf271dea6d11cc441ac88692e6903a"
+    },
+    {
+      "source_id": "gutenberg-45",
+      "ebook_id": 45,
+      "title": "Anne of Green Gables",
+      "author": "L. M. Montgomery",
+      "author_key": "l m montgomery",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/45/pg45.txt",
+      "raw_sha256": "89a5e9fb2e0bb44562a969785385366f94e1da736aebee7d9cdf459eb0b5f9f6",
+      "raw_bytes": 606693,
+      "cleaned_body_bytes": 576042,
+      "panel_byte_offset": 556634,
+      "panel_bytes": 16384,
+      "panel_sha256": "41947e95df57bb4675e273dd9a11f36cedaaf41dbc6509658c0cc764fa0ccb70"
+    },
+    {
+      "source_id": "gutenberg-5200",
+      "ebook_id": 5200,
+      "title": "Metamorphosis",
+      "author": "Franz Kafka",
+      "author_key": "franz kafka",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/5200/pg5200.txt",
+      "raw_sha256": "0933283a19a4daaef0d412e8f69c74fae126b0a946cb74b8f3c783a8e869830d",
+      "raw_bytes": 141933,
+      "cleaned_body_bytes": 119752,
+      "panel_byte_offset": 98904,
+      "panel_bytes": 16384,
+      "panel_sha256": "caa88d4a0473ad0e4d754d973f04eed4fe9187f646120f618318c2d7bf13aa15"
+    },
+    {
+      "source_id": "gutenberg-514",
+      "ebook_id": 514,
+      "title": "Little Women",
+      "author": "Louisa May Alcott",
+      "author_key": "louisa may alcott",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/514/pg514.txt",
+      "raw_sha256": "677d034b4a3d1cea92d075939878f852a7a3ec757dc9ed05ef0c40cab5c1e6de",
+      "raw_bytes": 1071405,
+      "cleaned_body_bytes": 1030772,
+      "panel_byte_offset": 523566,
+      "panel_bytes": 16384,
+      "panel_sha256": "8516140f4293f75f2c72ac23aab46cd5464b1a7b0d23eadb07f07095af7d310f"
+    },
+    {
+      "source_id": "gutenberg-2527",
+      "ebook_id": 2527,
+      "title": "The Sorrows of Young Werther",
+      "author": "Johann Wolfgang von Goethe",
+      "author_key": "johann wolfgang von goethe",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/2527/pg2527.txt",
+      "raw_sha256": "d3d603003a385308491ec2c7235db9695a4d7d35251c97d509ca2f976fae5ec0",
+      "raw_bytes": 259618,
+      "cleaned_body_bytes": 235654,
+      "panel_byte_offset": 16841,
+      "panel_bytes": 16384,
+      "panel_sha256": "1eb08b74e93faf88194a02eae99c28a7869981052b2f7318ec5a84ecc4a06133"
+    },
+    {
+      "source_id": "gutenberg-2892",
+      "ebook_id": 2892,
+      "title": "Irish Fairy Tales",
+      "author": "James Stephens",
+      "author_key": "james stephens",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/2892/pg2892.txt",
+      "raw_sha256": "c2ce717029d8170be9c7d99a64787f79a52d93b85df2fea8916bc37b5b7389fc",
+      "raw_bytes": 387555,
+      "cleaned_body_bytes": 359260,
+      "panel_byte_offset": 246895,
+      "panel_bytes": 16384,
+      "panel_sha256": "9aabf9d1f6f8b56e1fe2cb141da6e612337a6e52c3a3a150aea8e020752c8d8d"
+    },
+    {
+      "source_id": "gutenberg-6761",
+      "ebook_id": 6761,
+      "title": "The Adventures of Ferdinand Count Fathom — Complete",
+      "author": "T. Smollett",
+      "author_key": "t smollett",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/6761/pg6761.txt",
+      "raw_sha256": "51f2900f5321b94031aaccbf68aaef177b7770635bf5f80d456ab9b129acdbdd",
+      "raw_bytes": 994515,
+      "cleaned_body_bytes": 958534,
+      "panel_byte_offset": 9922,
+      "panel_bytes": 16384,
+      "panel_sha256": "c15e8b848af8b9d9493cd1df0e372d14ad5cb547d3a4a3475a59e5a0b0a90e83"
+    },
+    {
+      "source_id": "gutenberg-10007",
+      "ebook_id": 10007,
+      "title": "Carmilla",
+      "author": "Joseph Sheridan Le Fanu",
+      "author_key": "joseph sheridan le fanu",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/10007/pg10007.txt",
+      "raw_sha256": "f751453ef6ad9363a7e31f63b8d4ef830c7ea20a2aba465a59fb6fbee6bbddca",
+      "raw_bytes": 181071,
+      "cleaned_body_bytes": 157910,
+      "panel_byte_offset": 127182,
+      "panel_bytes": 16384,
+      "panel_sha256": "2fcd1b51ab0b0f2cdca0a46f0638b0ab81c0270c914c1d3cf22a56792f64f517"
+    },
+    {
+      "source_id": "gutenberg-2500",
+      "ebook_id": 2500,
+      "title": "Siddhartha",
+      "author": "Hermann Hesse",
+      "author_key": "hermann hesse",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/2500/pg2500.txt",
+      "raw_sha256": "345b21d95cb61c0756d482230ae4cb8c1858a0cef1835e1ba89d18cd471343a3",
+      "raw_bytes": 242505,
+      "cleaned_body_bytes": 218727,
+      "panel_byte_offset": 180855,
+      "panel_bytes": 16384,
+      "panel_sha256": "c9860aeaf52248bbf6c918360dc9227f4de9a71d59874eda55337b8d8ba0ed72"
+    },
+    {
+      "source_id": "gutenberg-768",
+      "ebook_id": 768,
+      "title": "Wuthering Heights",
+      "author": "Emily Brontë",
+      "author_key": "emily bronte",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/768/pg768.txt",
+      "raw_sha256": "e533fe750589f0421d5d744576315f5c2b9b0d69e981179ea0551bbf134c5e02",
+      "raw_bytes": 693819,
+      "cleaned_body_bytes": 661642,
+      "panel_byte_offset": 513050,
+      "panel_bytes": 16384,
+      "panel_sha256": "ca28650dce27bf9d77ae37d3583090576b6c12465e4713e58bcfc47dca8dd430"
+    },
+    {
+      "source_id": "gutenberg-20203",
+      "ebook_id": 20203,
+      "title": "Autobiography of Benjamin Franklin",
+      "author": "Benjamin Franklin",
+      "author_key": "benjamin franklin",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/20203/pg20203.txt",
+      "raw_sha256": "c5be0e49f68f0876be480074b9dc0712a8fdbc7faa7def3acc6765afba9bd128",
+      "raw_bytes": 467432,
+      "cleaned_body_bytes": 439167,
+      "panel_byte_offset": 233021,
+      "panel_bytes": 16383,
+      "panel_sha256": "31b6df805fb3e27a86e9ccb574c9b2b982ea24bf3d503071ac6b0d38925b63d9"
+    },
+    {
+      "source_id": "gutenberg-8800",
+      "ebook_id": 8800,
+      "title": "The divine comedy",
+      "author": "Dante Alighieri",
+      "author_key": "dante alighieri",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/8800/pg8800.txt",
+      "raw_sha256": "3a7dd97b5fec82456c58237b33383a593480c2bfe088aeaaa4a519de2a10d39c",
+      "raw_bytes": 656728,
+      "cleaned_body_bytes": 621071,
+      "panel_byte_offset": 38605,
+      "panel_bytes": 16384,
+      "panel_sha256": "2325b3c975c28b40feb050a2ef4c25386535c3ad975fbe63ab34c151b1ac00ea"
+    },
+    {
+      "source_id": "gutenberg-120",
+      "ebook_id": 120,
+      "title": "Treasure Island",
+      "author": "Robert Louis Stevenson",
+      "author_key": "robert louis stevenson",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/120/pg120.txt",
+      "raw_sha256": "20cfdba153743bca26a15028ebb470121cbb7173ddafd435de5c19a79e4bbf30",
+      "raw_bytes": 399861,
+      "cleaned_body_bytes": 372534,
+      "panel_byte_offset": 174662,
+      "panel_bytes": 16384,
+      "panel_sha256": "18ac67cd6b18929e72bbd95090a1592240fe7b802881cf06b641ce0467b95267"
+    },
+    {
+      "source_id": "gutenberg-3207",
+      "ebook_id": 3207,
+      "title": "Leviathan",
+      "author": "Thomas Hobbes",
+      "author_key": "thomas hobbes",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/3207/pg3207.txt",
+      "raw_sha256": "3de1e492641d939567a8b0de827fb13e1ad992324f9ac8b204f60475009b7294",
+      "raw_bytes": 1254939,
+      "cleaned_body_bytes": 1211139,
+      "panel_byte_offset": 308120,
+      "panel_bytes": 16384,
+      "panel_sha256": "f422112371d7a4de50211489cf2ff8e3926f953009206a5056e688413da126c3"
+    },
+    {
+      "source_id": "gutenberg-145",
+      "ebook_id": 145,
+      "title": "Middlemarch",
+      "author": "George Eliot",
+      "author_key": "george eliot",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/145/pg145.txt",
+      "raw_sha256": "dc2e0107e6ae07e8e33da934b2ec4e8e600826a2e0cd48df265119cd02e5fb50",
+      "raw_bytes": 1865684,
+      "cleaned_body_bytes": 1812498,
+      "panel_byte_offset": 1592625,
+      "panel_bytes": 16384,
+      "panel_sha256": "b7dc015e868bfb6163a70a8b82688f96d67c963aecee8b7274eba4eb87491d9c"
+    },
+    {
+      "source_id": "gutenberg-61",
+      "ebook_id": 61,
+      "title": "The Communist Manifesto",
+      "author": "Karl Marx",
+      "author_key": "karl marx",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/61/pg61.txt",
+      "raw_sha256": "ba4623f09e411351ad4f34488289c70eceda8fb9d7977c1db64f0f01ed80cb59",
+      "raw_bytes": 94315,
+      "cleaned_body_bytes": 73064,
+      "panel_byte_offset": 5675,
+      "panel_bytes": 16383,
+      "panel_sha256": "b6377ca709364fbdab80462d5c010851d634293c281974d83692fdda7e0cf1a9"
+    },
+    {
+      "source_id": "gutenberg-1497",
+      "ebook_id": 1497,
+      "title": "The Republic",
+      "author": "Plato",
+      "author_key": "plato",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/1497/pg1497.txt",
+      "raw_sha256": "917c1cb469e1a8eba6083808764d7131da8d79140b575b4214c9d02a73ec4528",
+      "raw_bytes": 1244164,
+      "cleaned_body_bytes": 1199813,
+      "panel_byte_offset": 651133,
+      "panel_bytes": 16384,
+      "panel_sha256": "0eef3d1cbd27be464abad489eba0a6ebdb317aaf23e3bf1d5478b3b6f1673ab2"
+    },
+    {
+      "source_id": "gutenberg-174",
+      "ebook_id": 174,
+      "title": "The Picture of Dorian Gray",
+      "author": "Oscar Wilde",
+      "author_key": "oscar wilde",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/174/pg174.txt",
+      "raw_sha256": "38f36b510417177aa87a6a24c968e3ec63a447b7df36a9c1a7c5a3f2d9e51547",
+      "raw_bytes": 465814,
+      "cleaned_body_bytes": 437413,
+      "panel_byte_offset": 97144,
+      "panel_bytes": 16384,
+      "panel_sha256": "1c926dc6c8dca3a1bb08b42440f48907aae9d3019541f9eb2495b6b56509d994"
+    },
+    {
+      "source_id": "gutenberg-1184",
+      "ebook_id": 1184,
+      "title": "The Count of Monte Cristo",
+      "author": "Alexandre Dumas",
+      "author_key": "alexandre dumas",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/1184/pg1184.txt",
+      "raw_sha256": "64f8d5cfa51fcecb904abf7312d395d512a71817e7359b91288beb50517c3836",
+      "raw_bytes": 2787124,
+      "cleaned_body_bytes": 2705376,
+      "panel_byte_offset": 1425611,
+      "panel_bytes": 16383,
+      "panel_sha256": "8be0767f8e3eaf2b5080dc5cac4849881adebe420cab923cf7518fefb5aa5783"
+    },
+    {
+      "source_id": "gutenberg-3825",
+      "ebook_id": 3825,
+      "title": "Pygmalion",
+      "author": "Bernard Shaw",
+      "author_key": "bernard shaw",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/3825/pg3825.txt",
+      "raw_sha256": "bf2518b5c0f1e46e3190ab2e77a0ecb3e35a1e120b233e6cb27134395dff048a",
+      "raw_bytes": 215094,
+      "cleaned_body_bytes": 190966,
+      "panel_byte_offset": 69749,
+      "panel_bytes": 16384,
+      "panel_sha256": "f5b8491f6b31f10ad78d8edea130bd6482e677f493ede3c8ed470ab954d509ec"
+    },
+    {
+      "source_id": "gutenberg-4705",
+      "ebook_id": 4705,
+      "title": "A Treatise of Human Nature",
+      "author": "David Hume",
+      "author_key": "david hume",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/4705/pg4705.txt",
+      "raw_sha256": "9ff6a457b5b72d6e32e6159c2a6b2bf830efa914b213630fac2bbaaaf045b979",
+      "raw_bytes": 1365602,
+      "cleaned_body_bytes": 1323926,
+      "panel_byte_offset": 631239,
+      "panel_bytes": 16384,
+      "panel_sha256": "89352b7a544d41a676ad7e52fde41eb61e70ba5783427acdd364fa47b3e3db96"
+    },
+    {
+      "source_id": "gutenberg-23",
+      "ebook_id": 23,
+      "title": "Narrative of the Life of Frederick Douglass, an American Slave",
+      "author": "Frederick Douglass",
+      "author_key": "frederick douglass",
+      "role": "calibration",
+      "source_url": "https://www.gutenberg.org/cache/epub/23/pg23.txt",
+      "raw_sha256": "e39d8d5e516947d578555d8e549206e44e07f44697143b6d808eec8d503729bf",
+      "raw_bytes": 249061,
+      "cleaned_body_bytes": 225320,
+      "panel_byte_offset": 63536,
+      "panel_bytes": 16384,
+      "panel_sha256": "396371a630dccbc89ae671988b22b1e43f1398eb7d769981e05c3c950b1deedc"
+    },
+    {
+      "source_id": "gutenberg-1245",
+      "ebook_id": 1245,
+      "title": "Night and Day",
+      "author": "Virginia Woolf",
+      "author_key": "virginia woolf",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/1245/pg1245.txt",
+      "raw_sha256": "7a688d4f10da6b1ea159ba7b64c5f9995bd417784bc2d6d771246f1ad6b3206a",
+      "raw_bytes": 1003066,
+      "cleaned_body_bytes": 965145,
+      "panel_byte_offset": 196288,
+      "panel_bytes": 16384,
+      "panel_sha256": "97efefc56771c9ea39c8c1a09a0ff878361f6c7b2b8e14fdff28cb66bc54023f"
+    },
+    {
+      "source_id": "gutenberg-1260",
+      "ebook_id": 1260,
+      "title": "Jane Eyre: An Autobiography",
+      "author": "Charlotte Brontë",
+      "author_key": "charlotte bronte",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/1260/pg1260.txt",
+      "raw_sha256": "13414dee2951c3ee731d76d2ffd822016b2479c892162760c5d0eb2aa5fa7631",
+      "raw_bytes": 1084803,
+      "cleaned_body_bytes": 1043882,
+      "panel_byte_offset": 944067,
+      "panel_bytes": 16384,
+      "panel_sha256": "c03621bbca1dedabdd17268beac9ce95ea7c55bbf380c5ee16957f28d1666a54"
+    },
+    {
+      "source_id": "gutenberg-2701",
+      "ebook_id": 2701,
+      "title": "Moby Dick; Or, The Whale",
+      "author": "Herman Melville",
+      "author_key": "herman melville",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/2701/pg2701.txt",
+      "raw_sha256": "9a6844ac0703853720010787c7b6c70b0020f1ab1862dcd74452fa46474d1215",
+      "raw_bytes": 1276263,
+      "cleaned_body_bytes": 1234471,
+      "panel_byte_offset": 1108278,
+      "panel_bytes": 16384,
+      "panel_sha256": "d54a320d4fdf8120de986c6c7af342a8764f821240bc20ba9f0aa1bc1d798e7a"
+    },
+    {
+      "source_id": "gutenberg-215",
+      "ebook_id": 215,
+      "title": "The call of the wild",
+      "author": "Jack London",
+      "author_key": "jack london",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/215/pg215.txt",
+      "raw_sha256": "30f569c5671bba7bbc4a92ab6d8ee01a0d3be00f994819c77da62c28041eb8a2",
+      "raw_bytes": 199757,
+      "cleaned_body_bytes": 176855,
+      "panel_byte_offset": 147524,
+      "panel_bytes": 16384,
+      "panel_sha256": "82e01d0e6f7bba950a5e9dcfdeae57df4899705912e1681784bf55d7b31f3c4d"
+    },
+    {
+      "source_id": "gutenberg-32449",
+      "ebook_id": 32449,
+      "title": "Japanese Girls and Women",
+      "author": "Alice Mabel Bacon",
+      "author_key": "alice mabel bacon",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/32449/pg32449.txt",
+      "raw_sha256": "416a4f83408fd9d846f4f13ce416954d064d00ad464626b4fba9d55fd2694f3a",
+      "raw_bytes": 594216,
+      "cleaned_body_bytes": 564550,
+      "panel_byte_offset": 506025,
+      "panel_bytes": 16384,
+      "panel_sha256": "69ccd07af88d80a8848130e0b148f7335f4c6eb5dd31729472dbd2f35b472f02"
+    },
+    {
+      "source_id": "gutenberg-1232",
+      "ebook_id": 1232,
+      "title": "The Prince",
+      "author": "Niccolò Machiavelli",
+      "author_key": "niccolo machiavelli",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/1232/pg1232.txt",
+      "raw_sha256": "f136e6c198b831dae14576cf67b81834b7a09c1e416a460a2a62973f3fd54b75",
+      "raw_bytes": 308022,
+      "cleaned_body_bytes": 283353,
+      "panel_byte_offset": 195062,
+      "panel_bytes": 16384,
+      "panel_sha256": "d2bf82ab7bee219e1488939599e74c0660c8326994386232cebc7a483a49b0f4"
+    },
+    {
+      "source_id": "gutenberg-394",
+      "ebook_id": 394,
+      "title": "Cranford",
+      "author": "Elizabeth Cleghorn Gaskell",
+      "author_key": "elizabeth cleghorn gaskell",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/394/pg394.txt",
+      "raw_sha256": "3bb263075a97afd4058933534549f6176d881f7a9f74bb62eb52be26670e3cb0",
+      "raw_bytes": 421578,
+      "cleaned_body_bytes": 395019,
+      "panel_byte_offset": 344128,
+      "panel_bytes": 16384,
+      "panel_sha256": "0f87669fb6ba6f59677d3da9cf096afd7a934a83f6326752f8553ab563f0288f"
+    },
+    {
+      "source_id": "gutenberg-98",
+      "ebook_id": 98,
+      "title": "A Tale of Two Cities",
+      "author": "Charles Dickens",
+      "author_key": "charles dickens",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/98/pg98.txt",
+      "raw_sha256": "d54c2b80d40a40b982cd88852c6180bb944d95acdb028af3d0e01a1750681784",
+      "raw_bytes": 807197,
+      "cleaned_body_bytes": 771405,
+      "panel_byte_offset": 589725,
+      "panel_bytes": 16384,
+      "panel_sha256": "b21af62283922881c7d43b7d9606906978edd5eb96f83573368c6e19c790bdb3"
+    },
+    {
+      "source_id": "gutenberg-41",
+      "ebook_id": 41,
+      "title": "The Legend of Sleepy Hollow",
+      "author": "Washington Irving",
+      "author_key": "washington irving",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/41/pg41.txt",
+      "raw_sha256": "6847c02f49c9ff8a5e2a0e8f49842bf3bffc7f5a87216c895a6b64f26ecf9353",
+      "raw_bytes": 90896,
+      "cleaned_body_bytes": 69924,
+      "panel_byte_offset": 21607,
+      "panel_bytes": 16384,
+      "panel_sha256": "e56343f10cec3584e094a7561b956ae1bb6dafcfa98bee8842f2c5ef657506a7"
+    },
+    {
+      "source_id": "gutenberg-1228",
+      "ebook_id": 1228,
+      "title": "On the Origin of Species By Means of Natural Selection",
+      "author": "Charles Darwin",
+      "author_key": "charles darwin",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/1228/pg1228.txt",
+      "raw_sha256": "ededa9c0bf8761efed092c303b46c1c92de956838cba6249a33bedfd6d7363b4",
+      "raw_bytes": 970612,
+      "cleaned_body_bytes": 934455,
+      "panel_byte_offset": 361836,
+      "panel_bytes": 16384,
+      "panel_sha256": "92faab1a57cc0c91d6ba2e6c5fcade1882655ed26ccf10d6f85d72c034080db3"
+    },
+    {
+      "source_id": "gutenberg-3600",
+      "ebook_id": 3600,
+      "title": "Essays of Michel de Montaigne — Complete",
+      "author": "Michel de Montaigne",
+      "author_key": "michel de montaigne",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/3600/pg3600.txt",
+      "raw_sha256": "1b4c87312f0890e04cecee48e3a5fa263de65743230b819e16cb1bd72f7aee59",
+      "raw_bytes": 3105655,
+      "cleaned_body_bytes": 3033149,
+      "panel_byte_offset": 194242,
+      "panel_bytes": 16384,
+      "panel_sha256": "9a120aa08e9bd03bbf359b78e97520c194a0fe384b91e13a8c47cd128842f8d1"
+    },
+    {
+      "source_id": "gutenberg-7370",
+      "ebook_id": 7370,
+      "title": "Second Treatise of Government",
+      "author": "John Locke",
+      "author_key": "john locke",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/7370/pg7370.txt",
+      "raw_sha256": "3cd2baa0523ce2f5555576bf5af9079a887a497417a3217b61bc86ab12d543bb",
+      "raw_bytes": 339004,
+      "cleaned_body_bytes": 313987,
+      "panel_byte_offset": 92199,
+      "panel_bytes": 16384,
+      "panel_sha256": "4be224392f94023c073b9ec498fa495a185cf75142e2ff8f2e598e94ac012cf7"
+    },
+    {
+      "source_id": "gutenberg-11",
+      "ebook_id": 11,
+      "title": "Alice's Adventures in Wonderland",
+      "author": "Lewis Carroll",
+      "author_key": "lewis carroll",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/11/pg11.txt",
+      "raw_sha256": "01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e",
+      "raw_bytes": 174311,
+      "cleaned_body_bytes": 151068,
+      "panel_byte_offset": 53104,
+      "panel_bytes": 16383,
+      "panel_sha256": "a852b2b9d70c43626c4e47738b4def59ccc4c6302480d7592acb1e8e68e23915"
+    },
+    {
+      "source_id": "gutenberg-1292",
+      "ebook_id": 1292,
+      "title": "The Way of the World",
+      "author": "William Congreve",
+      "author_key": "william congreve",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/1292/pg1292.txt",
+      "raw_sha256": "76347167f318879949a0252b250e5e95eaecf900b8f00f538bc6bb3dbba750ea",
+      "raw_bytes": 187104,
+      "cleaned_body_bytes": 162955,
+      "panel_byte_offset": 87509,
+      "panel_bytes": 16384,
+      "panel_sha256": "187ffcdc779ad20fded42fd9f80ca654c72a1f5a1f9b9e37d02c05cfa2d770e2"
+    },
+    {
+      "source_id": "gutenberg-2542",
+      "ebook_id": 2542,
+      "title": "A Doll's House : a play",
+      "author": "Henrik Ibsen",
+      "author_key": "henrik ibsen",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/2542/pg2542.txt",
+      "raw_sha256": "d72a481b08ca7ace73e8ca2087b2baec29fc00e0d6e493f5e877b12116bccf4f",
+      "raw_bytes": 169080,
+      "cleaned_body_bytes": 144048,
+      "panel_byte_offset": 119717,
+      "panel_bytes": 16384,
+      "panel_sha256": "39619c02440f6857527c47698e447c8e3f4b261979074fe262323a25d48aa52e"
+    },
+    {
+      "source_id": "gutenberg-140",
+      "ebook_id": 140,
+      "title": "The Jungle",
+      "author": "Upton Sinclair",
+      "author_key": "upton sinclair",
+      "role": "evaluation",
+      "source_url": "https://www.gutenberg.org/cache/epub/140/pg140.txt",
+      "raw_sha256": "1a28274fdea8c1438ebad3d7d07946b3d8a0779754427ba4a4da3b64882b7514",
+      "raw_bytes": 854298,
+      "cleaned_body_bytes": 820407,
+      "panel_byte_offset": 380791,
+      "panel_bytes": 16384,
+      "panel_sha256": "0d1c1f89aa0b6760e690f28be42b2edf959e5fdda59539ac5ab158ea6e5b129f"
+    }
+  ],
+  "phases": {
+    "fitting": {
+      "phase": "fitting",
+      "corpus_path": "data/processed/production-cross-source-exchange-v1/fitting.txt",
+      "corpus_sha256": "8204b10c91c53efad158880ce9089c145679785591c3be5666dad97d6a0fe4f1",
+      "index_path": "data/processed/production-cross-source-exchange-v1/fitting.index.tsv",
+      "index_sha256": "946192d00e634d3bc6231590c7048c37baff2ce7958bca5b7b468b2621361cd3",
+      "document_start": 8,
+      "atomic_documents": 64,
+      "role_documents": 16,
+      "excluded_padding_documents": 48,
+      "document_bindings": [
+        {
+          "document": 0,
+          "document_id": "prefix-sentinel-00:0:f31e6ce5315a67b3",
+          "source_id": "prefix-sentinel-00",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "f31e6ce5315a67b3b15a812d457a628ae9eb6695171edec00c8e552ffc47d7dd"
+        },
+        {
+          "document": 1,
+          "document_id": "prefix-sentinel-01:0:2938bd6e7f6c0062",
+          "source_id": "prefix-sentinel-01",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "2938bd6e7f6c006247d96e3e6827fdff60abfa5191037ae31abc452634493142"
+        },
+        {
+          "document": 2,
+          "document_id": "prefix-sentinel-02:0:e2fcaf9b5a896ad2",
+          "source_id": "prefix-sentinel-02",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "e2fcaf9b5a896ad22baeb495127c4a9016e0edb18f4b2077f07855bc0a82b535"
+        },
+        {
+          "document": 3,
+          "document_id": "prefix-sentinel-03:0:185a898a191553ee",
+          "source_id": "prefix-sentinel-03",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "185a898a191553ee967c5d6dde1052408d5ed47550c1175d2c37f0fdb5fda26e"
+        },
+        {
+          "document": 4,
+          "document_id": "prefix-sentinel-04:0:5ac0a6e427c467c1",
+          "source_id": "prefix-sentinel-04",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "5ac0a6e427c467c1ccbb43dc9feab512202f9d1bc71dca93287316ceafeb278b"
+        },
+        {
+          "document": 5,
+          "document_id": "prefix-sentinel-05:0:539eac5444fde4fc",
+          "source_id": "prefix-sentinel-05",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "539eac5444fde4fc27e5492613c01a63a309cdd5a14e88bdebd3f290bbe2750e"
+        },
+        {
+          "document": 6,
+          "document_id": "prefix-sentinel-06:0:fa7931f906bdcb62",
+          "source_id": "prefix-sentinel-06",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "fa7931f906bdcb62a0bb66dd22db5f4be1b3f8d6f32cf28eabc9847e99c6e647"
+        },
+        {
+          "document": 7,
+          "document_id": "prefix-sentinel-07:0:a60d54a5336cfa49",
+          "source_id": "prefix-sentinel-07",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "a60d54a5336cfa493a5160c21022566f17d07af8f70771408334aba9e00bf89a"
+        },
+        {
+          "document": 8,
+          "document_id": "gutenberg-408:0:940c3993dcb8511c",
+          "source_id": "gutenberg-408",
+          "analysis_role": "fitting",
+          "sha256": "940c3993dcb8511c5f4de91f2e1f21943c858fb789ff0614ab4bce34995ea6cf"
+        },
+        {
+          "document": 9,
+          "document_id": "gutenberg-131:0:678bfb86e653bb1c",
+          "source_id": "gutenberg-131",
+          "analysis_role": "fitting",
+          "sha256": "678bfb86e653bb1c24909bae12198d562b7f49a55b259eec34f0422f3d6b9395"
+        },
+        {
+          "document": 10,
+          "document_id": "gutenberg-3300:0:0658c7e4f7235933",
+          "source_id": "gutenberg-3300",
+          "analysis_role": "fitting",
+          "sha256": "0658c7e4f7235933e82a1214cc48f836876de213e0714fd4a707b258c5257263"
+        },
+        {
+          "document": 11,
+          "document_id": "gutenberg-1998:0:d9207180412d5850",
+          "source_id": "gutenberg-1998",
+          "analysis_role": "fitting",
+          "sha256": "d9207180412d58509803e8bfc542eeaf0a2989b63f5a514856c50dbf6730d800"
+        },
+        {
+          "document": 12,
+          "document_id": "gutenberg-27827:0:9c3d5af67cebc581",
+          "source_id": "gutenberg-27827",
+          "analysis_role": "fitting",
+          "sha256": "9c3d5af67cebc5811102d2efe989a2ccbfdbeb3bd8bfc7938266fdf16e8784a5"
+        },
+        {
+          "document": 13,
+          "document_id": "gutenberg-236:0:0a34a5cc056c9f88",
+          "source_id": "gutenberg-236",
+          "analysis_role": "fitting",
+          "sha256": "0a34a5cc056c9f882ae80acfd63b3537228764c5995179a47323d0202f2d76d5"
+        },
+        {
+          "document": 14,
+          "document_id": "gutenberg-64317:0:bf709edb3d18fd38",
+          "source_id": "gutenberg-64317",
+          "analysis_role": "fitting",
+          "sha256": "bf709edb3d18fd3863ea5ca882fe3f11e8d2f3ec76e8c875aeab28dd15ae68ff"
+        },
+        {
+          "document": 15,
+          "document_id": "gutenberg-132:0:c345c9af9017e363",
+          "source_id": "gutenberg-132",
+          "analysis_role": "fitting",
+          "sha256": "c345c9af9017e363e90074c13fc24ff2404a09c20b30f5b201e88f5664f02109"
+        },
+        {
+          "document": 16,
+          "document_id": "gutenberg-161:0:1a5f5301a4163cb2",
+          "source_id": "gutenberg-161",
+          "analysis_role": "fitting",
+          "sha256": "1a5f5301a4163cb27320812df0f793223f2f7eadb58332530f162a682297babe"
+        },
+        {
+          "document": 17,
+          "document_id": "gutenberg-74:0:983b8058cadf46f3",
+          "source_id": "gutenberg-74",
+          "analysis_role": "fitting",
+          "sha256": "983b8058cadf46f3cce74a3dd40fa16299b1da91a6d5c66d9d4d5213f6a26a18"
+        },
+        {
+          "document": 18,
+          "document_id": "gutenberg-311:0:1852edb1dcc7f0d4",
+          "source_id": "gutenberg-311",
+          "analysis_role": "fitting",
+          "sha256": "1852edb1dcc7f0d4a131f19bc6ff377deddfadbaa71d3a524b710e44461c2da0"
+        },
+        {
+          "document": 19,
+          "document_id": "gutenberg-244:0:e2c549f325ec4311",
+          "source_id": "gutenberg-244",
+          "analysis_role": "fitting",
+          "sha256": "e2c549f325ec4311d1536d30714f076260c107adcf04da9514c3ae3ee81a8582"
+        },
+        {
+          "document": 20,
+          "document_id": "gutenberg-880:0:c2430f489f031d45",
+          "source_id": "gutenberg-880",
+          "analysis_role": "fitting",
+          "sha256": "c2430f489f031d452f62d21874bec2808058f394ef9f06e202e459525c6de027"
+        },
+        {
+          "document": 21,
+          "document_id": "gutenberg-205:0:5818a2f0692bd002",
+          "source_id": "gutenberg-205",
+          "analysis_role": "fitting",
+          "sha256": "5818a2f0692bd002978d17dda6893c6503d999c373db260d7c855609a610f357"
+        },
+        {
+          "document": 22,
+          "document_id": "gutenberg-863:0:2b473e82e5dc1c72",
+          "source_id": "gutenberg-863",
+          "analysis_role": "fitting",
+          "sha256": "2b473e82e5dc1c724d4676236dd3c5b275464db2d2e92afdfa3207e82c418f6c"
+        },
+        {
+          "document": 23,
+          "document_id": "gutenberg-1322:0:67ed2cddf88b933a",
+          "source_id": "gutenberg-1322",
+          "analysis_role": "fitting",
+          "sha256": "67ed2cddf88b933ae47188ea89425e2d1a48802bb3427900ed0e5aeaff32b4e5"
+        },
+        {
+          "document": 24,
+          "document_id": "excluded-padding-fitting-00:1:78cd32e01e473356",
+          "source_id": "excluded-padding-fitting-00",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "78cd32e01e473356b2ab7502b5f209fe529f6c3803c43af7ed1f54134d572c1f"
+        },
+        {
+          "document": 25,
+          "document_id": "excluded-padding-fitting-01:2:80c4ef18edabaa65",
+          "source_id": "excluded-padding-fitting-01",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "80c4ef18edabaa653cf20fd98322c597bfd72dc4dc4f64b324b3a5f5c6378da3"
+        },
+        {
+          "document": 26,
+          "document_id": "excluded-padding-fitting-02:3:8d9ab988f2279db8",
+          "source_id": "excluded-padding-fitting-02",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "8d9ab988f2279db84afb4c8e7d8ad4b120ebdbf20ae1dcda7c93e6fe510bffa0"
+        },
+        {
+          "document": 27,
+          "document_id": "excluded-padding-fitting-03:4:f66ffc33e479a783",
+          "source_id": "excluded-padding-fitting-03",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "f66ffc33e479a783ed537f318c3df77fbd4f192e642402418b7214bb02b28e03"
+        },
+        {
+          "document": 28,
+          "document_id": "excluded-padding-fitting-04:5:7ddc7a13a480fcaf",
+          "source_id": "excluded-padding-fitting-04",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "7ddc7a13a480fcafa84425cff58f3374c30a0a48dd9008e091f358eeb82feff9"
+        },
+        {
+          "document": 29,
+          "document_id": "excluded-padding-fitting-05:6:60d3ec7f690fa11b",
+          "source_id": "excluded-padding-fitting-05",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "60d3ec7f690fa11b0cd1c5344d4a07a1efd13d3cf706725882ff58d32185c944"
+        },
+        {
+          "document": 30,
+          "document_id": "excluded-padding-fitting-06:7:b8bea6cb97283e9c",
+          "source_id": "excluded-padding-fitting-06",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "b8bea6cb97283e9ce38a4e2e6d17122219752b8a0f574ed72e899ba8ea7c3a12"
+        },
+        {
+          "document": 31,
+          "document_id": "excluded-padding-fitting-07:8:5497e23f736c9a80",
+          "source_id": "excluded-padding-fitting-07",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "5497e23f736c9a802b31687db1058ef808a65ec3a6d8626c04d690214baf0057"
+        },
+        {
+          "document": 32,
+          "document_id": "excluded-padding-fitting-08:9:540dedcb54198805",
+          "source_id": "excluded-padding-fitting-08",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "540dedcb541988058a37870934cf504a806abd09e7b7dd118504ff5575c32060"
+        },
+        {
+          "document": 33,
+          "document_id": "excluded-padding-fitting-09:10:05a91f39b03ffb98",
+          "source_id": "excluded-padding-fitting-09",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "05a91f39b03ffb98313dbccdb99c35356f8ee4a4aa5f6aab916d4dd17993371a"
+        },
+        {
+          "document": 34,
+          "document_id": "excluded-padding-fitting-10:11:8b13371e4db2f038",
+          "source_id": "excluded-padding-fitting-10",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "8b13371e4db2f03861adfcb8204f7d65d4a1a29636bf708dfbd80033d6b176f5"
+        },
+        {
+          "document": 35,
+          "document_id": "excluded-padding-fitting-11:12:2afb9156edc5c49f",
+          "source_id": "excluded-padding-fitting-11",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "2afb9156edc5c49f739d229cdc722df4c84c40140168df4b20460d62c1e1c0c4"
+        },
+        {
+          "document": 36,
+          "document_id": "excluded-padding-fitting-12:13:5f1f909deef25db9",
+          "source_id": "excluded-padding-fitting-12",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "5f1f909deef25db98466947ad2dc88aca9339c3b9728b68a0984e2037a0240af"
+        },
+        {
+          "document": 37,
+          "document_id": "excluded-padding-fitting-13:14:0d5e620c33d2d3be",
+          "source_id": "excluded-padding-fitting-13",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "0d5e620c33d2d3be2729321fea34cbf1cff2790422e73ff13fd2b862f685785a"
+        },
+        {
+          "document": 38,
+          "document_id": "excluded-padding-fitting-14:15:a175f53be14f9aec",
+          "source_id": "excluded-padding-fitting-14",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "a175f53be14f9aec3409eba4167cdea7ff0ae4106729e8e3735dec9dede1231b"
+        },
+        {
+          "document": 39,
+          "document_id": "excluded-padding-fitting-15:16:28868bf95222d942",
+          "source_id": "excluded-padding-fitting-15",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "28868bf95222d9428ce7091f997fd5c76ae59cc0f9a891c1997a1079e069a1a3"
+        },
+        {
+          "document": 40,
+          "document_id": "excluded-padding-fitting-16:17:3f9c51e2ea9d808d",
+          "source_id": "excluded-padding-fitting-16",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "3f9c51e2ea9d808d3bc956705b666d534b6a1bd2a8865d9e17c68994e897269f"
+        },
+        {
+          "document": 41,
+          "document_id": "excluded-padding-fitting-17:18:05005725dc3acf77",
+          "source_id": "excluded-padding-fitting-17",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "05005725dc3acf7791660d71d4e52ba9a267c09400766d626aed11c906658af5"
+        },
+        {
+          "document": 42,
+          "document_id": "excluded-padding-fitting-18:19:663987d5b85bbde3",
+          "source_id": "excluded-padding-fitting-18",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "663987d5b85bbde38863935abf3241a3d01fdd88af8a72786344b6582c40223e"
+        },
+        {
+          "document": 43,
+          "document_id": "excluded-padding-fitting-19:20:877fca5146962005",
+          "source_id": "excluded-padding-fitting-19",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "877fca514696200508ce27df37d82a6574c85b0fde6a105258f8ad276077a2cd"
+        },
+        {
+          "document": 44,
+          "document_id": "excluded-padding-fitting-20:21:4c5823e09cb21efe",
+          "source_id": "excluded-padding-fitting-20",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "4c5823e09cb21efe7e971a44d198bf10e6e2a1b620476b55590f3222c9b2a307"
+        },
+        {
+          "document": 45,
+          "document_id": "excluded-padding-fitting-21:22:9364408961d4d827",
+          "source_id": "excluded-padding-fitting-21",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "9364408961d4d827b8d775decc4d16794618175c8634b1650166e58b9e3699ad"
+        },
+        {
+          "document": 46,
+          "document_id": "excluded-padding-fitting-22:23:5cf25b0e6eb25b16",
+          "source_id": "excluded-padding-fitting-22",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "5cf25b0e6eb25b16e9b7991c1f3d19d26460f594952392f154b55baec7213f99"
+        },
+        {
+          "document": 47,
+          "document_id": "excluded-padding-fitting-23:24:0bacaf76f3199b6b",
+          "source_id": "excluded-padding-fitting-23",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "0bacaf76f3199b6b0044e5b2483f65163b8f3123df9ee18963bfbf24521446d5"
+        },
+        {
+          "document": 48,
+          "document_id": "excluded-padding-fitting-24:25:a97a35894fda9397",
+          "source_id": "excluded-padding-fitting-24",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "a97a35894fda939772aeaeedd173bc21db0d09a7e8cbca2f5087ffe1fc3af4cf"
+        },
+        {
+          "document": 49,
+          "document_id": "excluded-padding-fitting-25:26:12b004776a7f17a4",
+          "source_id": "excluded-padding-fitting-25",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "12b004776a7f17a464c9721cf8e4cd6a4f943bd6f3137df07464df052bc92d20"
+        },
+        {
+          "document": 50,
+          "document_id": "excluded-padding-fitting-26:27:7b6d138fd10ac78a",
+          "source_id": "excluded-padding-fitting-26",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "7b6d138fd10ac78a106d6675ee12654866b26d6b95069eff4019912d05131cef"
+        },
+        {
+          "document": 51,
+          "document_id": "excluded-padding-fitting-27:28:40bfdb64f018224b",
+          "source_id": "excluded-padding-fitting-27",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "40bfdb64f018224b47bd54a1aeef8dd04189fb75e95a3670700354dce55c0aeb"
+        },
+        {
+          "document": 52,
+          "document_id": "excluded-padding-fitting-28:29:f5d013aa20f96c3e",
+          "source_id": "excluded-padding-fitting-28",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "f5d013aa20f96c3ed6dfe76ad3b4c315f6c9904cf796d760121969d06b339f49"
+        },
+        {
+          "document": 53,
+          "document_id": "excluded-padding-fitting-29:30:4055f682d78d76cf",
+          "source_id": "excluded-padding-fitting-29",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "4055f682d78d76cf36b35f64f15a8b05a24e743df40347a3e29d615a6b5f66ef"
+        },
+        {
+          "document": 54,
+          "document_id": "excluded-padding-fitting-30:31:0bf010b669823e4b",
+          "source_id": "excluded-padding-fitting-30",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "0bf010b669823e4bf0795b964e90d3384f08922dea88d32b8aeec1b443424a92"
+        },
+        {
+          "document": 55,
+          "document_id": "excluded-padding-fitting-31:32:333bddb49afdf55e",
+          "source_id": "excluded-padding-fitting-31",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "333bddb49afdf55e85e7bc511918dace1dff0f730e64a05b0901961cf0588f65"
+        },
+        {
+          "document": 56,
+          "document_id": "excluded-padding-fitting-32:33:2a14e48c41754438",
+          "source_id": "excluded-padding-fitting-32",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "2a14e48c41754438b310d97edee5bff29889db0fce7bb241d2d65bcf10e59f46"
+        },
+        {
+          "document": 57,
+          "document_id": "excluded-padding-fitting-33:34:3540744466ab29b9",
+          "source_id": "excluded-padding-fitting-33",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "3540744466ab29b95bfa7aa76975e3a09db7fe45399f1d83a98d54b0bfb8f1ab"
+        },
+        {
+          "document": 58,
+          "document_id": "excluded-padding-fitting-34:35:ff05dab6cb475952",
+          "source_id": "excluded-padding-fitting-34",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "ff05dab6cb475952ccc082cbbd41e84fa11130a689621be574c1ed35b97baf35"
+        },
+        {
+          "document": 59,
+          "document_id": "excluded-padding-fitting-35:36:340d6a0f4ea55853",
+          "source_id": "excluded-padding-fitting-35",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "340d6a0f4ea55853787552fafd910ebaef380fff2299e91e72be0483ffe495da"
+        },
+        {
+          "document": 60,
+          "document_id": "excluded-padding-fitting-36:37:3ae6eead1e8f66d8",
+          "source_id": "excluded-padding-fitting-36",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "3ae6eead1e8f66d8a6895e4f14095a0245344402ddc43de1f0a21759be76fd86"
+        },
+        {
+          "document": 61,
+          "document_id": "excluded-padding-fitting-37:38:f13f0d4cea2e7ae7",
+          "source_id": "excluded-padding-fitting-37",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "f13f0d4cea2e7ae7ddd88f61b76f40bb3eac932799edd7dff74e8e6837269972"
+        },
+        {
+          "document": 62,
+          "document_id": "excluded-padding-fitting-38:39:d6efc31e7978dae8",
+          "source_id": "excluded-padding-fitting-38",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "d6efc31e7978dae80f4c83d573864fae38c95168c7289b1c7ed25d3d69d58f5a"
+        },
+        {
+          "document": 63,
+          "document_id": "excluded-padding-fitting-39:40:472e0d99c712ece9",
+          "source_id": "excluded-padding-fitting-39",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "472e0d99c712ece941a2651c00bb26175347b20889aaf5541c31645659700796"
+        },
+        {
+          "document": 64,
+          "document_id": "excluded-padding-fitting-40:41:513843a9d7a01c26",
+          "source_id": "excluded-padding-fitting-40",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "513843a9d7a01c263fa2d7424215ff1b837be3754992d1fb5f0235e1de655471"
+        },
+        {
+          "document": 65,
+          "document_id": "excluded-padding-fitting-41:42:94626a337f92ce20",
+          "source_id": "excluded-padding-fitting-41",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "94626a337f92ce20a8e9ddffb5466860a0c51bc3126a7a28e5a9d893ca12535a"
+        },
+        {
+          "document": 66,
+          "document_id": "excluded-padding-fitting-42:43:80cf47da8e77f17f",
+          "source_id": "excluded-padding-fitting-42",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "80cf47da8e77f17fdef2a2edf3047f579984d8c81462eddf599eca5a86532cd4"
+        },
+        {
+          "document": 67,
+          "document_id": "excluded-padding-fitting-43:44:5a8b53c08a7bb5a7",
+          "source_id": "excluded-padding-fitting-43",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "5a8b53c08a7bb5a7d919cf9c87fd89189f3717e940c34b15c7d3a4270a2f2a3d"
+        },
+        {
+          "document": 68,
+          "document_id": "excluded-padding-fitting-44:45:88ace53089545e0b",
+          "source_id": "excluded-padding-fitting-44",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "88ace53089545e0b609391325532605dc040d1f604733630bb9edc74af24dffb"
+        },
+        {
+          "document": 69,
+          "document_id": "excluded-padding-fitting-45:46:6ed18aafe2324d6b",
+          "source_id": "excluded-padding-fitting-45",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "6ed18aafe2324d6bd20a8fad988d6a2f70b5a2e5d09276100a6bd0c891b33d7c"
+        },
+        {
+          "document": 70,
+          "document_id": "excluded-padding-fitting-46:47:8a2f07843f920157",
+          "source_id": "excluded-padding-fitting-46",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "8a2f07843f9201578cdd27e29ef1a6d160bf79dbbea10db36f388cbb9ef11595"
+        },
+        {
+          "document": 71,
+          "document_id": "excluded-padding-fitting-47:48:d0c624460f5efea2",
+          "source_id": "excluded-padding-fitting-47",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "d0c624460f5efea234d660bfd8947a4a943535e3981954751e0c611e1f4ff6d5"
+        }
+      ]
+    },
+    "calibration_evaluation": {
+      "phase": "calibration-evaluation",
+      "corpus_path": "data/processed/production-cross-source-exchange-v1/calibration-evaluation.txt",
+      "corpus_sha256": "0e75b7647ded930d79d857860b05bc2a1db50db5257c63e7b047984d56d968e2",
+      "index_path": "data/processed/production-cross-source-exchange-v1/calibration-evaluation.index.tsv",
+      "index_sha256": "32d3c2396967feb9b1ad7eb3758c6fa3bdd05997746ea512a3ceb19d99894372",
+      "document_start": 8,
+      "atomic_documents": 64,
+      "role_documents": 55,
+      "excluded_padding_documents": 9,
+      "document_bindings": [
+        {
+          "document": 0,
+          "document_id": "prefix-sentinel-00:0:f31e6ce5315a67b3",
+          "source_id": "prefix-sentinel-00",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "f31e6ce5315a67b3b15a812d457a628ae9eb6695171edec00c8e552ffc47d7dd"
+        },
+        {
+          "document": 1,
+          "document_id": "prefix-sentinel-01:0:2938bd6e7f6c0062",
+          "source_id": "prefix-sentinel-01",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "2938bd6e7f6c006247d96e3e6827fdff60abfa5191037ae31abc452634493142"
+        },
+        {
+          "document": 2,
+          "document_id": "prefix-sentinel-02:0:e2fcaf9b5a896ad2",
+          "source_id": "prefix-sentinel-02",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "e2fcaf9b5a896ad22baeb495127c4a9016e0edb18f4b2077f07855bc0a82b535"
+        },
+        {
+          "document": 3,
+          "document_id": "prefix-sentinel-03:0:185a898a191553ee",
+          "source_id": "prefix-sentinel-03",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "185a898a191553ee967c5d6dde1052408d5ed47550c1175d2c37f0fdb5fda26e"
+        },
+        {
+          "document": 4,
+          "document_id": "prefix-sentinel-04:0:5ac0a6e427c467c1",
+          "source_id": "prefix-sentinel-04",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "5ac0a6e427c467c1ccbb43dc9feab512202f9d1bc71dca93287316ceafeb278b"
+        },
+        {
+          "document": 5,
+          "document_id": "prefix-sentinel-05:0:539eac5444fde4fc",
+          "source_id": "prefix-sentinel-05",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "539eac5444fde4fc27e5492613c01a63a309cdd5a14e88bdebd3f290bbe2750e"
+        },
+        {
+          "document": 6,
+          "document_id": "prefix-sentinel-06:0:fa7931f906bdcb62",
+          "source_id": "prefix-sentinel-06",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "fa7931f906bdcb62a0bb66dd22db5f4be1b3f8d6f32cf28eabc9847e99c6e647"
+        },
+        {
+          "document": 7,
+          "document_id": "prefix-sentinel-07:0:a60d54a5336cfa49",
+          "source_id": "prefix-sentinel-07",
+          "analysis_role": "implementation_prefix_sentinel",
+          "sha256": "a60d54a5336cfa493a5160c21022566f17d07af8f70771408334aba9e00bf89a"
+        },
+        {
+          "document": 8,
+          "document_id": "gutenberg-110:0:7b630f1516713c19",
+          "source_id": "gutenberg-110",
+          "analysis_role": "calibration",
+          "sha256": "7b630f1516713c1935e6456a3da6d08dccd31dfb81b8f1e45ce5d37de8412ec9"
+        },
+        {
+          "document": 9,
+          "document_id": "gutenberg-2680:0:c0aa8ade8332de55",
+          "source_id": "gutenberg-2680",
+          "analysis_role": "calibration",
+          "sha256": "c0aa8ade8332de55de5a2150eaef69a7d6dfa76844317b4d8e903252fea6bb3a"
+        },
+        {
+          "document": 10,
+          "document_id": "gutenberg-19810:0:150b47f7e0466d18",
+          "source_id": "gutenberg-19810",
+          "analysis_role": "calibration",
+          "sha256": "150b47f7e0466d188ba7031a2841b6f6715e567bad69bbe43bf881714904b0b4"
+        },
+        {
+          "document": 11,
+          "document_id": "gutenberg-160:0:48b8eac8d8f4bf2f",
+          "source_id": "gutenberg-160",
+          "analysis_role": "calibration",
+          "sha256": "48b8eac8d8f4bf2f9a264d3e7f115092d1f9d988d44ff1324d0d1104d4abb2b5"
+        },
+        {
+          "document": 12,
+          "document_id": "gutenberg-996:0:49788d56a297a230",
+          "source_id": "gutenberg-996",
+          "analysis_role": "calibration",
+          "sha256": "49788d56a297a230c99102be9369f58228d2dd61c9f3d70ebcdc777d9820efa9"
+        },
+        {
+          "document": 13,
+          "document_id": "gutenberg-7178:0:678403ddaf8fa588",
+          "source_id": "gutenberg-7178",
+          "analysis_role": "calibration",
+          "sha256": "678403ddaf8fa5881fce149ca50002ea7cd5f9d7ced0d3f96a1033b6ee1b7d2d"
+        },
+        {
+          "document": 14,
+          "document_id": "gutenberg-2084:0:a4264c8be190978b",
+          "source_id": "gutenberg-2084",
+          "analysis_role": "calibration",
+          "sha256": "a4264c8be190978b47e3d557ef4df3f89c5b6d99286069b976eef5b57a3483b0"
+        },
+        {
+          "document": 15,
+          "document_id": "gutenberg-769:0:a9c079baac86e21a",
+          "source_id": "gutenberg-769",
+          "analysis_role": "calibration",
+          "sha256": "a9c079baac86e21ac6d98e271aeb4193f56eafceb28d976742045220a97d38ea"
+        },
+        {
+          "document": 16,
+          "document_id": "gutenberg-33:0:e5619da9779bc593",
+          "source_id": "gutenberg-33",
+          "analysis_role": "calibration",
+          "sha256": "e5619da9779bc59364fc2535992bf018146aac5c482fa3fe6d946879d11ea0ad"
+        },
+        {
+          "document": 17,
+          "document_id": "gutenberg-28054:0:227305083a2b4d24",
+          "source_id": "gutenberg-28054",
+          "analysis_role": "calibration",
+          "sha256": "227305083a2b4d24b2a67246f1da0f314724e60d4bec546ef2bc849b2c572bbd"
+        },
+        {
+          "document": 18,
+          "document_id": "gutenberg-1399:0:569371f2f58bf3e5",
+          "source_id": "gutenberg-1399",
+          "analysis_role": "calibration",
+          "sha256": "569371f2f58bf3e51f617631f7cc119eb734d9cb7a38f1b01658737bcaa64d9f"
+        },
+        {
+          "document": 19,
+          "document_id": "gutenberg-2775:0:29ad5e40abad95df",
+          "source_id": "gutenberg-2775",
+          "analysis_role": "calibration",
+          "sha256": "29ad5e40abad95dfc1b5519c0cabb393e09133e6461061d6d81b027160e15a03"
+        },
+        {
+          "document": 20,
+          "document_id": "gutenberg-209:0:d998c154bec3cc5f",
+          "source_id": "gutenberg-209",
+          "analysis_role": "calibration",
+          "sha256": "d998c154bec3cc5f07e7ce9677097c8e383984a289a90bd07ffa0525d6f51827"
+        },
+        {
+          "document": 21,
+          "document_id": "gutenberg-2147:0:af7fb16a8d292af5",
+          "source_id": "gutenberg-2147",
+          "analysis_role": "calibration",
+          "sha256": "af7fb16a8d292af59ef7901e04c7651b804eba7b131387e64ccceaf679bb11c8"
+        },
+        {
+          "document": 22,
+          "document_id": "gutenberg-155:0:008ca74df90d5578",
+          "source_id": "gutenberg-155",
+          "analysis_role": "calibration",
+          "sha256": "008ca74df90d55782ca1c368356a2110bfc503843409be895250f035bf16d7c4"
+        },
+        {
+          "document": 23,
+          "document_id": "gutenberg-55:0:e33b47cbb1a39bea",
+          "source_id": "gutenberg-55",
+          "analysis_role": "calibration",
+          "sha256": "e33b47cbb1a39bea6c6b873bbc553ba2b5117e6c6c3a51f1c4ae1f2ba31cbd3e"
+        },
+        {
+          "document": 24,
+          "document_id": "gutenberg-16:0:402abe68af0f4a8f",
+          "source_id": "gutenberg-16",
+          "analysis_role": "calibration",
+          "sha256": "402abe68af0f4a8f211df43259518a85d6e527f6a4aff3180549bc8901dc892f"
+        },
+        {
+          "document": 25,
+          "document_id": "gutenberg-829:0:323081dfe361850d",
+          "source_id": "gutenberg-829",
+          "analysis_role": "calibration",
+          "sha256": "323081dfe361850dc60804faf09d0ab4f7bf271dea6d11cc441ac88692e6903a"
+        },
+        {
+          "document": 26,
+          "document_id": "gutenberg-45:0:41947e95df57bb46",
+          "source_id": "gutenberg-45",
+          "analysis_role": "calibration",
+          "sha256": "41947e95df57bb4675e273dd9a11f36cedaaf41dbc6509658c0cc764fa0ccb70"
+        },
+        {
+          "document": 27,
+          "document_id": "gutenberg-5200:0:caa88d4a0473ad0e",
+          "source_id": "gutenberg-5200",
+          "analysis_role": "calibration",
+          "sha256": "caa88d4a0473ad0e4d754d973f04eed4fe9187f646120f618318c2d7bf13aa15"
+        },
+        {
+          "document": 28,
+          "document_id": "gutenberg-514:0:8516140f4293f75f",
+          "source_id": "gutenberg-514",
+          "analysis_role": "calibration",
+          "sha256": "8516140f4293f75f2c72ac23aab46cd5464b1a7b0d23eadb07f07095af7d310f"
+        },
+        {
+          "document": 29,
+          "document_id": "gutenberg-2527:0:1eb08b74e93faf88",
+          "source_id": "gutenberg-2527",
+          "analysis_role": "calibration",
+          "sha256": "1eb08b74e93faf88194a02eae99c28a7869981052b2f7318ec5a84ecc4a06133"
+        },
+        {
+          "document": 30,
+          "document_id": "gutenberg-2892:0:9aabf9d1f6f8b56e",
+          "source_id": "gutenberg-2892",
+          "analysis_role": "calibration",
+          "sha256": "9aabf9d1f6f8b56e1fe2cb141da6e612337a6e52c3a3a150aea8e020752c8d8d"
+        },
+        {
+          "document": 31,
+          "document_id": "gutenberg-6761:0:c15e8b848af8b9d9",
+          "source_id": "gutenberg-6761",
+          "analysis_role": "calibration",
+          "sha256": "c15e8b848af8b9d9493cd1df0e372d14ad5cb547d3a4a3475a59e5a0b0a90e83"
+        },
+        {
+          "document": 32,
+          "document_id": "gutenberg-10007:0:2fcd1b51ab0b0f2c",
+          "source_id": "gutenberg-10007",
+          "analysis_role": "calibration",
+          "sha256": "2fcd1b51ab0b0f2cdca0a46f0638b0ab81c0270c914c1d3cf22a56792f64f517"
+        },
+        {
+          "document": 33,
+          "document_id": "gutenberg-2500:0:c9860aeaf52248bb",
+          "source_id": "gutenberg-2500",
+          "analysis_role": "calibration",
+          "sha256": "c9860aeaf52248bbf6c918360dc9227f4de9a71d59874eda55337b8d8ba0ed72"
+        },
+        {
+          "document": 34,
+          "document_id": "gutenberg-768:0:ca28650dce27bf9d",
+          "source_id": "gutenberg-768",
+          "analysis_role": "calibration",
+          "sha256": "ca28650dce27bf9d77ae37d3583090576b6c12465e4713e58bcfc47dca8dd430"
+        },
+        {
+          "document": 35,
+          "document_id": "gutenberg-20203:0:31b6df805fb3e27a",
+          "source_id": "gutenberg-20203",
+          "analysis_role": "calibration",
+          "sha256": "31b6df805fb3e27a86e9ccb574c9b2b982ea24bf3d503071ac6b0d38925b63d9"
+        },
+        {
+          "document": 36,
+          "document_id": "gutenberg-8800:0:2325b3c975c28b40",
+          "source_id": "gutenberg-8800",
+          "analysis_role": "calibration",
+          "sha256": "2325b3c975c28b40feb050a2ef4c25386535c3ad975fbe63ab34c151b1ac00ea"
+        },
+        {
+          "document": 37,
+          "document_id": "gutenberg-120:0:18ac67cd6b18929e",
+          "source_id": "gutenberg-120",
+          "analysis_role": "calibration",
+          "sha256": "18ac67cd6b18929e72bbd95090a1592240fe7b802881cf06b641ce0467b95267"
+        },
+        {
+          "document": 38,
+          "document_id": "gutenberg-3207:0:f422112371d7a4de",
+          "source_id": "gutenberg-3207",
+          "analysis_role": "calibration",
+          "sha256": "f422112371d7a4de50211489cf2ff8e3926f953009206a5056e688413da126c3"
+        },
+        {
+          "document": 39,
+          "document_id": "gutenberg-145:0:b7dc015e868bfb61",
+          "source_id": "gutenberg-145",
+          "analysis_role": "calibration",
+          "sha256": "b7dc015e868bfb6163a70a8b82688f96d67c963aecee8b7274eba4eb87491d9c"
+        },
+        {
+          "document": 40,
+          "document_id": "gutenberg-61:0:b6377ca709364fbd",
+          "source_id": "gutenberg-61",
+          "analysis_role": "calibration",
+          "sha256": "b6377ca709364fbdab80462d5c010851d634293c281974d83692fdda7e0cf1a9"
+        },
+        {
+          "document": 41,
+          "document_id": "gutenberg-1497:0:0eef3d1cbd27be46",
+          "source_id": "gutenberg-1497",
+          "analysis_role": "calibration",
+          "sha256": "0eef3d1cbd27be464abad489eba0a6ebdb317aaf23e3bf1d5478b3b6f1673ab2"
+        },
+        {
+          "document": 42,
+          "document_id": "gutenberg-174:0:1c926dc6c8dca3a1",
+          "source_id": "gutenberg-174",
+          "analysis_role": "calibration",
+          "sha256": "1c926dc6c8dca3a1bb08b42440f48907aae9d3019541f9eb2495b6b56509d994"
+        },
+        {
+          "document": 43,
+          "document_id": "gutenberg-1184:0:8be0767f8e3eaf2b",
+          "source_id": "gutenberg-1184",
+          "analysis_role": "calibration",
+          "sha256": "8be0767f8e3eaf2b5080dc5cac4849881adebe420cab923cf7518fefb5aa5783"
+        },
+        {
+          "document": 44,
+          "document_id": "gutenberg-3825:0:f5b8491f6b31f10a",
+          "source_id": "gutenberg-3825",
+          "analysis_role": "calibration",
+          "sha256": "f5b8491f6b31f10ad78d8edea130bd6482e677f493ede3c8ed470ab954d509ec"
+        },
+        {
+          "document": 45,
+          "document_id": "gutenberg-4705:0:89352b7a544d41a6",
+          "source_id": "gutenberg-4705",
+          "analysis_role": "calibration",
+          "sha256": "89352b7a544d41a676ad7e52fde41eb61e70ba5783427acdd364fa47b3e3db96"
+        },
+        {
+          "document": 46,
+          "document_id": "gutenberg-23:0:396371a630dccbc8",
+          "source_id": "gutenberg-23",
+          "analysis_role": "calibration",
+          "sha256": "396371a630dccbc89ae671988b22b1e43f1398eb7d769981e05c3c950b1deedc"
+        },
+        {
+          "document": 47,
+          "document_id": "gutenberg-1245:0:97efefc56771c9ea",
+          "source_id": "gutenberg-1245",
+          "analysis_role": "evaluation",
+          "sha256": "97efefc56771c9ea39c8c1a09a0ff878361f6c7b2b8e14fdff28cb66bc54023f"
+        },
+        {
+          "document": 48,
+          "document_id": "gutenberg-1260:0:c03621bbca1dedab",
+          "source_id": "gutenberg-1260",
+          "analysis_role": "evaluation",
+          "sha256": "c03621bbca1dedabdd17268beac9ce95ea7c55bbf380c5ee16957f28d1666a54"
+        },
+        {
+          "document": 49,
+          "document_id": "gutenberg-2701:0:d54a320d4fdf8120",
+          "source_id": "gutenberg-2701",
+          "analysis_role": "evaluation",
+          "sha256": "d54a320d4fdf8120de986c6c7af342a8764f821240bc20ba9f0aa1bc1d798e7a"
+        },
+        {
+          "document": 50,
+          "document_id": "gutenberg-215:0:82e01d0e6f7bba95",
+          "source_id": "gutenberg-215",
+          "analysis_role": "evaluation",
+          "sha256": "82e01d0e6f7bba950a5e9dcfdeae57df4899705912e1681784bf55d7b31f3c4d"
+        },
+        {
+          "document": 51,
+          "document_id": "gutenberg-32449:0:69ccd07af88d80a8",
+          "source_id": "gutenberg-32449",
+          "analysis_role": "evaluation",
+          "sha256": "69ccd07af88d80a8848130e0b148f7335f4c6eb5dd31729472dbd2f35b472f02"
+        },
+        {
+          "document": 52,
+          "document_id": "gutenberg-1232:0:d2bf82ab7bee219e",
+          "source_id": "gutenberg-1232",
+          "analysis_role": "evaluation",
+          "sha256": "d2bf82ab7bee219e1488939599e74c0660c8326994386232cebc7a483a49b0f4"
+        },
+        {
+          "document": 53,
+          "document_id": "gutenberg-394:0:0f87669fb6ba6f59",
+          "source_id": "gutenberg-394",
+          "analysis_role": "evaluation",
+          "sha256": "0f87669fb6ba6f59677d3da9cf096afd7a934a83f6326752f8553ab563f0288f"
+        },
+        {
+          "document": 54,
+          "document_id": "gutenberg-98:0:b21af62283922881",
+          "source_id": "gutenberg-98",
+          "analysis_role": "evaluation",
+          "sha256": "b21af62283922881c7d43b7d9606906978edd5eb96f83573368c6e19c790bdb3"
+        },
+        {
+          "document": 55,
+          "document_id": "gutenberg-41:0:e56343f10cec3584",
+          "source_id": "gutenberg-41",
+          "analysis_role": "evaluation",
+          "sha256": "e56343f10cec3584e094a7561b956ae1bb6dafcfa98bee8842f2c5ef657506a7"
+        },
+        {
+          "document": 56,
+          "document_id": "gutenberg-1228:0:92faab1a57cc0c91",
+          "source_id": "gutenberg-1228",
+          "analysis_role": "evaluation",
+          "sha256": "92faab1a57cc0c91d6ba2e6c5fcade1882655ed26ccf10d6f85d72c034080db3"
+        },
+        {
+          "document": 57,
+          "document_id": "gutenberg-3600:0:9a120aa08e9bd03b",
+          "source_id": "gutenberg-3600",
+          "analysis_role": "evaluation",
+          "sha256": "9a120aa08e9bd03bbf359b78e97520c194a0fe384b91e13a8c47cd128842f8d1"
+        },
+        {
+          "document": 58,
+          "document_id": "gutenberg-7370:0:4be224392f94023c",
+          "source_id": "gutenberg-7370",
+          "analysis_role": "evaluation",
+          "sha256": "4be224392f94023c073b9ec498fa495a185cf75142e2ff8f2e598e94ac012cf7"
+        },
+        {
+          "document": 59,
+          "document_id": "gutenberg-11:0:a852b2b9d70c4362",
+          "source_id": "gutenberg-11",
+          "analysis_role": "evaluation",
+          "sha256": "a852b2b9d70c43626c4e47738b4def59ccc4c6302480d7592acb1e8e68e23915"
+        },
+        {
+          "document": 60,
+          "document_id": "gutenberg-1292:0:187ffcdc779ad20f",
+          "source_id": "gutenberg-1292",
+          "analysis_role": "evaluation",
+          "sha256": "187ffcdc779ad20fded42fd9f80ca654c72a1f5a1f9b9e37d02c05cfa2d770e2"
+        },
+        {
+          "document": 61,
+          "document_id": "gutenberg-2542:0:39619c02440f6857",
+          "source_id": "gutenberg-2542",
+          "analysis_role": "evaluation",
+          "sha256": "39619c02440f6857527c47698e447c8e3f4b261979074fe262323a25d48aa52e"
+        },
+        {
+          "document": 62,
+          "document_id": "gutenberg-140:0:0d1c1f89aa0b6760",
+          "source_id": "gutenberg-140",
+          "analysis_role": "evaluation",
+          "sha256": "0d1c1f89aa0b6760e690f28be42b2edf959e5fdda59539ac5ab158ea6e5b129f"
+        },
+        {
+          "document": 63,
+          "document_id": "excluded-padding-calibration-evaluation-00:1:80d3aeae4cd42faf",
+          "source_id": "excluded-padding-calibration-evaluation-00",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "80d3aeae4cd42faf94f12313853697196827da7c2b07280933ec7d25a94d1db8"
+        },
+        {
+          "document": 64,
+          "document_id": "excluded-padding-calibration-evaluation-01:2:73456509440b50be",
+          "source_id": "excluded-padding-calibration-evaluation-01",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "73456509440b50be63e2ce749c8ca0daa999c13f35699973809d587621f46600"
+        },
+        {
+          "document": 65,
+          "document_id": "excluded-padding-calibration-evaluation-02:3:44f687c6916d526c",
+          "source_id": "excluded-padding-calibration-evaluation-02",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "44f687c6916d526ca626bede2d5948df422eeeedff2027890bdf8b74a6fb21ad"
+        },
+        {
+          "document": 66,
+          "document_id": "excluded-padding-calibration-evaluation-03:4:825ba44480f4668d",
+          "source_id": "excluded-padding-calibration-evaluation-03",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "825ba44480f4668d97c7432fbb7d25b701122d4c2f683fdab13740ddd6427845"
+        },
+        {
+          "document": 67,
+          "document_id": "excluded-padding-calibration-evaluation-04:5:a12ba06efeb72fb1",
+          "source_id": "excluded-padding-calibration-evaluation-04",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "a12ba06efeb72fb1932c73e984d1fbd411da7c05f307c6aaf12119a8e6ff91ee"
+        },
+        {
+          "document": 68,
+          "document_id": "excluded-padding-calibration-evaluation-05:6:7f92b287ab122327",
+          "source_id": "excluded-padding-calibration-evaluation-05",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "7f92b287ab12232718689090f44a7f9261b5215f2b8adef6a08b873f85a2e72e"
+        },
+        {
+          "document": 69,
+          "document_id": "excluded-padding-calibration-evaluation-06:7:8510051702ab8113",
+          "source_id": "excluded-padding-calibration-evaluation-06",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "8510051702ab8113d1e937f8a4e4f5f948306c611e0c5a22bf7d86003df7255b"
+        },
+        {
+          "document": 70,
+          "document_id": "excluded-padding-calibration-evaluation-07:8:c6754e563e4b368a",
+          "source_id": "excluded-padding-calibration-evaluation-07",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "c6754e563e4b368a1867d8a13389e15d0c61ced293fa975d1a7073f4bdf707b5"
+        },
+        {
+          "document": 71,
+          "document_id": "excluded-padding-calibration-evaluation-08:9:7d727fd598873600",
+          "source_id": "excluded-padding-calibration-evaluation-08",
+          "analysis_role": "implementation_padding_excluded_from_analysis",
+          "sha256": "7d727fd5988736008128e26cf9edd0efce2f88801d31f881185663c4d561a168"
+        }
+      ]
+    }
+  },
+  "outcome_firewall": {
+    "action_cube_outcomes_read": false,
+    "documents_200_212_read": false,
+    "source_content_and_tokenization_metadata_are_pre_outcome_features": true
+  },
+  "frame_fingerprint_sha256": "8a6c0769edd908db191ae920f95f5809806f70f14c820e00558cd5caac431887"
+}

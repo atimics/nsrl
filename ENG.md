@@ -19,6 +19,99 @@ adaptive integer optimizers, deterministic parallel gradient accumulation,
 expert manifests and routing, generated checked backward code, and first-class
 WASM/browser deployment.
 
+The proof evaluator exposes `combined`, `transformer-only`, and
+`suffix-memory-only` modes. Any future headline model gate must run the matched
+component matrix and keep assisted memory out of the unassisted candidate row.
+The v1 combined artifact remains replayable historical evidence, not a clean
+transformer-only learning result. The first suffix-free successor sweep is also
+frozen: none of 16 bounded variants passed, so the next attempt must change the
+learning architecture or objective rather than only retune the existing
+calibrated trainer.
+
+Successor-v2 now has an end-to-end sealed replay rather than a row-only parser.
+Its candidate-specific manifest binds the 5,896-target dataset, identity-byte
+tokenizer, physically stripped model, evaluator source set, runner, exact
+matrix/evidence bytes, and per-system replay hashes. The repository check
+re-trains the float32 causal transformer and re-evaluates transformer-only,
+uniform, retrieval, byte n-gram, and float-transformer logits through one
+canonical integer NLL function. Suffix-memory, retrieval, and routing-oracle
+ablations are replay-invariant. The candidate scores 115,010,055 millibits and
+loses to all four baselines, so the engineering result is a frozen
+falsification and not scaling authorization.
+
+Prior work already establishes integer and quantized training as a field. The
+engineering contribution pursued here is the auditable combination: no float
+master weights, exact integer replay, explicit saturation and residual-carry
+telemetry, and shared training/deployment arithmetic. Broad literature claims
+must be checked against `research/paper-catalog.md`; the proposed relationship
+between rank and reachable integer updates remains experimental. The first
+rank/shift/carry matrix finds both equivalence and distinctness. Its matched
+longitudinal extension shows that early reachable movement is a high-precision
+predictor of later disjoint held-out gain, but also has delayed-activation false
+negatives and saturates in every early-reachable long run. Exact fingerprints
+therefore prioritize scale-up candidates; they do not replace saturation gates
+or longer activation deadlines.
+
+Production training has crossed the multi-group boundary and the local
+scaling-readiness gate. The frozen p10m K+V schedule uses shifts 26 and 30,
+respectively, over 2,048 windows. Both groups move by window 256 and in every
+second-half chunk; only K, V, and output cross integer update boundaries, all
+13 gradient paths remain active, and every saturation counter stays zero. The
+integer lane finishes 5,209 total millibits below initialization and replays
+windows 1,025–2,048 byte-for-byte. A float32 SGD reference matched on
+initialization, data, ordering, context, batch, budget, and held-out evaluation
+moves all 13 arrays, improves by 98 mean millibits, and replays its second half
+tensor-for-tensor. Optimizer families are not matched. The residual boundary
+policy selected the gated-MLP `gate` projection at shift 23 for a fresh
+isolated preflight. That preflight is complete: `gate` first crossed at window
+768 and accumulated 26 exact updates over 2,048 windows. Only K, V, `gate`, and
+output moved; all 13 gradient paths stayed active, saturation remained zero,
+held-out ended 5,209 total millibits below initialization, and replay from
+window 1,024 reproduced both model and optimizer byte-for-byte. The following
+source-relative `up` gate found 26 safe shift-23 updates but no dev gain. A
+shift-22 density probe then made 101,543 exact `up` updates with the same zero-
+saturation health, yet its selected checkpoint only tied dev and regressed the
+one-shot test by 1,245 total millibits. A matched 1,024-window comparison found
+the shift-22 and shift-23 models produce identical final features, logits,
+probabilities, and losses on all 256 dev windows. The immediate engineering
+bottleneck is therefore forward-path quantization masking, not update
+reachability. A predeclared sensitivity sweep finds forward shift 7 is the
+first safe functional boundary: 250 feature/logit vectors and 124 probability
+vectors change, but target probabilities change on 0 of 256 windows. Fresh
+1,024-window training at forward shift 7 remains zero-saturation and exactly
+replayable, makes 50,568 `up` updates, and still ties source dev. The next
+isolated action was target-probability resolution measurement. That audit is
+complete across Q15/Q19/Q23/Q27/Q31 using identical integer logits. Q15
+requantizes exactly to the production path but compresses source targets to
+three values and hides all target deltas; Q19 reveals one changed target and
+Q23 reveals the full 13-window support also visible at Q31. A compensated Q19
+and Q23 gradient preflight preserves effective output/backward learning scales,
+all 13 gradient paths, and zero saturation. Both wide lanes nevertheless end
+at the exact Q15 model bytes and dev loss after 256 windows, while their
+optimizer states differ. The precision signal is therefore residual-only at
+this horizon. The completed normalization audit then isolates the reciprocal:
+legacy normalization reaches 98,925/98,929 ppm worst-case Q23 mass error,
+retained-Q47 LUT reaches 6,354/6,349 ppm, one integer Newton step reaches 98/83
+ppm, and exact integer division reaches 73/74 ppm. Newton is nearly at the exact
+accuracy ceiling, but legacy/Newton/exact target-change coverage is 13/5/4
+windows. The conservative contract selects no default until those nine excess
+legacy changes are attributed. The completed attribution finds all four exact
+windows in the Newton set, no exact misses, and one Newton-only window caused by
+a denominator change at a Q23 rounding boundary. Across both 2,097,152-value
+probability surfaces, every Newton-versus-exact difference is at most one Q23
+unit. All nine legacy-only windows have unchanged target logits, changed target
+weights and denominators, and zero exact Q23 delta. Engineering can therefore
+use `q47_newton1` in training. The bounded normalized wide-gradient preflight
+is complete: its Q23/Newton control replays model and optimizer byte-for-byte
+and retains the recovered signal in optimizer state. The first safe `up`
+materialization boundary, shift 21, produces 155 `up` updates and changes 84
+feature/logit windows plus 29 probability windows without saturation, but no
+target probability or dev loss. The first output materialization boundary,
+effective shift 41, changes three target-probability windows but regresses dev
+by 415 total millibits. Integer precision now reaches the target loss boundary;
+optimization direction, not missing fractional bits, is the next isolated
+problem. Paid scaling remains outside these local contracts.
+
 ## Numeric Contract
 
 The inference runtime must not use floating-point operations for model math.
