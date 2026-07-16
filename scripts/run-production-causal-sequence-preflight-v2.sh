@@ -16,6 +16,7 @@ source_model="${NSRL_CAUSAL_SEQUENCE_SOURCE_MODEL:-data/experiments/production-m
 embedding_boost_shift="${NSRL_EMBEDDING_BOOST_SHIFT:-0}"
 context_tokens="${NSRL_CAUSAL_SEQUENCE_CONTEXT_TOKENS:-8}"
 targets_per_window="${NSRL_CAUSAL_SEQUENCE_TARGETS_PER_WINDOW:-8}"
+training_workers="${NSRL_CAUSAL_SEQUENCE_TRAINING_WORKERS:-1}"
 max_windows="${NSRL_CAUSAL_SEQUENCE_MAX_WINDOWS:-256}"
 evaluation_windows="${NSRL_CAUSAL_SEQUENCE_TRAIN_EVALUATION_WINDOWS:-256}"
 midpoint_steps="${NSRL_CAUSAL_SEQUENCE_MIDPOINT_STEPS:-32}"
@@ -49,7 +50,8 @@ train_model() {
     full-train-smoke --tokenizer "$tokenizer" --tokens "$train_tokens"
     --model "$model_in" --model-out "$model_out"
     --optimizer-state-out "$optimizer_out" --trace "$trace_out"
-    --context-tokens "$context_tokens" --targets-per-window "$targets_per_window" --spread-windows
+    --context-tokens "$context_tokens" --targets-per-window "$targets_per_window"
+    --training-workers "$training_workers" --spread-windows
     --max-windows "$max_windows" --evaluation-windows "$evaluation_windows" --epochs 1
     --batch-windows 4 --max-optimizer-steps "$optimizer_steps"
     --matrix-learning-rate-shift 23

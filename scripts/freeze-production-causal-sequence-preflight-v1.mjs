@@ -79,6 +79,10 @@ for (const [name, trace] of [["midpoint", midpoint], ["final", final], ["replay"
       === expectedTraining.embedding_learning_rate_boost_shift,
     `${name} embedding learning-rate boost does not match the prospective contract`);
   }
+  if (expectedTraining.training_workers !== undefined) {
+    assert(trace.training?.training_workers === expectedTraining.training_workers,
+      `${name} training worker count does not match the prospective contract`);
+  }
   assert(trace.health?.gradient_saturation_count === 0
     && trace.health?.residual_saturation_count === 0
     && trace.health?.weight_saturation_count === 0,
@@ -175,6 +179,9 @@ const result = {
   training: {
     target_policy: expectedTraining.target_policy,
     targets_per_window: expectedTraining.targets_per_window,
+    ...(expectedTraining.training_workers === undefined
+      ? {}
+      : {training_workers: expectedTraining.training_workers}),
     supervised_targets: midpoint.training.supervised_targets
       + final.training.supervised_targets,
     optimizer_steps: final.training.total_optimizer_step,
