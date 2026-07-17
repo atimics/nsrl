@@ -142,17 +142,27 @@ Known facts from the status command:
   residuals apply the mean shift without quantizing internal trunk gradients.
   The optimizer schedule binds target count, per-group shifts, embedding boost,
   cursor, and source model; legacy one-target training remains byte-identical,
-- the prospectively frozen context-64 `p10m-causal-sequence-scale-v2` row trains
-  32,768 causal targets over 512 corpus-spread windows. It improves 512-window
-  development NLL by 41,675 millibits and test NLL by 38,691, moves all eleven
-  trunk groups, has zero saturation, and byte-replays from its midpoint,
-- that scale candidate still does not pass `open-generation-v1`. Candidate
-  modeling improves to 3,626 millibits/original UTF-8 byte and UTF-8 validity
-  reaches 1,000 per mille, but worst repetition is 999 per mille, minimum unique
-  share is 1 per mille, minimum entropy is zero, and context use plus distractor
-  resistance remain zero. Its greedy continuation emits the space token for all
-  512 steps. The next LLM gate is materially larger context-64 corpus coverage,
-  not another decoder-cache or output-format repair.
+- deterministic production training now parallelizes output-head work across
+  workers without changing model, optimizer, or normalized trace bytes. Eight
+  local workers reduced the measured 16-window context-64 benchmark from 21.16
+  seconds to 13.10 seconds,
+- the latest prospectively frozen context-64 candidate is
+  `p10m-causal-sequence-scale-v3-bias-r3`. It supervises 131,072 causal targets
+  over 2,048 corpus-spread windows, improves the frozen 512-window development
+  NLL by 3,580 millibits and test NLL by 18,939, moves all eleven trunk groups,
+  has zero saturation, and byte-replays from its midpoint,
+- output-bias, per-layer residual-saturation, source-to-candidate parameter
+  delta, and optimizer-residual audits now localize training failures instead
+  of inferring them from generation alone. They found and repaired output-bias
+  domination and a layer-3 O-projection overflow, but the balanced candidate
+  still enters a one-token self-loop for all 12 development prompts,
+- the latest candidate still does not pass `open-generation-v1`. Modeling is
+  3,604 millibits/original UTF-8 byte and UTF-8 validity is 1,000 per mille, but
+  worst repetition is 999 per mille, minimum unique share is 1 per mille,
+  minimum entropy is zero, and context use plus distractor resistance remain
+  zero. The next LLM gate is materially broader corpus coverage or a stronger
+  learned conditional objective, not another decoder-cache, output-format, or
+  isolated learning-rate repair.
 
 ## Headline Eval
 
@@ -188,8 +198,9 @@ The practical sequence is:
 3. Add the required byte-ngram, retrieval, best-smaller-NSRL, and same-shape
    float-twin bits-per-original-byte rows; keep the modeling gate red until the
    full matrix exists.
-4. Scale the passing context-64 causal-suffix schedule beyond the current 512
-   windows until greedy generation stops collapsing and the frozen repetition,
+4. Scale the healthy context-64 causal-suffix schedule beyond the current 2,048
+   windows / 131,072 targets, or strengthen the conditional training objective,
+   until raw greedy generation stops self-looping and the frozen repetition,
    entropy, context-use, and distractor gates pass.
 5. Add the required byte-ngram, retrieval, best-smaller-NSRL, and same-shape
    float-twin modeling rows without opening the hidden generation panel.

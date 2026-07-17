@@ -86,16 +86,18 @@ development and untouched test evidence before generation is rerun.
 
 ## Context-64 causal scale diagnostic
 
-The full-trunk prerequisite has now been met by
-`benchmarks/production-model-v1/p10m-causal-sequence-scale-v2.json`: development
-and test canonical NLL both improve, every trunk group moves, saturation is
-zero, and midpoint replay is byte-identical. Its complete generation rerun is
-frozen at
-`benchmarks/open-generation-v1/p10m-causal-sequence-scale-v2.json`.
+The latest full-trunk prerequisite is frozen at
+`benchmarks/production-model-v1/p10m-causal-sequence-scale-v3-bias-r3.json`.
+It supervises 131,072 causal targets over 2,048 corpus-spread windows;
+development and test canonical NLL both improve, all eleven trunk groups move,
+saturation is zero, and midpoint replay is byte-identical. Independent audits
+bind output-bias behavior, per-layer residual health, parameter deltas, and
+optimizer residual thresholds. Its complete generation rerun is frozen at
+`benchmarks/open-generation-v1/p10m-causal-sequence-scale-v3-bias-r3.json`.
 
-| Surface | Scale-v2 result | Gate |
+| Surface | Latest result | Gate |
 | --- | ---: | --- |
-| Candidate modeling | 3,626 millibits/original UTF-8 byte | baselines missing |
+| Candidate modeling | 3,604 millibits/original UTF-8 byte | baselines missing |
 | Incremental cache | 405,504 state bytes; 10,240 workspace bytes | pass |
 | Complete generation matrix | 12 prompts; 60 samples; 30,720 tokens | pass |
 | Worst repeated four-gram share | 999 per mille | fail (`<= 150`) |
@@ -105,8 +107,11 @@ frozen at
 | Context use | 0 per mille | fail (`>= 750`) |
 | Distractor resistance | 0 per mille | fail (`>= 700`) |
 
-The greedy surface emits the space token for all 512 continuation steps. The
-sampled surfaces are varied but not yet structured language. This isolates the
-remaining quality gap to training scale and learned context conditioning; the
-incremental serving path, artifact bindings, matrix completeness, saturation,
-and UTF-8 gates are already green. The hidden panel remains unopened.
+The raw context audit records distinct hidden and logit hashes for every prompt,
+so the trunk is not globally context-blind. Nevertheless, only two greedy first
+tokens appear and all 12 prompts enter one-token feedback loops. Output-bias
+damping and an O-projection stability repair eliminated numeric collapse but
+did not produce conditional language. This isolates the remaining quality gap
+to learned context conditioning and training coverage; the incremental serving
+path, artifact bindings, matrix completeness, replay, saturation, and UTF-8
+gates are already green. The hidden panel remains unopened.

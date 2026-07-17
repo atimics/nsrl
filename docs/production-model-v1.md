@@ -262,14 +262,22 @@ learning-rate boost are bound into resumable optimizer state. The legacy
 one-target path remains byte-identical to the pre-change model, optimizer, and
 trace artifacts.
 
-The prospectively frozen context-64 scale row is
-`benchmarks/production-model-v1/p10m-causal-sequence-scale-v2.json`. It
-supervises 32,768 targets across 512 corpus-spread windows, improves canonical
-512-window development NLL by 41,675 millibits and test NLL by 38,691, moves all
-eleven trunk groups, records zero saturation, and byte-replays its second half
-from the midpoint. This is valid generalization and restart evidence, not a
-language-quality promotion: the corresponding generation checkpoint remains
-red, so materially broader corpus coverage is still required.
+The latest prospectively frozen context-64 row is
+`benchmarks/production-model-v1/p10m-causal-sequence-scale-v3-bias-r3.json`.
+It supervises 131,072 targets across 2,048 corpus-spread windows, improves
+canonical 512-window development NLL by 3,580 millibits and test NLL by 18,939,
+moves all eleven trunk groups, records zero saturation, and byte-replays its
+second half from the midpoint. Independent output-bias, per-layer saturation,
+parameter-delta, and optimizer-residual audits repaired two numeric failure
+modes: output-bias domination and layer-3 O-projection overflow.
+
+This is valid generalization, numeric-health, and restart evidence, not a
+language-quality promotion. The corresponding generation checkpoint remains
+red at 999 per mille worst repetition, 1 per mille minimum unique four-gram
+share, zero minimum entropy, and zero context use and distractor resistance.
+All 12 raw audited prompts enter one-token feedback loops despite prompt-specific
+hidden and logit states. Materially broader corpus coverage or a stronger
+conditional objective is still required.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
