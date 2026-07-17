@@ -1,0 +1,84 @@
+{
+  "schema": "nsrl.production_output_dot_kernel_benchmark.v1",
+  "hypothesis": "validated_non_overflowing_output_dot_products_can_use_plain_order_preserving_accumulation_and_token_major_memory_access_without_changing_artifacts",
+  "profile": "p10m",
+  "provenance": {
+    "source_model": {
+      "path": "data/experiments/production-model-v1/p10m-causal-sequence-scale-v2/candidate.nsrlpm",
+      "sha256": "75848eeb9cbb6afd2d45b45732ab5d96a18170880f519a85585381f4abe69e2a"
+    },
+    "tokenizer": {
+      "path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+      "sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce"
+    },
+    "train_tokens": {
+      "path": "data/processed/production-corpus-v1/train.nsrltok",
+      "sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8"
+    },
+    "before_binary_sha256": "ed2ce26fc5a5d13e1894c098ddb7c3945be94ea9f284795042ee616e55b0cc76",
+    "candidate_binary_sha256": "00b915a85115635678af9e22a52b49f06705422bbf8f427d858a4d5627b7829b",
+    "production_source_sha256": "d000dc40bd653c9d18a50958db2ebf7d234f4211b500fa8992031dce7dea388d",
+    "training_source_sha256": "ad3588a4dcebde4855be04062f128dc2f4c2f5b9f061f48acae3ca3f07c412ea"
+  },
+  "workload": {
+    "context_tokens": 64,
+    "targets_per_window": 64,
+    "spread_windows": true,
+    "windows": 16,
+    "evaluation_windows": 16,
+    "batch_windows": 4,
+    "optimizer_steps": 4,
+    "training_workers": 8,
+    "schedule": "p10m_causal_sequence_scale_v4_learning_rate_fields"
+  },
+  "measurements": [
+    {
+      "round": 1,
+      "order": "before_then_candidate",
+      "before_real_seconds": 15.31,
+      "before_user_seconds": 22.49,
+      "candidate_real_seconds": 13.73,
+      "candidate_user_seconds": 14.53
+    },
+    {
+      "round": 2,
+      "order": "candidate_then_before",
+      "before_real_seconds": 14.49,
+      "before_user_seconds": 21.81,
+      "candidate_real_seconds": 13.62,
+      "candidate_user_seconds": 14.64
+    }
+  ],
+  "summary": {
+    "before_mean_real_seconds": 14.90,
+    "candidate_mean_real_seconds": 13.675,
+    "wall_time_reduction_per_mille": 82,
+    "before_mean_user_seconds": 22.15,
+    "candidate_mean_user_seconds": 14.585,
+    "user_time_reduction_per_mille": 342,
+    "final_candidate_confirmation_real_seconds": 13.70,
+    "final_candidate_confirmation_user_seconds": 14.54
+  },
+  "artifact_identity": {
+    "model_byte_identical": true,
+    "optimizer_byte_identical": true,
+    "trace_byte_identical": true,
+    "model_sha256": "5cd290f52e359e3ac0e2ee5d126696c93bb6681a753d76ec3d0d26a5cda39057",
+    "optimizer_sha256": "b9768a152aa504e8705f5e5ef87f1dee877520d7b9bf1c8bfadff10554a82960",
+    "trace_sha256": "13467e60b2ea0db9da401b5b7f281c7aa3a098fc3b99694c5d52d9706b89af32"
+  },
+  "verification": {
+    "production_library_tests_passed": 139,
+    "new_bound_test_passed": true,
+    "strict_clippy_passed": true,
+    "candidate_built_in_isolated_target_directory": true,
+    "original_in_flight_scale_v4_binary_unchanged_during_measurement": true,
+    "scale_v4_restarted_from_zero_with_candidate_source": true
+  },
+  "known_non_claims": [
+    "measurements_ran_while_scale_v4_was_active",
+    "short_local_benchmark_not_a_full_run_projection",
+    "kernel_change_does_not_improve_model_quality_by_itself",
+    "timings_do_not_include_the_scale_v4_restart"
+  ]
+}

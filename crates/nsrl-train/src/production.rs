@@ -2617,12 +2617,14 @@ fn output_logits(model: &ProductionModelV1, features: &[i16]) -> Result<Vec<i32>
     let mut logits = vec![0_i32; model.config.vocab_size];
     for (token, logit) in logits.iter_mut().enumerate() {
         let start = token * model.config.d_model;
-        let mut accumulator = 0_i64;
-        for (dim, &feature) in features.iter().enumerate() {
-            accumulator = accumulator.saturating_add(
-                i64::from(feature).saturating_mul(i64::from(model.output_weights[start + dim])),
-            );
-        }
+        // The validated numeric contract proves this contiguous i16 dot product
+        // cannot overflow i64, so this is byte-equivalent to saturating addition
+        // while remaining vectorization-friendly.
+        let accumulator = features
+            .iter()
+            .zip(&model.output_weights[start..start + model.config.d_model])
+            .map(|(&feature, &weight)| i64::from(feature) * i64::from(weight))
+            .sum::<i64>();
         let shifted = accumulator >> model.scales.output_shift;
         *logit = (shifted.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32)
             .saturating_add(model.output_bias_q8[token]);

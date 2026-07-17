@@ -146,6 +146,14 @@ Known facts from the status command:
   workers without changing model, optimizer, or normalized trace bytes. Eight
   local workers reduced the measured 16-window context-64 benchmark from 21.16
   seconds to 13.10 seconds,
+- validated non-overflowing output dot products now use order-preserving plain
+  accumulation and token-major memory access, with a saturating fallback for
+  unbounded custom shapes. Under concurrent scale-v4 load, paired 16-window
+  measurements improve from 14.90 to 13.68 seconds mean wall time and from
+  22.15 to 14.59 seconds mean CPU time while model, optimizer, and trace bytes
+  remain identical. The original in-flight binary was not replaced during the
+  measurement; scale-v4 was restarted from zero afterward so every phase and
+  frozen provenance row use the optimized source and a single binary,
 - the latest prospectively frozen context-64 candidate is
   `p10m-causal-sequence-scale-v3-bias-r3`. It supervises 131,072 causal targets
   over 2,048 corpus-spread windows, improves the frozen 512-window development

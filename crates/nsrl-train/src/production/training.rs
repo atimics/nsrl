@@ -22,6 +22,8 @@ use super::{
 
 const OPTIMIZER_MAGIC: &[u8; 8] = b"NSRLPO2\n";
 const OPTIMIZER_VERSION: u32 = 2;
+const I16_MAGNITUDE: u128 = 1_u128 << 15;
+const I32_MAGNITUDE: u128 = 1_u128 << 31;
 const GROUP_NAMES: [&str; 13] = [
     "embeddings",
     "attention_rms",
@@ -37,6 +39,13 @@ const GROUP_NAMES: [&str; 13] = [
     "output",
     "bias",
 ];
+
+fn signed_product_sum_i64_safe(terms: usize, left_magnitude: u128, right_magnitude: u128) -> bool {
+    (terms as u128)
+        .checked_mul(left_magnitude)
+        .and_then(|bound| bound.checked_mul(right_magnitude))
+        .is_some_and(|bound| bound <= i64::MAX as u128)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProductionGradientProposalLane {
@@ -1894,11 +1903,18 @@ fn update_output_parameter_chunk(
     apply_updates: bool,
 ) -> UpdateStats {
     let mut stats = UpdateStats::default();
+    let fast_accumulation =
+        signed_product_sum_i64_safe(gradients.len(), I32_MAGNITUDE, I16_MAGNITUDE);
+    let mut weight_gradients = vec![0_i64; d_model];
     for local_token in 0..output_bias.len() {
         let token = first_token + local_token;
-        let bias_gradient = gradients
-            .iter()
-            .fold(0_i64, |sum, row| sum.saturating_add(i64::from(row[token])));
+        let bias_gradient = if fast_accumulation {
+            gradients.iter().map(|row| i64::from(row[token])).sum()
+        } else {
+            gradients
+                .iter()
+                .fold(0_i64, |sum, row| sum.saturating_add(i64::from(row[token])))
+        };
         update_i32(
             &mut output_bias[local_token],
             bias_gradient,
@@ -1908,15 +1924,25 @@ fn update_output_parameter_chunk(
             12,
             &mut stats,
         );
-        for dim in 0..d_model {
-            let gradient = gradients
-                .iter()
-                .enumerate()
-                .fold(0_i64, |sum, (row, grad_logits)| {
-                    sum.saturating_add(
-                        i64::from(grad_logits[token]) * i64::from(features[row * d_model + dim]),
-                    )
-                });
+        weight_gradients.fill(0);
+        if fast_accumulation {
+            for (row, grad_logits) in gradients.iter().enumerate() {
+                let output_gradient = i64::from(grad_logits[token]);
+                let feature_row = &features[row * d_model..(row + 1) * d_model];
+                for (gradient, &feature) in weight_gradients.iter_mut().zip(feature_row) {
+                    *gradient += output_gradient * i64::from(feature);
+                }
+            }
+        } else {
+            for (row, grad_logits) in gradients.iter().enumerate() {
+                let output_gradient = i64::from(grad_logits[token]);
+                let feature_row = &features[row * d_model..(row + 1) * d_model];
+                for (gradient, &feature) in weight_gradients.iter_mut().zip(feature_row) {
+                    *gradient = gradient.saturating_add(output_gradient * i64::from(feature));
+                }
+            }
+        }
+        for (dim, &gradient) in weight_gradients.iter().enumerate() {
             let index = local_token * d_model + dim;
             update_i16(
                 &mut output_weights[index],
@@ -2473,9 +2499,14 @@ fn output_logits(model: &ProductionModelV1, features: &[i16]) -> Vec<i32> {
     (0..model.config.vocab_size)
         .map(|token| {
             let start = token * model.config.d_model;
-            let acc = features.iter().enumerate().fold(0_i64, |sum, (d, &f)| {
-                sum.saturating_add(i64::from(f) * i64::from(model.output_weights[start + d]))
-            });
+            // ProductionModelConfig::validate binds this i16-by-i16 dot product
+            // below i64::MAX. Plain addition preserves the saturating result and
+            // lets LLVM vectorize the contiguous output row.
+            let acc = features
+                .iter()
+                .zip(&model.output_weights[start..start + model.config.d_model])
+                .map(|(&feature, &weight)| i64::from(feature) * i64::from(weight))
+                .sum::<i64>();
             ((acc >> model.scales.output_shift).clamp(i64::from(i32::MIN), i64::from(i32::MAX))
                 as i32)
                 .saturating_add(model.output_bias_q8[token])
@@ -2591,16 +2622,30 @@ fn output_feature_accumulators(
     let accumulate_rows = |rows: &[Vec<i32>]| {
         let mut accumulators = Vec::with_capacity(rows.len() * model.config.d_model);
         for grad_logits in rows {
-            for dim in 0..model.config.d_model {
-                let mut accumulator = 0_i64;
-                for (token, &gradient) in grad_logits.iter().enumerate() {
-                    accumulator = accumulator.saturating_add(
-                        i64::from(gradient)
-                            * i64::from(model.output_weights[token * model.config.d_model + dim]),
-                    );
+            let mut row_accumulators = vec![0_i64; model.config.d_model];
+            if signed_product_sum_i64_safe(model.config.vocab_size, I32_MAGNITUDE, I16_MAGNITUDE) {
+                // Walk token-major output rows contiguously. Each dimension keeps
+                // the original ascending-token accumulation order.
+                for (&gradient, weights) in grad_logits
+                    .iter()
+                    .zip(model.output_weights.chunks_exact(model.config.d_model))
+                {
+                    for (accumulator, &weight) in row_accumulators.iter_mut().zip(weights) {
+                        *accumulator += i64::from(gradient) * i64::from(weight);
+                    }
                 }
-                accumulators.push(accumulator);
+            } else {
+                for (&gradient, weights) in grad_logits
+                    .iter()
+                    .zip(model.output_weights.chunks_exact(model.config.d_model))
+                {
+                    for (accumulator, &weight) in row_accumulators.iter_mut().zip(weights) {
+                        *accumulator =
+                            accumulator.saturating_add(i64::from(gradient) * i64::from(weight));
+                    }
+                }
             }
+            accumulators.extend(row_accumulators);
         }
         accumulators
     };
@@ -2850,11 +2895,30 @@ mod tests {
     use nsrl_core::SoftmaxNormalization;
 
     use super::{
-        BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME,
-        ProductionFullTrainConfig, UpdateStats, accumulate_residual, causal_suffix_targets,
-        effective_learning_rate_shifts, schedule_hash, spread_document_windows,
-        systematic_fixed_mass_gradient,
+        BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME, I16_MAGNITUDE,
+        I32_MAGNITUDE, ProductionFullTrainConfig, UpdateStats, accumulate_residual,
+        causal_suffix_targets, effective_learning_rate_shifts, schedule_hash,
+        signed_product_sum_i64_safe, spread_document_windows, systematic_fixed_mass_gradient,
     };
+
+    #[test]
+    fn fast_output_accumulation_is_bound_to_safe_shapes() {
+        assert!(signed_product_sum_i64_safe(
+            8_192,
+            I32_MAGNITUDE,
+            I16_MAGNITUDE,
+        ));
+        assert!(signed_product_sum_i64_safe(
+            448,
+            I16_MAGNITUDE,
+            I16_MAGNITUDE,
+        ));
+        assert!(!signed_product_sum_i64_safe(
+            usize::MAX,
+            I32_MAGNITUDE,
+            I16_MAGNITUDE,
+        ));
+    }
 
     #[test]
     fn systematic_fixed_mass_lanes_are_exact_replayable_and_zero_sum() {
