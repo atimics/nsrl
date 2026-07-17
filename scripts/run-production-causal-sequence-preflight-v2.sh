@@ -15,6 +15,7 @@ test_tokens="data/processed/production-corpus-v1/test.nsrltok"
 source_model="${NSRL_CAUSAL_SEQUENCE_SOURCE_MODEL:-data/experiments/production-model-v1/p10m-kv-scaling-readiness/integer-model-7.nsrlpm}"
 embedding_boost_shift="${NSRL_EMBEDDING_BOOST_SHIFT:-0}"
 k_learning_rate_shift="${NSRL_K_LEARNING_RATE_SHIFT:-19}"
+o_learning_rate_shift="${NSRL_O_LEARNING_RATE_SHIFT:-11}"
 up_learning_rate_shift="${NSRL_UP_LEARNING_RATE_SHIFT:-16}"
 gate_learning_rate_shift="${NSRL_GATE_LEARNING_RATE_SHIFT:-16}"
 output_bias_learning_rate_shift="${NSRL_OUTPUT_BIAS_LEARNING_RATE_SHIFT:-}"
@@ -60,7 +61,7 @@ train_model() {
     --batch-windows 4 --max-optimizer-steps "$optimizer_steps"
     --matrix-learning-rate-shift 23
     --q-learning-rate-shift 16 --k-learning-rate-shift "$k_learning_rate_shift"
-    --v-learning-rate-shift 23 --o-learning-rate-shift 11
+    --v-learning-rate-shift 23 --o-learning-rate-shift "$o_learning_rate_shift"
     --up-learning-rate-shift "$up_learning_rate_shift"
     --gate-learning-rate-shift "$gate_learning_rate_shift"
     --down-learning-rate-shift 4 --vector-learning-rate-shift 9
