@@ -156,6 +156,13 @@ Known facts from the status command:
   of inferring them from generation alone. They found and repaired output-bias
   domination and a layer-3 O-projection overflow, but the balanced candidate
   still enters a one-token self-loop for all 12 development prompts,
+- the bound rollout-divergence audit shows that collapse begins before
+  free-running exposure: the balanced candidate gets 0 of 128 held-out
+  continuation positions correct under teacher forcing, with mean correct-token
+  rank 2,426 and mean Q15 probability 5. Free generation matches 0 of 128
+  reference tokens and self-loops on 958 per mille of transitions. Equally
+  sized prefix and suffix swaps change 255 input tokens each, but the older
+  prefix moves aggregate logits about five times more than the recent suffix,
 - the latest candidate still does not pass `open-generation-v1`. Modeling is
   3,604 millibits/original UTF-8 byte and UTF-8 validity is 1,000 per mille, but
   worst repetition is 999 per mille, minimum unique share is 1 per mille,

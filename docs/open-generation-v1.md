@@ -111,7 +111,19 @@ The raw context audit records distinct hidden and logit hashes for every prompt,
 so the trunk is not globally context-blind. Nevertheless, only two greedy first
 tokens appear and all 12 prompts enter one-token feedback loops. Output-bias
 damping and an O-projection stability repair eliminated numeric collapse but
-did not produce conditional language. This isolates the remaining quality gap
-to learned context conditioning and training coverage; the incremental serving
-path, artifact bindings, matrix completeness, replay, saturation, and UTF-8
-gates are already green. The hidden panel remains unopened.
+did not produce conditional language.
+
+The complementary rollout-divergence checkpoint is frozen at
+`benchmarks/open-generation-v1/p10m-causal-sequence-scale-v3-bias-r3-rollout-divergence.json`.
+Across eight corpus-spread development windows and 16 continuation positions
+per window, teacher forcing produces zero top-one matches, mean correct-token
+rank 2,426, and mean correct-token Q15 probability 5. Free running also matches
+zero reference tokens and self-loops on 115 of 120 transitions. Prefix and
+suffix counterfactuals each change 255 input tokens in aggregate, while the
+older-half prefix swaps move logits 5,011 per mille as much as recent-half
+suffix swaps. Collapse therefore precedes rollout distribution shift and
+includes an anomalous context-weighting signal. This isolates the remaining
+quality gap to next-token ranking, learned context conditioning, and training
+coverage; the incremental serving path, artifact bindings, matrix completeness,
+replay, saturation, and UTF-8 gates are already green. The hidden panel remains
+unopened.

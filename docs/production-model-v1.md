@@ -276,8 +276,16 @@ language-quality promotion. The corresponding generation checkpoint remains
 red at 999 per mille worst repetition, 1 per mille minimum unique four-gram
 share, zero minimum entropy, and zero context use and distractor resistance.
 All 12 raw audited prompts enter one-token feedback loops despite prompt-specific
-hidden and logit states. Materially broader corpus coverage or a stronger
-conditional objective is still required.
+hidden and logit states. A corpus-spread rollout-divergence audit further shows
+zero teacher-forced top-one matches across 128 held-out continuation positions,
+mean correct-token rank 2,426, mean correct-token Q15 probability 5, zero
+free-running reference matches, and 958 per mille self-loop transitions. The
+failure therefore starts in next-token ranking rather than only after exposure
+to generated history. Equal-size context swaps also move logits about five
+times more for the older half than the recent half, which is a diagnostic signal
+for context weighting rather than a promotion claim. Materially broader corpus
+coverage is now the controlled test; if that signal survives, the next change
+must strengthen the conditional objective or architecture.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
