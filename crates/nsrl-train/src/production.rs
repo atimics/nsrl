@@ -228,6 +228,8 @@ pub struct ProductionLayerBoundaryHashes {
     pub layer: usize,
     pub attention_residual_hash: u64,
     pub layer_output_hash: u64,
+    pub attention_residual_saturation_count: usize,
+    pub mlp_residual_saturation_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2512,11 +2514,10 @@ fn production_features_observed(
         )
         .ok_or(TrainError::CoreRejected("production_linear_attention"))?;
         let mut attention_residual = vec![0_i16; total];
-        residual_saturation_count = residual_saturation_count.saturating_add(add_residual(
-            &hidden,
-            &attention_output,
-            &mut attention_residual,
-        ));
+        let attention_residual_saturation_count =
+            add_residual(&hidden, &attention_output, &mut attention_residual);
+        residual_saturation_count =
+            residual_saturation_count.saturating_add(attention_residual_saturation_count);
         let attention_residual_hash = observer
             .as_ref()
             .map_or(0, |_| hash_i16_slice(&attention_residual));
@@ -2565,16 +2566,17 @@ fn production_features_observed(
             &mut mlp_output,
         )
         .ok_or(TrainError::CoreRejected("production_gated_mlp"))?;
-        residual_saturation_count = residual_saturation_count.saturating_add(add_residual(
-            &attention_residual,
-            &mlp_output,
-            &mut hidden,
-        ));
+        let mlp_residual_saturation_count =
+            add_residual(&attention_residual, &mlp_output, &mut hidden);
+        residual_saturation_count =
+            residual_saturation_count.saturating_add(mlp_residual_saturation_count);
         if let Some((_, layers)) = observer.as_mut() {
             layers.push(ProductionLayerBoundaryHashes {
                 layer,
                 attention_residual_hash,
                 layer_output_hash: hash_i16_slice(&hidden),
+                attention_residual_saturation_count,
+                mlp_residual_saturation_count,
             });
         }
     }
@@ -3021,9 +3023,23 @@ mod tests {
     #[test]
     fn production_forward_and_smoke_training_accept_u32_tokens() {
         let mut model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 11).expect("model");
-        let forward = forward_production_model(&model, &[300, 301, 302, 303]).expect("forward");
+        let context = [300, 301, 302, 303];
+        let forward = forward_production_model(&model, &context).expect("forward");
         assert_eq!(forward.logits_q8.len(), 320);
         assert_eq!(forward.probabilities_q15.len(), 320);
+        let branches =
+            forward_production_model_branch_hashes(&model, &context).expect("branch health");
+        assert_eq!(branches.layers.len(), model.config.layers);
+        assert_eq!(
+            branches
+                .layers
+                .iter()
+                .map(|layer| {
+                    layer.attention_residual_saturation_count + layer.mlp_residual_saturation_count
+                })
+                .sum::<usize>(),
+            forward.residual_saturation_count
+        );
         let tokens = [BOS_TOKEN_ID, 300, 301, 302, 303, 304, 305, EOS_TOKEN_ID];
         let trace = train_production_output_smoke(
             &mut model,
