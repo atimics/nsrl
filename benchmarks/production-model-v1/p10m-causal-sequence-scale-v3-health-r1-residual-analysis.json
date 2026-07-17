@@ -1,0 +1,83 @@
+{
+  "schema": "nsrl.production_optimizer_residual_analysis.v1",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "inputs": {
+    "checkpoint": {
+      "path": "benchmarks/production-model-v1/p10m-causal-sequence-scale-v3-health-r1.json",
+      "sha256": "83f3bfef0566ad8ea6376d90127223796a7bc964d0e372e9e7a0699afb27b177"
+    },
+    "optimizer": {
+      "path": "data/experiments/production-model-v1/p10m-causal-sequence-scale-v3-health-r1/candidate.nsrlpo",
+      "bytes": 74541140,
+      "fnv64": "0x7e65b2f0d10bc4c0",
+      "sha256": "1634f66798ff1f87032c79853f963a96e5e4d5688eb4845aefcf19d147e180a8"
+    },
+    "final_trace": {
+      "path": "data/experiments/production-model-v1/p10m-causal-sequence-scale-v3-health-r1/train-final.json",
+      "bytes": 3262,
+      "fnv64": "0x320e52912042f8c7",
+      "sha256": "7626bfb9925f3cabe8da9ed76053146611e8af3468191acca44670b1b744374b"
+    }
+  },
+  "method": {
+    "optimizer_format": "NSRLPOV2",
+    "residual_byte_offset": 76,
+    "residual_encoding": "little_endian_i64",
+    "parameter_order": [
+      "embeddings",
+      "attention_rms",
+      "mlp_rms",
+      "final_rms",
+      "q",
+      "k",
+      "v",
+      "o",
+      "up",
+      "gate",
+      "down",
+      "output",
+      "bias"
+    ],
+    "up_residual_range": [3673344, 4852992],
+    "gate_residual_range": [4852992, 6032640],
+    "absolute_value_sort": true,
+    "nonzero_update_threshold": "2^(effective_shift-1)",
+    "current_effective_shift": 22,
+    "current_threshold": 2097152,
+    "prospective_effective_shift": 21,
+    "prospective_threshold": 1048576
+  },
+  "groups": {
+    "up": {
+      "parameters": 1179648,
+      "movement_l1": 0,
+      "maximum_absolute_residual": 1884167,
+      "p99_absolute_residual": 877492,
+      "p999_absolute_residual": 1158929,
+      "p9999_absolute_residual": 1393360,
+      "coordinates_at_current_threshold": 0,
+      "coordinates_at_prospective_threshold": 3150
+    },
+    "gate": {
+      "parameters": 1179648,
+      "movement_l1": 0,
+      "maximum_absolute_residual": 1924060,
+      "p99_absolute_residual": 875932,
+      "p999_absolute_residual": 1158504,
+      "p9999_absolute_residual": 1409707,
+      "coordinates_at_current_threshold": 0,
+      "coordinates_at_prospective_threshold": 3072
+    }
+  },
+  "conclusion": {
+    "current_zero_updates_explained_by_integer_threshold": true,
+    "minimal_prospective_change": "reduce_only_up_and_gate_cli_learning_rate_shifts_from_16_to_15",
+    "all_other_schedule_fields_unchanged": true
+  },
+  "known_non_claims": [
+    "prospective_threshold_counts_are_not_a_counterfactual_training_replay",
+    "lower_shift_changes_residual_consumption_and_later_gradients",
+    "movement_projection_does_not_claim_quality_or_health_success"
+  ]
+}
