@@ -1,0 +1,160 @@
+{
+  "schema": "nsrl.production_causal_sequence_preflight_contract.v1",
+  "objective": "mean_integer_base2_next_token_nll_over_causal_suffix",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-sequence-scale-v2/candidate.nsrlpm",
+    "model_hash": "0x5144efe093d39404",
+    "artifact_sha256": "75848eeb9cbb6afd2d45b45732ab5d96a18170880f519a85585381f4abe69e2a"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "derivation": {
+    "policy": "fourfold_coverage_expansion_of_bias_r3_schedule_from_the_identical_clean_scale_v2_source",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-sequence-scale-v3-bias-r3.json",
+        "sha256": "4231ed62096d49fea926f8dbb13eaeab2aef0e1a4b5e11c0219056edf07ae9c0"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-sequence-scale-v3-bias-r3.json",
+        "sha256": "983cd27ca8f91353d5410aab9443a30bc72e25b04e62caec23d5e32156438f1f"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-sequence-scale-v3-bias-r3-context-sensitivity.json",
+        "sha256": "a790fbd495809ef12cf57b2ba1f147b7e594220209e16ec1895c1a13e6cd4c7a"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-sequence-scale-v3-bias-r3-residual-saturation.json",
+        "sha256": "7189278bec2e89ba3980f08e56bfa3618cc5328d72f9f6430aef1fec34226393"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-sequence-scale-v3-bias-r3-parameter-delta.json",
+        "sha256": "cb8513dedfea33e67a4a4dd512c57f79c530de6f8b27701151751ff915aa4ce3"
+      }
+    ],
+    "bias_r3_preflight_passed": true,
+    "bias_r3_development_total_nll_delta_millibits": -3580,
+    "bias_r3_test_total_nll_delta_millibits": -18939,
+    "bias_r3_zero_training_and_inference_saturation": true,
+    "bias_r3_all_eleven_trunk_groups_moved": true,
+    "bias_r3_exact_restart_replay": true,
+    "bias_r3_open_generation_passed": false,
+    "bias_r3_open_generation_failed_gates": [
+      "repeat_4gram_health",
+      "unique_4gram_health",
+      "entropy_health",
+      "context_use",
+      "distractor_resistance"
+    ],
+    "bias_r3_context_audit_prompt_count": 12,
+    "bias_r3_context_audit_self_loop_count": 12,
+    "coverage_windows_before": 2048,
+    "coverage_windows_after": 8192,
+    "coverage_multiplier": 4,
+    "supervised_targets_before": 131072,
+    "supervised_targets_after": 524288,
+    "optimizer_steps_before": 512,
+    "optimizer_steps_after": 2048,
+    "coverage_hypothesis": "materially_broader_evenly_spread_corpus_coverage_can_convert_prompt_specific_hidden_states_into_non_looping_conditional_generation",
+    "all_learning_rate_context_target_batch_and_evaluation_fields_unchanged": true,
+    "development_test_and_generation_quality_not_used_to_choose_the_8192_window_result": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 64,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 8192,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_optimizer_steps": 1024,
+    "optimizer_steps": 2048,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "embedding_learning_rate_boost_shift": 2,
+    "cli_learning_rate_shifts": {
+      "matrix": 23,
+      "embeddings": 0,
+      "vector": 9,
+      "output_bias": 13,
+      "final_rms": 9,
+      "q": 16,
+      "k": 21,
+      "v": 23,
+      "o": 13,
+      "up": 15,
+      "gate": 15,
+      "down": 4,
+      "output": 30
+    },
+    "learning_rate_shifts": {
+      "embeddings": 4,
+      "attention_rms": 11,
+      "mlp_rms": 6,
+      "final_rms": 15,
+      "q": 22,
+      "k": 27,
+      "v": 29,
+      "o": 19,
+      "up": 21,
+      "gate": 21,
+      "down": 10,
+      "output": 36,
+      "bias": 19
+    },
+    "effective_probability_adjusted_shifts": {
+      "output": 44,
+      "bias": 27
+    },
+    "shift_derivation": "unchanged_threshold_selected_bias_r3_schedule"
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 512,
+    "selection_partition": "development",
+    "confirmation_partition": "test",
+    "source_dev_total_nll_millibits": 6590318,
+    "source_test_total_nll_millibits": 6596027,
+    "test_candidate_must_not_be_scored_unless_development_improves": true
+  },
+  "gates": {
+    "development_total_nll_strictly_improves": true,
+    "test_total_nll_strictly_improves": true,
+    "all_eleven_trunk_groups_move": true,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "exact_restart_replay": true
+  },
+  "authorization": {
+    "local_scale": true,
+    "open_generation_rerun": false,
+    "open_generation_rerun_requires_development_and_test_improvement": true,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_8192_window_scale_run_not_full_corpus_training",
+    "8192_window_uniform_rank_sample_is_not_a_strict_superset_of_the_2048_window_sample",
+    "public_test_has_prior_confirmatory_reads",
+    "fourfold_coverage_also_fourfolds_the_optimizer_horizon",
+    "coverage_success_does_not_by_itself_pass_open_generation_v1",
+    "worker_count_is_execution_provenance_not_optimizer_schedule"
+  ]
+}
