@@ -28,9 +28,8 @@ assert(run.bindings.candidate_model_fnv64 === result.candidate.model_fnv64
   && run.bindings.candidate_tokenizer_fnv64 === result.candidate.tokenizer_fnv64
   && modeling.bindings.candidate_tokenizer_hash === result.candidate.tokenizer_fnv64,
 "open-generation candidate bindings disagree");
-assert(result.promotion_passed === false
-  && result.gates.development_generation_passed === false,
-"the frozen baseline is expected to remain a non-passing diagnostic row");
+assert(result.promotion_passed === false,
+  "development-only evidence must not claim model promotion");
 
 const checkpoint = {
   schema: "nsrl.open_generation_development_checkpoint.v1",
