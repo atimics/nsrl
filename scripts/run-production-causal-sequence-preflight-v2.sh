@@ -17,6 +17,7 @@ embedding_boost_shift="${NSRL_EMBEDDING_BOOST_SHIFT:-0}"
 k_learning_rate_shift="${NSRL_K_LEARNING_RATE_SHIFT:-19}"
 up_learning_rate_shift="${NSRL_UP_LEARNING_RATE_SHIFT:-16}"
 gate_learning_rate_shift="${NSRL_GATE_LEARNING_RATE_SHIFT:-16}"
+output_bias_learning_rate_shift="${NSRL_OUTPUT_BIAS_LEARNING_RATE_SHIFT:-}"
 context_tokens="${NSRL_CAUSAL_SEQUENCE_CONTEXT_TOKENS:-8}"
 targets_per_window="${NSRL_CAUSAL_SEQUENCE_TARGETS_PER_WINDOW:-8}"
 training_workers="${NSRL_CAUSAL_SEQUENCE_TRAINING_WORKERS:-1}"
@@ -71,6 +72,9 @@ train_model() {
   )
   if [[ -n "$optimizer_in" ]]; then
     args+=(--optimizer-state "$optimizer_in")
+  fi
+  if [[ -n "$output_bias_learning_rate_shift" ]]; then
+    args+=(--output-bias-learning-rate-shift "$output_bias_learning_rate_shift")
   fi
   "$binary" "${args[@]}"
 }
