@@ -1,0 +1,138 @@
+{
+  "schema": "nsrl.production_causal_sequence_preflight_contract.v1",
+  "objective": "mean_integer_base2_next_token_nll_over_causal_suffix",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-sequence-scale-v2/candidate.nsrlpm",
+    "model_hash": "0x5144efe093d39404",
+    "artifact_sha256": "75848eeb9cbb6afd2d45b45732ab5d96a18170880f519a85585381f4abe69e2a"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "derivation": {
+    "policy": "repeat_health_r1_from_the_clean_scale_v2_source_with_only_up_and_gate_update_rates_doubled",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-sequence-scale-v3-health-r1.json",
+        "sha256": "83f3bfef0566ad8ea6376d90127223796a7bc964d0e372e9e7a0699afb27b177"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-sequence-scale-v3-health-r1-residual-analysis.json",
+        "sha256": "39461657c9d55465190a2362b67ce7c984815b203d27db25574762b2a4ec5ab8"
+      }
+    ],
+    "health_r1_preflight_passed": false,
+    "health_r1_failed_gate": "all_eleven_trunk_groups_move",
+    "health_r1_saturation_gate_passed": true,
+    "health_r1_up_movement_l1": 0,
+    "health_r1_gate_movement_l1": 0,
+    "health_r1_up_maximum_absolute_residual": 1884167,
+    "health_r1_gate_maximum_absolute_residual": 1924060,
+    "health_r1_coordinates_over_shift_21_threshold": {
+      "up": 3150,
+      "gate": 3072
+    },
+    "repair_signal": "integer_residual_dead_update_analysis_only",
+    "up_effective_shift_before": 22,
+    "up_effective_shift_after": 21,
+    "gate_effective_shift_before": 22,
+    "gate_effective_shift_after": 21,
+    "all_other_training_and_evaluation_fields_unchanged": true,
+    "health_r1_quality_deltas_not_used_to_choose_repair": true,
+    "test_loss_not_used_to_choose_health_r2_schedule": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 64,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 2048,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_optimizer_steps": 256,
+    "optimizer_steps": 512,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "embedding_learning_rate_boost_shift": 2,
+    "cli_learning_rate_shifts": {
+      "matrix": 23,
+      "embeddings": 0,
+      "vector": 9,
+      "final_rms": 9,
+      "q": 16,
+      "k": 21,
+      "v": 23,
+      "o": 11,
+      "up": 15,
+      "gate": 15,
+      "down": 4,
+      "output": 30
+    },
+    "learning_rate_shifts": {
+      "embeddings": 4,
+      "attention_rms": 11,
+      "mlp_rms": 6,
+      "final_rms": 15,
+      "q": 22,
+      "k": 27,
+      "v": 29,
+      "o": 17,
+      "up": 21,
+      "gate": 21,
+      "down": 10,
+      "output": 36,
+      "bias": 15
+    },
+    "effective_probability_adjusted_shifts": {
+      "output": 44,
+      "bias": 23
+    },
+    "shift_derivation": "health_r1_optimizer_residual_threshold_analysis"
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 512,
+    "selection_partition": "development",
+    "confirmation_partition": "test",
+    "source_dev_total_nll_millibits": 6590318,
+    "source_test_total_nll_millibits": 6596027,
+    "test_candidate_must_not_be_scored_unless_development_improves": true
+  },
+  "gates": {
+    "development_total_nll_strictly_improves": true,
+    "test_total_nll_strictly_improves": true,
+    "all_eleven_trunk_groups_move": true,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "exact_restart_replay": true
+  },
+  "authorization": {
+    "local_scale": true,
+    "open_generation_rerun": false,
+    "open_generation_rerun_requires_development_and_test_improvement": true,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_2048_window_scale_run_not_full_corpus_training",
+    "public_test_has_prior_confirmatory_reads",
+    "health_repair_success_does_not_pass_open_generation_v1",
+    "worker_count_is_execution_provenance_not_optimizer_schedule"
+  ]
+}
