@@ -85,6 +85,7 @@ struct Config {
     gate_learning_rate_shift: Option<u8>,
     down_learning_rate_shift: Option<u8>,
     vector_learning_rate_shift: u8,
+    output_bias_learning_rate_shift: Option<u8>,
     final_rms_learning_rate_shift: Option<u8>,
     embedding_learning_rate_shift: u8,
     embedding_learning_rate_boost_shift: u8,
@@ -167,6 +168,7 @@ impl Default for Config {
             gate_learning_rate_shift: full.gate_learning_rate_shift,
             down_learning_rate_shift: full.down_learning_rate_shift,
             vector_learning_rate_shift: full.vector_learning_rate_shift,
+            output_bias_learning_rate_shift: full.output_bias_learning_rate_shift,
             final_rms_learning_rate_shift: full.final_rms_learning_rate_shift,
             embedding_learning_rate_shift: full.embedding_learning_rate_shift,
             embedding_learning_rate_boost_shift: full.embedding_learning_rate_boost_shift,
@@ -1145,6 +1147,7 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
         gate_learning_rate_shift: config.gate_learning_rate_shift,
         down_learning_rate_shift: config.down_learning_rate_shift,
         vector_learning_rate_shift: config.vector_learning_rate_shift,
+        output_bias_learning_rate_shift: config.output_bias_learning_rate_shift,
         final_rms_learning_rate_shift: config.final_rms_learning_rate_shift,
         embedding_learning_rate_shift: config.embedding_learning_rate_shift,
         embedding_learning_rate_boost_shift: config.embedding_learning_rate_boost_shift,
@@ -1406,6 +1409,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 config.vector_learning_rate_shift =
                     next(&mut args, "--vector-learning-rate-shift")?.parse()?
             }
+            "--output-bias-learning-rate-shift" => {
+                config.output_bias_learning_rate_shift =
+                    Some(next(&mut args, "--output-bias-learning-rate-shift")?.parse()?)
+            }
             "--embedding-learning-rate-shift" => {
                 config.embedding_learning_rate_shift =
                     next(&mut args, "--embedding-learning-rate-shift")?.parse()?
@@ -1598,7 +1605,7 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor.\n"
+        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors.\n"
     );
     println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
@@ -1684,6 +1691,8 @@ mod tests {
             "4",
             "--training-workers",
             "3",
+            "--output-bias-learning-rate-shift",
+            "14",
             "--embedding-learning-rate-boost-shift",
             "1",
         ]))
@@ -1691,6 +1700,7 @@ mod tests {
         assert!(config.spread_windows);
         assert_eq!(config.targets_per_window, 4);
         assert_eq!(config.training_workers, 3);
+        assert_eq!(config.output_bias_learning_rate_shift, Some(14));
         assert_eq!(config.embedding_learning_rate_boost_shift, 1);
     }
 

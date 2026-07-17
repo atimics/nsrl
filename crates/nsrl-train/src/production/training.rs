@@ -222,6 +222,7 @@ pub struct ProductionFullTrainConfig {
     pub gate_learning_rate_shift: Option<u8>,
     pub down_learning_rate_shift: Option<u8>,
     pub vector_learning_rate_shift: u8,
+    pub output_bias_learning_rate_shift: Option<u8>,
     pub embedding_learning_rate_shift: u8,
     pub embedding_learning_rate_boost_shift: u8,
     pub output_learning_rate_shift: u8,
@@ -252,6 +253,7 @@ impl Default for ProductionFullTrainConfig {
             gate_learning_rate_shift: None,
             down_learning_rate_shift: None,
             vector_learning_rate_shift: 10,
+            output_bias_learning_rate_shift: None,
             embedding_learning_rate_shift: 4,
             embedding_learning_rate_boost_shift: 0,
             output_learning_rate_shift: 24,
@@ -882,7 +884,8 @@ pub fn train_production_full_smoke(
             .saturating_add(target_mean_shift(config))
             > 62
         || config
-            .vector_learning_rate_shift
+            .output_bias_learning_rate_shift
+            .unwrap_or(config.vector_learning_rate_shift)
             .saturating_add(config.probability_gradient_fractional_bits - 15)
             .saturating_add(target_mean_shift(config))
             > 62
@@ -1000,7 +1003,8 @@ pub fn train_production_full_smoke(
             .saturating_add(config.probability_gradient_fractional_bits - 15)
             .saturating_add(target_mean_shift(config)),
         effective_bias_learning_rate_shift: config
-            .vector_learning_rate_shift
+            .output_bias_learning_rate_shift
+            .unwrap_or(config.vector_learning_rate_shift)
             .saturating_add(config.probability_gradient_fractional_bits - 15)
             .saturating_add(target_mean_shift(config)),
         gradient_saturation_count: stats.gradient_saturation,
@@ -1954,7 +1958,8 @@ fn update_output_parameters(
         .saturating_add(precision_shift)
         .saturating_add(target_mean_shift(config));
     let bias_shift = config
-        .vector_learning_rate_shift
+        .output_bias_learning_rate_shift
+        .unwrap_or(config.vector_learning_rate_shift)
         .saturating_add(precision_shift)
         .saturating_add(target_mean_shift(config));
     let parameter_residuals = &mut residuals[ranges.output.start..ranges.bias.end];
@@ -2723,6 +2728,9 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     if c.embedding_learning_rate_boost_shift > 0 {
         bytes.extend_from_slice(&[0xfb, c.embedding_learning_rate_boost_shift]);
     }
+    if let Some(shift) = c.output_bias_learning_rate_shift {
+        bytes.extend_from_slice(&[0xfa, shift]);
+    }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
         hash.wrapping_mul(FNV_PRIME)
@@ -2818,7 +2826,10 @@ pub(super) fn effective_learning_rate_shifts(config: ProductionFullTrainConfig) 
         matrix_learning_rate_shift(config, 9),
         matrix_learning_rate_shift(config, 10),
         config.output_learning_rate_shift.saturating_add(mean_shift),
-        config.vector_learning_rate_shift.saturating_add(mean_shift),
+        config
+            .output_bias_learning_rate_shift
+            .unwrap_or(config.vector_learning_rate_shift)
+            .saturating_add(mean_shift),
     ]
 }
 
@@ -2951,6 +2962,19 @@ mod tests {
             ..base
         };
         assert_eq!(schedule_hash(base), schedule_hash(parallel));
+        let damped_bias = ProductionFullTrainConfig {
+            output_bias_learning_rate_shift: Some(14),
+            ..base
+        };
+        assert_eq!(
+            effective_learning_rate_shifts(damped_bias),
+            [4, 6, 0, 6, 16, 20, 24, 16, 16, 16, 8, 24, 14]
+        );
+        assert_eq!(
+            &effective_learning_rate_shifts(base)[..12],
+            &effective_learning_rate_shifts(damped_bias)[..12]
+        );
+        assert_ne!(schedule_hash(base), schedule_hash(damped_bias));
     }
 
     #[test]

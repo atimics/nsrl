@@ -302,6 +302,7 @@ fn fitting_training_config() -> ProductionFullTrainConfig {
         gate_learning_rate_shift: Some(23),
         down_learning_rate_shift: Some(25),
         vector_learning_rate_shift: 23,
+        output_bias_learning_rate_shift: None,
         final_rms_learning_rate_shift: None,
         embedding_learning_rate_shift: 17,
         embedding_learning_rate_boost_shift: 0,
