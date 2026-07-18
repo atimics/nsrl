@@ -14,10 +14,18 @@ dev_tokens="data/processed/production-corpus-v1/dev.nsrltok"
 test_tokens="data/processed/production-corpus-v1/test.nsrltok"
 source_model="${NSRL_CAUSAL_SEQUENCE_SOURCE_MODEL:-data/experiments/production-model-v1/p10m-kv-scaling-readiness/integer-model-7.nsrlpm}"
 embedding_boost_shift="${NSRL_EMBEDDING_BOOST_SHIFT:-0}"
+matrix_learning_rate_shift="${NSRL_MATRIX_LEARNING_RATE_SHIFT:-23}"
+embedding_learning_rate_shift="${NSRL_EMBEDDING_LEARNING_RATE_SHIFT:-0}"
+vector_learning_rate_shift="${NSRL_VECTOR_LEARNING_RATE_SHIFT:-9}"
+final_rms_learning_rate_shift="${NSRL_FINAL_RMS_LEARNING_RATE_SHIFT:-9}"
+q_learning_rate_shift="${NSRL_Q_LEARNING_RATE_SHIFT:-16}"
 k_learning_rate_shift="${NSRL_K_LEARNING_RATE_SHIFT:-19}"
+v_learning_rate_shift="${NSRL_V_LEARNING_RATE_SHIFT:-23}"
 o_learning_rate_shift="${NSRL_O_LEARNING_RATE_SHIFT:-11}"
 up_learning_rate_shift="${NSRL_UP_LEARNING_RATE_SHIFT:-16}"
 gate_learning_rate_shift="${NSRL_GATE_LEARNING_RATE_SHIFT:-16}"
+down_learning_rate_shift="${NSRL_DOWN_LEARNING_RATE_SHIFT:-4}"
+output_learning_rate_shift="${NSRL_OUTPUT_LEARNING_RATE_SHIFT:-30}"
 output_bias_learning_rate_shift="${NSRL_OUTPUT_BIAS_LEARNING_RATE_SHIFT:-}"
 context_tokens="${NSRL_CAUSAL_SEQUENCE_CONTEXT_TOKENS:-8}"
 targets_per_window="${NSRL_CAUSAL_SEQUENCE_TARGETS_PER_WINDOW:-8}"
@@ -26,6 +34,11 @@ max_windows="${NSRL_CAUSAL_SEQUENCE_MAX_WINDOWS:-256}"
 evaluation_windows="${NSRL_CAUSAL_SEQUENCE_TRAIN_EVALUATION_WINDOWS:-256}"
 midpoint_steps="${NSRL_CAUSAL_SEQUENCE_MIDPOINT_STEPS:-32}"
 optimizer_steps="${NSRL_CAUSAL_SEQUENCE_OPTIMIZER_STEPS:-64}"
+parallel_replay="${NSRL_CAUSAL_SEQUENCE_PARALLEL_REPLAY:-0}"
+if [[ "$parallel_replay" != "0" && "$parallel_replay" != "1" ]]; then
+  echo "NSRL_CAUSAL_SEQUENCE_PARALLEL_REPLAY must be 0 or 1" >&2
+  exit 2
+fi
 
 mkdir -p "$out_dir"
 work_dir="$(mktemp -d "$out_dir/.run.XXXXXX")"
@@ -59,15 +72,19 @@ train_model() {
     --training-workers "$training_workers" --spread-windows
     --max-windows "$max_windows" --evaluation-windows "$evaluation_windows" --epochs 1
     --batch-windows 4 --max-optimizer-steps "$optimizer_steps"
-    --matrix-learning-rate-shift 23
-    --q-learning-rate-shift 16 --k-learning-rate-shift "$k_learning_rate_shift"
-    --v-learning-rate-shift 23 --o-learning-rate-shift "$o_learning_rate_shift"
+    --matrix-learning-rate-shift "$matrix_learning_rate_shift"
+    --q-learning-rate-shift "$q_learning_rate_shift"
+    --k-learning-rate-shift "$k_learning_rate_shift"
+    --v-learning-rate-shift "$v_learning_rate_shift"
+    --o-learning-rate-shift "$o_learning_rate_shift"
     --up-learning-rate-shift "$up_learning_rate_shift"
     --gate-learning-rate-shift "$gate_learning_rate_shift"
-    --down-learning-rate-shift 4 --vector-learning-rate-shift 9
-    --final-rms-learning-rate-shift 9 --embedding-learning-rate-shift 0
+    --down-learning-rate-shift "$down_learning_rate_shift"
+    --vector-learning-rate-shift "$vector_learning_rate_shift"
+    --final-rms-learning-rate-shift "$final_rms_learning_rate_shift"
+    --embedding-learning-rate-shift "$embedding_learning_rate_shift"
     --embedding-learning-rate-boost-shift "$embedding_boost_shift"
-    --output-learning-rate-shift 30 --output-backward-shift 8
+    --output-learning-rate-shift "$output_learning_rate_shift" --output-backward-shift 8
     --probability-gradient-fractional-bits 23
     --probability-normalization q47-newton1
   )
@@ -88,13 +105,33 @@ train_model "$source_model" "" \
   "$work_dir/midpoint.nsrlpm" "$work_dir/midpoint.nsrlpo" \
   "$work_dir/train-midpoint.json" "$midpoint_steps"
 echo "causal sequence phase: final"
-train_model "$work_dir/midpoint.nsrlpm" "$work_dir/midpoint.nsrlpo" \
-  "$work_dir/candidate.nsrlpm" "$work_dir/candidate.nsrlpo" \
-  "$work_dir/train-final.json" "$optimizer_steps"
-echo "causal sequence phase: replay"
-train_model "$work_dir/midpoint.nsrlpm" "$work_dir/midpoint.nsrlpo" \
-  "$work_dir/replay.nsrlpm" "$work_dir/replay.nsrlpo" \
-  "$work_dir/train-replay.json" "$optimizer_steps"
+if [[ "$parallel_replay" == "1" ]]; then
+  train_model "$work_dir/midpoint.nsrlpm" "$work_dir/midpoint.nsrlpo" \
+    "$work_dir/candidate.nsrlpm" "$work_dir/candidate.nsrlpo" \
+    "$work_dir/train-final.json" "$optimizer_steps" &
+  final_pid=$!
+  echo "causal sequence phase: replay (parallel)"
+  train_model "$work_dir/midpoint.nsrlpm" "$work_dir/midpoint.nsrlpo" \
+    "$work_dir/replay.nsrlpm" "$work_dir/replay.nsrlpo" \
+    "$work_dir/train-replay.json" "$optimizer_steps" &
+  replay_pid=$!
+  final_status=0
+  replay_status=0
+  wait "$final_pid" || final_status=$?
+  wait "$replay_pid" || replay_status=$?
+  if ((final_status != 0 || replay_status != 0)); then
+    echo "parallel final/replay failed: final=$final_status replay=$replay_status" >&2
+    exit 1
+  fi
+else
+  train_model "$work_dir/midpoint.nsrlpm" "$work_dir/midpoint.nsrlpo" \
+    "$work_dir/candidate.nsrlpm" "$work_dir/candidate.nsrlpo" \
+    "$work_dir/train-final.json" "$optimizer_steps"
+  echo "causal sequence phase: replay"
+  train_model "$work_dir/midpoint.nsrlpm" "$work_dir/midpoint.nsrlpo" \
+    "$work_dir/replay.nsrlpm" "$work_dir/replay.nsrlpo" \
+    "$work_dir/train-replay.json" "$optimizer_steps"
+fi
 
 cmp "$work_dir/candidate.nsrlpm" "$work_dir/replay.nsrlpm"
 cmp "$work_dir/candidate.nsrlpo" "$work_dir/replay.nsrlpo"

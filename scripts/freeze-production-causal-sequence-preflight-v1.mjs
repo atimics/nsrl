@@ -20,6 +20,7 @@ const candidateTest = fs.existsSync(candidateTestPath) ? readRun("candidate-test
 assert([
   "nsrl.production_causal_sequence_preflight_contract.v1",
   "nsrl.production_causal_tail_context_contract.v1",
+  "nsrl.production_causal_tail_stability_contract.v1",
 ].includes(contract.schema),
   "causal sequence contract schema is invalid");
 assert(contract.authorization?.hidden_panel_access === false

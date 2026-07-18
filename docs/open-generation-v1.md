@@ -140,3 +140,16 @@ mille as much as recent-suffix swaps. Broader coverage alone is therefore
 falsified at this schedule. The next public-development candidate must first
 pass a prospectively frozen recent-tail objective, test-loss, zero-saturation,
 and rollout-ranking gate; the hidden panel remains unopened.
+
+The first recent-tail candidate passes the loss and teacher-forced ranking part
+of that hypothesis but fails numeric health and free running. Development/test
+NLL improve by 445,246/403,430 millibits; teacher-forced top-one rises from zero
+to 2/128, mean target rank improves to 1,711, and mean target probability rises
+to 27 Q15. However, it self-loops on all 120 free-running transitions and
+records 2,285,126 rollout residual saturations plus 391,301 residual
+saturations across the 12-prompt manifest. The second training half has no
+nonzero gradients in any attention or MLP projection. The quality-gate receipt
+at `benchmarks/production-model-v1/p10m-causal-tail-context-v1-quality-gate.json`
+therefore keeps open-generation authorization false. A damped numeric preflight
+must pass before this objective is scaled again; the hidden panel remains
+unopened.

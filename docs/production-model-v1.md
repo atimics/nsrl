@@ -306,6 +306,35 @@ to the last eight causal rows. It holds corpus-window coverage fixed and slows
 the K base update by two bits; this tests objective alignment and numeric health
 instead of repeating the falsified scale-only intervention.
 
+That recent-tail experiment is complete and rejected, but it identifies the
+first large conditional-learning signal. The frozen checkpoint at
+`benchmarks/production-model-v1/p10m-causal-tail-context-v1.json` improves
+development NLL by 445,246 millibits and test NLL by 403,430. Its rollout audit
+records 2/128 teacher-forced top-one matches, mean target rank 1,711, and mean
+target probability 27 Q15, crossing all three prospectively frozen ranking
+thresholds. Scale-v4 had 0/128, rank 2,265, and probability 6. Restricting loss
+to positions with 57--64 visible tokens therefore materially improves the
+context-64 objective and next-token ranking.
+
+It is not a numerically valid candidate. The less-cancelled tail gradients make
+the unchanged group learning coefficients much too large. By the 4,096-window
+midpoint, all public prompts already saturate internal residuals; the second
+half then has zero nonzero gradients in Q/K/V/O and every MLP projection, while
+final RMS accumulates 3,495 weight saturations. The selected model records
+2,285,126 rollout residual saturations and still self-loops on all 120 free-
+running transitions. Exact midpoint replay, dev improvement, and test
+improvement pass, but the training/inference saturation and repetition gates
+correctly reject promotion and generation.
+
+The next prospectively frozen contract is a 2,048-window numeric preflight at
+`benchmarks/production-model-v1/p10m-causal-tail-stability-v1-contract.json`.
+It preserves the successful tail-8 objective and damps each group by the
+power-of-two ceiling of its midpoint movement excess relative to the last
+healthy scale-v4 reference, with extra boundary margin. It must move all eleven
+trunk groups, improve dev and test, retain exact replay, and record zero
+training and public-manifest inference saturation before a fresh 8,192-window
+tail run can be frozen. It cannot authorize open generation itself.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

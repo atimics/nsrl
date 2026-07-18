@@ -16,7 +16,10 @@ const context = JSON.parse(contextBytes);
 const saturationBytes = fs.readFileSync(config.saturation);
 const saturation = JSON.parse(saturationBytes);
 
-assert(contract.schema === "nsrl.production_causal_tail_context_contract.v1",
+assert([
+  "nsrl.production_causal_tail_context_contract.v1",
+  "nsrl.production_causal_tail_stability_contract.v1",
+].includes(contract.schema),
   "causal tail-context contract schema is invalid");
 assert(contract.authorization?.postflight_quality_gate_required === true
   && contract.authorization?.hidden_panel_access === false
@@ -84,6 +87,8 @@ const gates = {
         <= expected.saturation.maximum_residual_saturation_count,
 };
 const qualityGatePassed = Object.values(gates).every(Boolean);
+const openGenerationRerunAuthorized = qualityGatePassed
+  && contract.authorization?.open_generation_rerun === true;
 const result = {
   schema: "nsrl.production_causal_tail_context_quality_gate.v1",
   contract: binding(config.contract, contractBytes),
@@ -109,7 +114,7 @@ const result = {
   },
   gates,
   quality_gate_passed: qualityGatePassed,
-  open_generation_rerun_authorized: qualityGatePassed,
+  open_generation_rerun_authorized: openGenerationRerunAuthorized,
   evidence: {
     rollout: binding(config.rollout, rolloutBytes),
     context: binding(config.context, contextBytes),
@@ -132,7 +137,7 @@ process.stdout.write(`${JSON.stringify({
   candidate: modelHash,
   gates,
   quality_gate_passed: qualityGatePassed,
-  open_generation_rerun_authorized: qualityGatePassed,
+  open_generation_rerun_authorized: openGenerationRerunAuthorized,
   out: config.out,
 })}\n`);
 
