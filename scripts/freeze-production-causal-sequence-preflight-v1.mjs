@@ -17,7 +17,10 @@ const candidateDev = readRun("candidate-dev.json");
 const candidateTestPath = path.join(config.runDir, "candidate-test.json");
 const candidateTest = fs.existsSync(candidateTestPath) ? readRun("candidate-test.json") : null;
 
-assert(contract.schema === "nsrl.production_causal_sequence_preflight_contract.v1",
+assert([
+  "nsrl.production_causal_sequence_preflight_contract.v1",
+  "nsrl.production_causal_tail_context_contract.v1",
+].includes(contract.schema),
   "causal sequence contract schema is invalid");
 assert(contract.authorization?.hidden_panel_access === false
   && contract.authorization?.paid_scaling === false,
@@ -153,6 +156,7 @@ const gates = {
   exact_restart_replay: exactRestartReplay,
 };
 const preflightPassed = Object.values(gates).every(Boolean);
+const postflightRequired = contract.authorization?.postflight_quality_gate_required === true;
 
 const artifactNames = [
   "source-dev.json", "source-test.json", "train-midpoint.json", "midpoint.nsrlpm",
@@ -195,7 +199,7 @@ const result = {
   },
   gates,
   preflight_passed: preflightPassed,
-  open_generation_rerun_authorized: preflightPassed,
+  open_generation_rerun_authorized: preflightPassed && !postflightRequired,
   test_candidate_scored: Boolean(candidateTest),
   provenance: {
     binary: binding(config.binary, fs.readFileSync(config.binary)),

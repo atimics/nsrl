@@ -262,7 +262,7 @@ learning-rate boost are bound into resumable optimizer state. The legacy
 one-target path remains byte-identical to the pre-change model, optimizer, and
 trace artifacts.
 
-The latest prospectively frozen context-64 row is
+The last passing context-64 prerequisite is
 `benchmarks/production-model-v1/p10m-causal-sequence-scale-v3-bias-r3.json`.
 It supervises 131,072 targets across 2,048 corpus-spread windows, improves
 canonical 512-window development NLL by 3,580 millibits and test NLL by 18,939,
@@ -283,9 +283,28 @@ free-running reference matches, and 958 per mille self-loop transitions. The
 failure therefore starts in next-token ranking rather than only after exposure
 to generated history. Equal-size context swaps also move logits about five
 times more for the older half than the recent half, which is a diagnostic signal
-for context weighting rather than a promotion claim. Materially broader corpus
-coverage is now the controlled test; if that signal survives, the next change
-must strengthen the conditional objective or architecture.
+for context weighting rather than a promotion claim.
+
+The prospectively frozen fourfold-coverage test is complete and rejected.
+`benchmarks/production-model-v1/p10m-causal-sequence-scale-v4.json` supervises
+524,288 targets across 8,192 corpus-spread windows. Development NLL improves by
+54,691 millibits, but test NLL regresses by 6,033 millibits. K accumulates 3,742
+weight saturations in the first half and 171 in the second, while the selected
+candidate also exposes 22 inference residual saturations on one adversarial
+prompt. Exact midpoint replay and all-group movement still pass. The frozen
+gate therefore withholds both preflight promotion and open-generation rerun.
+
+Scale-v4 does not repair conditional ranking. Its held-out rollout audit still
+has zero teacher-forced top-one matches across 128 positions; mean target rank
+improves only from 2,426 to 2,265 and mean target probability from 5 to 6 Q15.
+Free running becomes a one-token loop on all 120 transitions. Equal-size older-
+prefix swaps now move logits 5,693 per mille as much as recent-suffix swaps.
+Because the causal-suffix objective spends 56 of every 64 losses on contexts
+shorter than 57 tokens, while evaluation and generation score the final
+context-64 row, the next prospective experiment changes the target distribution
+to the last eight causal rows. It holds corpus-window coverage fixed and slows
+the K base update by two bits; this tests objective alignment and numeric health
+instead of repeating the falsified scale-only intervention.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at

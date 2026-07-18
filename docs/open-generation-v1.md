@@ -127,3 +127,16 @@ quality gap to next-token ranking, learned context conditioning, and training
 coverage; the incremental serving path, artifact bindings, matrix completeness,
 replay, saturation, and UTF-8 gates are already green. The hidden panel remains
 unopened.
+
+The follow-up fourfold-coverage candidate is frozen at
+`benchmarks/production-model-v1/p10m-causal-sequence-scale-v4.json` and is not
+eligible for an open-generation row. It improves development NLL by 54,691
+millibits but regresses test NLL by 6,033, reintroduces K training saturation,
+and produces 22 late-layer residual saturations on the public adversarial
+manifest. Its diagnostic rollout remains at zero teacher-forced top-one matches
+across 128 positions, with mean target rank 2,265, and self-loops on every one
+of 120 free-running transitions. Older-prefix swaps affect logits 5,693 per
+mille as much as recent-suffix swaps. Broader coverage alone is therefore
+falsified at this schedule. The next public-development candidate must first
+pass a prospectively frozen recent-tail objective, test-loss, zero-saturation,
+and rollout-ranking gate; the hidden panel remains unopened.
