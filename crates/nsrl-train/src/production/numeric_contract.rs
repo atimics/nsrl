@@ -1,3 +1,16 @@
+//! Explicit numeric contract for the production model: bit-widths,
+//! rounding rules, and overflow bounds for every edge in the
+//! forward and backward computation graph.
+//!
+//! # Purpose
+//!
+//! This is a machine-readable description of the integer arithmetic
+//! contract that the production model must honour.  It is used by
+//! audit and documentation tooling rather than by the training loop
+//! directly.  Every projection, attention bound, and update rule
+//! is declared with its fractional bits, accumulator width, and
+//! rounding mode.
+
 use std::fmt::Write;
 
 use nsrl_core::MAX_RIGHT_SHIFT;

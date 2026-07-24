@@ -639,10 +639,10 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
         for (index, record) in records.iter().enumerate() {
             let target = tokens[record.end];
             let context = &tokens[record.start..record.end];
-            for expert_index in 0..3 {
+            for (expert_index, expert) in experts.iter().enumerate().take(3) {
                 let row = mini_transformer_next_token_row_with_block_expert(
                     &model,
-                    &experts[expert_index],
+                    expert,
                     context,
                     attention_kind,
                     position_policy,
@@ -652,8 +652,8 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
                 mistakes[index][expert_index] = usize::from(argmax(&row.logits_q8) != target);
             }
         }
-        for expert in 0..3 {
-            fixed[expert].add_group(&losses, &mistakes, 0, records.len(), expert);
+        for (expert_index, aggregate) in fixed.iter_mut().enumerate() {
+            aggregate.add_group(&losses, &mistakes, 0, records.len(), expert_index);
         }
         let prompt_choice = best_expert(&losses, &mistakes, 0, records.len());
         prompt.add_group(&losses, &mistakes, 0, records.len(), prompt_choice);
@@ -672,14 +672,14 @@ fn score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::erro
         }
         let mut token_routes = vec![0_usize; records.len()];
         let mut previous_token = None;
-        for index in 0..records.len() {
+        for (index, route) in token_routes.iter_mut().enumerate() {
             let choice = best_expert(&losses, &mistakes, index, index + 1);
             if previous_token.is_some_and(|previous| previous != choice) {
                 token.route_switches = token.route_switches.saturating_add(1);
             }
             previous_token = Some(choice);
             token.add_group(&losses, &mistakes, index, index + 1, choice);
-            token_routes[index] = choice;
+            *route = choice;
         }
         for (index, record) in records.iter().enumerate() {
             let router_features = match router_feature_kind {
@@ -952,7 +952,7 @@ fn route_json(route: &RouteAggregate) -> String {
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err("hex input length must be even".into());
     }
     (0..value.len())

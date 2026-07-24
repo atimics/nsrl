@@ -1,3 +1,22 @@
+//! Atomic structure audit: Ising-model and interaction analysis for
+//! production model parameters.
+//!
+//! # Purpose
+//!
+//! After a boolean-jet confirmation identifies which moves help, this
+//! module analyses the structure of interactions between them: Do parameter
+//! groups interact? Are the interactions pairwise (Ising-like) or
+//! higher-order?  Can we build a simple surrogate that predicts loss
+//! without evaluating every combination?
+//!
+//! # Key types
+//!
+//! - [`audit_production_atomic_structure`] — computes one-body fields,
+//!   pair couplings, and interaction widths across document windows.
+//! - [`ProductionAtomicObjectiveTrace`] — the full interaction lattice.
+//! - [`ProductionExchangeTrace`] — records which atoms (moves) exchange
+//!   with each other under conditional perturbation.
+
 use std::collections::BTreeSet;
 use std::fmt::Write;
 
@@ -64,6 +83,12 @@ pub struct ProductionAtomicSourceBinding {
     pub source_index_hash: u64,
     pub proposal_source_cluster_hash: u64,
     pub proposal_source_clusters: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionAtomicDocumentRange {
+    pub start: usize,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -185,9 +210,12 @@ pub fn freeze_production_atomic_structure_contract(
     moves: Vec<ProductionBooleanJetMove>,
     protocol_bindings: ProductionBooleanJetProtocolBindings,
     source_binding: ProductionAtomicSourceBinding,
-    document_start: usize,
-    documents: usize,
+    document_range: ProductionAtomicDocumentRange,
 ) -> Result<ProductionAtomicStructureContract, TrainError> {
+    let ProductionAtomicDocumentRange {
+        start: document_start,
+        count: documents,
+    } = document_range;
     model.validate()?;
     validate_contract_inputs(model, context_tokens, &moves, protocol_bindings)?;
     if source_binding.source_index_hash == 0
@@ -200,17 +228,17 @@ pub fn freeze_production_atomic_structure_contract(
     }
     let (analysis_role, hard_stop_before_document) = atomic_surface(document_start, documents)?;
     let move_fingerprint = atomic_move_fingerprint(&moves);
-    let manifest_hash = atomic_manifest_hash(
+    let manifest_hash = atomic_manifest_hash(AtomicManifestInput {
         protocol_bindings,
-        model.model_hash(),
-        model.tokenizer_hash,
+        model_hash: model.model_hash(),
+        tokenizer_hash: model.tokenizer_hash,
         token_stream_hash,
         source_binding,
         context_tokens,
         document_start,
         documents,
-        &moves,
-    );
+        moves: &moves,
+    });
     Ok(ProductionAtomicStructureContract {
         analysis_role,
         protocol_bindings,
@@ -255,21 +283,21 @@ pub fn audit_production_atomic_structure(
         || contract.windows_per_document != WINDOWS_PER_DOCUMENT
         || contract.move_fingerprint != atomic_move_fingerprint(&contract.moves)
         || contract.manifest_hash
-            != atomic_manifest_hash(
-                contract.protocol_bindings,
-                model.model_hash(),
-                model.tokenizer_hash,
+            != atomic_manifest_hash(AtomicManifestInput {
+                protocol_bindings: contract.protocol_bindings,
+                model_hash: model.model_hash(),
+                tokenizer_hash: model.tokenizer_hash,
                 token_stream_hash,
-                ProductionAtomicSourceBinding {
+                source_binding: ProductionAtomicSourceBinding {
                     source_index_hash: contract.source_index_hash,
                     proposal_source_cluster_hash: contract.proposal_source_cluster_hash,
                     proposal_source_clusters: contract.proposal_source_clusters,
                 },
-                contract.context_tokens,
-                contract.document_start,
-                contract.documents,
-                &contract.moves,
-            )
+                context_tokens: contract.context_tokens,
+                document_start: contract.document_start,
+                documents: contract.documents,
+                moves: &contract.moves,
+            })
         || tokens
             .iter()
             .any(|&token| token as usize >= model.config.vocab_size)
@@ -1002,7 +1030,7 @@ fn build_boundary_taxonomy(
 > {
     let mut total = ProductionBoundaryTaxonomy::default();
     let mut by_atom = [ProductionBoundaryTaxonomy::default(); RANK];
-    for atom in 0..RANK {
+    for (atom, atom_taxonomy) in by_atom.iter_mut().enumerate() {
         for base_mask in 0..VERTICES {
             if base_mask & (1 << atom) != 0 {
                 continue;
@@ -1059,7 +1087,7 @@ fn build_boundary_taxonomy(
                     3
                 };
                 increment_taxonomy(&mut total, category);
-                increment_taxonomy(&mut by_atom[atom], category);
+                increment_taxonomy(atom_taxonomy, category);
             }
         }
     }
@@ -1089,8 +1117,8 @@ fn atomic_move_fingerprint(moves: &[ProductionBooleanJetMove]) -> u64 {
     hash
 }
 
-fn atomic_manifest_hash(
-    bindings: ProductionBooleanJetProtocolBindings,
+struct AtomicManifestInput<'a> {
+    protocol_bindings: ProductionBooleanJetProtocolBindings,
     model_hash: u64,
     tokenizer_hash: u64,
     token_stream_hash: u64,
@@ -1098,26 +1126,28 @@ fn atomic_manifest_hash(
     context_tokens: usize,
     document_start: usize,
     documents: usize,
-    moves: &[ProductionBooleanJetMove],
-) -> u64 {
+    moves: &'a [ProductionBooleanJetMove],
+}
+
+fn atomic_manifest_hash(input: AtomicManifestInput<'_>) -> u64 {
     let mut hash = FNV_OFFSET;
     for byte in b"nsrl.production_atomic_structure.v1" {
         hash = fnv_byte(hash, *byte);
     }
     for value in [
-        bindings.source_fnv64,
-        bindings.binary_fnv64,
-        model_hash,
-        tokenizer_hash,
-        token_stream_hash,
-        source_binding.source_index_hash,
-        source_binding.proposal_source_cluster_hash,
-        source_binding.proposal_source_clusters as u64,
-        context_tokens as u64,
-        document_start as u64,
-        documents as u64,
+        input.protocol_bindings.source_fnv64,
+        input.protocol_bindings.binary_fnv64,
+        input.model_hash,
+        input.tokenizer_hash,
+        input.token_stream_hash,
+        input.source_binding.source_index_hash,
+        input.source_binding.proposal_source_cluster_hash,
+        input.source_binding.proposal_source_clusters as u64,
+        input.context_tokens as u64,
+        input.document_start as u64,
+        input.documents as u64,
         WINDOWS_PER_DOCUMENT as u64,
-        atomic_move_fingerprint(moves),
+        atomic_move_fingerprint(input.moves),
     ] {
         for byte in value.to_le_bytes() {
             hash = fnv_byte(hash, byte);
@@ -1527,8 +1557,10 @@ mod tests {
     #[test]
     fn rank_six_mobius_transform_reconstructs_exactly() {
         let losses = (0..VERTICES)
-            .map(|mask| 10_000_u64 + (mask as u64 * 17) ^ (mask.count_ones() as u64 * 31))
+            .map(|mask| (10_000_u64 + (mask as u64 * 17)) ^ (mask.count_ones() as u64 * 31))
             .collect::<Vec<_>>();
+        assert_eq!(losses[3], 10_109);
+        assert_ne!(losses[3], 10_013);
         let coefficients = mobius(&losses).expect("rank-six Möbius transform");
         assert!(reconstructs(&losses, &coefficients));
     }

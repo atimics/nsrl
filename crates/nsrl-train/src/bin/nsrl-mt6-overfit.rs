@@ -4,17 +4,17 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+use nsrl_train::cli::{next_arg, run_main};
 use nsrl_train::mt6::{MiniTransformerV6Model, Mt6OverfitConfig, train_mt6_output_overfit};
 
 fn main() {
-    match run() {
-        Ok(true) => {}
-        Ok(false) => std::process::exit(1),
-        Err(error) => {
-            eprintln!("nsrl-mt6-overfit: {error}");
-            std::process::exit(2);
+    run_main(|| {
+        if run()? {
+            Ok(())
+        } else {
+            Err("overfit gate failed".into())
         }
-    }
+    })
 }
 
 fn run() -> Result<bool, Box<dyn std::error::Error>> {
@@ -29,17 +29,22 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--tokens" => tokens_path = Some(PathBuf::from(required(&mut args, &arg)?)),
-            "--model-out" => model_out_path = Some(PathBuf::from(required(&mut args, &arg)?)),
-            "--trace-out" => trace_out_path = Some(PathBuf::from(required(&mut args, &arg)?)),
-            "--seq-len" => seq_len = required(&mut args, &arg)?.parse()?,
-            "--windows" => windows = required(&mut args, &arg)?.parse()?,
-            "--epochs" => epochs = required(&mut args, &arg)?.parse()?,
+            "--tokens" => tokens_path = Some(PathBuf::from(next_arg(&mut args, "--tokens")?)),
+            "--model-out" => {
+                model_out_path = Some(PathBuf::from(next_arg(&mut args, "--model-out")?))
+            }
+            "--trace-out" => {
+                trace_out_path = Some(PathBuf::from(next_arg(&mut args, "--trace-out")?))
+            }
+            "--seq-len" => seq_len = next_arg(&mut args, "--seq-len")?.parse()?,
+            "--windows" => windows = next_arg(&mut args, "--windows")?.parse()?,
+            "--epochs" => epochs = next_arg(&mut args, "--epochs")?.parse()?,
             "--min-accuracy-per-mille" => {
-                min_accuracy_per_mille = required(&mut args, &arg)?.parse()?
+                min_accuracy_per_mille = next_arg(&mut args, "--min-accuracy-per-mille")?.parse()?
             }
             "--max-residual-saturations-per-window" => {
-                max_residual_saturations_per_window = required(&mut args, &arg)?.parse()?
+                max_residual_saturations_per_window =
+                    next_arg(&mut args, "--max-residual-saturations-per-window")?.parse()?
             }
             "--help" | "-h" => {
                 println!(
@@ -120,14 +125,6 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         print!("{line}");
     }
     Ok(passed)
-}
-
-fn required(
-    args: &mut impl Iterator<Item = String>,
-    option: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-    args.next()
-        .ok_or_else(|| format!("{option} requires a value").into())
 }
 
 fn json_string(value: &str) -> String {

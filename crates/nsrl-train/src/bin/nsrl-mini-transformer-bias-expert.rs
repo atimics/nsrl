@@ -318,14 +318,14 @@ fn run_score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         let mut mistakes = vec![[0_usize; 3]; records.len()];
         for (index, record) in records.iter().enumerate() {
             let target = *tokens.get(record.end).ok_or("score target out of range")?;
-            for expert_index in 0..3 {
-                let (logits, probabilities) = biased_row(record, &experts[expert_index].biases_q8)?;
+            for (expert_index, expert) in experts.iter().enumerate().take(3) {
+                let (logits, probabilities) = biased_row(record, &expert.biases_q8)?;
                 losses[index][expert_index] = sample_probability_error(&probabilities, target);
                 mistakes[index][expert_index] = usize::from(argmax(&logits) != target);
             }
         }
-        for expert in 0..3 {
-            fixed[expert].add_group(&losses, &mistakes, 0, records.len(), expert);
+        for (expert_index, aggregate) in fixed.iter_mut().enumerate() {
+            aggregate.add_group(&losses, &mistakes, 0, records.len(), expert_index);
         }
         let prompt_choice = best_expert(&losses, &mistakes, 0, records.len());
         prompt.add_group(&losses, &mistakes, 0, records.len(), prompt_choice);
@@ -345,14 +345,14 @@ fn run_score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
 
         let mut token_routes = vec![0_usize; records.len()];
         let mut previous_token = None;
-        for index in 0..records.len() {
+        for (index, route) in token_routes.iter_mut().enumerate() {
             let choice = best_expert(&losses, &mistakes, index, index + 1);
             if previous_token.is_some_and(|previous| previous != choice) {
                 token.route_switches = token.route_switches.saturating_add(1);
             }
             previous_token = Some(choice);
             token.add_group(&losses, &mistakes, index, index + 1, choice);
-            token_routes[index] = choice;
+            *route = choice;
         }
 
         for (index, record) in records.iter().enumerate() {

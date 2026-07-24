@@ -544,17 +544,16 @@ fn run_score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         let mut mistakes = vec![[0_usize; 3]; records.len()];
         for (index, record) in records.iter().enumerate() {
             let target = tokens[record.end];
-            for expert_index in 0..3 {
-                let (hidden, _, _) =
-                    adapted_hidden(&record.last_hidden_q15, &experts[expert_index]);
+            for (expert_index, expert) in experts.iter().enumerate().take(3) {
+                let (hidden, _, _) = adapted_hidden(&record.last_hidden_q15, expert);
                 let row = mini_transformer_output_from_hidden_q15(&model, &hidden)?;
                 losses[index][expert_index] =
                     sample_probability_error(&row.probabilities_q15, target);
                 mistakes[index][expert_index] = usize::from(argmax(&row.logits_q8) != target);
             }
         }
-        for expert in 0..3 {
-            fixed[expert].add_group(&losses, &mistakes, 0, records.len(), expert);
+        for (expert_index, aggregate) in fixed.iter_mut().enumerate() {
+            aggregate.add_group(&losses, &mistakes, 0, records.len(), expert_index);
         }
         let prompt_choice = best_expert(&losses, &mistakes, 0, records.len());
         prompt.add_group(&losses, &mistakes, 0, records.len(), prompt_choice);
@@ -573,14 +572,14 @@ fn run_score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         }
         let mut token_routes = vec![0_usize; records.len()];
         let mut previous_token = None;
-        for index in 0..records.len() {
+        for (index, route) in token_routes.iter_mut().enumerate() {
             let choice = best_expert(&losses, &mistakes, index, index + 1);
             if previous_token.is_some_and(|previous| previous != choice) {
                 token.route_switches = token.route_switches.saturating_add(1);
             }
             previous_token = Some(choice);
             token.add_group(&losses, &mistakes, index, index + 1, choice);
-            token_routes[index] = choice;
+            *route = choice;
         }
         for (index, record) in records.iter().enumerate() {
             writeln!(
@@ -979,10 +978,12 @@ fn evaluate_teacher_probability_l1(
     for (record, teacher) in records.iter().zip(teacher_probabilities) {
         let (hidden, _, _) = adapted_hidden(&record.last_hidden_q15, expert);
         let student = mini_transformer_output_from_hidden_q15(model, &hidden)?;
-        for index in 0..VOCAB {
+        for (&student_probability, &teacher_probability) in
+            student.probabilities_q15.iter().zip(teacher)
+        {
             distance = distance.saturating_add(
-                (i32::from(student.probabilities_q15[index]) - i32::from(teacher[index]))
-                    .unsigned_abs() as usize,
+                (i32::from(student_probability) - i32::from(teacher_probability)).unsigned_abs()
+                    as usize,
             );
         }
     }
@@ -1028,22 +1029,27 @@ fn train_expert(
                 let mut grad_output_q15 = [0_i16; VOCAB];
                 if let Some(teacher_probabilities) = teacher_probabilities {
                     let teacher = &teacher_probabilities[batch_start + batch_index];
-                    for index in 0..VOCAB {
-                        grad_output_q15[index] = saturate_i16(
-                            i64::from(row.probabilities_q15[index]) - i64::from(teacher[index]),
+                    for ((gradient_output, &student_probability), &teacher_probability) in
+                        grad_output_q15
+                            .iter_mut()
+                            .zip(&row.probabilities_q15)
+                            .zip(teacher)
+                    {
+                        *gradient_output = saturate_i16(
+                            i64::from(student_probability) - i64::from(teacher_probability),
                         );
                     }
                 } else {
                     let target = usize::from(tokens[record.end]);
                     let target_probability = i64::from(row.probabilities_q15[target].max(0));
-                    for index in 0..VOCAB {
+                    for (index, gradient_output) in grad_output_q15.iter_mut().enumerate() {
                         let mut gradient = i64::from(row.probabilities_q15[index]);
                         if index == target {
                             gradient = gradient.saturating_sub(i64::from(i16::MAX));
                         }
                         gradient =
                             gradient.saturating_mul(target_probability) / i64::from(i16::MAX);
-                        grad_output_q15[index] = saturate_i16(gradient);
+                        *gradient_output = saturate_i16(gradient);
                     }
                 }
                 let grad_hidden_q15 =
@@ -1052,11 +1058,10 @@ fn train_expert(
                     if hidden[dim] == i16::MIN || hidden[dim] == i16::MAX {
                         continue;
                     }
-                    for rank_index in 0..expert.rank {
+                    for (rank_index, &latent_value) in latent.iter().enumerate().take(expert.rank) {
                         let index = dim * expert.rank + rank_index;
                         let gradient = round_shift_rhu_i64(
-                            i64::from(grad_hidden_q15[dim])
-                                .saturating_mul(i64::from(latent[rank_index])),
+                            i64::from(grad_hidden_q15[dim]).saturating_mul(i64::from(latent_value)),
                             15,
                         );
                         gradients[index] = gradients[index].saturating_add(gradient);

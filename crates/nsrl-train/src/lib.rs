@@ -26,6 +26,7 @@ use nsrl_core::{
 };
 
 pub mod artifact_contract;
+pub mod cli;
 pub mod mt6;
 pub mod production;
 pub mod solomon_latent;
@@ -144,20 +145,43 @@ use nsrl_train_core::{
     MINI_TRANSFORMER_OUTPUT_SCALES,
 };
 
+// --- shared numeric constants ---
+
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
-const DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15: i16 = 4096;
-const DEFAULT_MINI_TRANSFORMER_EPOCHS: usize = 1;
+const BASE2_SOFTMAX_LN2_Q15: i32 = 22_713;
+
+// --- mini-transformer architecture defaults (shared across module + tests) ---
+
 const DEFAULT_MINI_TRANSFORMER_SEQ_LEN: usize = 4;
-const DEFAULT_MINI_TRANSFORMER_STRIDE: usize = 1;
-const DEFAULT_MINI_TRANSFORMER_MAX_WINDOWS: usize = 64;
-const DEFAULT_MINI_TRANSFORMER_BATCH_WINDOWS: usize = 1;
-const DEFAULT_MINI_TRANSFORMER_LEARNING_RATE: i32 = 1;
-const DEFAULT_MINI_TRANSFORMER_HEAD_LEARNING_RATE_SHIFT: u8 = 18;
-const DEFAULT_MINI_TRANSFORMER_MLP_LEARNING_RATE_SHIFT: u8 = 16;
-const DEFAULT_MINI_TRANSFORMER_EMBEDDING_LEARNING_RATE_SHIFT: u8 = 14;
-const DEFAULT_MINI_TRANSFORMER_ATTENTION_LEARNING_RATE_SHIFT: u8 = 24;
-const DEFAULT_MINI_TRANSFORMER_ATTENTION_QK_LEARNING_RATE_SHIFT: u8 = 18;
+const DEFAULT_MINI_TRANSFORMER_LAYERS: usize = 2;
+const DEFAULT_MINI_TRANSFORMER_RMS_GAMMA_Q15: i16 = 16_384;
+const MINI_TRANSFORMER_RMS_EPSILON: u64 = 1;
+
+// --- training/optimizer bounds ---
+
+/// Shared default for adaptive rule update interval; used in config default and
+/// roughly two dozen test cases that construct configs directly.
+const DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES: usize = 128;
+const MINI_TRANSFORMER_ATTENTION_VO_ORACLE_MAX_D_MODEL: usize = 64;
+const MINI_TRANSFORMER_ADAPTIVE_RULE_TRACE_EVENT_LIMIT: usize = 256;
+const MINI_TRANSFORMER_RULE_SATURATION_PRESSURE_DIVISOR: usize = 512;
+const MINI_TRANSFORMER_RULE_ZERO_PRESSURE_NUMERATOR: usize = 31;
+const MINI_TRANSFORMER_RULE_ZERO_PRESSURE_DENOMINATOR: usize = 32;
+const MINI_TRANSFORMER_ROLLBACK_HISTORY_LIMIT: usize = 8;
+
+// --- decode / generation defaults (shared across DecodeConfig + decoding.rs) ---
+
+const DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15: i16 = 4096;
+const DEFAULT_CORPUS_PRIOR_ORDER: u8 = 1;
+
+// --- parallelism ---
+
+const PARALLEL_EVAL_MIN_ITEMS: usize = 512;
+const PARALLEL_EVAL_MIN_ITEMS_PER_THREAD: usize = 128;
+
+// --- feature-gated artifact format constants ---
+
 #[cfg(feature = "mini-calibrated")]
 const MINI_TRANSFORMER_NGRAM_CACHE_MAGIC: [u8; 8] = *b"NSRLNG1\0";
 #[cfg(feature = "mini-calibrated")]
@@ -168,22 +192,8 @@ const MINI_TRANSFORMER_NGRAM_CACHE_MAX_ORDER: usize = 4;
 const MINI_TRANSFORMER_SUFFIX_MEMORY_MAGIC: [u8; 8] = *b"NSRLSM1\0";
 #[cfg(feature = "mini-calibrated")]
 const MINI_TRANSFORMER_SUFFIX_MEMORY_HEADER_BYTES: usize = 16;
-const DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES: usize = 128;
-const DEFAULT_MINI_TRANSFORMER_RMS_GAMMA_Q15: i16 = 16_384;
-const MINI_TRANSFORMER_RMS_EPSILON: u64 = 1;
-const DEFAULT_MINI_TRANSFORMER_LAYERS: usize = 2;
-const MINI_TRANSFORMER_ATTENTION_VO_ORACLE_MAX_D_MODEL: usize = 64;
-const MINI_TRANSFORMER_ADAPTIVE_RULE_TRACE_EVENT_LIMIT: usize = 256;
-const MINI_TRANSFORMER_RULE_SATURATION_PRESSURE_DIVISOR: usize = 512;
-const MINI_TRANSFORMER_RULE_ZERO_PRESSURE_NUMERATOR: usize = 31;
-const MINI_TRANSFORMER_RULE_ZERO_PRESSURE_DENOMINATOR: usize = 32;
-const DEFAULT_CORPUS_PRIOR_LOGIT_SHIFT: u8 = 8;
-const DEFAULT_CORPUS_PRIOR_ORDER: u8 = 1;
-const DEFAULT_LEXEME_MEMORY_LOGIT_SHIFT: u8 = 5;
-const MINI_TRANSFORMER_ROLLBACK_HISTORY_LIMIT: usize = 8;
-const PARALLEL_EVAL_MIN_ITEMS: usize = 512;
-const PARALLEL_EVAL_MIN_ITEMS_PER_THREAD: usize = 128;
-const BASE2_SOFTMAX_LN2_Q15: i32 = 22_713;
+
+// --- known-non-claim strings ---
 const MINI_TRANSFORMER_GENERATION_KNOWN_NON_CLAIMS: [&str; 5] = [
     "fixed_small_integer_transformer_only",
     "learned_absolute_position_embeddings_not_rope",
@@ -424,12 +434,12 @@ impl MiniTransformerMlpTrainConfig {
 impl Default for MiniTransformerMlpTrainConfig {
     fn default() -> Self {
         Self {
-            epochs: DEFAULT_MINI_TRANSFORMER_EPOCHS,
+            epochs: 1,
             seq_len: DEFAULT_MINI_TRANSFORMER_SEQ_LEN,
-            stride: DEFAULT_MINI_TRANSFORMER_STRIDE,
+            stride: 1,
             window_offset: 0,
-            max_windows: Some(DEFAULT_MINI_TRANSFORMER_MAX_WINDOWS),
-            batch_windows: DEFAULT_MINI_TRANSFORMER_BATCH_WINDOWS,
+            max_windows: Some(64),
+            batch_windows: 1,
             target_token_min: u8::MIN,
             target_token_max: u8::MAX,
             target_segment: MiniTransformerTargetSegment::All,
@@ -439,15 +449,13 @@ impl Default for MiniTransformerMlpTrainConfig {
             tokenizer_id: ByteTokenizerId::Identity,
             attention_kind: MiniTransformerAttentionKind::Base2Softmax,
             position_policy: MiniTransformerPositionPolicy::LearnedAbsolute,
-            learning_rate: DEFAULT_MINI_TRANSFORMER_LEARNING_RATE,
-            output_learning_rate_shift: DEFAULT_MINI_TRANSFORMER_HEAD_LEARNING_RATE_SHIFT,
-            mlp_learning_rate_shift: DEFAULT_MINI_TRANSFORMER_MLP_LEARNING_RATE_SHIFT,
-            embedding_learning_rate_shift: DEFAULT_MINI_TRANSFORMER_EMBEDDING_LEARNING_RATE_SHIFT,
-            attention_learning_rate_shift: DEFAULT_MINI_TRANSFORMER_ATTENTION_LEARNING_RATE_SHIFT,
-            attention_q_learning_rate_shift:
-                DEFAULT_MINI_TRANSFORMER_ATTENTION_QK_LEARNING_RATE_SHIFT,
-            attention_qk_learning_rate_shift:
-                DEFAULT_MINI_TRANSFORMER_ATTENTION_QK_LEARNING_RATE_SHIFT,
+            learning_rate: 1,
+            output_learning_rate_shift: 18,
+            mlp_learning_rate_shift: 16,
+            embedding_learning_rate_shift: 14,
+            attention_learning_rate_shift: 24,
+            attention_q_learning_rate_shift: 18,
+            attention_qk_learning_rate_shift: 18,
             adaptive_rule_shifts: false,
             adaptive_rule_interval_batches: DEFAULT_MINI_TRANSFORMER_ADAPTIVE_RULE_INTERVAL_BATCHES,
             adaptive_attention_shifts: false,
@@ -1234,7 +1242,7 @@ impl DecodeConfig {
             max_repeat_run: 0,
             no_repeat_ngram_order: 0,
             corpus_prior: false,
-            corpus_prior_logit_shift: DEFAULT_CORPUS_PRIOR_LOGIT_SHIFT,
+            corpus_prior_logit_shift: 8,
             corpus_prior_order: DEFAULT_CORPUS_PRIOR_ORDER,
             frequency_penalty_cap: 0,
             frequency_penalty_min_weight_q15: DEFAULT_LEXEME_FREQUENCY_WEIGHT_MIN_Q15,
@@ -1253,7 +1261,7 @@ impl DecodeConfig {
             prompt_topic_logit_shift: 6,
             memory_context_order: 0,
             memory_min_context_order: 1,
-            memory_logit_shift: DEFAULT_LEXEME_MEMORY_LOGIT_SHIFT,
+            memory_logit_shift: 5,
             strict_memory_on_steps: 0,
             strict_memory_off_steps: 0,
             strict_memory: false,
@@ -1600,6 +1608,8 @@ struct MiniTransformerBlockBackwardAccumulation {
     input_gradient_saturation_count: usize,
     grad_input: Vec<i16>,
 }
+
+// --- window start / selection helpers ---
 
 fn byte_window_starts(
     token_count: usize,
@@ -1968,6 +1978,8 @@ fn validate_mini_transformer_effective_learning_rate_shifts(
     mini_transformer_batch_component_shift_config(config, config.batch_windows).map(|_| ())
 }
 
+// --- model initialization ---
+
 fn initial_mini_transformer_embeddings() -> Vec<i16> {
     let mut embeddings = Vec::with_capacity(BYTE_VOCAB * MINI_TRANSFORMER_D_MODEL);
     for token in 0..BYTE_VOCAB {
@@ -2133,6 +2145,8 @@ fn initial_mini_transformer_output_weights() -> Vec<i8> {
     }
     weights
 }
+
+// --- forward pass / embedding helpers ---
 
 fn mini_transformer_embedding_sequence_with_position_policy_q15(
     embeddings: &[i16],
@@ -2769,6 +2783,8 @@ fn mini_transformer_stacked_layer_runtime_config(
     config
 }
 
+// --- n-gram cache (mini-calibrated feature) ---
+
 #[cfg(feature = "mini-calibrated")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MiniTransformerNgramCacheRecord {
@@ -3226,6 +3242,8 @@ fn mini_transformer_rerank_output_row(
     Ok(())
 }
 
+// --- output row / eval / scoring ---
+
 fn mini_transformer_output_row_for(
     output_weights: &[i8],
     features: &[i16],
@@ -3569,7 +3587,7 @@ fn mini_transformer_router_hidden_features_q15(
     seq_len: usize,
 ) -> Result<[i16; MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES], TrainError> {
     if seq_len == 0
-        || MINI_TRANSFORMER_D_MODEL % MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES != 0
+        || !MINI_TRANSFORMER_D_MODEL.is_multiple_of(MINI_TRANSFORMER_ROUTER_HIDDEN_FEATURES)
         || block_output.len() != seq_len * MINI_TRANSFORMER_D_MODEL
     {
         return Err(TrainError::InvalidConfig);
@@ -3770,6 +3788,8 @@ fn hash_mini_transformer_target_segment(
     }
 }
 
+// --- binary serialization helpers ---
+
 fn checked_u32(value: usize, message: &'static str) -> Result<u32, TrainError> {
     u32::try_from(value).map_err(|_| TrainError::InvalidModel(message))
 }
@@ -3943,6 +3963,8 @@ struct ByteVocabOutputRow {
     logits_q8: [i32; BYTE_VOCAB],
     probabilities_q15: [i16; BYTE_VOCAB],
 }
+
+// --- gradient computation helpers ---
 
 fn byte_vocab_softmax_gradient_q15(
     probabilities_q15: &[i16; BYTE_VOCAB],
@@ -4151,6 +4173,8 @@ fn apply_embedding_delta_i16(embedding: &mut i16, delta: i64, stats: &mut Softma
         .saturating_add(applied_delta.unsigned_abs());
     *embedding = clamped;
 }
+
+// --- json output / hash helpers ---
 
 fn hash_i8_slice(values: &[i8]) -> u64 {
     let mut hasher = StableHasher::new();
@@ -4850,5 +4874,29 @@ fn push_quoted(out: &mut String, value: &str) {
 }
 
 #[cfg(test)]
-#[path = "mini_transformer/tests.rs"]
-mod tests;
+#[path = "mini_transformer/tests_adam.rs"]
+mod tests_adam;
+#[cfg(test)]
+#[path = "mini_transformer/tests_decode.rs"]
+mod tests_decode;
+#[cfg(test)]
+#[path = "mini_transformer/tests_generation.rs"]
+mod tests_generation;
+#[cfg(test)]
+#[path = "mini_transformer/tests_gradients.rs"]
+mod tests_gradients;
+#[cfg(test)]
+#[path = "mini_transformer/tests_serialization.rs"]
+mod tests_serialization;
+#[cfg(test)]
+#[path = "mini_transformer/tests_swarm.rs"]
+mod tests_swarm;
+#[cfg(test)]
+#[path = "mini_transformer/tests_traces.rs"]
+mod tests_traces;
+#[cfg(test)]
+#[path = "mini_transformer/tests_training.rs"]
+mod tests_training;
+#[cfg(test)]
+#[path = "mini_transformer/tests_windows.rs"]
+mod tests_windows;

@@ -37,6 +37,15 @@ struct TrainStats {
     hidden_saturation_count: usize,
 }
 
+#[derive(Clone, Copy)]
+struct HiddenTrainConfig {
+    epochs: usize,
+    batch_windows: usize,
+    learning_rate_shift: u8,
+    learning_rate: i64,
+    reverse_gradient: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct RouteAggregate {
     windows: usize,
@@ -142,11 +151,13 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         &tokens,
         &model,
         &mut expert.gains_q15,
-        epochs,
-        batch_windows,
-        learning_rate_shift,
-        learning_rate,
-        reverse_gradient,
+        HiddenTrainConfig {
+            epochs,
+            batch_windows,
+            learning_rate_shift,
+            learning_rate,
+            reverse_gradient,
+        },
     )?;
     let final_metrics = evaluate_hidden(&records, &tokens, &model, &expert.gains_q15)?;
     let artifact = expert.to_bytes();
@@ -304,17 +315,16 @@ fn run_score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         let mut mistakes = vec![[0_usize; 3]; records.len()];
         for (index, record) in records.iter().enumerate() {
             let target = tokens[record.end];
-            for expert_index in 0..3 {
-                let (hidden, _) =
-                    adapted_hidden(&record.last_hidden_q15, &experts[expert_index].gains_q15);
+            for (expert_index, expert) in experts.iter().enumerate().take(3) {
+                let (hidden, _) = adapted_hidden(&record.last_hidden_q15, &expert.gains_q15);
                 let row = mini_transformer_output_from_hidden_q15(&model, &hidden)?;
                 losses[index][expert_index] =
                     sample_probability_error(&row.probabilities_q15, target);
                 mistakes[index][expert_index] = usize::from(argmax(&row.logits_q8) != target);
             }
         }
-        for expert in 0..3 {
-            fixed[expert].add_group(&losses, &mistakes, 0, records.len(), expert);
+        for (expert_index, aggregate) in fixed.iter_mut().enumerate() {
+            aggregate.add_group(&losses, &mistakes, 0, records.len(), expert_index);
         }
         let prompt_choice = best_expert(&losses, &mistakes, 0, records.len());
         prompt.add_group(&losses, &mistakes, 0, records.len(), prompt_choice);
@@ -333,14 +343,14 @@ fn run_score(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         }
         let mut token_routes = vec![0_usize; records.len()];
         let mut previous_token = None;
-        for index in 0..records.len() {
+        for (index, route) in token_routes.iter_mut().enumerate() {
             let choice = best_expert(&losses, &mistakes, index, index + 1);
             if previous_token.is_some_and(|previous| previous != choice) {
                 token.route_switches = token.route_switches.saturating_add(1);
             }
             previous_token = Some(choice);
             token.add_group(&losses, &mistakes, index, index + 1, choice);
-            token_routes[index] = choice;
+            *route = choice;
         }
         for (index, record) in records.iter().enumerate() {
             writeln!(
@@ -490,11 +500,7 @@ fn train_hidden(
     tokens: &[u8],
     model: &MiniTransformerMlpModel,
     gains_q15: &mut [i16; MINI_TRANSFORMER_D_MODEL],
-    epochs: usize,
-    batch_windows: usize,
-    learning_rate_shift: u8,
-    learning_rate: i64,
-    reverse_gradient: bool,
+    config: HiddenTrainConfig,
 ) -> Result<TrainStats, Box<dyn std::error::Error>> {
     let mut residuals = [0_i64; MINI_TRANSFORMER_D_MODEL];
     let mut stats = TrainStats {
@@ -503,8 +509,8 @@ fn train_hidden(
         gain_saturation_count: 0,
         hidden_saturation_count: 0,
     };
-    for _ in 0..epochs {
-        for batch in records.chunks(batch_windows) {
+    for _ in 0..config.epochs {
+        for batch in records.chunks(config.batch_windows) {
             let mut gradients = [0_i64; MINI_TRANSFORMER_D_MODEL];
             for record in batch {
                 let (hidden, hidden_saturations) =
@@ -516,13 +522,13 @@ fn train_hidden(
                 let target = usize::from(*tokens.get(record.end).ok_or("target out of range")?);
                 let target_probability = i64::from(row.probabilities_q15[target].max(0));
                 let mut grad_output_q15 = [0_i16; VOCAB];
-                for index in 0..VOCAB {
+                for (index, gradient_output) in grad_output_q15.iter_mut().enumerate() {
                     let mut gradient = i64::from(row.probabilities_q15[index]);
                     if index == target {
                         gradient = gradient.saturating_sub(i64::from(i16::MAX));
                     }
                     gradient = gradient.saturating_mul(target_probability) / i64::from(i16::MAX);
-                    grad_output_q15[index] = saturate_i16(gradient);
+                    *gradient_output = saturate_i16(gradient);
                 }
                 let grad_hidden_q15 =
                     mini_transformer_output_gradient_to_hidden_q15(model, &grad_output_q15)?;
@@ -539,15 +545,15 @@ fn train_hidden(
                 }
             }
             let denominator = i64::try_from(batch.len())?
-                .checked_shl(u32::from(learning_rate_shift))
+                .checked_shl(u32::from(config.learning_rate_shift))
                 .ok_or("hidden expert denominator overflow")?;
             for index in 0..MINI_TRANSFORMER_D_MODEL {
                 let numerator = gradients[index].saturating_add(residuals[index]);
                 let update = round_div_signed(numerator, denominator)?;
                 residuals[index] = numerator.saturating_sub(update.saturating_mul(denominator));
-                let update = update.saturating_mul(learning_rate);
+                let update = update.saturating_mul(config.learning_rate);
                 let previous = gains_q15[index];
-                let raw = if reverse_gradient {
+                let raw = if config.reverse_gradient {
                     i64::from(previous).saturating_add(update)
                 } else {
                     i64::from(previous).saturating_sub(update)

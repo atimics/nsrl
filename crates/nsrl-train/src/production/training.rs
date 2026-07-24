@@ -1,3 +1,30 @@
+//! Production training loop: full-gradient windows, direct head/feature training,
+//! gradient proposal lanes, and the persistent optimizer state (v2).
+//!
+//! # Gradient proposal lanes
+//!
+//! The core research question is how to compute integer softmax gradients that
+//! preserve enough signal for training.  Seven lanes are implemented:
+//!
+//! - `NormalizedRescued` / `MassCorrectedNormalized` — softmax-normalized
+//!   probabilities with rescue or mass correction.
+//! - `ReciprocalFree*` — avoid the reciprocal division by working in raw
+//!   exponentiated weight space, applying rounding at different points.
+//! - `SystematicFixedMassK{N}` — low-resolution systematic proposals with
+//!   fixed-mass token-id hashing.
+//! - `MassCorrectedNormalizedNoRescue` — mass-corrected without rescue gradient.
+//!
+//! # Optimizer
+//!
+//! The persistent optimizer state (`ProductionOptimizerStateV2`) stores per-group
+//! accumulator residuals (i64) for 13 named parameter groups.  Updates are
+//! applied when accumulators cross their signed magnitude boundaries.
+//!
+//! # Determinism
+//!
+//! Training runs produce byte-identical midpoint replay when re-executed with
+//! the same seed and data order.
+
 use core::{cmp::Reverse, ops::Range};
 use std::thread;
 

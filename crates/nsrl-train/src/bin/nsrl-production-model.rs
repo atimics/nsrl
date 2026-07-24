@@ -8,10 +8,11 @@ use std::path::PathBuf;
 use nsrl_core::SoftmaxNormalization;
 use nsrl_corpus::subword::SubwordTokenizer;
 use nsrl_train::production::{
-    DirectFeatureTrainConfig, DirectHeadTrainConfig, ProductionAtomicSourceBinding,
-    ProductionBooleanJetAnalysisRole, ProductionBooleanJetConfirmationConfig,
-    ProductionBooleanJetConfirmationV2Config, ProductionBooleanJetMatchedControlV2Config,
-    ProductionBooleanJetMove, ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
+    DirectFeatureTrainConfig, DirectHeadTrainConfig, ProductionAtomicDocumentRange,
+    ProductionAtomicSourceBinding, ProductionBooleanJetAnalysisRole,
+    ProductionBooleanJetConfirmationConfig, ProductionBooleanJetConfirmationV2Config,
+    ProductionBooleanJetMatchedControlV2Config, ProductionBooleanJetMove,
+    ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
     ProductionBooleanJetProtocolBindings, ProductionBooleanJetProtocolVersion,
     ProductionBooleanJetRankTwoConfig, ProductionFullTrainConfig, ProductionGenerationConfig,
     ProductionGradientAlignmentConfig, ProductionModelConfig, ProductionModelV1,
@@ -814,8 +815,10 @@ fn boolean_jet_atomic_structure(
         moves,
         protocol_bindings,
         source_binding,
-        config.boolean_jet_proposal_document_start,
-        config.boolean_jet_proposal_documents,
+        ProductionAtomicDocumentRange {
+            start: config.boolean_jet_proposal_document_start,
+            count: config.boolean_jet_proposal_documents,
+        },
     )?;
     if config.boolean_jet_expected_move_fingerprint != 0
         && config.boolean_jet_expected_move_fingerprint != contract.move_fingerprint

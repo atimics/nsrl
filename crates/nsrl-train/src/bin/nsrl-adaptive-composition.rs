@@ -31,6 +31,9 @@ struct Move {
     delta: i8,
 }
 
+type StateActionMoves = BTreeMap<(String, String), Vec<Move>>;
+type FamilyStateActionPredictor = BTreeMap<(String, String, String), i128>;
+
 #[derive(Clone)]
 struct Window {
     context: Vec<u32>,
@@ -667,9 +670,7 @@ fn fit_actions(options: &BTreeMap<String, String>) -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-fn read_actions(
-    path: impl AsRef<Path>,
-) -> Result<BTreeMap<(String, String), Vec<Move>>, Box<dyn Error>> {
+fn read_actions(path: impl AsRef<Path>) -> Result<StateActionMoves, Box<dyn Error>> {
     let text = fs::read_to_string(path)?;
     let mut lines = text.lines();
     if lines.next() != Some("state\taction\twrite\tgroup\tcoordinate\tdelta") {
@@ -701,9 +702,7 @@ fn read_actions(
     Ok(actions)
 }
 
-fn read_predictor(
-    path: impl AsRef<Path>,
-) -> Result<BTreeMap<(String, String, String), i128>, Box<dyn Error>> {
+fn read_predictor(path: impl AsRef<Path>) -> Result<FamilyStateActionPredictor, Box<dyn Error>> {
     let text = fs::read_to_string(path)?;
     let mut lines = text.lines();
     if lines.next() != Some("family\tstate\taction\tlower_median_contrast_q32\tobservations") {

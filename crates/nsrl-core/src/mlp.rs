@@ -1,3 +1,33 @@
+//! Integer gated MLP block with power-of-two Hard SiLU activation and
+//! deterministic backward pass.
+//!
+//! # Structure
+//!
+//! The gated MLP follows the LLaMA-style pattern:
+//!
+//! ```text
+//! gate = HardSiLU(x · W_gate + bias)
+//! up   = x · W_up
+//! out  = gate ⊙ up · W_down
+//! ```
+//!
+//! The activation is a power-of-two Hard SiLU: `x · σ(x)` where σ is
+//! approximated as `clamp(x/4 + 1/2, 0, 1)`. The shift (2) and bias (0.5
+//! in Q15 = 16,384) are exposed as [`HARD_SILU_GATE_SHIFT`] and
+//! [`HARD_SILU_GATE_BIAS_Q15`].
+//!
+//! # Residual block
+//!
+//! `prenorm_gated_mlp_residual_block_i16_q15_checked` composes RMSNorm →
+//! gated MLP → residual add into a single checked call. Saturation events
+//! on the residual add are counted and returned.
+//!
+//! # Backward path
+//!
+//! Split into input-gradient and weight-update phases, mirroring the linear
+//! layer. Activation gradients flow through the exact piecewise-linear
+//! Hard SiLU derivative.
+
 use crate::linear::{
     LinearBackwardInputI16I8Params, LinearBackwardInputWorkspace,
     LinearBackwardWeightUpdateI8Params, LinearBackwardWeightUpdateWorkspace, LinearI16I8Params,

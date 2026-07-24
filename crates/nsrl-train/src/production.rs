@@ -61,9 +61,10 @@ pub use numeric_contract::{
     ProductionProjectionContract, ProductionRoundingRule, ProductionTrainingNumericContract,
 };
 pub use structure_audit::{
-    ProductionAtomicDocumentCoefficients, ProductionAtomicObjectiveTrace,
-    ProductionAtomicSourceBinding, ProductionAtomicStructureContract,
-    ProductionAtomicStructureRole, ProductionAtomicStructureTrace, ProductionBoundaryTaxonomy,
+    ProductionAtomicDocumentCoefficients, ProductionAtomicDocumentRange,
+    ProductionAtomicObjectiveTrace, ProductionAtomicSourceBinding,
+    ProductionAtomicStructureContract, ProductionAtomicStructureRole,
+    ProductionAtomicStructureTrace, ProductionBoundaryTaxonomy,
     ProductionDocumentRepresentationDiscrepancy, ProductionExchangeTrace,
     ProductionInteractionTailTrace, ProductionInteractionWidthTrace,
     ProductionRepresentationConcordance, ProductionRepresentationDiscrepancy,

@@ -127,14 +127,18 @@ fn run_train(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn std::
         &trace_out,
         training_trace_json(
             &model,
-            epochs,
-            objective,
-            regret_gradient_shift,
+            RouterTrainingConfig {
+                epochs,
+                objective,
+                regret_gradient_shift,
+            },
             update,
-            initial_train,
-            final_train,
-            initial_calibration,
-            final_calibration,
+            RouterTrainingMetrics {
+                initial_train,
+                final_train,
+                initial_calibration,
+                final_calibration,
+            },
         ),
     )?;
     if let Some(path) = predictions_out {
@@ -304,7 +308,7 @@ impl RouterModel {
             *hidden_value = acc.clamp(0, i64::from(i16::MAX)) as i16;
         }
         let mut logits_q8 = [0_i32; OUTPUT_DIM];
-        for output_index in 0..OUTPUT_DIM {
+        for (output_index, logit) in logits_q8.iter_mut().enumerate() {
             let mut acc = i64::from(self.output_bias_q8[output_index]);
             for (hidden_index, &hidden_value) in hidden.iter().enumerate() {
                 let weight = self.output_weights[output_index * HIDDEN_DIM + hidden_index];
@@ -314,7 +318,7 @@ impl RouterModel {
                     )
                     .ok_or("output accumulation overflow")?;
             }
-            logits_q8[output_index] = acc.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+            *logit = acc.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
         }
         let mut probabilities_q15 = [0_i16; OUTPUT_DIM];
         base2_softmax_i32_q15(&logits_q8, &mut probabilities_q15).ok_or("router softmax failed")?;
@@ -551,9 +555,9 @@ fn utility_target_probabilities(
         .min()
         .ok_or("router row has no child losses")?;
     let mut utility_logits_q8 = [0_i32; OUTPUT_DIM];
-    for output_index in 0..OUTPUT_DIM {
+    for (output_index, utility_logit) in utility_logits_q8.iter_mut().enumerate() {
         let regret = row.child_losses_q15[output_index].saturating_sub(best_loss);
-        utility_logits_q8[output_index] = -i32::try_from(regret >> UTILITY_LOSS_LOGIT_SHIFT)?;
+        *utility_logit = -i32::try_from(regret >> UTILITY_LOSS_LOGIT_SHIFT)?;
     }
     let mut probabilities_q15 = [0_i16; OUTPUT_DIM];
     base2_softmax_i32_q15(&utility_logits_q8, &mut probabilities_q15)
@@ -718,16 +722,24 @@ fn write_predictions(
     Ok(())
 }
 
-fn training_trace_json(
-    model: &RouterModel,
+struct RouterTrainingConfig {
     epochs: usize,
     objective: RouterObjective,
     regret_gradient_shift: u8,
-    update: RouterUpdateStats,
+}
+
+struct RouterTrainingMetrics {
     initial_train: RouterMetrics,
     final_train: RouterMetrics,
     initial_calibration: RouterMetrics,
     final_calibration: RouterMetrics,
+}
+
+fn training_trace_json(
+    model: &RouterModel,
+    config: RouterTrainingConfig,
+    update: RouterUpdateStats,
+    metrics: RouterTrainingMetrics,
 ) -> String {
     format!(
         "{{\"schema\":\"nsrl.router_training.v2\",\"model\":{{\"artifact\":\"NSRLRT1\",\"model_hash\":\"0x{:016x}\",\"seed\":{},\"input_dim\":{},\"hidden_dim\":{},\"output_dim\":{},\"feature_indices\":[{}]}},\"training\":{{\"epochs\":{},\"optimizer\":\"integer_error_feedback_sgd\",\"objective\":\"{}\",\"class_balanced\":{},\"utility_loss_logit_shift\":{},\"regret_gradient_shift\":{},\"output_logit_shift\":{},\"output_weight_grad_shift\":{},\"input_weight_grad_shift\":{},\"updates\":{{\"input_weights\":{},\"output_weights\":{},\"hidden_bias\":{},\"output_bias\":{},\"saturation_count\":{}}}}},\"initial_train\":{},\"final_train\":{},\"initial_calibration\":{},\"final_calibration\":{}}}\n",
@@ -742,11 +754,11 @@ fn training_trace_json(
             .map(usize::to_string)
             .collect::<Vec<_>>()
             .join(","),
-        epochs,
-        objective.as_str(),
-        objective == RouterObjective::HardLabel,
+        config.epochs,
+        config.objective.as_str(),
+        config.objective == RouterObjective::HardLabel,
         UTILITY_LOSS_LOGIT_SHIFT,
-        regret_gradient_shift,
+        config.regret_gradient_shift,
         OUTPUT_LOGIT_SHIFT,
         OUTPUT_WEIGHT_GRAD_SHIFT,
         INPUT_WEIGHT_GRAD_SHIFT,
@@ -755,10 +767,10 @@ fn training_trace_json(
         update.hidden_bias_updates,
         update.output_bias_updates,
         update.saturation_count,
-        metrics_json(initial_train),
-        metrics_json(final_train),
-        metrics_json(initial_calibration),
-        metrics_json(final_calibration),
+        metrics_json(metrics.initial_train),
+        metrics_json(metrics.final_train),
+        metrics_json(metrics.initial_calibration),
+        metrics_json(metrics.final_calibration),
     )
 }
 

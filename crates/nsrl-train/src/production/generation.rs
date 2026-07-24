@@ -1,3 +1,18 @@
+//! Deterministic autoregressive generation for the production model.
+//!
+//! # Design
+//!
+//! Generation uses the linear-attention incremental cache so each new
+//! token only computes one step of attention rather than full-window
+//! replay.  The cache state (`LinearAttentionState`) is updated in place
+//! and the output head produces logits for the next token.
+//!
+//! # Configuration
+//!
+//! [`ProductionGenerationConfig`] bundles sampling strategy, repeat
+//! penalties, and stopping criteria.  The config is versioned so
+//! generation traces are byte-replayable.
+
 use std::fmt::Write;
 
 use nsrl_core::{

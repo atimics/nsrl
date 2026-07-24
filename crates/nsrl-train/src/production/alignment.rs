@@ -1,3 +1,20 @@
+//! Per-document gradient alignment audit infrastructure.
+//!
+//! This module answers: "Do the integer gradient proposal lanes move
+//! parameters in directions that are consistent with per-document
+//! loss improvements?"
+//!
+//! # Core abstraction
+//!
+//! A [`SurfaceEval`] bundles a set of document windows, computes NLL
+//! under the current model, perturbs parameters along a gradient
+//! proposal direction, and measures the resulting loss delta. Each
+//! lane/group/window combination produces a [`ProductionGradientAlignmentSample`].
+//!
+//! The top-level [`audit_production_gradient_alignment`] runs the full
+//! lane × group × window matrix and reports which lanes produce
+//! beneficial movement on held-out documents.
+
 use std::fmt::Write;
 use std::ops::Range;
 

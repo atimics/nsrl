@@ -1,3 +1,23 @@
+//! Boolean-jet confirmation protocol: structured hypothesis testing for
+//! model changes.
+//!
+//! # Purpose
+//!
+//! A "Boolean jet" is a collection of coordinate-aligned parameter moves
+//! (vertices) that form a proposal.  The confirmation protocol tests each
+//! vertex individually, each pair (rank-two), and matched controls against
+//! frozen held-out document windows.  This provides granular, falsifiable
+//! evidence about which components of a model change actually help.
+//!
+//! # Key types
+//!
+//! - [`ProductionBooleanJetMove`] — a named set of signed parameter deltas.
+//! - [`ProductionBooleanJetConfirmationTrace`] — per-vertex and per-document
+//!   loss deltas with exact sign tests.
+//! - [`audit_production_boolean_jet_confirmation`] — the v1 protocol.
+//! - [`audit_production_boolean_jet_confirmation_v2`] — the v2 protocol
+//!   with matched controls.
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -1019,8 +1039,10 @@ fn audit_production_boolean_jet_confirmation_impl(
             &contract.matched_control_moves,
         ),
         ProductionBooleanJetProtocolVersion::StabilityV2 => manifest_hash_v2(
-            contract.expected_source_fnv64,
-            contract.expected_binary_fnv64,
+            ProductionBooleanJetProtocolBindings {
+                source_fnv64: contract.expected_source_fnv64,
+                binary_fnv64: contract.expected_binary_fnv64,
+            },
             model.model_hash(),
             model.tokenizer_hash,
             token_stream_hash,
@@ -1558,8 +1580,7 @@ pub fn freeze_production_boolean_jet_matched_control(
     ))?;
     let move_fingerprint = move_fingerprint(trunk_moves, head_moves);
     let manifest_hash = manifest_hash_v2(
-        config.protocol_bindings.source_fnv64,
-        config.protocol_bindings.binary_fnv64,
+        config.protocol_bindings,
         model.model_hash(),
         model.tokenizer_hash,
         token_stream_hash,
@@ -2272,8 +2293,7 @@ fn manifest_hash(
 }
 
 fn manifest_hash_v2(
-    source_fnv64: u64,
-    binary_fnv64: u64,
+    protocol_bindings: ProductionBooleanJetProtocolBindings,
     model_hash: u64,
     tokenizer_hash: u64,
     token_stream_hash: u64,
@@ -2293,7 +2313,11 @@ fn manifest_hash_v2(
     for byte in b"nsrl.production_boolean_jet_stability.v2" {
         hash = fnv_byte(hash, *byte);
     }
-    for value in [source_fnv64, binary_fnv64, v1] {
+    for value in [
+        protocol_bindings.source_fnv64,
+        protocol_bindings.binary_fnv64,
+        v1,
+    ] {
         for byte in value.to_le_bytes() {
             hash = fnv_byte(hash, byte);
         }

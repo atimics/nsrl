@@ -1,3 +1,31 @@
+//! Integer linear (fully-connected) layers: forward, backward-input, and
+//! backward-weight-update paths.
+//!
+//! # Kernel variants
+//!
+//! The layer supports multiple [`LinearKernel`] implementations:
+//!
+//! - `GenericI8` — standard i8-weight × i16-activation dot product with i32
+//!   accumulation. This is the default and most-tested path.
+//! - `Ternary` — weights binarised to {-1, 0, +1} from i8 storage.
+//!
+//! # Data layout
+//!
+//! Weights are in channel-major order: `[C_out][C_in]`. Per-channel scale
+//! (`multiplier` + `right_shift`) requantizes the i32 accumulator to i16.
+//!
+//! # Backward path
+//!
+//! Split into two phases:
+//!
+//! 1. **Backward input** — transpose the weight matrix against the output
+//!    gradient to compute the input gradient.
+//! 2. **Backward weight update** — outer product of input activations and
+//!    output gradient, accumulated and requantized to i8 weight deltas.
+//!
+//! Both phases support an optional prescale step so callers can factor the
+//! gradient scale out of the inner loop.
+
 use crate::numeric::{
     FixedScale, MAX_RIGHT_SHIFT, requantize_i32_to_i16, round_shift_rhu_i64, saturate_i8,
     saturate_i16,

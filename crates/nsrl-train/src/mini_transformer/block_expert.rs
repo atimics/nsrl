@@ -250,12 +250,12 @@ fn block_expert_backward_rows(
             } else {
                 i64::from(grad_adapted[index])
             };
-            for rank in 0..expert.rank {
+            for (rank, grad_latent_value) in grad_latent.iter_mut().enumerate() {
                 let weight_index = dim * expert.rank + rank;
                 gradients[weight_index] = gradients[weight_index].saturating_add(
                     grad.saturating_mul(i64::from(cache.latent_q15[latent_start + rank])),
                 );
-                grad_latent[rank] = grad_latent[rank].saturating_add(round_shift_rhu_i64(
+                *grad_latent_value = grad_latent_value.saturating_add(round_shift_rhu_i64(
                     grad.saturating_mul(i64::from(weights[weight_index])),
                     Q15_SHIFT.saturating_add(expert.residual_shift),
                 ));

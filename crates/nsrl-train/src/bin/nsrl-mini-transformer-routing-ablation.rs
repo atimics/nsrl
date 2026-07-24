@@ -187,8 +187,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err("model window records do not align".into());
         }
 
-        for expert in 0..3 {
-            fixed[expert].add_group(&records[expert], expert);
+        for (expert_index, aggregate) in fixed.iter_mut().enumerate() {
+            aggregate.add_group(&records[expert_index], expert_index);
         }
 
         let prompt_choice = best_expert(&records, 0, windows);
@@ -209,14 +209,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut token_routes = vec![0_usize; windows];
         let mut previous_token = None;
-        for index in 0..windows {
+        for (index, route) in token_routes.iter_mut().enumerate() {
             let choice = best_expert(&records, index, index + 1);
             if previous_token.is_some_and(|previous| previous != choice) {
                 token.route_switches = token.route_switches.saturating_add(1);
             }
             previous_token = Some(choice);
             token.add_group(&records[choice][index..index + 1], choice);
-            token_routes[index] = choice;
+            *route = choice;
         }
 
         if let Some(output) = details.as_mut() {
@@ -265,9 +265,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .ok_or("no fixed expert")?;
     let mut output = BufWriter::new(fs::File::create(output_path)?);
-    write!(
+    writeln!(
         output,
-        "{{\"schema\":\"nsrl.mini_transformer.routing_granularity_ablation.v2\",\"dataset\":{{\"path\":{},\"hash\":\"0x{:016x}\",\"samples\":{},\"stride\":{},\"windows\":{}}},\"models\":{{\"ids\":[{},{},{}],\"hashes\":[\"0x{:016x}\",\"0x{:016x}\",\"0x{:016x}\"],\"seq_len\":{},\"router_feature_model_index\":{}}},\"fixed_experts\":[{},{},{}],\"best_fixed_expert\":{},\"oracle_routes\":{{\"prompt\":{},\"span\":{},\"token\":{}}},\"known_non_claims\":[\"target-aware_oracle_ceiling_not_deployable_router\",\"whole_model_experts_not_shared_attention_moe\",\"does_not_claim_language_model_quality\"]}}\n",
+        "{{\"schema\":\"nsrl.mini_transformer.routing_granularity_ablation.v2\",\"dataset\":{{\"path\":{},\"hash\":\"0x{:016x}\",\"samples\":{},\"stride\":{},\"windows\":{}}},\"models\":{{\"ids\":[{},{},{}],\"hashes\":[\"0x{:016x}\",\"0x{:016x}\",\"0x{:016x}\"],\"seq_len\":{},\"router_feature_model_index\":{}}},\"fixed_experts\":[{},{},{}],\"best_fixed_expert\":{},\"oracle_routes\":{{\"prompt\":{},\"span\":{},\"token\":{}}},\"known_non_claims\":[\"target-aware_oracle_ceiling_not_deployable_router\",\"whole_model_experts_not_shared_attention_moe\",\"does_not_claim_language_model_quality\"]}}",
         json_string(&input_path.to_string_lossy()),
         input_hash,
         sample_count,

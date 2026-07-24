@@ -1,3 +1,34 @@
+//! Integer-native attention with base-2 softmax, linear (causal) attention, and TTT.
+//!
+//! # Design
+//!
+//! This module implements three flavours of deterministic integer attention:
+//!
+//! - **Base-2 softmax self-attention** — logits from integer dot products scaled
+//!   by an exact power-of-four shift (`sqrt(d_k)`), exponentiated in base-2 via a
+//!   256-entry Q15 lookup table. Masked positions use `i32::MIN`. Reciprocal
+//!   normalisation supports four precision levels (LegacyQ31Lut, Q47Lut,
+//!   Q47Newton1, Q47Exact).
+//!
+//! - **Linear (causal) attention** — recurrent i64 state (`S = K^T V` and
+//!   `K_s = sum φ(K)`) projected with φ(Q). Avoids O(T²) memory. Optional
+//!   additive decay factor.
+//!
+//! - **Linear TTT (test-time-training)** — extends linear attention with a
+//!   per-step gradient update on the recurrent state from prediction error.
+//!
+//! # Numerical contract
+//!
+//! - Head dimensions must be powers of four so `sqrt(d_k)` is an exact arithmetic
+//!   right shift.
+//! - QK dot products accumulate in i64, shift to i32 logits.
+//! - Softmax weights are Q15 unsigned; probability-weighted value accumulation
+//!   uses wrapping arithmetic on the fast path (guarded by compile-time bounds).
+//! - Every `_checked` function returns `Option`, failing on shape mismatch,
+//!   overflow, or zero denominator.
+//! - NLL objectives are shift-invariant (computed directly from exponentiated
+//!   weights), making them independent of reciprocal approximation quality.
+
 use crate::linear::{
     LinearI16I8Params, LinearKernel, linear_i16_i8_i16_per_channel_with_kernel_checked,
 };

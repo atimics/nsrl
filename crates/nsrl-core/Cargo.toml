@@ -7,6 +7,7 @@ build = "build.rs"
 
 [lib]
 path = "src/lib.rs"
+bench = false
 
 [features]
 default = []
@@ -14,4 +15,13 @@ std = []
 
 [dev-dependencies]
 proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "attention"
+harness = false
+
+[[bench]]
+name = "linear"
+harness = false
 
