@@ -1,0 +1,151 @@
+{
+  "schema": "nsrl.production_stability_localization.v1",
+  "checked": false,
+  "objective": "refine_the_representation_v2_instability_boundary_to_a_four_step_interval",
+  "source_model_hash": "0x2b5fcca18e6ad700",
+  "baseline_model_hash": "0x5b54c3ba2baa9d39",
+  "points": [
+    {
+      "total_optimizer_step": 416,
+      "model_hash": "0x2b5fcca18e6ad700",
+      "development_total_nll_millibits": 6540010,
+      "development_delta_from_full_v1_millibits": -177,
+      "training_saturation_count": 0,
+      "manifest_residual_saturation_count": 0,
+      "frozen_parameter_groups_unchanged": true,
+      "movement_l1": {
+        "embeddings": 39,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 58423,
+        "v": 0,
+        "o": 2518,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      },
+      "safe": true
+    },
+    {
+      "total_optimizer_step": 420,
+      "model_hash": "0x2b5fcca18e6ad700",
+      "development_total_nll_millibits": 6540010,
+      "development_delta_from_full_v1_millibits": -177,
+      "training_saturation_count": 0,
+      "manifest_residual_saturation_count": 0,
+      "frozen_parameter_groups_unchanged": true,
+      "movement_l1": {
+        "embeddings": 39,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 58423,
+        "v": 0,
+        "o": 2518,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      },
+      "safe": true
+    },
+    {
+      "total_optimizer_step": 424,
+      "model_hash": "0x2b5fcca18e6ad700",
+      "development_total_nll_millibits": 6540010,
+      "development_delta_from_full_v1_millibits": -177,
+      "training_saturation_count": 0,
+      "manifest_residual_saturation_count": 0,
+      "frozen_parameter_groups_unchanged": true,
+      "movement_l1": {
+        "embeddings": 39,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 58423,
+        "v": 0,
+        "o": 2518,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      },
+      "safe": true
+    },
+    {
+      "total_optimizer_step": 428,
+      "model_hash": "0x2b5fcca18e6ad700",
+      "development_total_nll_millibits": 6540010,
+      "development_delta_from_full_v1_millibits": -177,
+      "training_saturation_count": 0,
+      "manifest_residual_saturation_count": 0,
+      "frozen_parameter_groups_unchanged": true,
+      "movement_l1": {
+        "embeddings": 39,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 58423,
+        "v": 0,
+        "o": 2518,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      },
+      "safe": true
+    },
+    {
+      "total_optimizer_step": 432,
+      "model_hash": "0x0eb4a3d0e2a92d77",
+      "development_total_nll_millibits": 6547640,
+      "development_delta_from_full_v1_millibits": 7453,
+      "training_saturation_count": 23001,
+      "manifest_residual_saturation_count": 238951,
+      "frozen_parameter_groups_unchanged": true,
+      "movement_l1": {
+        "embeddings": 56479,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 2542877,
+        "v": 99007,
+        "o": 7963119,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      },
+      "safe": false
+    }
+  ],
+  "first_unsafe_interval": {
+    "safe_total_optimizer_step": 428,
+    "unsafe_total_optimizer_step": 432
+  },
+  "gates": {
+    "known_safe_endpoint_confirmed": true,
+    "known_unsafe_endpoint_confirmed": true,
+    "frozen_parameter_groups_unchanged_at_all_points": true,
+    "adjacent_safe_to_unsafe_interval_found": true,
+    "test_partition_not_read": true
+  },
+  "authorization": {
+    "diagnostic_only": true,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false
+  }
+}

@@ -475,6 +475,15 @@ saturation signature already present. This establishes coincidence but not
 causal order. A final four-step localization is authorized to identify the
 first offending batch interval before changing any group rate.
 
+The four-step refinement finds no movement or metric change at steps 420, 424,
+or 428: each retains the step-416 state of 39 embedding, 58,423 K, zero V, and
+2,518 O L1 with zero saturation and a 177-millibit development improvement.
+The complete runaway is present by step 432. The instability is therefore not
+gradual residual accumulation over the interval; one of four consecutive
+optimizer batches triggers a discontinuous multi-group update. Single-step
+probes at 429--431 are the final localization before inspecting the triggering
+training batch and designing an update guard.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
