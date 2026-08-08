@@ -269,6 +269,7 @@ pub struct ProductionFullTrainConfig {
     pub batch_windows: usize,
     pub max_optimizer_steps: usize,
     pub evaluation_windows: usize,
+    pub reject_saturated_batch: bool,
 }
 
 impl Default for ProductionFullTrainConfig {
@@ -300,6 +301,7 @@ impl Default for ProductionFullTrainConfig {
             batch_windows: 4,
             max_optimizer_steps: usize::MAX,
             evaluation_windows: usize::MAX,
+            reject_saturated_batch: false,
         }
     }
 }
@@ -458,6 +460,23 @@ impl ProductionOptimizerStateV2 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionRejectedBatchTrace {
+    pub attempted_total_optimizer_step: u64,
+    pub start_epoch: u64,
+    pub start_window: u64,
+    pub windows: usize,
+    pub supervised_targets: usize,
+    pub movement_l1: [u64; 13],
+    pub gradient_nonzero_count: [u64; 13],
+    pub update_nonzero_count: [u64; 13],
+    pub saturation_by_group: [u64; 13],
+    pub residual_saturation_by_group: [u64; 13],
+    pub gradient_saturation_count: usize,
+    pub residual_saturation_count: usize,
+    pub weight_saturation_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductionFullTrainTrace {
     pub profile: &'static str,
     pub parameter_count: usize,
@@ -505,6 +524,8 @@ pub struct ProductionFullTrainTrace {
     pub initial_model_hash: u64,
     pub final_model_hash: u64,
     pub optimizer_state_hash: u64,
+    pub reject_saturated_batch: bool,
+    pub rejected_batch: Option<ProductionRejectedBatchTrace>,
 }
 
 impl ProductionFullTrainTrace {
@@ -638,6 +659,54 @@ impl ProductionFullTrainTrace {
                 ),
             );
         }
+        if self.reject_saturated_batch {
+            let rejected = self.rejected_batch.map_or_else(
+                || "null".to_string(),
+                |batch| {
+                    format!(
+                        concat!(
+                            "{{\"attempted_total_optimizer_step\":{},",
+                            "\"start_epoch\":{},\"start_window\":{},",
+                            "\"windows\":{},\"supervised_targets\":{},",
+                            "\"movement_l1\":{{{}}},",
+                            "\"gradient_nonzero_count\":{{{}}},",
+                            "\"update_nonzero_count\":{{{}}},",
+                            "\"saturation_by_group\":{{{}}},",
+                            "\"residual_saturation_by_group\":{{{}}},",
+                            "\"gradient_saturation_count\":{},",
+                            "\"residual_saturation_count\":{},",
+                            "\"weight_saturation_count\":{}}}"
+                        ),
+                        batch.attempted_total_optimizer_step,
+                        batch.start_epoch,
+                        batch.start_window,
+                        batch.windows,
+                        batch.supervised_targets,
+                        render_groups(batch.movement_l1),
+                        render_groups(batch.gradient_nonzero_count),
+                        render_groups(batch.update_nonzero_count),
+                        render_groups(batch.saturation_by_group),
+                        render_groups(batch.residual_saturation_by_group),
+                        batch.gradient_saturation_count,
+                        batch.residual_saturation_count,
+                        batch.weight_saturation_count,
+                    )
+                },
+            );
+            output = output.replace(
+                ",\"health\"",
+                &format!(
+                    ",\"transaction\":{{\"saturation_policy\":\"reject_batch_stop\",\"rejected_batch\":{rejected}}},\"health\""
+                ),
+            );
+            output = output.replace(
+                "\"batched_residual_updates\":true",
+                &format!(
+                    "\"batched_residual_updates\":true,\"saturated_batch_rejection_enabled\":true,\"saturated_batch_rejected_atomically\":{}",
+                    self.rejected_batch.is_some(),
+                ),
+            );
+        }
         output
     }
 }
@@ -679,7 +748,7 @@ pub(super) struct CoarseGradientSnapshot {
     pub residual_saturation_count: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct UpdateStats {
     movement: [u64; 13],
     gradient_nonzero: [u64; 13],
@@ -695,6 +764,10 @@ struct UpdateStats {
 }
 
 impl UpdateStats {
+    fn has_saturation(&self) -> bool {
+        self.gradient_saturation > 0 || self.residual_saturation > 0 || self.weight_saturation > 0
+    }
+
     fn merge(&mut self, other: Self) {
         for (left, right) in self.movement.iter_mut().zip(other.movement) {
             *left = left.saturating_add(right);
@@ -959,11 +1032,20 @@ pub fn train_production_full_smoke(
     let mut stats = UpdateStats::default();
     let mut optimizer_steps = 0_usize;
     let mut supervised_targets = 0_usize;
-    while state.next_epoch < config.epochs as u64 && optimizer_steps < config.max_optimizer_steps {
+    let mut rejected_batch = None;
+    'training: while state.next_epoch < config.epochs as u64
+        && optimizer_steps < config.max_optimizer_steps
+    {
         let batch_start = state.next_window as usize;
         let batch_end = batch_start
             .saturating_add(config.batch_windows)
             .min(windows.len());
+        let model_before = config.reject_saturated_batch.then(|| model.clone());
+        let residuals_before = config
+            .reject_saturated_batch
+            .then(|| state.residuals.clone());
+        let mut batch_stats = UpdateStats::default();
+        let mut batch_supervised_targets = 0_usize;
         for (index, (context, target)) in windows[batch_start..batch_end].iter().enumerate() {
             let targets = causal_suffix_targets(context, *target, config.targets_per_window)?;
             let cache = forward_cache_for_target_rows(
@@ -983,10 +1065,35 @@ pub fn train_production_full_smoke(
                 &ranges,
                 &mut state.residuals,
                 index + 1 == batch_end - batch_start,
-                &mut stats,
+                &mut batch_stats,
             )?;
-            supervised_targets = supervised_targets.saturating_add(targets.len());
+            batch_supervised_targets = batch_supervised_targets.saturating_add(targets.len());
         }
+        if config.reject_saturated_batch && batch_stats.has_saturation() {
+            *model = model_before.expect("guarded batch has a model snapshot");
+            state.residuals = residuals_before.expect("guarded batch has a residual snapshot");
+            rejected_batch = Some(ProductionRejectedBatchTrace {
+                attempted_total_optimizer_step: state
+                    .step
+                    .checked_add(1)
+                    .ok_or(TrainError::InvalidConfig)?,
+                start_epoch: state.next_epoch,
+                start_window: state.next_window,
+                windows: batch_end - batch_start,
+                supervised_targets: batch_supervised_targets,
+                movement_l1: batch_stats.movement,
+                gradient_nonzero_count: batch_stats.gradient_nonzero,
+                update_nonzero_count: batch_stats.update_nonzero,
+                saturation_by_group: batch_stats.saturation_by_group,
+                residual_saturation_by_group: batch_stats.residual_saturation_by_group,
+                gradient_saturation_count: batch_stats.gradient_saturation,
+                residual_saturation_count: batch_stats.residual_saturation,
+                weight_saturation_count: batch_stats.weight_saturation,
+            });
+            break 'training;
+        }
+        stats.merge(batch_stats);
+        supervised_targets = supervised_targets.saturating_add(batch_supervised_targets);
         state.step = state.step.checked_add(1).ok_or(TrainError::InvalidConfig)?;
         optimizer_steps = optimizer_steps.saturating_add(1);
         if batch_end == windows.len() {
@@ -1057,6 +1164,8 @@ pub fn train_production_full_smoke(
         initial_model_hash,
         final_model_hash: model.model_hash(),
         optimizer_state_hash: state.state_hash(),
+        reject_saturated_batch: config.reject_saturated_batch,
+        rejected_batch,
     };
     Ok((trace, state))
 }

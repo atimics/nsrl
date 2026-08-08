@@ -73,8 +73,9 @@ pub use structure_audit::{
 pub use training::{
     DirectFeatureTrainConfig, DirectFeatureTrainTrace, DirectHeadTrainConfig,
     DirectTrainWindowBinding, ProductionFullTrainConfig, ProductionFullTrainTrace,
-    ProductionGradientProposalLane, ProductionOptimizerStateV2, train_production_direct_feature,
-    train_production_direct_head_search, train_production_full_smoke,
+    ProductionGradientProposalLane, ProductionOptimizerStateV2, ProductionRejectedBatchTrace,
+    train_production_direct_feature, train_production_direct_head_search,
+    train_production_full_smoke,
 };
 
 pub const PRODUCTION_MODEL_V1_SCHEMA: &str = "nsrl.production_model.v1";
@@ -3345,6 +3346,13 @@ mod tests {
         assert!(uninterrupted_trace.spread_windows);
         assert_eq!(uninterrupted_trace.targets_per_window, 2);
         assert!(uninterrupted_trace.supervised_targets > 0);
+        assert!(!uninterrupted_trace.reject_saturated_batch);
+        assert!(uninterrupted_trace.rejected_batch.is_none());
+        assert!(
+            !uninterrupted_trace
+                .to_json_line()
+                .contains("\"transaction\"")
+        );
         assert!(uninterrupted_trace.to_json_line().contains(
             "\"window_selection\":\"deterministic_uniform_target_rank_over_all_documents\""
         ));
@@ -3424,5 +3432,57 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn production_full_saturation_guard_rejects_batch_atomically() {
+        let mut model = ProductionModelV1::new_initial(tiny_config(), 0x1234, 23).expect("model");
+        model.initialize_output_weights(1).expect("output init");
+        model.output_bias_q8.fill(i32::MAX);
+        model.validate().expect("saturation fixture");
+        let initial = model.clone();
+        let initial_hash = model.model_hash();
+        let tokens = [BOS_TOKEN_ID, 300, 301, 302, 303, 304, EOS_TOKEN_ID];
+        let config = ProductionFullTrainConfig {
+            context_tokens: 4,
+            max_windows: 1,
+            epochs: 1,
+            batch_windows: 1,
+            max_optimizer_steps: 1,
+            output_bias_learning_rate_shift: Some(0),
+            reject_saturated_batch: true,
+            ..ProductionFullTrainConfig::default()
+        };
+
+        let (trace, state) = train_production_full_smoke(&mut model, &tokens, 0x5678, config, None)
+            .expect("guarded full train");
+        let rejected = trace.rejected_batch.expect("saturated batch rejected");
+
+        assert_eq!(model, initial);
+        assert_eq!(model.model_hash(), initial_hash);
+        assert_eq!(state.bound_model_hash, initial_hash);
+        assert_eq!(state.step, 0);
+        assert_eq!(state.next_epoch, 0);
+        assert_eq!(state.next_window, 0);
+        assert!(state.residuals.iter().all(|&residual| residual == 0));
+        assert_eq!(trace.optimizer_steps, 0);
+        assert_eq!(trace.total_optimizer_step, 0);
+        assert_eq!(trace.supervised_targets, 0);
+        assert_eq!(trace.initial_model_hash, initial_hash);
+        assert_eq!(trace.final_model_hash, initial_hash);
+        assert!(!trace.schedule_complete);
+        assert_eq!(trace.weight_saturation_count, 0);
+        assert_eq!(trace.gradient_saturation_count, 0);
+        assert_eq!(trace.residual_saturation_count, 0);
+        assert_eq!(rejected.attempted_total_optimizer_step, 1);
+        assert_eq!(rejected.start_epoch, 0);
+        assert_eq!(rejected.start_window, 0);
+        assert_eq!(rejected.windows, 1);
+        assert_eq!(rejected.supervised_targets, 1);
+        assert!(rejected.weight_saturation_count > 0);
+        assert!(rejected.saturation_by_group[12] > 0);
+        let json = trace.to_json_line();
+        assert!(json.contains("\"saturation_policy\":\"reject_batch_stop\""));
+        assert!(json.contains("\"saturated_batch_rejected_atomically\":true"));
     }
 }

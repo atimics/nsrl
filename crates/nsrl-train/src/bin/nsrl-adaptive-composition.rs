@@ -316,6 +316,7 @@ fn fitting_training_config() -> ProductionFullTrainConfig {
         batch_windows: 4,
         max_optimizer_steps: usize::MAX,
         evaluation_windows: usize::MAX,
+        reject_saturated_batch: false,
     }
 }
 
