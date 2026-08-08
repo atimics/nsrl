@@ -80,7 +80,10 @@ assert(
     && (contract.training.backward_quantization === undefined
       || (trace.training.backward_quantization === contract.training.backward_quantization
         && trace.training.backward_stochastic_seed
-          === contract.training.backward_stochastic_seed)),
+          === contract.training.backward_stochastic_seed))
+    && (contract.training.embedding_residual_flush === undefined
+      || trace.training.embedding_residual_flush
+        === contract.training.embedding_residual_flush),
   "training geometry mismatch",
 );
 assert(
@@ -133,7 +136,13 @@ const stochasticQuantization = contract.training.backward_quantization ?? null;
 const stochasticRoundUpCount = trace.diagnostics.backward_stochastic_round_up_count ?? 0;
 const stochasticSignalPassed = stochasticQuantization === null
   || stochasticRoundUpCount >= contract.gates.backward_stochastic_round_up_count_min;
-const stabilityPassed = scheduleComplete && numericHealthPassed && frozenGroupsUnchanged;
+const embeddingResidualFlush = contract.training.embedding_residual_flush ?? null;
+const embeddingResidualFlushPassed = embeddingResidualFlush === null
+  || trace.gates.batched_embedding_residual_flush === true;
+const stabilityPassed = scheduleComplete
+  && numericHealthPassed
+  && frozenGroupsUnchanged
+  && embeddingResidualFlushPassed;
 const livenessPassed = requiredGroupsMoved;
 const allGatesPassed = stabilityPassed
   && stochasticSignalPassed
@@ -149,9 +158,11 @@ const outcome = allGatesPassed
         ? "isolation_failed"
         : !stochasticSignalPassed
           ? "full_horizon_stochastic_signal_missing"
-          : !livenessPassed
-            ? "stable_but_required_representation_groups_not_live"
-            : "stable_live_without_development_improvement";
+          : !embeddingResidualFlushPassed
+            ? "batch_complete_embedding_residual_flush_missing"
+            : !livenessPassed
+              ? "stable_but_required_representation_groups_not_live"
+              : "stable_live_without_development_improvement";
 
 const result = {
   schema: "nsrl.production_representation_stability.v1",
@@ -201,6 +212,9 @@ const result = {
     manifest_residual_saturation_zero: manifestSaturation === 0,
     ...(stochasticQuantization === null ? {} : {
       stochastic_round_up_count_at_least_minimum: stochasticSignalPassed,
+    }),
+    ...(embeddingResidualFlush === null ? {} : {
+      batch_complete_embedding_residual_flush_active: embeddingResidualFlushPassed,
     }),
     required_parameter_groups_moved: requiredGroupsMoved,
     frozen_parameter_groups_unchanged: frozenGroupsUnchanged,
