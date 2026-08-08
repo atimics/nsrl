@@ -1,0 +1,71 @@
+{
+  "schema": "nsrl.production_saturation_backoff_audit_contract.v1",
+  "objective": "find_the_minimum_output_backward_damping_that_accepts_the_exact_step_430_batch_with_inherited_optimizer_residuals_and_zero_saturation",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "commit": "31b34264",
+    "audit_mode": "read_only_inherited_residual_counterfactual",
+    "candidate_artifacts_persisted": false
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/model-step-429.nsrlpm",
+    "model_hash": "0x2b5fcca18e6ad700",
+    "model_sha256": "f551732806e1fc123a864e67f44807635dca3e234fa87337e3d14252f928ae78",
+    "optimizer_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/optimizer-step-429.nsrlpo",
+    "optimizer_state_hash": "0x00049ca43d5255ad",
+    "optimizer_sha256": "99dfa0c5748e2914d151f47cd3c084833a07e241fb3823003ed2df7dbb014cbb",
+    "trace_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/train-step-429.json",
+    "trace_sha256": "a533c6eaa3418fe3978672e3d482f60971f858d37ff3463fa581cd02ee6d2d28",
+    "total_optimizer_step": 429,
+    "next_window": 1716
+  },
+  "failure_witness": {
+    "trace_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/train-step-430.json",
+    "trace_sha256": "84e1f0b621788bd293898de48b2a22e787992cf54f77140fd58e0bbab761e44f",
+    "output_backward_shift": 8,
+    "gradient_saturation_count": 2626,
+    "residual_saturation_count": 0,
+    "weight_saturation_count": 20375
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda"
+  },
+  "audit": {
+    "candidate_output_backward_shifts": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "selection": "minimum_candidate_with_committed_batch_and_zero_gradient_residual_weight_saturation",
+    "inherited_optimizer_residuals": true,
+    "schedule_hash_rebound_in_memory_only": true,
+    "source_model_must_not_be_mutated": true,
+    "source_optimizer_must_not_be_mutated": true
+  },
+  "gates": {
+    "base_shift_must_reproduce_failure_witness": true,
+    "all_candidates_must_use_the_same_source_model_optimizer_and_batch": true,
+    "accepted_candidate_saturation_max": 0,
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "read_only_local_counterfactual": true,
+    "optimizer_schedule_change": false,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}
