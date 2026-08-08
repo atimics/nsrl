@@ -1,0 +1,131 @@
+{
+  "schema": "nsrl.production_group_composition_audit_contract.v1",
+  "objective": "attribute_the_representation_v5_development_regression_across_embeddings_k_v_and_o_without_retraining",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "commit": "c04a05811bba0b0e3364a744bc1cdd4cd82363e9",
+    "mode": "read_only_exact_parameter_group_composition"
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b",
+    "development_total_nll_millibits": 6540187
+  },
+  "candidate": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v5-stability/candidate.nsrlpm",
+    "model_hash": "0xef0d1adc8eecddd6",
+    "model_sha256": "82005038d204b69c867a4624451cffacd0e023ee3029b2ff67a54f6a5a1e43de",
+    "development_total_nll_millibits": 6540357,
+    "isolated_movement_l1": {
+      "embeddings": 1,
+      "k": 1152,
+      "v": 998,
+      "o": 58
+    }
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "context_tokens": 64,
+    "windows": 512
+  },
+  "derivation": {
+    "artifact_path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v5-stability.json",
+    "artifact_sha256": "a16ba253f757285f61d95094c8709289508729928c621db8f3afcb5ea762fc83",
+    "outcome": "stable_live_without_development_improvement",
+    "development_delta_millibits": 170
+  },
+  "compositions": [
+    {
+      "id": "source",
+      "candidate_groups": []
+    },
+    {
+      "id": "embeddings_only",
+      "candidate_groups": [
+        "embeddings"
+      ]
+    },
+    {
+      "id": "k_only",
+      "candidate_groups": [
+        "k"
+      ]
+    },
+    {
+      "id": "v_only",
+      "candidate_groups": [
+        "v"
+      ]
+    },
+    {
+      "id": "o_only",
+      "candidate_groups": [
+        "o"
+      ]
+    },
+    {
+      "id": "without_embeddings",
+      "candidate_groups": [
+        "k",
+        "v",
+        "o"
+      ]
+    },
+    {
+      "id": "without_k",
+      "candidate_groups": [
+        "embeddings",
+        "v",
+        "o"
+      ]
+    },
+    {
+      "id": "without_v",
+      "candidate_groups": [
+        "embeddings",
+        "k",
+        "o"
+      ]
+    },
+    {
+      "id": "without_o",
+      "candidate_groups": [
+        "embeddings",
+        "k",
+        "v"
+      ]
+    },
+    {
+      "id": "candidate",
+      "candidate_groups": [
+        "embeddings",
+        "k",
+        "v",
+        "o"
+      ]
+    }
+  ],
+  "gates": {
+    "candidate_difference_must_be_isolated_to_composed_groups": true,
+    "source_and_candidate_endpoints_must_reproduce": true,
+    "residual_saturation_max": 0,
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "read_only_development_attribution": true,
+    "training": false,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}
