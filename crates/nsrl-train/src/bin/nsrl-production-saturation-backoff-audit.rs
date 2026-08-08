@@ -27,6 +27,30 @@ struct Config {
     output_backward_shifts: Vec<u8>,
     backward_quantization: ProductionBackwardQuantization,
     backward_stochastic_seed: u64,
+    candidate_schedule: CandidateSchedule,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CandidateSchedule {
+    embedding_learning_rate_shift: u8,
+    embedding_learning_rate_boost_shift: u8,
+    k_learning_rate_shift: u8,
+    v_learning_rate_shift: u8,
+    o_learning_rate_shift: u8,
+    flush_batched_embedding_residuals: bool,
+}
+
+impl Default for CandidateSchedule {
+    fn default() -> Self {
+        Self {
+            embedding_learning_rate_shift: 0,
+            embedding_learning_rate_boost_shift: 2,
+            k_learning_rate_shift: 22,
+            v_learning_rate_shift: 26,
+            o_learning_rate_shift: 10,
+            flush_batched_embedding_residuals: false,
+        }
+    }
 }
 
 fn main() {
@@ -52,7 +76,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (tokens, token_stream_hash) =
         decode_bound_token_stream(&token_bytes, model.tokenizer_hash, model.config.vocab_size)?;
     let source_state = ProductionOptimizerStateV2::from_bytes(&optimizer_bytes)?;
-    let base_config = representation_v2_config(8, ProductionBackwardQuantization::RescuedRhu, 0);
+    let base_config = representation_v2_config(
+        8,
+        ProductionBackwardQuantization::RescuedRhu,
+        0,
+        CandidateSchedule::default(),
+    );
     source_state.validate_binding(&model, token_stream_hash, base_config)?;
 
     let mut rows = String::new();
@@ -61,6 +90,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             shift,
             config.backward_quantization,
             config.backward_stochastic_seed,
+            config.candidate_schedule,
         );
         let mut candidate_state = source_state.clone();
         candidate_state.schedule_hash =
@@ -112,6 +142,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "\"base_output_backward_shift\":8,",
             "\"candidate_backward_quantization\":\"{}\",",
             "\"candidate_backward_stochastic_seed\":{},",
+            "\"candidate_embedding_learning_rate_shift\":{},",
+            "\"candidate_embedding_learning_rate_boost_shift\":{},",
+            "\"candidate_k_learning_rate_shift\":{},",
+            "\"candidate_v_learning_rate_shift\":{},",
+            "\"candidate_o_learning_rate_shift\":{},",
+            "\"candidate_flush_batched_embedding_residuals\":{},",
             "\"output_backward_shifts\":[{}],",
             "\"candidate_schedule_hash_rebound_in_memory_only\":true,",
             "\"candidate_artifacts_persisted\":false}},",
@@ -133,6 +169,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         source_state.next_window,
         config.backward_quantization.as_str(),
         config.backward_stochastic_seed,
+        config.candidate_schedule.embedding_learning_rate_shift,
+        config
+            .candidate_schedule
+            .embedding_learning_rate_boost_shift,
+        config.candidate_schedule.k_learning_rate_shift,
+        config.candidate_schedule.v_learning_rate_shift,
+        config.candidate_schedule.o_learning_rate_shift,
+        config.candidate_schedule.flush_batched_embedding_residuals,
         shifts,
         rows,
     );
@@ -148,6 +192,7 @@ fn representation_v2_config(
     output_backward_shift: u8,
     backward_quantization: ProductionBackwardQuantization,
     backward_stochastic_seed: u64,
+    candidate: CandidateSchedule,
 ) -> ProductionFullTrainConfig {
     ProductionFullTrainConfig {
         context_tokens: 64,
@@ -158,17 +203,17 @@ fn representation_v2_config(
         epochs: 1,
         matrix_learning_rate_shift: 59,
         q_learning_rate_shift: Some(59),
-        k_learning_rate_shift: Some(22),
-        v_learning_rate_shift: Some(26),
-        o_learning_rate_shift: Some(10),
+        k_learning_rate_shift: Some(candidate.k_learning_rate_shift),
+        v_learning_rate_shift: Some(candidate.v_learning_rate_shift),
+        o_learning_rate_shift: Some(candidate.o_learning_rate_shift),
         up_learning_rate_shift: Some(59),
         gate_learning_rate_shift: Some(59),
         down_learning_rate_shift: Some(59),
         vector_learning_rate_shift: 62,
         output_bias_learning_rate_shift: Some(51),
         final_rms_learning_rate_shift: Some(59),
-        embedding_learning_rate_shift: 0,
-        embedding_learning_rate_boost_shift: 2,
+        embedding_learning_rate_shift: candidate.embedding_learning_rate_shift,
+        embedding_learning_rate_boost_shift: candidate.embedding_learning_rate_boost_shift,
         output_learning_rate_shift: 51,
         output_backward_shift: Some(output_backward_shift),
         probability_gradient_fractional_bits: 23,
@@ -177,6 +222,7 @@ fn representation_v2_config(
         max_optimizer_steps: 1,
         evaluation_windows: 64,
         reject_saturated_batch: true,
+        flush_batched_embedding_residuals: candidate.flush_batched_embedding_residuals,
         backward_quantization,
         backward_stochastic_seed,
     }
@@ -191,6 +237,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
     let mut output_backward_shifts = None;
     let mut backward_quantization = ProductionBackwardQuantization::RescuedRhu;
     let mut backward_stochastic_seed = 0_u64;
+    let mut candidate_schedule = CandidateSchedule::default();
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
         let value = || "missing saturation backoff audit argument value";
@@ -219,6 +266,26 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--backward-stochastic-seed" => {
                 backward_stochastic_seed = args.next().ok_or_else(value)?.parse()?
             }
+            "--embedding-learning-rate-shift" => {
+                candidate_schedule.embedding_learning_rate_shift =
+                    args.next().ok_or_else(value)?.parse()?
+            }
+            "--embedding-learning-rate-boost-shift" => {
+                candidate_schedule.embedding_learning_rate_boost_shift =
+                    args.next().ok_or_else(value)?.parse()?
+            }
+            "--k-learning-rate-shift" => {
+                candidate_schedule.k_learning_rate_shift = args.next().ok_or_else(value)?.parse()?
+            }
+            "--v-learning-rate-shift" => {
+                candidate_schedule.v_learning_rate_shift = args.next().ok_or_else(value)?.parse()?
+            }
+            "--o-learning-rate-shift" => {
+                candidate_schedule.o_learning_rate_shift = args.next().ok_or_else(value)?.parse()?
+            }
+            "--flush-batched-embedding-residuals" => {
+                candidate_schedule.flush_batched_embedding_residuals = true
+            }
             other => return Err(format!("unknown argument: {other}").into()),
         }
     }
@@ -232,6 +299,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             .ok_or("--output-backward-shifts is required")?,
         backward_quantization,
         backward_stochastic_seed,
+        candidate_schedule,
     })
 }
 

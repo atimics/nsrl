@@ -295,6 +295,7 @@ pub struct ProductionFullTrainConfig {
     pub max_optimizer_steps: usize,
     pub evaluation_windows: usize,
     pub reject_saturated_batch: bool,
+    pub flush_batched_embedding_residuals: bool,
     pub backward_quantization: ProductionBackwardQuantization,
     pub backward_stochastic_seed: u64,
 }
@@ -329,6 +330,7 @@ impl Default for ProductionFullTrainConfig {
             max_optimizer_steps: usize::MAX,
             evaluation_windows: usize::MAX,
             reject_saturated_batch: false,
+            flush_batched_embedding_residuals: false,
             backward_quantization: ProductionBackwardQuantization::RescuedRhu,
             backward_stochastic_seed: 0,
         }
@@ -555,6 +557,7 @@ pub struct ProductionFullTrainTrace {
     pub final_model_hash: u64,
     pub optimizer_state_hash: u64,
     pub reject_saturated_batch: bool,
+    pub flush_batched_embedding_residuals: bool,
     pub rejected_batch: Option<ProductionRejectedBatchTrace>,
     pub backward_quantization: ProductionBackwardQuantization,
     pub backward_stochastic_seed: u64,
@@ -740,6 +743,16 @@ impl ProductionFullTrainTrace {
                     "\"batched_residual_updates\":true,\"saturated_batch_rejection_enabled\":true,\"saturated_batch_rejected_atomically\":{}",
                     self.rejected_batch.is_some(),
                 ),
+            );
+        }
+        if self.flush_batched_embedding_residuals {
+            output = output.replace(
+                ",\"optimizer_steps\"",
+                ",\"embedding_residual_flush\":\"all_batch_touched_tokens\",\"optimizer_steps\"",
+            );
+            output = output.replace(
+                "\"batched_residual_updates\":true",
+                "\"batched_residual_updates\":true,\"batched_embedding_residual_flush\":true",
             );
         }
         if self.backward_quantization != ProductionBackwardQuantization::RescuedRhu {
@@ -1102,7 +1115,11 @@ pub fn train_production_full_smoke(
             .then(|| state.residuals.clone());
         let mut batch_stats = UpdateStats::default();
         let mut batch_supervised_targets = 0_usize;
+        let mut batch_embedding_tokens = Vec::new();
         for (index, (context, target)) in windows[batch_start..batch_end].iter().enumerate() {
+            if config.flush_batched_embedding_residuals {
+                batch_embedding_tokens.extend_from_slice(context);
+            }
             let targets = causal_suffix_targets(context, *target, config.targets_per_window)?;
             let cache = forward_cache_for_target_rows(
                 model,
@@ -1129,6 +1146,16 @@ pub fn train_production_full_smoke(
                 ),
             )?;
             batch_supervised_targets = batch_supervised_targets.saturating_add(targets.len());
+        }
+        if config.flush_batched_embedding_residuals {
+            flush_batched_embedding_residuals(
+                &mut model.embeddings,
+                &mut state.residuals[ranges.embeddings.clone()],
+                &mut batch_embedding_tokens,
+                model.config.d_model,
+                effective_learning_rate_shifts(config)[0],
+                &mut batch_stats,
+            );
         }
         if config.reject_saturated_batch && batch_stats.has_saturation() {
             *model = model_before.expect("guarded batch has a model snapshot");
@@ -1227,6 +1254,7 @@ pub fn train_production_full_smoke(
         final_model_hash: model.model_hash(),
         optimizer_state_hash: state.state_hash(),
         reject_saturated_batch: config.reject_saturated_batch,
+        flush_batched_embedding_residuals: config.flush_batched_embedding_residuals,
         rejected_batch,
         backward_quantization: config.backward_quantization,
         backward_stochastic_seed: config.backward_stochastic_seed,
@@ -2089,7 +2117,7 @@ fn backward_update_with_spec(
                     .saturating_add(target_mean_shift(config))
                     .saturating_sub(config.embedding_learning_rate_boost_shift),
                 &mut residuals[ranges.embeddings.start + token as usize * c.d_model + dim],
-                apply_updates,
+                apply_updates && !config.flush_batched_embedding_residuals,
                 0,
                 stats,
             );
@@ -2631,6 +2659,33 @@ fn update_i16(
     *value = next;
     consume_residual(residual, update, shift);
 }
+
+fn flush_batched_embedding_residuals(
+    embeddings: &mut [i16],
+    residuals: &mut [i64],
+    touched_tokens: &mut Vec<u32>,
+    d_model: usize,
+    shift: u8,
+    stats: &mut UpdateStats,
+) {
+    touched_tokens.sort_unstable();
+    touched_tokens.dedup();
+    for &token in touched_tokens.iter() {
+        let start = token as usize * d_model;
+        for dim in 0..d_model {
+            update_i16(
+                &mut embeddings[start + dim],
+                0,
+                shift,
+                &mut residuals[start + dim],
+                true,
+                0,
+                stats,
+            );
+        }
+    }
+}
+
 fn update_i32(
     value: &mut i32,
     gradient: i64,
@@ -2995,6 +3050,9 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
         bytes.extend_from_slice(&[0xf9, mode]);
         bytes.extend_from_slice(&c.backward_stochastic_seed.to_le_bytes());
     }
+    if c.flush_batched_embedding_residuals {
+        bytes.extend_from_slice(&[0xf8, 1]);
+    }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
         hash.wrapping_mul(FNV_PRIME)
@@ -3116,8 +3174,9 @@ mod tests {
     use super::{
         BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME, I16_MAGNITUDE,
         I32_MAGNITUDE, ProductionBackwardQuantization, ProductionFullTrainConfig, UpdateStats,
-        accumulate_residual, causal_suffix_targets, effective_learning_rate_shifts, schedule_hash,
-        signed_product_sum_i64_safe, spread_document_windows, systematic_fixed_mass_gradient,
+        accumulate_residual, causal_suffix_targets, effective_learning_rate_shifts,
+        flush_batched_embedding_residuals, schedule_hash, signed_product_sum_i64_safe,
+        spread_document_windows, systematic_fixed_mass_gradient,
     };
 
     #[test]
@@ -3271,6 +3330,37 @@ mod tests {
                 ..stochastic
             })
         );
+        let embedding_flush = ProductionFullTrainConfig {
+            flush_batched_embedding_residuals: true,
+            ..base
+        };
+        assert_ne!(schedule_hash(base), schedule_hash(embedding_flush));
+    }
+
+    #[test]
+    fn batched_embedding_flush_applies_every_touched_token_once() {
+        let mut embeddings = vec![0_i16; 6];
+        let mut residuals = vec![0_i64; 6];
+        residuals[0] = 3;
+        residuals[1] = -3;
+        residuals[4] = 2;
+        let mut touched_tokens = vec![0, 2, 0];
+        let mut stats = UpdateStats::default();
+
+        flush_batched_embedding_residuals(
+            &mut embeddings,
+            &mut residuals,
+            &mut touched_tokens,
+            2,
+            1,
+            &mut stats,
+        );
+
+        assert_eq!(embeddings, [-2, 1, 0, 0, -1, 0]);
+        assert_eq!(residuals, [-1, -1, 0, 0, 0, 0]);
+        assert_eq!(stats.update_nonzero[0], 3);
+        assert_eq!(stats.movement[0], 4);
+        assert!(stats.gradient_nonzero.iter().all(|&count| count == 0));
     }
 
     #[test]

@@ -3433,6 +3433,60 @@ mod tests {
             .is_err()
         );
 
+        let embedding_flush_config = ProductionFullTrainConfig {
+            flush_batched_embedding_residuals: true,
+            ..config
+        };
+        let mut embedding_flush_uninterrupted_model = initial.clone();
+        let (embedding_flush_trace, embedding_flush_uninterrupted_state) =
+            train_production_full_smoke(
+                &mut embedding_flush_uninterrupted_model,
+                &tokens,
+                0x5678,
+                embedding_flush_config,
+                None,
+            )
+            .expect("embedding flush full train");
+        assert!(embedding_flush_trace.flush_batched_embedding_residuals);
+        assert!(
+            embedding_flush_trace
+                .to_json_line()
+                .contains("\"embedding_residual_flush\":\"all_batch_touched_tokens\"")
+        );
+        let mut embedding_flush_resumed_model = initial.clone();
+        let (_, embedding_flush_partial_state) = train_production_full_smoke(
+            &mut embedding_flush_resumed_model,
+            &tokens,
+            0x5678,
+            ProductionFullTrainConfig {
+                max_optimizer_steps: 1,
+                ..embedding_flush_config
+            },
+            None,
+        )
+        .expect("partial embedding flush train");
+        let (_, embedding_flush_resumed_state) = train_production_full_smoke(
+            &mut embedding_flush_resumed_model,
+            &tokens,
+            0x5678,
+            embedding_flush_config,
+            Some(embedding_flush_partial_state),
+        )
+        .expect("resumed embedding flush train");
+        assert_eq!(
+            embedding_flush_resumed_model,
+            embedding_flush_uninterrupted_model
+        );
+        assert_eq!(
+            embedding_flush_resumed_state,
+            embedding_flush_uninterrupted_state
+        );
+        assert!(
+            embedding_flush_resumed_state
+                .validate_binding(&embedding_flush_resumed_model, 0x5678, config)
+                .is_err()
+        );
+
         let stochastic_config = ProductionFullTrainConfig {
             backward_quantization: ProductionBackwardQuantization::LateStochastic,
             backward_stochastic_seed: 0x5eed,

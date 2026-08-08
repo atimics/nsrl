@@ -317,6 +317,7 @@ fn fitting_training_config() -> ProductionFullTrainConfig {
         max_optimizer_steps: usize::MAX,
         evaluation_windows: usize::MAX,
         reject_saturated_batch: false,
+        flush_batched_embedding_residuals: false,
         backward_quantization: nsrl_train::production::ProductionBackwardQuantization::RescuedRhu,
         backward_stochastic_seed: 0,
     }

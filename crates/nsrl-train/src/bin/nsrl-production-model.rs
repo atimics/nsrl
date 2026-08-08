@@ -98,6 +98,7 @@ struct Config {
     max_optimizer_steps: usize,
     evaluation_windows: usize,
     reject_saturated_batch: bool,
+    flush_batched_embedding_residuals: bool,
     backward_quantization: ProductionBackwardQuantization,
     backward_stochastic_seed: u64,
     alignment_coordinates_per_group: usize,
@@ -184,6 +185,7 @@ impl Default for Config {
             max_optimizer_steps: full.max_optimizer_steps,
             evaluation_windows: full.evaluation_windows,
             reject_saturated_batch: full.reject_saturated_batch,
+            flush_batched_embedding_residuals: full.flush_batched_embedding_residuals,
             backward_quantization: full.backward_quantization,
             backward_stochastic_seed: full.backward_stochastic_seed,
             alignment_coordinates_per_group: 1,
@@ -1168,6 +1170,7 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
         max_optimizer_steps: config.max_optimizer_steps,
         evaluation_windows: config.evaluation_windows,
         reject_saturated_batch: config.reject_saturated_batch,
+        flush_batched_embedding_residuals: config.flush_batched_embedding_residuals,
         backward_quantization: config.backward_quantization,
         backward_stochastic_seed: config.backward_stochastic_seed,
     }
@@ -1473,6 +1476,9 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 config.evaluation_windows = next(&mut args, "--evaluation-windows")?.parse()?
             }
             "--reject-saturated-batch" => config.reject_saturated_batch = true,
+            "--flush-batched-embedding-residuals" => {
+                config.flush_batched_embedding_residuals = true
+            }
             "--backward-quantization" => {
                 let value = next(&mut args, "--backward-quantization")?;
                 config.backward_quantization = match value.as_str() {
@@ -1633,7 +1639,7 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors. Pass --backward-quantization rescued-rhu|late-rhu|late-stochastic to select the schedule-bound intermediate-gradient quantizer; stochastic mode also binds --backward-stochastic-seed N for exact restart replay.\n"
+        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --flush-batched-embedding-residuals to apply accumulated embedding residuals for every token touched anywhere in a committed batch. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors. Pass --backward-quantization rescued-rhu|late-rhu|late-stochastic to select the schedule-bound intermediate-gradient quantizer; stochastic mode also binds --backward-stochastic-seed N for exact restart replay.\n"
     );
     println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
@@ -1723,6 +1729,7 @@ mod tests {
             "14",
             "--embedding-learning-rate-boost-shift",
             "1",
+            "--flush-batched-embedding-residuals",
             "--backward-quantization",
             "late-stochastic",
             "--backward-stochastic-seed",
@@ -1734,6 +1741,7 @@ mod tests {
         assert_eq!(config.training_workers, 3);
         assert_eq!(config.output_bias_learning_rate_shift, Some(14));
         assert_eq!(config.embedding_learning_rate_boost_shift, 1);
+        assert!(config.flush_batched_embedding_residuals);
         assert_eq!(
             config.backward_quantization,
             ProductionBackwardQuantization::LateStochastic

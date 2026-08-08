@@ -36,6 +36,9 @@ The runtime now provides:
 - schedule-bound rescued-RHU, late-RHU, and deterministic late-stochastic
   intermediate-gradient quantizers, with the stochastic seed and round-up
   count retained in resumable training evidence;
+- an opt-in, schedule-bound batch-complete embedding residual flush that applies
+  accumulated updates for every token touched anywhere in the batch while
+  preserving the legacy sparse-final-window behavior by default;
 - phase-aware interval liveness state bound to the exact preceding model hash,
   with a chained event-history hash and hard output, trunk-gradient, and
   trunk-update deadlines;
@@ -573,6 +576,18 @@ frozen result is
 The next justified lever is therefore group-specific residual/update thresholds
 on the denser rescued-RHU signal, guarded on the exact trigger batch before any
 new full-horizon run.
+
+The optimizer audit also exposed an independent sparse-batching defect behind
+embedding non-liveness. Matrix groups revisit every coordinate on the final
+window of a batch, so their accumulated residuals are materialized at commit.
+Embeddings revisit only tokens present in that final window; residuals for
+tokens seen exclusively in earlier windows were carried but never offered to
+the update rule. The opt-in `--flush-batched-embedding-residuals` mode now
+collects all batch-touched token IDs, accumulates every window exactly as
+before, then applies each touched embedding row once at commit. The mode is
+optimizer-schedule-bound, exactly resumable, covered by touched-token and
+resume tests, and omitted from default traces and hashes unless enabled. It
+still requires the exact trigger-batch safety gate before a production horizon.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
