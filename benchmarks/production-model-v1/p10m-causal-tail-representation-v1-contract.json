@@ -1,0 +1,213 @@
+{
+  "schema": "nsrl.production_causal_tail_stability_contract.v1",
+  "objective": "isolated_embedding_kvo_representation_continuation_over_recent_causal_tail",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "artifact_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "derivation": {
+    "policy": "isolated_embedding_kvo_continuation_at_the_last_zero_saturation_scale_v2_effective_shifts",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-head-balance-v1.json",
+        "sha256": "7ed783e54ff7b5272d818cd9dd513c4f4e556ac7e0f0fa3dac3f7376493074d7"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-head-balance-v1-quality-gate.json",
+        "sha256": "01c80949a08c3e704f943a42ab138d404e0c13c61e346eac5c3dd97bbd312f51"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-head-balance-v1-rollout-divergence.json",
+        "sha256": "32afd20a155b1e090b09e8009c598380f038834c80be5c8058e4eff0264398d2"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-head-balance-v1-context-sensitivity.json",
+        "sha256": "51d8df404cf544b71169907d3d1a849b937374e23370fc14e4402ca4c0935210"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-head-balance-v1-residual-saturation.json",
+        "sha256": "66d4726aa96d22d1d02ece3505cebf4c6b4754123d3e3aa17bc37d409597c722"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-full-v1-embeddings-residual-audit.json",
+        "sha256": "7cf0ba4513954c5f0a311c6c93b75df9a8f22ade75d5592f35d35bf1867458b6"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-full-v1-k-residual-audit.json",
+        "sha256": "265d386b046340276039bb9175afadb2ab17f1e65cd99ed8baa9c52b62666831"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-full-v1-v-residual-audit.json",
+        "sha256": "7df87427d0954b99bf34ce96496097c0bb78b9798122e07a02eb6b13e12836db"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-full-v1-o-residual-audit.json",
+        "sha256": "d60d79e132a7565605ef718f029469166f015460dae4097211d11593b3a01f5d"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-sequence-scale-v2-contract.json",
+        "sha256": "dae4bfe36e70eb3844c9dd9508e1990a6cfeda14ed19980d3d4359af84108e09"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-sequence-scale-v2.json",
+        "sha256": "c9f29ab18bc71f535dcb122f22bd9afd6bba2a9964c658292b5e21c686e0443e"
+      }
+    ],
+    "head_balance_v1_preflight_passed": true,
+    "head_balance_v1_development_total_nll_delta_millibits": -6661,
+    "head_balance_v1_test_total_nll_delta_millibits": -6166,
+    "head_balance_v1_trunk_movement_l1": 0,
+    "head_balance_v1_output_movement_l1": 72172,
+    "head_balance_v1_bias_movement_l1": 515,
+    "head_balance_v1_teacher_forced_top1_matches": 0,
+    "head_balance_v1_teacher_forced_mean_target_rank": 2202,
+    "head_balance_v1_teacher_forced_mean_target_probability_q15": 6,
+    "head_balance_v1_free_running_self_loop_transition_per_mille": 1000,
+    "head_balance_only_is_insufficient": true,
+    "effective_shift_changes_from_full_v1": {
+      "embeddings": {"old": 5, "new": 4},
+      "k": {"old": 28, "new": 25},
+      "v": {"old": 30, "new": 29},
+      "o": {"old": 18, "new": 17}
+    },
+    "coordinates_at_new_final_residual_threshold": {
+      "embeddings": 1558,
+      "k": 188582,
+      "v": 104370,
+      "o": 31295
+    },
+    "continuation_windows": 2048,
+    "only_embeddings_k_v_and_o_may_move": true,
+    "development_test_and_postflight_metrics_not_used_to_choose_the_continuation_result": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 2048,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_optimizer_steps": 256,
+    "optimizer_steps": 512,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "embedding_learning_rate_boost_shift": 2,
+    "parallel_replay": true,
+    "cli_learning_rate_shifts": {
+      "matrix": 59,
+      "embeddings": 3,
+      "vector": 62,
+      "output_bias": 51,
+      "final_rms": 59,
+      "q": 59,
+      "k": 22,
+      "v": 26,
+      "o": 14,
+      "up": 59,
+      "gate": 59,
+      "down": 59,
+      "output": 51
+    },
+    "learning_rate_shifts": {
+      "embeddings": 4,
+      "attention_rms": 61,
+      "mlp_rms": 55,
+      "final_rms": 62,
+      "q": 62,
+      "k": 25,
+      "v": 29,
+      "o": 17,
+      "up": 62,
+      "gate": 62,
+      "down": 62,
+      "output": 54,
+      "bias": 54
+    },
+    "effective_probability_adjusted_shifts": {
+      "output": 62,
+      "bias": 62
+    },
+    "shift_derivation": "freeze_head_and_non_kvo_trunk_then_reuse_zero_saturation_scale_v2_embedding_kvo_shifts"
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 512,
+    "selection_partition": "development",
+    "confirmation_partition": "test",
+    "source_dev_total_nll_millibits": 6540187,
+    "source_test_total_nll_millibits": 6556527,
+    "test_candidate_must_not_be_scored_unless_development_improves": true
+  },
+  "gates": {
+    "development_total_nll_strictly_improves": true,
+    "test_total_nll_strictly_improves": true,
+    "required_parameter_groups": ["embeddings", "k", "v", "o"],
+    "frozen_parameter_groups": [
+      "attention_rms", "mlp_rms", "final_rms", "q", "up", "gate", "down", "output", "bias"
+    ],
+    "gradient_residual_and_weight_saturation_max": 0,
+    "exact_restart_replay": true
+  },
+  "postflight": {
+    "rollout": {
+      "windows": 8,
+      "context_tokens": 64,
+      "rollout_tokens": 16,
+      "evaluated_positions": 128,
+      "minimum_teacher_forced_top1_matches": 1,
+      "maximum_mean_target_rank": 2200,
+      "minimum_mean_target_probability_q15": 7,
+      "maximum_self_loop_transition_per_mille": 950,
+      "maximum_prefix_to_suffix_logit_l1_per_mille": 5000
+    },
+    "context": {
+      "prompts": 12,
+      "top_k": 8,
+      "minimum_unique_greedy_tokens": 6,
+      "maximum_greedy_self_loops": 10
+    },
+    "saturation": {
+      "prompts": 12,
+      "layers": 6,
+      "maximum_residual_saturation_count": 0
+    }
+  },
+  "authorization": {
+    "local_representation_continuation": true,
+    "postflight_quality_gate_required": true,
+    "open_generation_rerun": true,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_2048_window_representation_only_continuation_not_full_corpus_training",
+    "reuses_training_windows_after_the_full_tail_run",
+    "public_test_has_prior_confirmatory_reads",
+    "isolated_embedding_kvo_hypothesis_does_not_change_the_output_head_or_other_trunk_groups",
+    "postflight_public_metrics_are_development_gates_not_hidden_evaluation",
+    "postflight_success_authorizes_only_the_public_open_generation_rerun",
+    "complete_open_generation_promotion_still_requires_baselines_human_review_and_untouched_hidden_panel"
+  ]
+}

@@ -79,7 +79,7 @@ for (const [name, trace] of [["midpoint", midpoint], ["final", final], ["replay"
     `${name} probability-adjusted update shifts do not match the prospective contract`);
   }
   if (expectedTraining.embedding_learning_rate_boost_shift !== undefined) {
-    assert(trace.training?.embedding_learning_rate_boost_shift
+    assert((trace.training?.embedding_learning_rate_boost_shift ?? 0)
       === expectedTraining.embedding_learning_rate_boost_shift,
     `${name} embedding learning-rate boost does not match the prospective contract`);
   }

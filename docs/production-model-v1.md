@@ -397,6 +397,22 @@ only those two groups for 2,048 spread windows. Its contract is
 `benchmarks/production-model-v1/p10m-causal-tail-head-balance-v1-contract.json`;
 it retains the full strong quality gate and cannot open hidden evaluation.
 
+The isolated head-balance continuation passes loss, replay, health, and
+isolation, but fails the quality hypothesis. Output moves 72,172 L1 units while
+bias moves 515 and every trunk group remains unchanged. Development and test
+NLL improve by 6,661 and 6,166 millibits, but mean target rank regresses from
+2,106 to 2,202, target probability reaches only 6 Q15, all 120 free-running
+transitions still self-loop, and all 12 public prompts self-loop. A stronger
+head alone therefore cannot recover conditional language behavior.
+
+The next prospective continuation isolates representation learning at
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v1-contract.json`.
+It returns embeddings, K, V, and O to their last zero-saturation scale-v2
+effective shifts and freezes the output head plus every other trunk group.
+The bound full-v1 residuals predict 1,558 embedding, 188,582 K, 104,370 V, and
+31,295 O coordinates at those thresholds, spanning every attention layer. It
+uses 2,048 spread windows and retains the same strong public quality gates.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
