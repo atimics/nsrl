@@ -29,6 +29,10 @@ The runtime now provides:
   diagnostics;
 - explicit residual-accumulator overflow counts globally and by parameter
   group;
+- an opt-in atomic saturation guard that snapshots each batch, rolls model
+  weights and optimizer residuals back on any gradient, residual, or weight
+  saturation, leaves the durable cursor at the last committed batch, and emits
+  the rejected batch diagnostics separately;
 - phase-aware interval liveness state bound to the exact preceding model hash,
   with a chained event-history hash and hard output, trunk-gradient, and
   trunk-update deadlines;
@@ -501,6 +505,20 @@ four triggering contexts have 49--61 unique tokens, distinct decoded-content
 hashes, and ordinary eight-token suffix targets. This is not a duplicated or
 empty-window ingestion error. The evidence is
 `benchmarks/production-model-v1/p10m-causal-tail-representation-v2-trigger-window-audit.json`.
+
+The atomic saturation guard now closes that transaction-integrity gap. With
+`--reject-saturated-batch`, the bound replay commits the inert step 429, detects
+the exact step-430 signature of 2,626 gradient and 20,375 weight saturations,
+restores the pre-batch model and optimizer residuals, and stops with the cursor
+at window 1,716. The emitted model and optimizer artifacts are byte-identical
+to the independently produced safe step-429 checkpoint. Committed health stays
+at zero saturation; development remains 177 millibits better than full-v1 and
+the public manifest has zero residual saturation. The frozen evidence is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v2-atomic-saturation-guard.json`.
+This prevents corruption; it does not make representation-v2 learn past the
+rejected batch, improve open-generation quality, or authorize test evaluation.
+The next modeling experiment must change the K/O update dynamics before this
+same batch can be accepted safely.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
