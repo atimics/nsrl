@@ -532,6 +532,18 @@ learning. The result is
 A fresh whole-horizon shift-9 run, protected by atomic rejection, is required
 before judging liveness or development quality.
 
+That fresh representation-v3 stability run is complete and falsifies scalar
+backward damping as the representation fix. It commits all 512 optimizer steps
+with no rejected batch and zero training, development, or public-manifest
+saturation. Isolation also passes. But only O moves, by 20 L1 units;
+embeddings, K, and V remain unchanged, and development NLL regresses by 46
+millibits. The frozen result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v3-stability.json`.
+The one-bit boundary therefore jumps from an unsafe multi-million-unit update
+at shift 8 to an almost inert run at shift 9. The next representation work must
+preserve more intermediate gradient precision or control updates per group;
+another global scalar damping run is not justified.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
