@@ -484,6 +484,17 @@ optimizer batches triggers a discontinuous multi-group update. Single-step
 probes at 429--431 are the final localization before inspecting the triggering
 training batch and designing an update guard.
 
+Single-step localization identifies optimizer step 430 as the trigger. Step
+429 commits no parameter update and remains safe. Step 430 alone changes
+56,022 embedding, 2.52 million K, 99,007 V, and 7.96 million O L1, with 2,626
+gradient and 20,375 weight saturations; steps 431 and 432 do not add to the
+numeric failure. The step-430 trace records 140,639 K, 96,812 V, and 312,047 O
+nonzero updates in one four-window batch. This is an optimizer transaction
+failure: the trainer detects saturation but commits the corrupting batch and
+continues. The next engineering gate is to bind the exact batch inputs, then
+make saturation rejection atomic so a failed batch cannot mutate either model
+weights or optimizer residual state.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
