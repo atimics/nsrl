@@ -72,10 +72,10 @@ pub use structure_audit::{
 };
 pub use training::{
     DirectFeatureTrainConfig, DirectFeatureTrainTrace, DirectHeadTrainConfig,
-    DirectTrainWindowBinding, ProductionFullTrainConfig, ProductionFullTrainTrace,
-    ProductionGradientProposalLane, ProductionOptimizerStateV2, ProductionRejectedBatchTrace,
-    train_production_direct_feature, train_production_direct_head_search,
-    train_production_full_smoke,
+    DirectTrainWindowBinding, ProductionBackwardQuantization, ProductionFullTrainConfig,
+    ProductionFullTrainTrace, ProductionGradientProposalLane, ProductionOptimizerStateV2,
+    ProductionRejectedBatchTrace, train_production_direct_feature,
+    train_production_direct_head_search, train_production_full_smoke,
 };
 
 pub const PRODUCTION_MODEL_V1_SCHEMA: &str = "nsrl.production_model.v1";
@@ -3397,7 +3397,7 @@ mod tests {
                 .contains("\"training_workers\":4")
         );
 
-        let mut resumed_model = initial;
+        let mut resumed_model = initial.clone();
         let partial_config = ProductionFullTrainConfig {
             max_optimizer_steps: 1,
             ..config
@@ -3431,6 +3431,67 @@ mod tests {
                 Some(resumed_state)
             )
             .is_err()
+        );
+
+        let stochastic_config = ProductionFullTrainConfig {
+            backward_quantization: ProductionBackwardQuantization::LateStochastic,
+            backward_stochastic_seed: 0x5eed,
+            ..config
+        };
+        let mut stochastic_uninterrupted_model = initial.clone();
+        let (stochastic_trace, stochastic_uninterrupted_state) = train_production_full_smoke(
+            &mut stochastic_uninterrupted_model,
+            &tokens,
+            0x5678,
+            stochastic_config,
+            None,
+        )
+        .expect("stochastic full train");
+        assert_eq!(
+            stochastic_trace.backward_quantization,
+            ProductionBackwardQuantization::LateStochastic
+        );
+        assert!(stochastic_trace.backward_stochastic_round_up_count > 0);
+        assert!(
+            stochastic_trace
+                .to_json_line()
+                .contains("\"backward_quantization\":\"late-stochastic\"")
+        );
+
+        let mut stochastic_resumed_model = initial;
+        let stochastic_partial_config = ProductionFullTrainConfig {
+            max_optimizer_steps: 1,
+            ..stochastic_config
+        };
+        let (_, stochastic_partial_state) = train_production_full_smoke(
+            &mut stochastic_resumed_model,
+            &tokens,
+            0x5678,
+            stochastic_partial_config,
+            None,
+        )
+        .expect("stochastic partial train");
+        let (_, stochastic_resumed_state) = train_production_full_smoke(
+            &mut stochastic_resumed_model,
+            &tokens,
+            0x5678,
+            stochastic_config,
+            Some(stochastic_partial_state),
+        )
+        .expect("stochastic resume");
+        assert_eq!(stochastic_resumed_model, stochastic_uninterrupted_model);
+        assert_eq!(stochastic_resumed_state, stochastic_uninterrupted_state);
+        assert!(
+            stochastic_resumed_state
+                .validate_binding(
+                    &stochastic_resumed_model,
+                    0x5678,
+                    ProductionFullTrainConfig {
+                        backward_stochastic_seed: 0x5eee,
+                        ..stochastic_config
+                    }
+                )
+                .is_err()
         );
     }
 

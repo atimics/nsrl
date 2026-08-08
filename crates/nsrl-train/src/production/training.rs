@@ -175,6 +175,31 @@ pub(super) enum BackwardQuantizationMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductionBackwardQuantization {
+    RescuedRhu,
+    LateRhu,
+    LateStochastic,
+}
+
+impl ProductionBackwardQuantization {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RescuedRhu => "rescued-rhu",
+            Self::LateRhu => "late-rhu",
+            Self::LateStochastic => "late-stochastic",
+        }
+    }
+
+    const fn mode(self) -> BackwardQuantizationMode {
+        match self {
+            Self::RescuedRhu => BackwardQuantizationMode::RescuedRhu,
+            Self::LateRhu => BackwardQuantizationMode::LateRhu,
+            Self::LateStochastic => BackwardQuantizationMode::LateStochastic,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct GradientProposalSpec {
     pub source: GradientSource,
     pub quantization: BackwardQuantizationMode,
@@ -270,6 +295,8 @@ pub struct ProductionFullTrainConfig {
     pub max_optimizer_steps: usize,
     pub evaluation_windows: usize,
     pub reject_saturated_batch: bool,
+    pub backward_quantization: ProductionBackwardQuantization,
+    pub backward_stochastic_seed: u64,
 }
 
 impl Default for ProductionFullTrainConfig {
@@ -302,6 +329,8 @@ impl Default for ProductionFullTrainConfig {
             max_optimizer_steps: usize::MAX,
             evaluation_windows: usize::MAX,
             reject_saturated_batch: false,
+            backward_quantization: ProductionBackwardQuantization::RescuedRhu,
+            backward_stochastic_seed: 0,
         }
     }
 }
@@ -474,6 +503,7 @@ pub struct ProductionRejectedBatchTrace {
     pub gradient_saturation_count: usize,
     pub residual_saturation_count: usize,
     pub weight_saturation_count: usize,
+    pub backward_stochastic_round_up_count: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -526,6 +556,9 @@ pub struct ProductionFullTrainTrace {
     pub optimizer_state_hash: u64,
     pub reject_saturated_batch: bool,
     pub rejected_batch: Option<ProductionRejectedBatchTrace>,
+    pub backward_quantization: ProductionBackwardQuantization,
+    pub backward_stochastic_seed: u64,
+    pub backward_stochastic_round_up_count: u64,
 }
 
 impl ProductionFullTrainTrace {
@@ -675,7 +708,8 @@ impl ProductionFullTrainTrace {
                             "\"residual_saturation_by_group\":{{{}}},",
                             "\"gradient_saturation_count\":{},",
                             "\"residual_saturation_count\":{},",
-                            "\"weight_saturation_count\":{}}}"
+                            "\"weight_saturation_count\":{},",
+                            "\"backward_stochastic_round_up_count\":{}}}"
                         ),
                         batch.attempted_total_optimizer_step,
                         batch.start_epoch,
@@ -690,6 +724,7 @@ impl ProductionFullTrainTrace {
                         batch.gradient_saturation_count,
                         batch.residual_saturation_count,
                         batch.weight_saturation_count,
+                        batch.backward_stochastic_round_up_count,
                     )
                 },
             );
@@ -704,6 +739,23 @@ impl ProductionFullTrainTrace {
                 &format!(
                     "\"batched_residual_updates\":true,\"saturated_batch_rejection_enabled\":true,\"saturated_batch_rejected_atomically\":{}",
                     self.rejected_batch.is_some(),
+                ),
+            );
+        }
+        if self.backward_quantization != ProductionBackwardQuantization::RescuedRhu {
+            output = output.replace(
+                "\"backward\":\"full_quantized_straight_through\"",
+                &format!(
+                    "\"backward\":\"full_quantized_straight_through\",\"backward_quantization\":\"{}\",\"backward_stochastic_seed\":{}",
+                    self.backward_quantization.as_str(),
+                    self.backward_stochastic_seed,
+                ),
+            );
+            output = output.replace(
+                "\"backward_quantization_count\":",
+                &format!(
+                    "\"backward_stochastic_round_up_count\":{},\"backward_quantization_count\":",
+                    self.backward_stochastic_round_up_count,
                 ),
             );
         }
@@ -761,6 +813,7 @@ struct UpdateStats {
     gradient_saturation: usize,
     residual_saturation: usize,
     weight_saturation: usize,
+    backward_stochastic_round_up: u64,
 }
 
 impl UpdateStats {
@@ -810,6 +863,9 @@ impl UpdateStats {
         self.weight_saturation = self
             .weight_saturation
             .saturating_add(other.weight_saturation);
+        self.backward_stochastic_round_up = self
+            .backward_stochastic_round_up
+            .saturating_add(other.backward_stochastic_round_up);
     }
 }
 
@@ -1066,6 +1122,11 @@ pub fn train_production_full_smoke(
                 &mut state.residuals,
                 index + 1 == batch_end - batch_start,
                 &mut batch_stats,
+                splitmix64(
+                    config.backward_stochastic_seed
+                        ^ state.step.rotate_left(17)
+                        ^ ((batch_start + index) as u64).rotate_left(41),
+                ),
             )?;
             batch_supervised_targets = batch_supervised_targets.saturating_add(targets.len());
         }
@@ -1089,6 +1150,7 @@ pub fn train_production_full_smoke(
                 gradient_saturation_count: batch_stats.gradient_saturation,
                 residual_saturation_count: batch_stats.residual_saturation,
                 weight_saturation_count: batch_stats.weight_saturation,
+                backward_stochastic_round_up_count: batch_stats.backward_stochastic_round_up,
             });
             break 'training;
         }
@@ -1166,6 +1228,9 @@ pub fn train_production_full_smoke(
         optimizer_state_hash: state.state_hash(),
         reject_saturated_batch: config.reject_saturated_batch,
         rejected_batch,
+        backward_quantization: config.backward_quantization,
+        backward_stochastic_seed: config.backward_stochastic_seed,
+        backward_stochastic_round_up_count: stats.backward_stochastic_round_up,
     };
     Ok((trace, state))
 }
@@ -1615,10 +1680,15 @@ fn backward_update_targets(
     residuals: &mut [i64],
     apply_updates: bool,
     stats: &mut UpdateStats,
+    stochastic_seed: u64,
 ) -> Result<(), TrainError> {
-    let spec = GradientProposalSpec::lane(ProductionGradientProposalLane::NormalizedRescued, 0);
+    let spec = GradientProposalSpec {
+        source: GradientSource::NormalizedProbability,
+        quantization: config.backward_quantization.mode(),
+        stochastic_seed,
+    };
     let mut quantizer = BackwardQuantizer::new(spec.quantization, spec.stochastic_seed);
-    backward_update_with_spec(
+    let result = backward_update_with_spec(
         model,
         context_tokens,
         targets,
@@ -1630,7 +1700,11 @@ fn backward_update_targets(
         stats,
         spec,
         &mut quantizer,
-    )
+    );
+    stats.backward_stochastic_round_up = stats
+        .backward_stochastic_round_up
+        .saturating_add(quantizer.stochastic_round_up_count);
+    result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2912,6 +2986,15 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     if let Some(shift) = c.output_bias_learning_rate_shift {
         bytes.extend_from_slice(&[0xfa, shift]);
     }
+    if c.backward_quantization != ProductionBackwardQuantization::RescuedRhu {
+        let mode = match c.backward_quantization {
+            ProductionBackwardQuantization::RescuedRhu => 0,
+            ProductionBackwardQuantization::LateRhu => 1,
+            ProductionBackwardQuantization::LateStochastic => 2,
+        };
+        bytes.extend_from_slice(&[0xf9, mode]);
+        bytes.extend_from_slice(&c.backward_stochastic_seed.to_le_bytes());
+    }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
         hash.wrapping_mul(FNV_PRIME)
@@ -3032,8 +3115,8 @@ mod tests {
 
     use super::{
         BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME, I16_MAGNITUDE,
-        I32_MAGNITUDE, ProductionFullTrainConfig, UpdateStats, accumulate_residual,
-        causal_suffix_targets, effective_learning_rate_shifts, schedule_hash,
+        I32_MAGNITUDE, ProductionBackwardQuantization, ProductionFullTrainConfig, UpdateStats,
+        accumulate_residual, causal_suffix_targets, effective_learning_rate_shifts, schedule_hash,
         signed_product_sum_i64_safe, spread_document_windows, systematic_fixed_mass_gradient,
     };
 
@@ -3175,6 +3258,19 @@ mod tests {
             &effective_learning_rate_shifts(damped_bias)[..12]
         );
         assert_ne!(schedule_hash(base), schedule_hash(damped_bias));
+        let stochastic = ProductionFullTrainConfig {
+            backward_quantization: ProductionBackwardQuantization::LateStochastic,
+            backward_stochastic_seed: 29,
+            ..base
+        };
+        assert_ne!(schedule_hash(base), schedule_hash(stochastic));
+        assert_ne!(
+            schedule_hash(stochastic),
+            schedule_hash(ProductionFullTrainConfig {
+                backward_stochastic_seed: 30,
+                ..stochastic
+            })
+        );
     }
 
     #[test]

@@ -33,6 +33,9 @@ The runtime now provides:
   weights and optimizer residuals back on any gradient, residual, or weight
   saturation, leaves the durable cursor at the last committed batch, and emits
   the rejected batch diagnostics separately;
+- schedule-bound rescued-RHU, late-RHU, and deterministic late-stochastic
+  intermediate-gradient quantizers, with the stochastic seed and round-up
+  count retained in resumable training evidence;
 - phase-aware interval liveness state bound to the exact preceding model hash,
   with a chained event-history hash and hard output, trunk-gradient, and
   trunk-update deadlines;

@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use nsrl_core::SoftmaxNormalization;
 use nsrl_corpus::subword::SubwordTokenizer;
 use nsrl_train::production::{
-    ProductionFullTrainConfig, ProductionModelV1, ProductionOptimizerStateV2,
-    decode_bound_token_stream, train_production_full_smoke,
+    ProductionBackwardQuantization, ProductionFullTrainConfig, ProductionModelV1,
+    ProductionOptimizerStateV2, decode_bound_token_stream, train_production_full_smoke,
 };
 
 const SCHEMA: &str = "nsrl.production_saturation_backoff_audit.v1";
@@ -25,6 +25,8 @@ struct Config {
     optimizer_state: PathBuf,
     trace: PathBuf,
     output_backward_shifts: Vec<u8>,
+    backward_quantization: ProductionBackwardQuantization,
+    backward_stochastic_seed: u64,
 }
 
 fn main() {
@@ -50,12 +52,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (tokens, token_stream_hash) =
         decode_bound_token_stream(&token_bytes, model.tokenizer_hash, model.config.vocab_size)?;
     let source_state = ProductionOptimizerStateV2::from_bytes(&optimizer_bytes)?;
-    let base_config = representation_v2_config(8);
+    let base_config = representation_v2_config(8, ProductionBackwardQuantization::RescuedRhu, 0);
     source_state.validate_binding(&model, token_stream_hash, base_config)?;
 
     let mut rows = String::new();
     for (index, &shift) in config.output_backward_shifts.iter().enumerate() {
-        let candidate_config = representation_v2_config(shift);
+        let candidate_config = representation_v2_config(
+            shift,
+            config.backward_quantization,
+            config.backward_stochastic_seed,
+        );
         let mut candidate_state = source_state.clone();
         candidate_state.schedule_hash =
             ProductionOptimizerStateV2::new(&model, token_stream_hash, candidate_config)
@@ -104,6 +110,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "\"next_epoch\":{},\"next_window\":{}}},",
             "\"audit\":{{\"mode\":\"read_only_inherited_residual_counterfactual\",",
             "\"base_output_backward_shift\":8,",
+            "\"candidate_backward_quantization\":\"{}\",",
+            "\"candidate_backward_stochastic_seed\":{},",
             "\"output_backward_shifts\":[{}],",
             "\"candidate_schedule_hash_rebound_in_memory_only\":true,",
             "\"candidate_artifacts_persisted\":false}},",
@@ -123,6 +131,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         source_state.step,
         source_state.next_epoch,
         source_state.next_window,
+        config.backward_quantization.as_str(),
+        config.backward_stochastic_seed,
         shifts,
         rows,
     );
@@ -134,7 +144,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn representation_v2_config(output_backward_shift: u8) -> ProductionFullTrainConfig {
+fn representation_v2_config(
+    output_backward_shift: u8,
+    backward_quantization: ProductionBackwardQuantization,
+    backward_stochastic_seed: u64,
+) -> ProductionFullTrainConfig {
     ProductionFullTrainConfig {
         context_tokens: 64,
         max_windows: 2048,
@@ -163,6 +177,8 @@ fn representation_v2_config(output_backward_shift: u8) -> ProductionFullTrainCon
         max_optimizer_steps: 1,
         evaluation_windows: 64,
         reject_saturated_batch: true,
+        backward_quantization,
+        backward_stochastic_seed,
     }
 }
 
@@ -173,6 +189,8 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
     let mut optimizer_state = None;
     let mut trace = None;
     let mut output_backward_shifts = None;
+    let mut backward_quantization = ProductionBackwardQuantization::RescuedRhu;
+    let mut backward_stochastic_seed = 0_u64;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
         let value = || "missing saturation backoff audit argument value";
@@ -187,6 +205,20 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--output-backward-shifts" => {
                 output_backward_shifts = Some(parse_shifts(&args.next().ok_or_else(value)?)?)
             }
+            "--backward-quantization" => {
+                let mode = args.next().ok_or_else(value)?;
+                backward_quantization = match mode.as_str() {
+                    "rescued-rhu" | "rescued_rhu" => ProductionBackwardQuantization::RescuedRhu,
+                    "late-rhu" | "late_rhu" => ProductionBackwardQuantization::LateRhu,
+                    "late-stochastic" | "late_stochastic" => {
+                        ProductionBackwardQuantization::LateStochastic
+                    }
+                    _ => return Err(format!("unsupported backward quantization: {mode}").into()),
+                };
+            }
+            "--backward-stochastic-seed" => {
+                backward_stochastic_seed = args.next().ok_or_else(value)?.parse()?
+            }
             other => return Err(format!("unknown argument: {other}").into()),
         }
     }
@@ -198,6 +230,8 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
         trace: trace.ok_or("--trace is required")?,
         output_backward_shifts: output_backward_shifts
             .ok_or("--output-backward-shifts is required")?,
+        backward_quantization,
+        backward_stochastic_seed,
     })
 }
 

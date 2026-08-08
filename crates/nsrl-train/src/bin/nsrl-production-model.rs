@@ -9,10 +9,10 @@ use nsrl_core::SoftmaxNormalization;
 use nsrl_corpus::subword::SubwordTokenizer;
 use nsrl_train::production::{
     DirectFeatureTrainConfig, DirectHeadTrainConfig, ProductionAtomicDocumentRange,
-    ProductionAtomicSourceBinding, ProductionBooleanJetAnalysisRole,
-    ProductionBooleanJetConfirmationConfig, ProductionBooleanJetConfirmationV2Config,
-    ProductionBooleanJetMatchedControlV2Config, ProductionBooleanJetMove,
-    ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
+    ProductionAtomicSourceBinding, ProductionBackwardQuantization,
+    ProductionBooleanJetAnalysisRole, ProductionBooleanJetConfirmationConfig,
+    ProductionBooleanJetConfirmationV2Config, ProductionBooleanJetMatchedControlV2Config,
+    ProductionBooleanJetMove, ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
     ProductionBooleanJetProtocolBindings, ProductionBooleanJetProtocolVersion,
     ProductionBooleanJetRankTwoConfig, ProductionFullTrainConfig, ProductionGenerationConfig,
     ProductionGradientAlignmentConfig, ProductionModelConfig, ProductionModelV1,
@@ -98,6 +98,8 @@ struct Config {
     max_optimizer_steps: usize,
     evaluation_windows: usize,
     reject_saturated_batch: bool,
+    backward_quantization: ProductionBackwardQuantization,
+    backward_stochastic_seed: u64,
     alignment_coordinates_per_group: usize,
     alignment_transfer_windows: usize,
     alignment_documents_per_surface: usize,
@@ -182,6 +184,8 @@ impl Default for Config {
             max_optimizer_steps: full.max_optimizer_steps,
             evaluation_windows: full.evaluation_windows,
             reject_saturated_batch: full.reject_saturated_batch,
+            backward_quantization: full.backward_quantization,
+            backward_stochastic_seed: full.backward_stochastic_seed,
             alignment_coordinates_per_group: 1,
             alignment_transfer_windows: 1,
             alignment_documents_per_surface: 0,
@@ -1164,6 +1168,8 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
         max_optimizer_steps: config.max_optimizer_steps,
         evaluation_windows: config.evaluation_windows,
         reject_saturated_batch: config.reject_saturated_batch,
+        backward_quantization: config.backward_quantization,
+        backward_stochastic_seed: config.backward_stochastic_seed,
     }
 }
 
@@ -1467,6 +1473,21 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 config.evaluation_windows = next(&mut args, "--evaluation-windows")?.parse()?
             }
             "--reject-saturated-batch" => config.reject_saturated_batch = true,
+            "--backward-quantization" => {
+                let value = next(&mut args, "--backward-quantization")?;
+                config.backward_quantization = match value.as_str() {
+                    "rescued-rhu" | "rescued_rhu" => ProductionBackwardQuantization::RescuedRhu,
+                    "late-rhu" | "late_rhu" => ProductionBackwardQuantization::LateRhu,
+                    "late-stochastic" | "late_stochastic" => {
+                        ProductionBackwardQuantization::LateStochastic
+                    }
+                    _ => return Err(format!("unsupported backward quantization: {value}").into()),
+                }
+            }
+            "--backward-stochastic-seed" => {
+                config.backward_stochastic_seed =
+                    next(&mut args, "--backward-stochastic-seed")?.parse()?
+            }
             "--coordinates-per-group" => {
                 config.alignment_coordinates_per_group =
                     next(&mut args, "--coordinates-per-group")?.parse()?
@@ -1612,7 +1633,7 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors.\n"
+        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors. Pass --backward-quantization rescued-rhu|late-rhu|late-stochastic to select the schedule-bound intermediate-gradient quantizer; stochastic mode also binds --backward-stochastic-seed N for exact restart replay.\n"
     );
     println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
@@ -1702,6 +1723,10 @@ mod tests {
             "14",
             "--embedding-learning-rate-boost-shift",
             "1",
+            "--backward-quantization",
+            "late-stochastic",
+            "--backward-stochastic-seed",
+            "29",
         ]))
         .expect("spread training arguments");
         assert!(config.spread_windows);
@@ -1709,6 +1734,11 @@ mod tests {
         assert_eq!(config.training_workers, 3);
         assert_eq!(config.output_bias_learning_rate_shift, Some(14));
         assert_eq!(config.embedding_learning_rate_boost_shift, 1);
+        assert_eq!(
+            config.backward_quantization,
+            ProductionBackwardQuantization::LateStochastic
+        );
+        assert_eq!(config.backward_stochastic_seed, 29);
     }
 
     #[test]
