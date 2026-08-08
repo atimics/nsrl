@@ -456,6 +456,16 @@ diagnostic therefore localizes the first unsafe interval between optimizer
 steps 256 and 512 using development loss and numeric health only. It does not
 read test or select a promotion candidate.
 
+The first localization pass resumes the exact step-256 model and optimizer at
+three prospectively frozen endpoints. Steps 320 and 384 remain saturation-free;
+step 384 improves development NLL by 177 millibits relative to full-v1, with
+embedding/K/O movement of 33, 58,423, and 2,518 L1 and V still unchanged. By
+step 448, movement has discontinuously jumped to 62,508 embeddings, 2.54
+million K, 99,007 V, and 7.96 million O L1, alongside 23,001 training and
+238,946 manifest-inference saturations. The first unsafe interval is therefore
+384--448. Test remains unread. A finer diagnostic can now distinguish whether
+V's first integer updates coincide with the runaway or merely follow it.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
