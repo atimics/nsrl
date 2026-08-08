@@ -560,6 +560,20 @@ gate, not a liveness or quality result. The frozen evidence is
 A fresh 2,048-window run is required to learn whether those unbiased sub-LSB
 rounding events accumulate into safe embeddings/K/V/O movement.
 
+That representation-v4 horizon is complete and falsifies late-stochastic
+backward quantization as the missing liveness mechanism at this scale. All 512
+steps commit with zero saturation, no rejected batch, 2,116,385 stochastic
+round-ups, and clean isolation. Nevertheless, the final model is byte-for-byte
+identical to representation-v3: only O moves by 20 L1 units, embeddings/K/V do
+not move, and development NLL again regresses by 46 millibits. Relative to
+rescued-RHU, late-stochastic produces far fewer nonzero K and V parameter
+gradients over this horizon (2,048 and 256 versus 253,952 and 24,576). The
+frozen result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v4-stability.json`.
+The next justified lever is therefore group-specific residual/update thresholds
+on the denser rescued-RHU signal, guarded on the exact trigger batch before any
+new full-horizon run.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
