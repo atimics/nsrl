@@ -495,6 +495,13 @@ continues. The next engineering gate is to bind the exact batch inputs, then
 make saturation rejection atomic so a failed batch cannot mutate either model
 weights or optimizer residual state.
 
+The bound spread-window audit covers both step-429 and step-430 batches. All
+eight windows map to distinct corpus documents at exact population ranks; the
+four triggering contexts have 49--61 unique tokens, distinct decoded-content
+hashes, and ordinary eight-token suffix targets. This is not a duplicated or
+empty-window ingestion error. The evidence is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v2-trigger-window-audit.json`.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
