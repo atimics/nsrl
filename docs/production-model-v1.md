@@ -435,6 +435,27 @@ changes only embeddings from 4 to 1 and O from 17 to 13, and retains the same
 isolation, replay, health, held-out, and public quality gates. This is a
 corrected fresh-run boundary test, not permission to rebind old optimizer state.
 
+Representation-v2 is complete and rejects the assumption that simultaneous
+boundary reachability remains stable over the full horizon. All four required
+groups move and every frozen group remains unchanged, but development NLL
+regresses by 7,361 millibits, so the test partition is not scored. Training
+accumulates 2,626 gradient and 20,375 weight saturations, concentrated in K and
+O. Public inference then records 238,805 residual saturations on the manifest,
+mean target rank regresses to 2,404, and 119/120 free-running transitions still
+self-loop. Exact replay passes, but no quality or generation authorization is
+granted.
+
+Post-rejection phase localization shows a sharp nonlinear transition rather
+than immediate instability. At the prospectively fixed 1,024-window midpoint,
+embeddings move 28 L1, K 28,969, and O 1,856 across all six layers; V remains
+locked. Training and public-manifest saturation are both zero, and development
+NLL improves by 106 millibits. During the second half, O movement explodes to
+7.96 million L1 and K to 2.54 million, with maximum source-relative coordinate
+deltas beyond the i8 range in both groups; V then moves 99,007 L1. The next
+diagnostic therefore localizes the first unsafe interval between optimizer
+steps 256 and 512 using development loss and numeric health only. It does not
+read test or select a promotion candidate.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

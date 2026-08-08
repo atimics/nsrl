@@ -1,0 +1,74 @@
+{
+  "schema": "nsrl.production_causal_tail_context_quality_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v2-contract.json",
+    "bytes": 8291,
+    "fnv64": "0x851af06da088e706",
+    "sha256": "4510a23bb2dd217ca10a9e3b21bc049d2c4b1b34577a98f6ae414c4706900e73"
+  },
+  "preflight": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v2.json",
+    "bytes": 7113,
+    "fnv64": "0x71df91e1498947b2",
+    "sha256": "47f9ecd40e4a2d76d2e8aad341c63ee6eb6288196815619826941710292ab57d"
+  },
+  "candidate_model_hash": "0x2a9aaaadba611651",
+  "measurements": {
+    "development_total_nll_delta_millibits": 7361,
+    "test_total_nll_delta_millibits": null,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 2404,
+    "teacher_forced_mean_target_probability_q15": 4,
+    "free_running_self_loop_transition_per_mille": 991,
+    "prefix_to_suffix_logit_l1_per_mille": 8013,
+    "context_unique_greedy_tokens": 3,
+    "context_greedy_self_loops": 12,
+    "rollout_residual_saturation_count": 1297231,
+    "context_residual_saturation_count": 245159,
+    "manifest_residual_saturation_count": 238805
+  },
+  "gates": {
+    "preflight_passed": false,
+    "teacher_forced_top1_minimum": false,
+    "teacher_forced_mean_target_rank_maximum": false,
+    "teacher_forced_mean_target_probability_q15_minimum": false,
+    "free_running_self_loop_per_mille_maximum": false,
+    "prefix_to_suffix_context_effect_per_mille_maximum": false,
+    "context_unique_greedy_tokens_minimum": false,
+    "context_greedy_self_loops_maximum": false,
+    "inference_residual_saturation_maximum": false
+  },
+  "quality_gate_passed": false,
+  "open_generation_rerun_authorized": false,
+  "evidence": {
+    "rollout": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v2-rollout-divergence.json",
+      "bytes": 9560,
+      "fnv64": "0x889be7f95c9990f3",
+      "sha256": "b4809e2b20b1456b6045980942f88a6a4200e2091de58c1f487d3fc629cea4fc"
+    },
+    "context": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v2-context-sensitivity.json",
+      "bytes": 9979,
+      "fnv64": "0x20594d71706cc63b",
+      "sha256": "dd431779dcac921fcc4dcec8257ce8b1de3ad16476e241a5562a0336fa2ff13c"
+    },
+    "saturation": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v2-residual-saturation.json",
+      "bytes": 4508,
+      "fnv64": "0x8c0a6bb1fd317b64",
+      "sha256": "d0e8fa7b47edabbbd5db63ce5edc00db233622c110b33c0840cd5010f19b1d7f"
+    }
+  },
+  "hidden_panel_opened": false,
+  "known_non_claims": [
+    "bounded_2048_window_representation_only_fresh_optimizer_run_not_full_corpus_training",
+    "reuses_training_windows_after_the_full_tail_run",
+    "does_not_resume_or_rebind_the_full_v1_or_representation_v1_optimizer_state",
+    "public_test_has_prior_confirmatory_reads",
+    "isolated_embedding_kvo_hypothesis_does_not_change_the_output_head_or_other_trunk_groups",
+    "postflight_public_metrics_are_development_gates_not_hidden_evaluation",
+    "postflight_success_authorizes_only_the_public_open_generation_rerun",
+    "complete_open_generation_promotion_still_requires_baselines_human_review_and_untouched_hidden_panel"
+  ]
+}
