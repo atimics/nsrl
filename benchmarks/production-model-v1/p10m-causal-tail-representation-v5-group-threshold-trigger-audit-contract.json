@@ -1,0 +1,121 @@
+{
+  "schema": "nsrl.production_representation_group_threshold_trigger_audit_contract.v1",
+  "objective": "test_batch_complete_embedding_residual_flush_and_minimum_group_specific_update_thresholds_on_the_exact_step_430_trigger_batch",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "commit": "5e91914c",
+    "backward_quantization": "rescued-rhu",
+    "output_backward_shift": 9,
+    "flush_batched_embedding_residuals": true,
+    "cli_learning_rate_shifts": {
+      "embeddings": 0,
+      "embedding_boost": 3,
+      "k": 21,
+      "v": 23,
+      "o": 9
+    },
+    "effective_learning_rate_shifts": {
+      "embeddings": 0,
+      "k": 24,
+      "v": 26,
+      "o": 12
+    }
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/model-step-429.nsrlpm",
+    "model_hash": "0x2b5fcca18e6ad700",
+    "model_sha256": "f551732806e1fc123a864e67f44807635dca3e234fa87337e3d14252f928ae78",
+    "optimizer_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/optimizer-step-429.nsrlpo",
+    "optimizer_state_hash": "0x00049ca43d5255ad",
+    "optimizer_sha256": "99dfa0c5748e2914d151f47cd3c084833a07e241fb3823003ed2df7dbb014cbb",
+    "trace_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/train-step-429.json",
+    "trace_sha256": "a533c6eaa3418fe3978672e3d482f60971f858d37ff3463fa581cd02ee6d2d28",
+    "total_optimizer_step": 429,
+    "next_window": 1716
+  },
+  "failure_witness": {
+    "trace_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/train-step-430.json",
+    "trace_sha256": "84e1f0b621788bd293898de48b2a22e787992cf54f77140fd58e0bbab761e44f",
+    "output_backward_shift": 8,
+    "gradient_saturation_count": 2626,
+    "residual_saturation_count": 0,
+    "weight_saturation_count": 20375
+  },
+  "derivation": {
+    "selection_policy": "one_bit_embedding_materialization_margin_and_first_nonzero_residual_threshold_for_each_matrix_group",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v3-stability.json",
+        "sha256": "a2877a86153c22483db580ad62e5fe29c9d6775b7a2f86a9b73ae1934255a11e"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v4-stability.json",
+        "sha256": "c48c4ceb753b3959499920400aa24ba3bd79e0c6d71a860f0e915cf09d830a67"
+      }
+    ],
+    "residual_audits": {
+      "embeddings": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v3-stability/embeddings-residual-audit.json",
+        "sha256": "17940803de9b707ca09dfac127d1d29f7aff17692764b7584d2a9818d33c00af",
+        "maximum_absolute_residual": 1,
+        "selected_effective_shift": 0
+      },
+      "k": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v3-stability/k-residual-audit.json",
+        "sha256": "2e66036dbab377dfb0517f5be58051366d9848391b0077e29aa6c0498e15abeb",
+        "first_crossing_effective_shift": 24,
+        "coordinates_at_threshold": 1152
+      },
+      "v": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v3-stability/v-residual-audit.json",
+        "sha256": "9fa99af7874a0fa14478720c7a8825c37c2216812542e9803597d5f10ed2f434",
+        "first_crossing_effective_shift": 26,
+        "coordinates_at_threshold": 998
+      },
+      "o": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v3-stability/o-residual-audit.json",
+        "sha256": "3f41fddbf3ae59bcb536850cdd8c5e7dfe5edeb7a666d05a5d8a3199da8cbeb6",
+        "first_crossing_effective_shift": 12,
+        "coordinates_at_threshold": 46
+      }
+    }
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda"
+  },
+  "audit": {
+    "mode": "read_only_inherited_residual_counterfactual",
+    "candidate_output_backward_shifts": [
+      9
+    ],
+    "candidate_schedule_hash_rebound_in_memory_only": true,
+    "candidate_artifacts_persisted": false
+  },
+  "gates": {
+    "exact_trigger_batch_must_commit": true,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "required_moving_groups": [
+      "k",
+      "v",
+      "o"
+    ],
+    "batch_complete_embedding_flush_must_be_active": true,
+    "source_model_and_optimizer_must_not_be_mutated": true,
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "read_only_local_counterfactual": true,
+    "fresh_full_horizon_run_requires_trigger_gate": true,
+    "optimizer_schedule_change": false,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}
