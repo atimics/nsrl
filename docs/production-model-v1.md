@@ -413,6 +413,28 @@ The bound full-v1 residuals predict 1,558 embedding, 188,582 K, 104,370 V, and
 31,295 O coordinates at those thresholds, spanning every attention layer. It
 uses 2,048 spread windows and retains the same strong public quality gates.
 
+Representation-v1 is complete and rejects both its liveness and quality
+hypotheses. K moves 85,881 L1 units and V moves 1,705, but embeddings and O do
+not move at all. Development and test NLL improve by only 262 and 691
+millibits. Mean target rank improves slightly from 2,106 to 2,091, while
+top-one remains 0/128, target probability remains 5 Q15, all 120 free-running
+transitions still self-loop, and only three prompt-greedy tokens appear. Replay
+is exact, frozen groups remain unchanged, and every saturation counter is zero.
+
+The failed liveness forecast exposes a contract-design error: the threshold
+counts came from full-v1's accumulated optimizer residuals, but the generic
+sequence runner started representation-v1 with a fresh zero-residual optimizer.
+This is a model continuation, not an optimizer-state continuation, so those old
+counts were not valid predictions for a 2,048-window fresh run. The bound final
+representation-v1 state now supplies like-for-like fresh-run evidence.
+Embeddings have 56 unit residuals and first cross at effective shift 1. O first
+crosses at shift 16 with only two coordinates in layer 5; effective shift 13 is
+the first threshold that reaches all six attention layers, with 4,283 total
+coordinates. Representation-v2 repeats the same full-v1 source and windows,
+changes only embeddings from 4 to 1 and O from 17 to 13, and retains the same
+isolation, replay, health, held-out, and public quality gates. This is a
+corrected fresh-run boundary test, not permission to rebind old optimizer state.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

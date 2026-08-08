@@ -1,0 +1,73 @@
+{
+  "schema": "nsrl.production_causal_tail_context_quality_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v1-contract.json",
+    "bytes": 8435,
+    "fnv64": "0xd9b5fbb3ccac0b3c",
+    "sha256": "e4d7bef1447a66ad92c9a81871d107e8376365150d45eb23e6004be98481cdb8"
+  },
+  "preflight": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v1.json",
+    "bytes": 7539,
+    "fnv64": "0x77cac6162485efd7",
+    "sha256": "670ac6673f33d5a22c35c3b6e582c95b9cb550a00d0eaf2b77723d843e8a21fa"
+  },
+  "candidate_model_hash": "0x574af274974b1377",
+  "measurements": {
+    "development_total_nll_delta_millibits": -262,
+    "test_total_nll_delta_millibits": -691,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 2091,
+    "teacher_forced_mean_target_probability_q15": 5,
+    "free_running_self_loop_transition_per_mille": 1000,
+    "prefix_to_suffix_logit_l1_per_mille": 1312,
+    "context_unique_greedy_tokens": 3,
+    "context_greedy_self_loops": 7,
+    "rollout_residual_saturation_count": 0,
+    "context_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "gates": {
+    "preflight_passed": false,
+    "teacher_forced_top1_minimum": false,
+    "teacher_forced_mean_target_rank_maximum": true,
+    "teacher_forced_mean_target_probability_q15_minimum": false,
+    "free_running_self_loop_per_mille_maximum": false,
+    "prefix_to_suffix_context_effect_per_mille_maximum": true,
+    "context_unique_greedy_tokens_minimum": false,
+    "context_greedy_self_loops_maximum": true,
+    "inference_residual_saturation_maximum": true
+  },
+  "quality_gate_passed": false,
+  "open_generation_rerun_authorized": false,
+  "evidence": {
+    "rollout": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v1-rollout-divergence.json",
+      "bytes": 9484,
+      "fnv64": "0x6fc1017db5d27d49",
+      "sha256": "4b80a9519778537627e54760cdf05bfb6713542c284a9c129facc4ed7d55d83d"
+    },
+    "context": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v1-context-sensitivity.json",
+      "bytes": 9919,
+      "fnv64": "0x6568d8d2736b0634",
+      "sha256": "df9469211b18cfaebe58f3584f32a422a2ade347bd51019fbc5ab92c38daaca0"
+    },
+    "saturation": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v1-residual-saturation.json",
+      "bytes": 4258,
+      "fnv64": "0x1ecdc336bf087155",
+      "sha256": "e14a645ca96de561c2e622b89e91a2702bb4520afa343d9ff678618da15d618a"
+    }
+  },
+  "hidden_panel_opened": false,
+  "known_non_claims": [
+    "bounded_2048_window_representation_only_continuation_not_full_corpus_training",
+    "reuses_training_windows_after_the_full_tail_run",
+    "public_test_has_prior_confirmatory_reads",
+    "isolated_embedding_kvo_hypothesis_does_not_change_the_output_head_or_other_trunk_groups",
+    "postflight_public_metrics_are_development_gates_not_hidden_evaluation",
+    "postflight_success_authorizes_only_the_public_open_generation_rerun",
+    "complete_open_generation_promotion_still_requires_baselines_human_review_and_untouched_hidden_panel"
+  ]
+}
