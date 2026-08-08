@@ -1,0 +1,73 @@
+{
+  "schema": "nsrl.production_representation_stability.v1",
+  "checked": false,
+  "objective": "test_corrected_embedding_batch_semantics_and_minimum_group_specific_update_thresholds_over_the_fresh_full_representation_horizon",
+  "outcome": "stable_live_without_development_improvement",
+  "source_model_hash": "0x5b54c3ba2baa9d39",
+  "candidate": {
+    "model_hash": "0xef0d1adc8eecddd6",
+    "model_sha256": "82005038d204b69c867a4624451cffacd0e023ee3029b2ff67a54f6a5a1e43de",
+    "optimizer_state_hash": "0x6d12dbb24014b0c4",
+    "optimizer_sha256": "87e8161160c3c334d7b3080259717d9ad752413942acc15647dc87b427334c53",
+    "total_optimizer_step": 512,
+    "next_epoch": 1,
+    "next_window": 0,
+    "schedule_complete": true
+  },
+  "transaction": {
+    "saturation_policy": "reject_batch_stop",
+    "rejected_batch": null
+  },
+  "health": {
+    "committed_training": {
+      "gradient_saturation_count": 0,
+      "residual_saturation_count": 0,
+      "weight_saturation_count": 0
+    },
+    "rejected_batch_saturation_count": 0,
+    "development_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "development": {
+    "source_total_nll_millibits": 6540187,
+    "candidate_total_nll_millibits": 6540357,
+    "delta_millibits": 170
+  },
+  "movement_l1": {
+    "embeddings": 1,
+    "attention_rms": 0,
+    "mlp_rms": 0,
+    "final_rms": 0,
+    "q": 0,
+    "k": 1152,
+    "v": 998,
+    "o": 58,
+    "up": 0,
+    "gate": 0,
+    "down": 0,
+    "output": 0,
+    "bias": 0
+  },
+  "gates": {
+    "schedule_complete_at_required_step": true,
+    "atomic_saturation_guard_active": true,
+    "no_batch_rejected": true,
+    "committed_training_saturation_zero": true,
+    "rejected_batch_saturation_zero": true,
+    "development_residual_saturation_zero": true,
+    "manifest_residual_saturation_zero": true,
+    "batch_complete_embedding_residual_flush_active": true,
+    "required_parameter_groups_moved": true,
+    "frozen_parameter_groups_unchanged": true,
+    "development_strictly_improved": false,
+    "test_partition_not_read": true,
+    "all_stability_liveness_development_gates_passed": false
+  },
+  "authorization": {
+    "diagnostic_only": true,
+    "test_evaluation": false,
+    "quality_postflight": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false
+  }
+}

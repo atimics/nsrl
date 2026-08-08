@@ -601,6 +601,19 @@ is
 This authorizes a fresh protected horizon with the same schedule; it does not
 yet establish whole-horizon stability or development improvement.
 
+The fresh representation-v5 horizon completes and closes the numeric-liveness
+gap, but not the learning-direction gap. All 512 steps commit with zero
+training, development, or public-manifest saturation; no batch is rejected;
+the corrected embedding flush is active; and isolation passes. Embeddings, K,
+V, and O move by 1, 1,152, 998, and 58 L1 units respectively, exactly turning
+the previously accumulated residual boundaries into real updates. Development
+NLL nevertheless regresses by 170 millibits, so the result is stable and live
+without held-out improvement. The frozen result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v5-stability.json`.
+The next diagnostic must attribute that regression across the four moved groups
+or enforce a measured descent condition; further indiscriminate threshold
+reduction is not justified.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
