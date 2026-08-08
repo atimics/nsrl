@@ -76,7 +76,11 @@ assert(
     && trace.training.output_backward_shift === contract.training.output_backward_shift
     && trace.training.probability_gradient_fractional_bits
       === contract.training.probability_gradient_fractional_bits
-    && trace.training.probability_normalization === contract.training.probability_normalization,
+    && trace.training.probability_normalization === contract.training.probability_normalization
+    && (contract.training.backward_quantization === undefined
+      || (trace.training.backward_quantization === contract.training.backward_quantization
+        && trace.training.backward_stochastic_seed
+          === contract.training.backward_stochastic_seed)),
   "training geometry mismatch",
 );
 assert(
@@ -125,9 +129,16 @@ const manifestSaturation = saturation.aggregate.residual_saturation_count;
 const numericHealthPassed = committedTrainingSaturation === 0
   && rejectedSaturation === 0
   && manifestSaturation <= contract.gates.manifest_residual_saturation_max;
+const stochasticQuantization = contract.training.backward_quantization ?? null;
+const stochasticRoundUpCount = trace.diagnostics.backward_stochastic_round_up_count ?? 0;
+const stochasticSignalPassed = stochasticQuantization === null
+  || stochasticRoundUpCount >= contract.gates.backward_stochastic_round_up_count_min;
 const stabilityPassed = scheduleComplete && numericHealthPassed && frozenGroupsUnchanged;
 const livenessPassed = requiredGroupsMoved;
-const allGatesPassed = stabilityPassed && livenessPassed && developmentImproved;
+const allGatesPassed = stabilityPassed
+  && stochasticSignalPassed
+  && livenessPassed
+  && developmentImproved;
 const outcome = allGatesPassed
   ? "stable_live_development_improved"
   : !scheduleComplete
@@ -136,9 +147,11 @@ const outcome = allGatesPassed
       ? "full_horizon_numeric_health_failed"
       : !frozenGroupsUnchanged
         ? "isolation_failed"
-        : !livenessPassed
-          ? "stable_but_required_representation_groups_not_live"
-          : "stable_live_without_development_improvement";
+        : !stochasticSignalPassed
+          ? "full_horizon_stochastic_signal_missing"
+          : !livenessPassed
+            ? "stable_but_required_representation_groups_not_live"
+            : "stable_live_without_development_improvement";
 
 const result = {
   schema: "nsrl.production_representation_stability.v1",
@@ -169,6 +182,14 @@ const result = {
     delta_millibits: developmentDelta,
   },
   movement_l1: movement,
+  ...(stochasticQuantization === null ? {} : {
+    backward_quantization: {
+      mode: stochasticQuantization,
+      seed: contract.training.backward_stochastic_seed,
+      stochastic_round_up_count: stochasticRoundUpCount,
+      backward_quantization_count: trace.diagnostics.backward_quantization_count,
+    },
+  }),
   gates: {
     schedule_complete_at_required_step: scheduleComplete,
     atomic_saturation_guard_active: true,
@@ -178,6 +199,9 @@ const result = {
     development_residual_saturation_zero:
       development.health.residual_saturation_count === 0,
     manifest_residual_saturation_zero: manifestSaturation === 0,
+    ...(stochasticQuantization === null ? {} : {
+      stochastic_round_up_count_at_least_minimum: stochasticSignalPassed,
+    }),
     required_parameter_groups_moved: requiredGroupsMoved,
     frozen_parameter_groups_unchanged: frozenGroupsUnchanged,
     development_strictly_improved: developmentImproved,
