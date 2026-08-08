@@ -1,0 +1,229 @@
+{
+  "schema": "nsrl.production_causal_tail_stability_contract.v1",
+  "objective": "corrected_fresh_optimizer_embedding_kvo_representation_boundary_test",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "artifact_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "derivation": {
+    "policy": "repeat_representation_v1_from_the_same_model_with_fresh_run_boundaries_that_materialize_embeddings_and_all_o_layers",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v1.json",
+        "sha256": "670ac6673f33d5a22c35c3b6e582c95b9cb550a00d0eaf2b77723d843e8a21fa"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v1-quality-gate.json",
+        "sha256": "110470acb05f4c66cd09e9dd4a3f3c16fbae8a5bebb3f28ceab1c329907da73d"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v1-embeddings-residual-audit.json",
+        "sha256": "9a22b62ebf1fc5c2d766d22b93f06019ed430973e964cbeee6d81d91e3fbcbbf"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v1-o-residual-audit.json",
+        "sha256": "7d42460a3392fcff99a23de7b243baacd8abb1b5b9de15575f1d00e3a88098c1"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v1-rollout-divergence.json",
+        "sha256": "4b80a9519778537627e54760cdf05bfb6713542c284a9c129facc4ed7d55d83d"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v1-context-sensitivity.json",
+        "sha256": "df9469211b18cfaebe58f3584f32a422a2ade347bd51019fbc5ab92c38daaca0"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v1-residual-saturation.json",
+        "sha256": "e14a645ca96de561c2e622b89e91a2702bb4520afa343d9ff678618da15d618a"
+      }
+    ],
+    "representation_v1_preflight_passed": false,
+    "representation_v1_development_total_nll_delta_millibits": -262,
+    "representation_v1_test_total_nll_delta_millibits": -691,
+    "representation_v1_movement_l1": {
+      "embeddings": 0,
+      "k": 85881,
+      "v": 1705,
+      "o": 0
+    },
+    "representation_v1_teacher_forced_top1_matches": 0,
+    "representation_v1_teacher_forced_mean_target_rank": 2091,
+    "representation_v1_teacher_forced_mean_target_probability_q15": 5,
+    "representation_v1_free_running_self_loop_transition_per_mille": 1000,
+    "representation_v1_context_unique_greedy_tokens": 3,
+    "representation_v1_context_greedy_self_loops": 7,
+    "representation_v1_training_and_inference_saturation_count": 0,
+    "representation_v1_started_with_zero_optimizer_residuals": true,
+    "full_v1_optimizer_residuals_are_not_carried_into_this_run": true,
+    "effective_shift_changes_from_representation_v1": {
+      "embeddings": {
+        "old": 4,
+        "new": 1
+      },
+      "o": {
+        "old": 17,
+        "new": 13
+      }
+    },
+    "fresh_run_final_residual_coordinates_at_new_threshold": {
+      "embeddings": 56,
+      "o": 4283
+    },
+    "o_coordinates_at_effective_shift_13_by_layer": [
+      17,
+      17,
+      550,
+      1416,
+      1333,
+      950
+    ],
+    "o_shift_13_is_the_first_audited_threshold_to_reach_every_layer": true,
+    "continuation_windows": 2048,
+    "only_embeddings_k_v_and_o_may_move": true,
+    "development_test_and_postflight_metrics_not_used_to_choose_the_continuation_result": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 2048,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_optimizer_steps": 256,
+    "optimizer_steps": 512,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "embedding_learning_rate_boost_shift": 2,
+    "parallel_replay": true,
+    "cli_learning_rate_shifts": {
+      "matrix": 59,
+      "embeddings": 0,
+      "vector": 62,
+      "output_bias": 51,
+      "final_rms": 59,
+      "q": 59,
+      "k": 22,
+      "v": 26,
+      "o": 10,
+      "up": 59,
+      "gate": 59,
+      "down": 59,
+      "output": 51
+    },
+    "learning_rate_shifts": {
+      "embeddings": 1,
+      "attention_rms": 61,
+      "mlp_rms": 55,
+      "final_rms": 62,
+      "q": 62,
+      "k": 25,
+      "v": 29,
+      "o": 13,
+      "up": 62,
+      "gate": 62,
+      "down": 62,
+      "output": 54,
+      "bias": 54
+    },
+    "effective_probability_adjusted_shifts": {
+      "output": 62,
+      "bias": 62
+    },
+    "shift_derivation": "fresh_zero_residual_representation_v1_boundaries_with_o_materialized_in_every_layer"
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 512,
+    "selection_partition": "development",
+    "confirmation_partition": "test",
+    "source_dev_total_nll_millibits": 6540187,
+    "source_test_total_nll_millibits": 6556527,
+    "test_candidate_must_not_be_scored_unless_development_improves": true
+  },
+  "gates": {
+    "development_total_nll_strictly_improves": true,
+    "test_total_nll_strictly_improves": true,
+    "required_parameter_groups": [
+      "embeddings",
+      "k",
+      "v",
+      "o"
+    ],
+    "frozen_parameter_groups": [
+      "attention_rms",
+      "mlp_rms",
+      "final_rms",
+      "q",
+      "up",
+      "gate",
+      "down",
+      "output",
+      "bias"
+    ],
+    "gradient_residual_and_weight_saturation_max": 0,
+    "exact_restart_replay": true
+  },
+  "postflight": {
+    "rollout": {
+      "windows": 8,
+      "context_tokens": 64,
+      "rollout_tokens": 16,
+      "evaluated_positions": 128,
+      "minimum_teacher_forced_top1_matches": 1,
+      "maximum_mean_target_rank": 2200,
+      "minimum_mean_target_probability_q15": 7,
+      "maximum_self_loop_transition_per_mille": 950,
+      "maximum_prefix_to_suffix_logit_l1_per_mille": 5000
+    },
+    "context": {
+      "prompts": 12,
+      "top_k": 8,
+      "minimum_unique_greedy_tokens": 6,
+      "maximum_greedy_self_loops": 10
+    },
+    "saturation": {
+      "prompts": 12,
+      "layers": 6,
+      "maximum_residual_saturation_count": 0
+    }
+  },
+  "authorization": {
+    "local_representation_continuation": true,
+    "postflight_quality_gate_required": true,
+    "open_generation_rerun": true,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_2048_window_representation_only_fresh_optimizer_run_not_full_corpus_training",
+    "reuses_training_windows_after_the_full_tail_run",
+    "does_not_resume_or_rebind_the_full_v1_or_representation_v1_optimizer_state",
+    "public_test_has_prior_confirmatory_reads",
+    "isolated_embedding_kvo_hypothesis_does_not_change_the_output_head_or_other_trunk_groups",
+    "postflight_public_metrics_are_development_gates_not_hidden_evaluation",
+    "postflight_success_authorizes_only_the_public_open_generation_rerun",
+    "complete_open_generation_promotion_still_requires_baselines_human_review_and_untouched_hidden_panel"
+  ]
+}
