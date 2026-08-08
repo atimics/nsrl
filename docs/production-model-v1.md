@@ -466,6 +466,15 @@ million K, 99,007 V, and 7.96 million O L1, alongside 23,001 training and
 384--448. Test remains unread. A finer diagnostic can now distinguish whether
 V's first integer updates coincide with the runaway or merely follow it.
 
+The sixteen-step refinement narrows the transition to 416--432. Steps 400 and
+416 remain identical on development quality and saturation to the safe
+step-384 edge. At step 416, cumulative movement is only 39 embeddings, 58,423
+K, zero V, and 2,518 O L1. At step 432, embeddings, K, V, and O jump together
+to 56,479, 2.54 million, 99,007, and 7.96 million L1, with the complete
+saturation signature already present. This establishes coincidence but not
+causal order. A final four-step localization is authorized to identify the
+first offending batch interval before changing any group rate.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
