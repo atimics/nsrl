@@ -1,0 +1,207 @@
+{
+  "schema": "nsrl.production_causal_tail_stability_contract.v1",
+  "objective": "residual_threshold_unlock_preflight_for_mean_integer_base2_next_token_nll_over_recent_causal_tail",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-sequence-scale-v2/candidate.nsrlpm",
+    "model_hash": "0x5144efe093d39404",
+    "artifact_sha256": "75848eeb9cbb6afd2d45b45732ab5d96a18170880f519a85585381f4abe69e2a"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "derivation": {
+    "policy": "first_nonzero_integer_update_threshold_from_the_zero_saturation_tail_stability_optimizer_residuals",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-stability-v1.json",
+        "sha256": "5a39672f83bcb780e0292921978efd87cd7ea76f7f8c6f5d65eb43df03a3e50a"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-stability-v1-quality-gate.json",
+        "sha256": "cceb8b540a6fbe98bbd97c5c9f702f96f06231216571299eb2be34a021eb7979"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-stability-v1-attention_rms-residual-audit.json",
+        "sha256": "03aca1c3782c3e56ef874fc263283ac3bb7bfa1ae25a9707945f445418ce284c"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-stability-v1-mlp_rms-residual-audit.json",
+        "sha256": "c3ef86ff392646c3bd0884e3edea2ee71ffab9e084d3378bd30bcd4dbbcdbb2c"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-stability-v1-q-residual-audit.json",
+        "sha256": "d9b45ec44a6b9451b5f7c147edfadd90086df694453fd1abe2b7559242834cf6"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-stability-v1-up-residual-audit.json",
+        "sha256": "44405e97e0876b57a0b4df45d68fffbd5eeed97da85c60f586234301d3f75b98"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-stability-v1-gate-residual-audit.json",
+        "sha256": "31f5e9853e668acc820bcee104c3bfe52594bcd0ae167beeeca52c02ea5a01a3"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-stability-v1-o-residual-audit.json",
+        "sha256": "f1ce1b4803ba291b9cc9d6d2e86186f18960ebe46d559afce2b282c3d6798c77"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-stability-v1-rollout-divergence.json",
+        "sha256": "928ac51da412c2e0518233f0953bef3d9bf811219a6b4f94380f09b92733aed9"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-stability-v1-context-sensitivity.json",
+        "sha256": "651ac8a1cd127926b7ca9330bc6319d5382129a4c83fa6e0f8e455b619e9c3b6"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/p10m-causal-tail-stability-v1-residual-saturation.json",
+        "sha256": "7134ef4e42988db1fb6f75992771e377e5b7d6480db0fe81fc542376ee0189fd"
+      }
+    ],
+    "stability_v1_development_total_nll_delta_millibits": -9431,
+    "stability_v1_test_total_nll_delta_millibits": -4430,
+    "stability_v1_training_and_inference_saturation_count": 0,
+    "stability_v1_exact_restart_replay": true,
+    "stability_v1_locked_trunk_groups": ["mlp_rms", "q", "up", "gate"],
+    "effective_shift_first_crossings": {
+      "mlp_rms": {"shift": 5, "coordinates": 49},
+      "q": {"shift": 22, "coordinates": 59},
+      "up": {"shift": 21, "coordinates": 36},
+      "gate": {"shift": 21, "coordinates": 60}
+    },
+    "shared_vector_side_effect": {
+      "group": "attention_rms",
+      "old_effective_shift": 13,
+      "new_effective_shift": 11,
+      "residual_coordinates_at_new_threshold": 491,
+      "last_healthy_scale_v4_movement_l1": 21874
+    },
+    "unchanged_o_reason": "already_moved_with_zero_saturation_at_effective_shift_19",
+    "preflight_windows": 2048,
+    "full_tail_context_windows": 8192,
+    "full_scale_rerun_requires_preflight_pass": true,
+    "development_test_and_postflight_metrics_not_used_to_choose_the_preflight_result": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 2048,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_optimizer_steps": 256,
+    "optimizer_steps": 512,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 8,
+    "embedding_learning_rate_boost_shift": 2,
+    "parallel_replay": true,
+    "cli_learning_rate_shifts": {
+      "matrix": 23,
+      "embeddings": 4,
+      "vector": 12,
+      "output_bias": 13,
+      "final_rms": 11,
+      "q": 19,
+      "k": 25,
+      "v": 27,
+      "o": 16,
+      "up": 18,
+      "gate": 18,
+      "down": 7,
+      "output": 33
+    },
+    "learning_rate_shifts": {
+      "embeddings": 5,
+      "attention_rms": 11,
+      "mlp_rms": 5,
+      "final_rms": 14,
+      "q": 22,
+      "k": 28,
+      "v": 30,
+      "o": 19,
+      "up": 21,
+      "gate": 21,
+      "down": 10,
+      "output": 36,
+      "bias": 16
+    },
+    "effective_probability_adjusted_shifts": {
+      "output": 44,
+      "bias": 24
+    },
+    "shift_derivation": "first_nonzero_final_optimizer_residual_threshold_with_no_change_to_already_live_matrix_groups"
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 512,
+    "selection_partition": "development",
+    "confirmation_partition": "test",
+    "source_dev_total_nll_millibits": 6590318,
+    "source_test_total_nll_millibits": 6596027,
+    "test_candidate_must_not_be_scored_unless_development_improves": true
+  },
+  "gates": {
+    "development_total_nll_strictly_improves": true,
+    "test_total_nll_strictly_improves": true,
+    "all_eleven_trunk_groups_move": true,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "exact_restart_replay": true
+  },
+  "postflight": {
+    "rollout": {
+      "windows": 8,
+      "context_tokens": 64,
+      "rollout_tokens": 16,
+      "evaluated_positions": 128,
+      "minimum_teacher_forced_top1_matches": 0,
+      "maximum_mean_target_rank": 8192,
+      "minimum_mean_target_probability_q15": 0,
+      "maximum_self_loop_transition_per_mille": 1000,
+      "maximum_prefix_to_suffix_logit_l1_per_mille": 1000000000
+    },
+    "context": {
+      "prompts": 12,
+      "top_k": 8,
+      "minimum_unique_greedy_tokens": 1,
+      "maximum_greedy_self_loops": 12
+    },
+    "saturation": {
+      "prompts": 12,
+      "layers": 6,
+      "maximum_residual_saturation_count": 0
+    }
+  },
+  "authorization": {
+    "local_numeric_preflight": true,
+    "postflight_quality_gate_required": true,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_2048_window_residual_unlock_preflight_not_full_tail_context_training",
+    "public_test_has_prior_confirmatory_reads",
+    "final_optimizer_residual_thresholds_predict_boundaries_not_the_retrained_trajectory",
+    "shared_vector_shift_also_accelerates_attention_rms",
+    "parallel_replay_changes_wall_time_only_not_optimizer_order",
+    "numeric_preflight_success_authorizes_only_a_fresh_full_scale_contract",
+    "postflight_quality_thresholds_other_than_zero_saturation_are_diagnostic_only"
+  ]
+}

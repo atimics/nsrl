@@ -326,7 +326,7 @@ running transitions. Exact midpoint replay, dev improvement, and test
 improvement pass, but the training/inference saturation and repetition gates
 correctly reject promotion and generation.
 
-The next prospectively frozen contract is a 2,048-window numeric preflight at
+The prospectively frozen contract is a 2,048-window numeric preflight at
 `benchmarks/production-model-v1/p10m-causal-tail-stability-v1-contract.json`.
 It preserves the successful tail-8 objective and damps each group by the
 power-of-two ceiling of its midpoint movement excess relative to the last
@@ -334,6 +334,25 @@ healthy scale-v4 reference, with extra boundary margin. It must move all eleven
 trunk groups, improve dev and test, retain exact replay, and record zero
 training and public-manifest inference saturation before a fresh 8,192-window
 tail run can be frozen. It cannot authorize open generation itself.
+
+That stability preflight is complete and numerically successful, but it is not
+promotion-eligible. Development and test NLL improve by 9,431 and 4,430
+millibits, exact midpoint replay passes, and training, held-out evaluation,
+rollout, context, and all 12 public-manifest prompts record zero saturation.
+The older-prefix/recent-suffix logit-effect ratio also falls from roughly five
+times to 1,644 per mille. The gate still rejects the candidate because MLP RMS,
+Q, up, and gate remain below their integer update boundaries.
+
+The prospective residual-boundary repair is frozen at
+`benchmarks/production-model-v1/p10m-causal-tail-unlock-v1-contract.json`.
+Audits of the bound final optimizer state locate the first nonzero thresholds:
+49 MLP-RMS coordinates at effective shift 5, 59 Q coordinates at shift 22,
+36 up coordinates at shift 21, and 60 gate coordinates at shift 21. The repair
+changes only vector 14 to 12, Q 23 to 19, and up/gate 20 to 18 at the CLI; all
+already-live matrix schedules remain unchanged. Because vector is shared by
+the two RMS groups, attention RMS also changes from effective shift 13 to 11.
+This remains a bounded numeric preflight and cannot authorize open generation
+or hidden-panel access.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
