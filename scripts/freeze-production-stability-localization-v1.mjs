@@ -56,6 +56,8 @@ const trainingSaturation = (trace) => Object.values(trace.health)
   .reduce((sum, value) => sum + value, 0);
 const deltaValue = (group) => group.total ?? group;
 const pointPaths = (step) => {
+  const contractedEndpoint = contract.derivation.endpoint_artifacts?.[String(step)];
+  if (contractedEndpoint) return contractedEndpoint;
   if (step === 256) return {
     trace: contract.source.trace_path,
     development: "benchmarks/production-model-v1/p10m-causal-tail-representation-v2-midpoint-development.json",
