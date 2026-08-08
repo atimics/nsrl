@@ -354,6 +354,15 @@ the two RMS groups, attention RMS also changes from effective shift 13 to 11.
 This remains a bounded numeric preflight and cannot authorize open generation
 or hidden-panel access.
 
+Unlock-v1 is complete and remains one boundary short of promotion. The intended
+MLP-RMS, Q, up, and gate groups move by 68, 41, 54, and 71 L1 units; development
+and test NLL improve by 9,891 and 5,192 millibits; exact replay and every zero-
+saturation gate pass. O alone remains unchanged, so the all-trunk gate rejects
+the candidate. Its final optimizer residual audit finds 574 coordinates at
+effective shift 18 and none at shift 19. The prospectively frozen unlock-v2
+contract changes only the O CLI shift from 16 to 15 and repeats the same bounded
+preflight before any full-tail schedule is authorized.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

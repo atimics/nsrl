@@ -1,0 +1,73 @@
+{
+  "schema": "nsrl.production_causal_tail_context_quality_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-unlock-v1-contract.json",
+    "bytes": 8281,
+    "fnv64": "0x9f90d4dbc37e9d35",
+    "sha256": "32df4e23a6be8e0e69adc1360f324551f8d49c2e30b40f2a66f76f03b2698ed4"
+  },
+  "preflight": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-unlock-v1.json",
+    "bytes": 7364,
+    "fnv64": "0x25302606710af049",
+    "sha256": "b4360ce33290545a33072241e06fc7f5d9891bf8abca97ae45854504dadca8ee"
+  },
+  "candidate_model_hash": "0x83895fbceae3110b",
+  "measurements": {
+    "development_total_nll_delta_millibits": -9891,
+    "test_total_nll_delta_millibits": -5192,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 2025,
+    "teacher_forced_mean_target_probability_q15": 4,
+    "free_running_self_loop_transition_per_mille": 1000,
+    "prefix_to_suffix_logit_l1_per_mille": 1533,
+    "context_unique_greedy_tokens": 3,
+    "context_greedy_self_loops": 12,
+    "rollout_residual_saturation_count": 0,
+    "context_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "gates": {
+    "preflight_passed": false,
+    "teacher_forced_top1_minimum": true,
+    "teacher_forced_mean_target_rank_maximum": true,
+    "teacher_forced_mean_target_probability_q15_minimum": true,
+    "free_running_self_loop_per_mille_maximum": true,
+    "prefix_to_suffix_context_effect_per_mille_maximum": true,
+    "context_unique_greedy_tokens_minimum": true,
+    "context_greedy_self_loops_maximum": true,
+    "inference_residual_saturation_maximum": true
+  },
+  "quality_gate_passed": false,
+  "open_generation_rerun_authorized": false,
+  "evidence": {
+    "rollout": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-unlock-v1-rollout-divergence.json",
+      "bytes": 9506,
+      "fnv64": "0x6e40c81c1e03a460",
+      "sha256": "84d6d3f42a3fba66a8c14397efccc356d78eb78408757c0d91b0514d6d37e9f0"
+    },
+    "context": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-unlock-v1-context-sensitivity.json",
+      "bytes": 9920,
+      "fnv64": "0x3d46d271623b2f69",
+      "sha256": "82c8fedca923dfbbf43ae32fe14aa5ad5e0af8ef9d51e98a2adb9474c9120d4e"
+    },
+    "saturation": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-unlock-v1-residual-saturation.json",
+      "bytes": 4258,
+      "fnv64": "0x8d2f7d83e66796fb",
+      "sha256": "a4ae827ba5379e90482eb2b822bcaefaca87cd0d0ead45b587ae779015fbbda7"
+    }
+  },
+  "hidden_panel_opened": false,
+  "known_non_claims": [
+    "bounded_2048_window_residual_unlock_preflight_not_full_tail_context_training",
+    "public_test_has_prior_confirmatory_reads",
+    "final_optimizer_residual_thresholds_predict_boundaries_not_the_retrained_trajectory",
+    "shared_vector_shift_also_accelerates_attention_rms",
+    "parallel_replay_changes_wall_time_only_not_optimizer_order",
+    "numeric_preflight_success_authorizes_only_a_fresh_full_scale_contract",
+    "postflight_quality_thresholds_other_than_zero_saturation_are_diagnostic_only"
+  ]
+}
