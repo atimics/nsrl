@@ -363,6 +363,21 @@ effective shift 18 and none at shift 19. The prospectively frozen unlock-v2
 contract changes only the O CLI shift from 16 to 15 and repeats the same bounded
 preflight before any full-tail schedule is authorized.
 
+Unlock-v2 passes that bounded gate. All eleven trunk groups move, development
+and test NLL improve by 6,822 and 12,161 millibits, exact midpoint replay is
+byte-identical, and training, evaluation, rollout, context, and all public-
+manifest inference checks remain at zero saturation. O moves 2,430 L1 units,
+well below the 123,029-unit last healthy scale-v4 reference.
+
+The full 8,192-window schedule is prospectively frozen at
+`benchmarks/production-model-v1/p10m-causal-tail-full-v1-contract.json`. It
+changes no learning or numeric coefficient from unlock-v2 and supervises
+65,536 recent-tail targets over 2,048 optimizer steps. Unlike the numeric
+preflights, its postflight quality gates restore the original tail-context
+ranking, repetition, context-use, and zero-saturation thresholds. Passing all
+of them authorizes only the public `open-generation-v1` rerun; hidden-panel
+access, paid scaling, and final promotion remain separately gated.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

@@ -1,0 +1,72 @@
+{
+  "schema": "nsrl.production_causal_tail_context_quality_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-unlock-v2-contract.json",
+    "bytes": 7017,
+    "fnv64": "0xfea84e7e1a87554e",
+    "sha256": "78bec3329b1cb52cc4f607b88f224b7f31a240a747b13beefaa37b82aca761e7"
+  },
+  "preflight": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-unlock-v2.json",
+    "bytes": 7317,
+    "fnv64": "0x173fb3f6230ab722",
+    "sha256": "00543c3c29b5a9c454c354425b3f9e331d4baad838a58bc19b6ba86f4e93e57e"
+  },
+  "candidate_model_hash": "0x3d0cea9ef5869ef7",
+  "measurements": {
+    "development_total_nll_delta_millibits": -6822,
+    "test_total_nll_delta_millibits": -12161,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 2151,
+    "teacher_forced_mean_target_probability_q15": 4,
+    "free_running_self_loop_transition_per_mille": 1000,
+    "prefix_to_suffix_logit_l1_per_mille": 6596,
+    "context_unique_greedy_tokens": 3,
+    "context_greedy_self_loops": 12,
+    "rollout_residual_saturation_count": 0,
+    "context_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "gates": {
+    "preflight_passed": true,
+    "teacher_forced_top1_minimum": true,
+    "teacher_forced_mean_target_rank_maximum": true,
+    "teacher_forced_mean_target_probability_q15_minimum": true,
+    "free_running_self_loop_per_mille_maximum": true,
+    "prefix_to_suffix_context_effect_per_mille_maximum": true,
+    "context_unique_greedy_tokens_minimum": true,
+    "context_greedy_self_loops_maximum": true,
+    "inference_residual_saturation_maximum": true
+  },
+  "quality_gate_passed": true,
+  "open_generation_rerun_authorized": false,
+  "evidence": {
+    "rollout": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-unlock-v2-rollout-divergence.json",
+      "bytes": 9521,
+      "fnv64": "0xf81242b9eb61cf92",
+      "sha256": "aa464056b9c61791a3e902d53ebe9a485218be13f7370f8c1a422bd09392ac6a"
+    },
+    "context": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-unlock-v2-context-sensitivity.json",
+      "bytes": 9938,
+      "fnv64": "0x979d5e274f43978f",
+      "sha256": "6a964da3a7abc6f2b02c6a9b1976d12d18989360556da4e378f0d87e8a655336"
+    },
+    "saturation": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-unlock-v2-residual-saturation.json",
+      "bytes": 4258,
+      "fnv64": "0x521ed22b0f7a80d9",
+      "sha256": "9d9492256c86ed64b4a8a25be9555707ec545dd9b74f7d95cce68c75bf6633c4"
+    }
+  },
+  "hidden_panel_opened": false,
+  "known_non_claims": [
+    "bounded_2048_window_o_projection_unlock_preflight_not_full_tail_context_training",
+    "public_test_has_prior_confirmatory_reads",
+    "final_optimizer_residual_thresholds_predict_boundaries_not_the_retrained_trajectory",
+    "parallel_replay_changes_wall_time_only_not_optimizer_order",
+    "numeric_preflight_success_authorizes_only_a_fresh_full_scale_contract",
+    "postflight_quality_thresholds_other_than_zero_saturation_are_diagnostic_only"
+  ]
+}
