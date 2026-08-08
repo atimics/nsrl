@@ -1,0 +1,171 @@
+{
+  "schema": "nsrl.production_group_composition_attribution.v1",
+  "checked": false,
+  "objective": "attribute_the_representation_v5_development_regression_across_embeddings_k_v_and_o_without_retraining",
+  "outcome": "composition_attribution_found_only_marginally_beneficial_group",
+  "source_total_nll_millibits": 6540187,
+  "candidate_total_nll_millibits": 6540357,
+  "candidate_delta_millibits": 170,
+  "individual_group_delta_millibits": {
+    "embeddings": 0,
+    "k": 5,
+    "v": 96,
+    "o": 31
+  },
+  "candidate_marginal_group_delta_millibits": {
+    "embeddings": 0,
+    "k": -12,
+    "v": 143,
+    "o": 72
+  },
+  "interaction_delta_millibits": 38,
+  "individually_beneficial_groups": [],
+  "marginally_beneficial_groups": [
+    "k"
+  ],
+  "rows": [
+    {
+      "id": "source",
+      "candidate_groups": [],
+      "model_hash": "0x5b54c3ba2baa9d39",
+      "total_nll_millibits": 6540187,
+      "delta_from_source_millibits": 0,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "embeddings_only",
+      "candidate_groups": [
+        "embeddings"
+      ],
+      "model_hash": "0x7aca7db464470430",
+      "total_nll_millibits": 6540187,
+      "delta_from_source_millibits": 0,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "k_only",
+      "candidate_groups": [
+        "k"
+      ],
+      "model_hash": "0x4b92ab5cefecfc01",
+      "total_nll_millibits": 6540192,
+      "delta_from_source_millibits": 5,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "v_only",
+      "candidate_groups": [
+        "v"
+      ],
+      "model_hash": "0x611c52074ae04b63",
+      "total_nll_millibits": 6540283,
+      "delta_from_source_millibits": 96,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "o_only",
+      "candidate_groups": [
+        "o"
+      ],
+      "model_hash": "0x71d0d3ab3353d111",
+      "total_nll_millibits": 6540218,
+      "delta_from_source_millibits": 31,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "without_embeddings",
+      "candidate_groups": [
+        "k",
+        "v",
+        "o"
+      ],
+      "model_hash": "0x9222de60b4c789b3",
+      "total_nll_millibits": 6540357,
+      "delta_from_source_millibits": 170,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "without_k",
+      "candidate_groups": [
+        "embeddings",
+        "v",
+        "o"
+      ],
+      "model_hash": "0x235508336db5f8c2",
+      "total_nll_millibits": 6540369,
+      "delta_from_source_millibits": 182,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "without_v",
+      "candidate_groups": [
+        "embeddings",
+        "k",
+        "o"
+      ],
+      "model_hash": "0x716777ef2f5a8a58",
+      "total_nll_millibits": 6540214,
+      "delta_from_source_millibits": 27,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "without_o",
+      "candidate_groups": [
+        "embeddings",
+        "k",
+        "v"
+      ],
+      "model_hash": "0xa3bd3d312242167a",
+      "total_nll_millibits": 6540285,
+      "delta_from_source_millibits": 98,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    },
+    {
+      "id": "candidate",
+      "candidate_groups": [
+        "embeddings",
+        "k",
+        "v",
+        "o"
+      ],
+      "model_hash": "0xef0d1adc8eecddd6",
+      "total_nll_millibits": 6540357,
+      "delta_from_source_millibits": 170,
+      "mistakes": 512,
+      "zero_probability_windows": 0,
+      "residual_saturation_count": 0
+    }
+  ],
+  "gates": {
+    "candidate_difference_isolated_to_composed_groups": true,
+    "source_and_candidate_endpoints_reproduced": true,
+    "all_compositions_residual_saturation_zero": true,
+    "source_and_candidate_artifacts_unchanged": true,
+    "test_partition_not_read": true
+  },
+  "authorization": {
+    "read_only_development_attribution": true,
+    "training": false,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false
+  }
+}

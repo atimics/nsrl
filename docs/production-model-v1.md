@@ -617,6 +617,19 @@ The next diagnostic must attribute that regression across the four moved groups
 or enforce a measured descent condition; further indiscriminate threshold
 reduction is not justified.
 
+The exact development composition audit attributes that +170 millibit
+regression. No moved group is beneficial alone: embeddings are functionally
+neutral on this panel, while K, V, and O alone worsen NLL by +5, +96, and +31
+millibits. In the full interaction, K is mildly compensating: removing it
+worsens the candidate by another 12 millibits. V is the dominant harmful
+marginal (+143 millibits), O adds +72, embeddings remain neutral, and
+non-additive interaction accounts for +38. The frozen evidence is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v5-group-composition-audit.json`.
+This rules out simple post-hoc group selection as a dev-improving candidate:
+every non-source composition measured here is neutral or worse. The next
+optimizer work must gate update direction on a training-only descent surface,
+with development retained for selection rather than used inside each update.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
