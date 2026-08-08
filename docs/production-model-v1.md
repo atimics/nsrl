@@ -27,6 +27,9 @@ The runtime now provides:
   epoch/window cursor state, and one carried i64 residual per parameter;
 - per-parameter-group gradient, carry, update, movement, and saturation
   diagnostics;
+- a read-only source/candidate composition audit that evaluates each moved
+  representation group alone and in leave-one-group-out combinations on the
+  canonical development objective;
 - explicit residual-accumulator overflow counts globally and by parameter
   group;
 - an opt-in atomic saturation guard that snapshots each batch, rolls model
