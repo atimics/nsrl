@@ -1,0 +1,145 @@
+{
+  "schema": "nsrl.production_representation_stability_contract.v1",
+  "objective": "test_one_bit_backward_damping_over_the_fresh_full_representation_horizon_with_atomic_saturation_rejection",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b",
+    "development_total_nll_millibits": 6540187
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "manifest_path": "benchmarks/open-generation-v1/manifest.tsv"
+  },
+  "derivation": {
+    "policy": "change_only_output_backward_shift_8_to_9_from_representation_v2_and_enable_atomic_saturation_rejection",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v2.json",
+        "sha256": "47f9ecd40e4a2d76d2e8aad341c63ee6eb6288196815619826941710292ab57d"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v2-trigger-window-audit.json",
+        "sha256": "f73fb9b74ab57ae238e8a9605ab76bfce82c7acbba4d248ef9de1a5eaf3fb17e"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v2-atomic-saturation-guard.json",
+        "sha256": "6ca4dc8e5158e21cb06e9363aad840e59fa14b700fdb36361e378ff55d15ed11"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v2-saturation-backoff-audit.json",
+        "sha256": "9d66efcbaed02f76e2487a06ecb820b6901e8714c01782d3dd526036f894618d"
+      }
+    ],
+    "backoff_audit_minimum_safe_output_backward_shift": 9,
+    "backoff_audit_selected_batch_model_movement_l1": 0,
+    "fresh_optimizer_residuals": true,
+    "test_partition_must_not_be_read": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 2048,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "optimizer_steps": 512,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 9,
+    "embedding_learning_rate_boost_shift": 2,
+    "atomic_saturation_policy": "reject_batch_stop",
+    "cli_learning_rate_shifts": {
+      "matrix": 59,
+      "embeddings": 0,
+      "vector": 62,
+      "output_bias": 51,
+      "final_rms": 59,
+      "q": 59,
+      "k": 22,
+      "v": 26,
+      "o": 10,
+      "up": 59,
+      "gate": 59,
+      "down": 59,
+      "output": 51
+    },
+    "learning_rate_shifts": {
+      "embeddings": 1,
+      "attention_rms": 61,
+      "mlp_rms": 55,
+      "final_rms": 62,
+      "q": 62,
+      "k": 25,
+      "v": 29,
+      "o": 13,
+      "up": 62,
+      "gate": 62,
+      "down": 62,
+      "output": 54,
+      "bias": 54
+    }
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "partition": "development",
+    "context_tokens": 64,
+    "windows": 512,
+    "test_evaluation": false,
+    "quality_postflight": false
+  },
+  "gates": {
+    "schedule_complete": true,
+    "required_total_optimizer_step": 512,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "manifest_residual_saturation_max": 0,
+    "development_total_nll_strictly_improves": true,
+    "required_parameter_groups": [
+      "embeddings",
+      "k",
+      "v",
+      "o"
+    ],
+    "frozen_parameter_groups": [
+      "attention_rms",
+      "mlp_rms",
+      "final_rms",
+      "q",
+      "up",
+      "gate",
+      "down",
+      "output",
+      "bias"
+    ],
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "local_dev_health_stability_run": true,
+    "test_evaluation": false,
+    "quality_postflight": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_2048_window_representation_only_run_not_full_corpus_training",
+    "same_training_windows_as_representation_v2",
+    "stability_and_liveness_diagnostic_not_quality_promotion",
+    "no_test_or_hidden_evaluation",
+    "no_exact_midpoint_replay_in_this_diagnostic_stage"
+  ]
+}
