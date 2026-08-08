@@ -520,6 +520,18 @@ rejected batch, improve open-generation quality, or authorize test evaluation.
 The next modeling experiment must change the K/O update dynamics before this
 same batch can be accepted safely.
 
+The read-only inherited-residual backoff audit now identifies the minimal
+backward change. It replays the exact step-430 batch from the safe step-429
+model and optimizer across output-backward shifts 8--16. Shift 8 reproduces
+all 2,626 gradient and 20,375 weight saturations. Every candidate from shift 9
+up commits with zero saturation; shift 9 is therefore the selected minimum.
+That one-bit damping leaves model bytes unchanged for this batch while changing
+optimizer residual state, so it restores safety without proving useful
+learning. The result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v2-saturation-backoff-audit.json`.
+A fresh whole-horizon shift-9 run, protected by atomic rejection, is required
+before judging liveness or development quality.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
