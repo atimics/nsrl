@@ -547,6 +547,19 @@ at shift 8 to an almost inert run at shift 9. The next representation work must
 preserve more intermediate gradient precision or control updates per group;
 another global scalar damping run is not justified.
 
+The exact trigger-batch gate for deterministic late-stochastic backward
+quantization now passes at shift 9. From the same safe step-429 model and
+optimizer residuals, step 430 commits with zero gradient, residual, or weight
+saturation and records 4,049 stochastic round-ups across 20,062,208 backward
+quantizations. The model remains unchanged on this single batch, and the
+representation-group parameter gradients are still below their update
+thresholds; the stochastic path changes the optimizer state and adds one final
+RMS nonzero gradient relative to rescued-RHU. This is a safety and signal-path
+gate, not a liveness or quality result. The frozen evidence is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v3-late-stochastic-trigger-audit.json`.
+A fresh 2,048-window run is required to learn whether those unbiased sub-LSB
+rounding events accumulate into safe embeddings/K/V/O movement.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
