@@ -378,6 +378,25 @@ ranking, repetition, context-use, and zero-saturation thresholds. Passing all
 of them authorizes only the public `open-generation-v1` rerun; hidden-panel
 access, paid scaling, and final promotion remain separately gated.
 
+The full stable run is complete and passes its numeric/loss gate but fails its
+quality gate. Development and test NLL improve by 50,131 and 39,500 millibits;
+all eleven trunk groups move; replay is exact; and every training and inference
+saturation count is zero. Mean target rank 2,106, prefix/suffix effect ratio
+1,475 per mille, and 7/12 prompt self-loops pass. Teacher-forced top-one remains
+0/128, target probability is 5 Q15, free running self-loops on all 120
+transitions, and only three prompt-greedy tokens appear, so the public open-
+generation rerun remains unauthorized.
+
+The bound movement and residual evidence localizes a head imbalance. Output
+matrix movement is only 4,031 L1 units versus 508,316 in the last healthy
+scale-v4 run, while bias movement is 63,536. At the probability-adjusted output
+shift 41, 83,279 final residual coordinates cross the update threshold. The
+prospective head-balance continuation freezes all eleven trunk groups, makes
+the output matrix three bits faster, makes bias three bits slower, and trains
+only those two groups for 2,048 spread windows. Its contract is
+`benchmarks/production-model-v1/p10m-causal-tail-head-balance-v1-contract.json`;
+it retains the full strong quality gate and cannot open hidden evaluation.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

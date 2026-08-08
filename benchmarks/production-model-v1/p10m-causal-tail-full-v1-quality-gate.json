@@ -1,0 +1,73 @@
+{
+  "schema": "nsrl.production_causal_tail_context_quality_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-full-v1-contract.json",
+    "bytes": 7370,
+    "fnv64": "0xeb6c6f6b81780cb2",
+    "sha256": "cca132fd9b473f3033d86b65db79eaaac19cac0ccadb2eb654b3195ff6bc780a"
+  },
+  "preflight": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-full-v1.json",
+    "bytes": 7332,
+    "fnv64": "0xd3dfedcb274d5217",
+    "sha256": "d514170fec43da1a97f07d37fb83da616f149a370c61d2150d0b9eb3750bd7e8"
+  },
+  "candidate_model_hash": "0x5b54c3ba2baa9d39",
+  "measurements": {
+    "development_total_nll_delta_millibits": -50131,
+    "test_total_nll_delta_millibits": -39500,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 2106,
+    "teacher_forced_mean_target_probability_q15": 5,
+    "free_running_self_loop_transition_per_mille": 1000,
+    "prefix_to_suffix_logit_l1_per_mille": 1475,
+    "context_unique_greedy_tokens": 3,
+    "context_greedy_self_loops": 7,
+    "rollout_residual_saturation_count": 0,
+    "context_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "gates": {
+    "preflight_passed": true,
+    "teacher_forced_top1_minimum": false,
+    "teacher_forced_mean_target_rank_maximum": true,
+    "teacher_forced_mean_target_probability_q15_minimum": false,
+    "free_running_self_loop_per_mille_maximum": false,
+    "prefix_to_suffix_context_effect_per_mille_maximum": true,
+    "context_unique_greedy_tokens_minimum": false,
+    "context_greedy_self_loops_maximum": true,
+    "inference_residual_saturation_maximum": true
+  },
+  "quality_gate_passed": false,
+  "open_generation_rerun_authorized": false,
+  "evidence": {
+    "rollout": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-full-v1-rollout-divergence.json",
+      "bytes": 9484,
+      "fnv64": "0xbb7cec57544e3a05",
+      "sha256": "c1c294725528027168735b84d07bba5751eff5c82ad0db924ecde1d3c695d08a"
+    },
+    "context": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-full-v1-context-sensitivity.json",
+      "bytes": 9919,
+      "fnv64": "0x50378294489da2ce",
+      "sha256": "51c02430943a2d920d5d6159e4a3ac11641f2c83311748fc4771ae8f2f78ed96"
+    },
+    "saturation": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-full-v1-residual-saturation.json",
+      "bytes": 4258,
+      "fnv64": "0x783c57d5cadae4a2",
+      "sha256": "d834d1ba23bf26373f4ccbffba55f0bd9c8f0e4745a9d1f4db781fc662479e2c"
+    }
+  },
+  "hidden_panel_opened": false,
+  "known_non_claims": [
+    "bounded_8192_window_run_not_full_corpus_training",
+    "recent_tail_objective_supervises_65536_targets",
+    "public_test_has_prior_confirmatory_reads",
+    "postflight_public_metrics_are_development_gates_not_hidden_evaluation",
+    "postflight_success_authorizes_only_the_public_open_generation_rerun",
+    "complete_open_generation_promotion_still_requires_baselines_human_review_and_untouched_hidden_panel",
+    "worker_count_is_execution_provenance_not_optimizer_schedule"
+  ]
+}

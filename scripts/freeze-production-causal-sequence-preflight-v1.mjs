@@ -144,7 +144,22 @@ const trunkGroups = [
 const movement = Object.fromEntries(Object.keys(expectedTraining.learning_rate_shifts)
   .map((group) => [group,
     (midpoint.movement_l1?.[group] ?? 0) + (final.movement_l1?.[group] ?? 0)]));
-const allTrunkGroupsMoved = trunkGroups.every((group) => movement[group] > 0);
+const requiredMovementGroups = contract.gates?.required_parameter_groups ?? trunkGroups;
+assert(Array.isArray(requiredMovementGroups)
+  && requiredMovementGroups.length > 0
+  && new Set(requiredMovementGroups).size === requiredMovementGroups.length
+  && requiredMovementGroups.every((group) => Object.hasOwn(movement, group)),
+"causal sequence required movement groups are invalid");
+const requiredParameterGroupsMoved = requiredMovementGroups
+  .every((group) => movement[group] > 0);
+const frozenParameterGroups = contract.gates?.frozen_parameter_groups ?? [];
+assert(Array.isArray(frozenParameterGroups)
+  && new Set(frozenParameterGroups).size === frozenParameterGroups.length
+  && frozenParameterGroups.every((group) => Object.hasOwn(movement, group))
+  && frozenParameterGroups.every((group) => !requiredMovementGroups.includes(group)),
+"causal sequence frozen parameter groups are invalid");
+const frozenParameterGroupsUnchanged = frozenParameterGroups
+  .every((group) => movement[group] === 0);
 const exactRestartReplay = true;
 const zeroSaturation = [midpoint, final, replay, candidateDev, candidateTest]
   .filter(Boolean)
@@ -152,7 +167,12 @@ const zeroSaturation = [midpoint, final, replay, candidateDev, candidateTest]
 const gates = {
   development_total_nll_strictly_improves: developmentImproved,
   test_total_nll_strictly_improves: testImproved,
-  all_eleven_trunk_groups_move: allTrunkGroupsMoved,
+  ...(contract.gates?.required_parameter_groups === undefined
+    ? {all_eleven_trunk_groups_move: requiredParameterGroupsMoved}
+    : {required_parameter_groups_move: requiredParameterGroupsMoved}),
+  ...(contract.gates?.frozen_parameter_groups === undefined
+    ? {}
+    : {frozen_parameter_groups_unchanged: frozenParameterGroupsUnchanged}),
   gradient_residual_and_weight_saturation_max: zeroSaturation,
   exact_restart_replay: exactRestartReplay,
 };
