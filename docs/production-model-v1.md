@@ -589,6 +589,18 @@ optimizer-schedule-bound, exactly resumable, covered by touched-token and
 resume tests, and omitted from default traces and hashes unless enabled. It
 still requires the exact trigger-batch safety gate before a production horizon.
 
+That corrected-batching and group-threshold trigger gate now passes. From the
+same safe step-429 source, rescued-RHU at output-backward shift 9 with effective
+embedding/K/V/O shifts 0/24/26/12 commits step 430 with zero saturation. The
+batch-complete flush materializes 23 embedding updates even though the final
+window itself has no nonzero embedding gradient, directly confirming that
+earlier-window residuals were previously stranded. K, V, and O move by 58,822,
+54,318, and 7,415 L1 units respectively without saturating. The frozen evidence
+is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v5-group-threshold-trigger-audit.json`.
+This authorizes a fresh protected horizon with the same schedule; it does not
+yet establish whole-horizon stability or development improvement.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
