@@ -1,0 +1,78 @@
+{
+  "schema": "nsrl.production_signed_block_trigger_contract.v1",
+  "objective": "verify_the_signed_representation_trust_region_on_the_exact_step_430_inherited_residual_trigger",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "commit": "b3ae6d24",
+    "policy": "minimum_guard_nll_then_fewest_active_blocks_then_lexicographic_steps",
+    "candidate_family": "signed_ternary_embeddings_k_v_o",
+    "steps": [
+      -1,
+      0,
+      1
+    ],
+    "source_always_candidate": true,
+    "reversed_or_zero_block_residual_policy": "restore_pre_batch"
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/model-step-429.nsrlpm",
+    "model_hash": "0x2b5fcca18e6ad700",
+    "model_sha256": "f551732806e1fc123a864e67f44807635dca3e234fa87337e3d14252f928ae78",
+    "optimizer_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/optimizer-step-429.nsrlpo",
+    "optimizer_state_hash": "0x00049ca43d5255ad",
+    "optimizer_sha256": "99dfa0c5748e2914d151f47cd3c084833a07e241fb3823003ed2df7dbb014cbb",
+    "total_optimizer_step": 429,
+    "next_epoch": 0,
+    "next_window": 1716
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda"
+  },
+  "candidate_schedule": {
+    "context_tokens": 64,
+    "max_windows": 2048,
+    "spread_windows": true,
+    "targets_per_window": 8,
+    "batch_windows": 4,
+    "max_optimizer_steps": 1,
+    "backward_quantization": "rescued-rhu",
+    "output_backward_shift": 9,
+    "flush_batched_embedding_residuals": true,
+    "descent_guard_windows": 64,
+    "descent_guard_window_rank_hash": "0x59857d2ef204d60f",
+    "descent_guard_signed_representation_blocks": true,
+    "effective_learning_rate_shifts": {
+      "embeddings": 0,
+      "k": 24,
+      "v": 26,
+      "o": 12
+    }
+  },
+  "gates": {
+    "gradient_residual_and_weight_saturation_max": 0,
+    "signed_block_evaluated_batches": 1,
+    "signed_block_candidates_evaluated": 81,
+    "selected_guard_nll_must_strictly_improve": true,
+    "selected_active_blocks_min": 1,
+    "selected_model_hash_must_differ_from_source": true,
+    "selected_movement_must_be_isolated_to_embeddings_k_v_o": true,
+    "guard_update_window_overlap_count": 0,
+    "cursor_must_advance_to_total_optimizer_step": 430,
+    "source_model_and_optimizer_must_not_be_mutated": true,
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "read_only_local_counterfactual": true,
+    "fresh_signed_full_horizon_requires_trigger_gate": true,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}
