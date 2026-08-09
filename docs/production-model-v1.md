@@ -731,6 +731,17 @@ non-worsening, schedule-binding, fallback, and resume tests. All 145 library
 tests pass. The exact step-430 checkpoint trigger remains required before a
 fresh signed horizon.
 
+The exact inherited-residual trigger passes. The original all-forward proposal
+raises guard NLL by 329 millibits, but the 81-candidate trust region selects
+forward K and reverse V while omitting embeddings and O. That signed candidate
+lowers guard NLL from 814,147 to 813,824 millibits, commits 58,822/54,318 L1
+movement in K/V, changes the model hash, advances to step 430/window 1720, and
+has zero gradient, residual, or weight saturation. The frozen result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block-trigger.json`.
+This satisfies the exact production-checkpoint gate and authorizes one fresh
+signed full horizon with the same 64-window training-only surface; test and
+quality postflight remain unauthorized.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

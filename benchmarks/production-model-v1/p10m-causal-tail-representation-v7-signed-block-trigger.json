@@ -1,0 +1,90 @@
+{
+  "schema": "nsrl.production_signed_block_trigger.v1",
+  "checked": false,
+  "objective": "verify_the_signed_representation_trust_region_on_the_exact_step_430_inherited_residual_trigger",
+  "outcome": "forward_k_reverse_v_selected_with_strict_guard_descent",
+  "implementation": {
+    "commit": "b3ae6d24",
+    "candidate_schedule_hash": "0x89dc5ae8c37f54b1",
+    "policy": "minimum_guard_nll_then_fewest_active_blocks_then_lexicographic_steps"
+  },
+  "bindings": {
+    "source_model_hash": "0x2b5fcca18e6ad700",
+    "source_optimizer_state_hash": "0x00049ca43d5255ad",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "token_stream_hash": "0x97e5254c31c27bda",
+    "model_artifact_fnv64": "0x0175e75def0389e6",
+    "optimizer_artifact_fnv64": "0x2dc9478d2c6b4fd2",
+    "audit_source_fnv64": "0xee6d9bd92a222e0b",
+    "audit_binary_fnv64": "0xdeb865f6e4b35920"
+  },
+  "source_cursor": {
+    "total_optimizer_step": 429,
+    "next_epoch": 0,
+    "next_window": 1716
+  },
+  "forward_proposal": {
+    "guard_nll_millibits": 814476,
+    "delta_from_source_millibits": 329,
+    "movement_l1": {
+      "embeddings": 23,
+      "k": 58822,
+      "v": 54318,
+      "o": 7415
+    }
+  },
+  "signed_selection": {
+    "candidates_evaluated": 81,
+    "selected_steps": {
+      "embeddings": 0,
+      "k": 1,
+      "v": -1,
+      "o": 0
+    },
+    "source_guard_nll_millibits": 814147,
+    "selected_guard_nll_millibits": 813824,
+    "improvement_millibits": 323,
+    "committed_movement_l1": {
+      "embeddings": 0,
+      "k": 58822,
+      "v": 54318,
+      "o": 0
+    },
+    "final_model_hash": "0xcfd116740598b106",
+    "final_optimizer_state_hash": "0xb664848409f007ab"
+  },
+  "cursor": {
+    "total_optimizer_step": 430,
+    "next_epoch": 0,
+    "next_window": 1720
+  },
+  "health": {
+    "gradient_saturation_count": 0,
+    "residual_saturation_count": 0,
+    "weight_saturation_count": 0
+  },
+  "gates": {
+    "signed_block_evaluated_once": true,
+    "all_81_candidates_evaluated": true,
+    "selected_guard_nll_strictly_improved": true,
+    "selected_nonzero_blocks": true,
+    "selected_model_hash_differs_from_source": true,
+    "selected_movement_isolated_to_embeddings_k_v_o": true,
+    "guard_update_window_overlap_zero": true,
+    "cursor_advanced_to_step_430": true,
+    "gradient_residual_and_weight_saturation_zero": true,
+    "source_model_and_optimizer_unchanged": true,
+    "test_partition_not_read": true,
+    "fresh_signed_full_horizon_authorized": true
+  },
+  "authorization": {
+    "diagnostic_only": true,
+    "fresh_signed_full_horizon": true,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}
