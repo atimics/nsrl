@@ -87,7 +87,10 @@ assert(
     && (contract.training.descent_guard_windows === undefined
       || (trace.training.descent_guard_windows === contract.training.descent_guard_windows
         && trace.training.descent_guard_policy
-          === contract.training.descent_guard_policy)),
+          === contract.training.descent_guard_policy))
+    && (contract.training.signed_block_candidate_family === undefined
+      || trace.training.descent_guard_candidate_family
+        === contract.training.signed_block_candidate_family),
   "training geometry mismatch",
 );
 assert(
@@ -159,11 +162,24 @@ const descentGuardPassed = descentGuard === null
       >= contract.gates.descent_guard_evaluated_batches_min
     && descentGuard.accepted_batches
       >= contract.gates.descent_guard_accepted_batches_min;
+const signedBlockRequired = contract.training.signed_block_candidate_family !== undefined;
+const signedBlock = signedBlockRequired ? trace.signed_block_trust_region : null;
+const signedBlockPassed = !signedBlockRequired
+  || trace.gates.signed_block_trust_region_enabled === true
+    && trace.gates.signed_block_source_candidate_guarantees_nonworsening === true
+    && signedBlock.source_always_candidate === true
+    && signedBlock.evaluated_batches >= contract.gates.signed_block_evaluated_batches_min
+    && signedBlock.selected_batches >= contract.gates.signed_block_selected_batches_min
+    && signedBlock.last_selection.candidates_evaluated
+      === contract.gates.signed_block_candidates_evaluated
+    && signedBlock.last_selection.selected_nll_millibits
+      < signedBlock.last_selection.before_nll_millibits;
 const stabilityPassed = scheduleComplete
   && numericHealthPassed
   && frozenGroupsUnchanged
   && embeddingResidualFlushPassed
-  && descentGuardPassed;
+  && descentGuardPassed
+  && signedBlockPassed;
 const livenessPassed = requiredGroupsMoved;
 const developmentAccepted = contract.gates.development_total_nll_non_regression === true
   ? developmentDelta <= 0
@@ -175,7 +191,9 @@ const allGatesPassed = stabilityPassed
 const outcome = allGatesPassed
   ? descentGuardWindows === null
     ? "stable_live_development_improved"
-    : "stable_guarded_development_nonregressing"
+    : signedBlockRequired
+      ? "stable_signed_block_development_improved"
+      : "stable_guarded_development_nonregressing"
   : !scheduleComplete
     ? "atomic_guard_stopped_before_full_horizon"
     : !numericHealthPassed
@@ -188,6 +206,8 @@ const outcome = allGatesPassed
             ? "batch_complete_embedding_residual_flush_missing"
             : !descentGuardPassed
               ? "training_only_descent_guard_failed"
+              : !signedBlockPassed
+                ? "signed_block_trust_region_failed"
             : !livenessPassed
               ? "stable_but_required_representation_groups_not_live"
               : "stable_live_without_development_improvement";
@@ -232,6 +252,9 @@ const result = {
   ...(descentGuard === null ? {} : {
     descent_guard: descentGuard,
   }),
+  ...(signedBlock === null ? {} : {
+    signed_block_trust_region: signedBlock,
+  }),
   gates: {
     schedule_complete_at_required_step: scheduleComplete,
     atomic_saturation_guard_active: true,
@@ -250,6 +273,9 @@ const result = {
     ...(descentGuardWindows === null ? {} : {
       training_only_descent_guard_passed: descentGuardPassed,
     }),
+    ...(signedBlockRequired ? {
+      signed_block_trust_region_passed: signedBlockPassed,
+    } : {}),
     required_parameter_groups_moved: requiredGroupsMoved,
     frozen_parameter_groups_unchanged: frozenGroupsUnchanged,
     development_strictly_improved: developmentImproved,
