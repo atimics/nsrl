@@ -1,0 +1,165 @@
+{
+  "schema": "nsrl.production_representation_restart_replay_contract.v1",
+  "objective": "prove_disk_checkpoint_restart_replays_the_selected_signed_representation_event_exactly",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "signed_block_commit": "b3ae6d24",
+    "frozen_horizon_commit": "5758355e",
+    "replay_harness_commit": "91d1591c",
+    "descent_guard_policy": "reject_worsening_update_consume_batch",
+    "signed_block_policy": "minimum_guard_nll_then_fewest_active_blocks_then_lexicographic_steps",
+    "optimizer_persistence": "model_and_full_residual_state_with_bound_cursor_and_schedule_hash"
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b"
+  },
+  "bindings": {
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "artifacts": [
+      {
+        "path": "scripts/run-production-causal-tail-representation-v7-signed-block-restart-replay.sh",
+        "sha256": "0f2f477756c297437384bc849506207d71e32424b125a91530360757942850bc"
+      },
+      {
+        "path": "scripts/freeze-production-representation-restart-replay-v1.mjs",
+        "sha256": "eeb50cc683966f3835b73a57c8034a9d4e35563ae064f868578c73c2ef7ce081"
+      },
+      {
+        "path": "crates/nsrl-train/src/production/training.rs",
+        "sha256": "57691b039d714c9a226ebbb852a95170807f75227ca16dc389fa2da5b6449c62"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-model.rs",
+        "sha256": "33c2b38288800faee6fa4fb587ad11c9108102df9c2ab65343090c1755066ae9"
+      },
+      {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+        "sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+        "sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/train.nsrltok",
+        "sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block.json",
+        "sha256": "41e7a67d109bbdfc2fb6c7c89ed1ceaea42be203bc5107684422a3f01aa64908"
+      },
+      {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v7-signed-block/candidate.nsrlpm",
+        "sha256": "2e8f891dd0543dd18ad093e31e6e8bdf083ac7c2bce7c32e7bc2b58bb27e4196"
+      },
+      {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v7-signed-block/candidate.nsrlpo",
+        "sha256": "9f30f48b2aed1d10a6147986395356ab8c04c41b43d39de1a5a0f5081cf1b143"
+      }
+    ]
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 2048,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "optimizer_steps": 512,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 9,
+    "embedding_residual_flush": "all_batch_touched_tokens",
+    "descent_guard_windows": 64,
+    "descent_guard_window_rank_hash": "0x59857d2ef204d60f",
+    "signed_block_candidate_family": "signed_ternary_embeddings_k_v_o",
+    "learning_rate_shifts": {
+      "embeddings": 0,
+      "attention_rms": 61,
+      "mlp_rms": 55,
+      "final_rms": 62,
+      "q": 62,
+      "k": 24,
+      "v": 26,
+      "o": 12,
+      "up": 62,
+      "gate": 62,
+      "down": 62,
+      "output": 54,
+      "bias": 54
+    }
+  },
+  "replay": {
+    "persistence_boundary": "after_optimizer_step_486_before_selected_optimizer_step_487",
+    "partial_optimizer_steps": 486,
+    "partial_next_window": 1944,
+    "selected_optimizer_step": 487,
+    "resume_optimizer_steps": 26,
+    "candidates_evaluated": 81,
+    "expected_signed_selection": {
+      "before_nll_millibits": 814931,
+      "forward_nll_millibits": 815067,
+      "selected_nll_millibits": 814752,
+      "steps": {
+        "embeddings": 0,
+        "k": 1,
+        "v": -1,
+        "o": 1
+      },
+      "movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 1152,
+        "v": 998,
+        "o": 58,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      }
+    }
+  },
+  "reference": {
+    "horizon_checkpoint_path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block.json",
+    "horizon_checkpoint_sha256": "41e7a67d109bbdfc2fb6c7c89ed1ceaea42be203bc5107684422a3f01aa64908",
+    "final_model_hash": "0x48a1a080ed385233",
+    "final_model_sha256": "2e8f891dd0543dd18ad093e31e6e8bdf083ac7c2bce7c32e7bc2b58bb27e4196",
+    "final_optimizer_state_hash": "0x1b634d849fff0892",
+    "final_optimizer_sha256": "9f30f48b2aed1d10a6147986395356ab8c04c41b43d39de1a5a0f5081cf1b143"
+  },
+  "gates": {
+    "partial_model_remains_source_through_step_486": true,
+    "partial_cursor_is_window_1944": true,
+    "resume_starts_with_selected_step_487": true,
+    "selected_signed_decision_trace_exact": true,
+    "final_model_byte_identical_to_uninterrupted": true,
+    "final_optimizer_byte_identical_to_uninterrupted": true,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "local_restart_replay": true,
+    "test_evaluation": false,
+    "quality_postflight": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "restart_replay_proves_determinism_not_language_quality",
+    "bounded_2048_window_representation_only_schedule",
+    "reference_event_was_selected_on_training_guard_and_previously_confirmed_on_development",
+    "no_development_test_hidden_or_generation_evaluation_in_this_gate"
+  ]
+}
