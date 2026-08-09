@@ -1,0 +1,80 @@
+{
+  "schema": "nsrl.production_guard_group_composition_audit_contract.v1",
+  "objective": "test_all_exact_group_subsets_of_the_rejected_representation_update_on_the_same_training_only_descent_surface",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "commit": "73f9b75b",
+    "mode": "read_only_exact_parameter_group_composition",
+    "candidate_groups": [
+      "embeddings",
+      "k",
+      "v",
+      "o"
+    ],
+    "subsets": 16
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b"
+  },
+  "candidate": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v5-stability/candidate.nsrlpm",
+    "model_hash": "0xef0d1adc8eecddd6",
+    "model_sha256": "82005038d204b69c867a4624451cffacd0e023ee3029b2ff67a54f6a5a1e43de",
+    "isolated_movement_l1": {
+      "embeddings": 1,
+      "k": 1152,
+      "v": 998,
+      "o": 58
+    }
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda"
+  },
+  "evaluation": {
+    "partition": "training_descent_guard",
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 64,
+    "window_selection": "fixed_global_ranks_disjoint_from_spread_update_windows",
+    "update_windows": 2048,
+    "window_rank_hash": "0x59857d2ef204d60f",
+    "update_window_overlap_count": 0
+  },
+  "derivation": {
+    "guarded_horizon_artifact": "benchmarks/production-model-v1/p10m-causal-tail-representation-v6-descent-guard.json",
+    "guarded_horizon_outcome": "stable_guarded_development_nonregressing",
+    "rejected_batch_step": 487,
+    "rejected_batch_guard_regression_millibits": 136,
+    "candidate_delta_exactly_matches_rejected_batch": true
+  },
+  "gates": {
+    "candidate_difference_must_be_isolated_to_composed_groups": true,
+    "all_16_subsets_must_be_evaluated": true,
+    "source_and_candidate_endpoints_must_reproduce": true,
+    "guard_window_rank_hash_must_match": true,
+    "guard_update_window_overlap_count": 0,
+    "residual_saturation_max": 0,
+    "test_partition_must_not_be_read": true
+  },
+  "decision": {
+    "authorize_group_selective_optimizer_if_any_non_source_subset_delta_millibits_lte": 0,
+    "otherwise_simple_group_masking_is_falsified": true
+  },
+  "authorization": {
+    "read_only_training_guard_attribution": true,
+    "training": false,
+    "candidate_checkpoint": false,
+    "development_evaluation": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}
