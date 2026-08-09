@@ -1,0 +1,109 @@
+{
+  "schema": "nsrl.production_guard_group_composition_audit.v1",
+  "checked": false,
+  "objective": "test_all_exact_group_subsets_of_the_rejected_representation_update_on_the_same_training_only_descent_surface",
+  "outcome": "k_plus_o_is_guard_descent_v_is_harmful_and_embeddings_are_neutral",
+  "implementation": {
+    "commit": "73f9b75b",
+    "mode": "read_only_exact_parameter_group_composition",
+    "subsets_evaluated": 16
+  },
+  "bindings": {
+    "source_model_hash": "0x5b54c3ba2baa9d39",
+    "candidate_model_hash": "0xef0d1adc8eecddd6",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "token_stream_hash": "0x97e5254c31c27bda",
+    "source_artifact_fnv64": "0x9a508e2c2517f5a2",
+    "candidate_artifact_fnv64": "0x1307e5a559a0b4f7",
+    "audit_source_fnv64": "0x0914b98cc50e75de",
+    "audit_binary_fnv64": "0xd99b55198740c06f"
+  },
+  "evaluation": {
+    "partition": "training_descent_guard",
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 64,
+    "window_selection": "fixed_global_ranks_disjoint_from_spread_update_windows",
+    "update_windows": 2048,
+    "window_rank_hash": "0x59857d2ef204d60f",
+    "update_window_overlap_count": 0,
+    "source_total_nll_millibits": 814931,
+    "source_mistakes": 63,
+    "residual_saturation_count": 0
+  },
+  "group_effects_millibits": {
+    "embeddings": 0,
+    "k": -4,
+    "v": 163,
+    "o": -28
+  },
+  "best_compositions": [
+    {
+      "candidate_groups": [
+        "k",
+        "o"
+      ],
+      "delta_from_source_millibits": -32
+    },
+    {
+      "candidate_groups": [
+        "embeddings",
+        "k",
+        "o"
+      ],
+      "delta_from_source_millibits": -32
+    },
+    {
+      "candidate_groups": [
+        "o"
+      ],
+      "delta_from_source_millibits": -28
+    },
+    {
+      "candidate_groups": [
+        "k"
+      ],
+      "delta_from_source_millibits": -4
+    },
+    {
+      "candidate_groups": [
+        "embeddings"
+      ],
+      "delta_from_source_millibits": 0
+    }
+  ],
+  "v_containing_compositions": {
+    "minimum_delta_from_source_millibits": 136,
+    "maximum_delta_from_source_millibits": 163,
+    "all_regress": true
+  },
+  "gates": {
+    "candidate_difference_isolated_to_composed_groups": true,
+    "all_16_subsets_evaluated": true,
+    "source_and_candidate_endpoints_reproduced": true,
+    "guard_window_rank_hash_matched": true,
+    "guard_update_window_overlap_zero": true,
+    "residual_saturation_zero": true,
+    "non_source_nonworsening_subset_exists": true,
+    "test_partition_not_read": true,
+    "group_selective_optimizer_locally_authorized": true
+  },
+  "interpretation": {
+    "bundled_rejection_is_too_coarse": true,
+    "v_should_be_rejected_on_this_surface": true,
+    "k_plus_o_should_be_retained_on_this_surface": true,
+    "known_development_k_plus_o_delta_millibits": 27,
+    "larger_training_only_guard_required_before_optimizer_implementation": true
+  },
+  "authorization": {
+    "diagnostic_only": true,
+    "larger_training_guard_composition_audit": true,
+    "training": false,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}

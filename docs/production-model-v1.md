@@ -676,6 +676,18 @@ next optimizer must search a richer discrete candidate family—such as
 group-selective or threshold-backoff variants—on the same training-only surface
 rather than merely accepting or discarding the single bundled proposal.
 
+The exact all-subset audit shows that bundled rejection is indeed too coarse.
+On the same 64-window training guard, K+O improves NLL by 32 millibits, O alone
+by 28, and K alone by 4; embeddings are neutral. Every subset containing V
+regresses by 136--163 millibits. The frozen evidence is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v6-guard-group-composition-audit.json`.
+This establishes a local block-selective descent direction, but it also exposes
+surface variance: the earlier 512-window development attribution places K+O at
+about +27 millibits. Before implementing group-selective commits, the same
+16-way read-only audit must therefore be repeated on a larger disjoint
+training-only guard. That preserves development as a selector while testing
+whether the training guard is large enough to predict direction reliably.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
