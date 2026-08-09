@@ -1,0 +1,65 @@
+{
+  "schema": "nsrl.production_signed_block_development_confirmation.v1",
+  "checked": false,
+  "objective": "confirm_the_preselected_training_guard_signed_block_minimum_on_the_frozen_development_panel",
+  "outcome": "signed_block_direction_improves_training_guard_and_development",
+  "implementation": {
+    "commit": "3e6ff5b7",
+    "mode": "read_only_exact_signed_group_composition"
+  },
+  "bindings": {
+    "source_model_hash": "0x5b54c3ba2baa9d39",
+    "forward_candidate_model_hash": "0xef0d1adc8eecddd6",
+    "selected_model_hash": "0xe188e6fcdb6ecf2a",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "token_stream_hash": "0xda195778ceb603ab",
+    "source_artifact_fnv64": "0x9a508e2c2517f5a2",
+    "candidate_artifact_fnv64": "0x1307e5a559a0b4f7",
+    "audit_source_fnv64": "0x5f8e8a90d6a9c211",
+    "audit_binary_fnv64": "0x01e4c04bb103cf19"
+  },
+  "selection": {
+    "artifact": "benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block-guard-audit.json",
+    "id": "forward_embeddings_plus_forward_k_plus_reverse_v_plus_forward_o",
+    "group_steps": {
+      "embeddings": 1,
+      "k": 1,
+      "v": -1,
+      "o": 1
+    },
+    "training_guard_delta_millibits": -179
+  },
+  "development": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 512,
+    "source_total_nll_millibits": 6540187,
+    "selected_total_nll_millibits": 6540118,
+    "delta_millibits": -69,
+    "mistakes": 512,
+    "zero_probability_windows": 0,
+    "residual_saturation_count": 0
+  },
+  "gates": {
+    "candidate_difference_isolated_to_composed_groups": true,
+    "exactly_one_preselected_composition_evaluated": true,
+    "selected_model_hash_matched": true,
+    "source_endpoint_reproduced": true,
+    "all_reflections_within_parameter_range": true,
+    "residual_saturation_zero": true,
+    "development_total_nll_strictly_improved": true,
+    "test_partition_not_read": true,
+    "signed_block_trust_region_authorized": true
+  },
+  "authorization": {
+    "diagnostic_only": true,
+    "signed_block_trust_region_implementation": true,
+    "fresh_training_horizon_requires_implementation_tests_and_exact_trigger": true,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}

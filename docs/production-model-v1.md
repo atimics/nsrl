@@ -701,6 +701,19 @@ read-only development confirmation of the selected signed composition. Only a
 matching development direction can authorize engineering a signed block trust
 region into training.
 
+The exact selected composition confirms on the 512-window development panel.
+Forward embeddings/K/O with reversed V lowers development NLL from 6,540,187
+to 6,540,118 millibits, a 69-millibit improvement, with zero residual
+saturation and the preregistered model hash. Development was not used inside
+the update; it confirms the direction selected by the disjoint training guard.
+The frozen result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block-development-confirmation.json`.
+This is the first representation proposal in this ladder that is both
+numerically live and directionally improving on training-only selection plus
+development confirmation. It authorizes implementation of a signed block
+trust region, followed by unit/resume tests and an exact checkpoint trigger
+before another full horizon.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
