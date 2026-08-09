@@ -1,0 +1,111 @@
+{
+  "schema": "nsrl.production_representation_stability.v1",
+  "checked": false,
+  "objective": "test_training_only_measured_descent_over_the_fresh_full_representation_horizon",
+  "outcome": "stable_guarded_development_nonregressing",
+  "source_model_hash": "0x5b54c3ba2baa9d39",
+  "candidate": {
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b",
+    "optimizer_state_hash": "0x8aaba193a4c26c6b",
+    "optimizer_sha256": "ec872f4797b700e85206e8a468bc0ff0ff2b62f51064dcb1bd906bdb31124c3c",
+    "total_optimizer_step": 512,
+    "next_epoch": 1,
+    "next_window": 0,
+    "schedule_complete": true
+  },
+  "transaction": {
+    "saturation_policy": "reject_batch_stop",
+    "rejected_batch": null
+  },
+  "health": {
+    "committed_training": {
+      "gradient_saturation_count": 0,
+      "residual_saturation_count": 0,
+      "weight_saturation_count": 0
+    },
+    "rejected_batch_saturation_count": 0,
+    "development_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "development": {
+    "source_total_nll_millibits": 6540187,
+    "candidate_total_nll_millibits": 6540187,
+    "delta_millibits": 0
+  },
+  "movement_l1": {
+    "embeddings": 0,
+    "attention_rms": 0,
+    "mlp_rms": 0,
+    "final_rms": 0,
+    "q": 0,
+    "k": 0,
+    "v": 0,
+    "o": 0,
+    "up": 0,
+    "gate": 0,
+    "down": 0,
+    "output": 0,
+    "bias": 0
+  },
+  "descent_guard": {
+    "surface": "fixed_disjoint_training_windows",
+    "window_rank_hash": "0x59857d2ef204d60f",
+    "update_window_overlap_count": 0,
+    "initial_nll_millibits": 814931,
+    "final_nll_millibits": 814931,
+    "evaluated_batches": 1,
+    "accepted_batches": 0,
+    "rejected_batches": 1,
+    "accepted_improvement_millibits": 0,
+    "rejected_regression_millibits": 136,
+    "last_rejected_batch": {
+      "attempted_total_optimizer_step": 487,
+      "start_epoch": 0,
+      "start_window": 1944,
+      "windows": 4,
+      "before_nll_millibits": 814931,
+      "after_nll_millibits": 815067,
+      "regression_millibits": 136,
+      "movement_l1": {
+        "embeddings": 1,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 1152,
+        "v": 998,
+        "o": 58,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      }
+    }
+  },
+  "gates": {
+    "schedule_complete_at_required_step": true,
+    "atomic_saturation_guard_active": true,
+    "no_batch_rejected": true,
+    "committed_training_saturation_zero": true,
+    "rejected_batch_saturation_zero": true,
+    "development_residual_saturation_zero": true,
+    "manifest_residual_saturation_zero": true,
+    "batch_complete_embedding_residual_flush_active": true,
+    "training_only_descent_guard_passed": true,
+    "required_parameter_groups_moved": true,
+    "frozen_parameter_groups_unchanged": true,
+    "development_strictly_improved": false,
+    "development_did_not_regress": true,
+    "test_partition_not_read": true,
+    "all_stability_liveness_development_gates_passed": true
+  },
+  "authorization": {
+    "diagnostic_only": true,
+    "test_evaluation": false,
+    "quality_postflight": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false
+  }
+}

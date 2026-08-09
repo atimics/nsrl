@@ -661,6 +661,21 @@ Its prospective contract authorizes one fresh full protected horizon with the
 same 64-window training-only guard; it does not authorize test evaluation or a
 quality claim.
 
+The full representation-v6 guarded horizon completes and passes every declared
+safety gate. Exactly one batch crosses an integer boundary, at optimizer step
+487: it attempts the same embeddings/K/V/O movement as unguarded v5
+(1/1,152/998/58 L1), but raises the fixed training-guard NLL by 136 millibits.
+The transaction rejects it, restores model and residual state, and continues
+through step 512. Final model bytes equal the source; training, development,
+and manifest saturation remain zero; development NLL is exactly unchanged at
+6,540,187 rather than v5's +170-millibit regression. The frozen result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v6-descent-guard.json`.
+This closes the unsafe-commit gap and localizes what remains: the current
+surrogate produces no acceptable representation update on this horizon. The
+next optimizer must search a richer discrete candidate family—such as
+group-selective or threshold-backoff variants—on the same training-only surface
+rather than merely accepting or discarding the single bundled proposal.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
