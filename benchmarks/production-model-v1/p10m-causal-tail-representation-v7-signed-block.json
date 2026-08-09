@@ -1,0 +1,135 @@
+{
+  "schema": "nsrl.production_representation_stability.v1",
+  "checked": false,
+  "objective": "test_the_signed_representation_trust_region_over_the_fresh_full_representation_horizon",
+  "outcome": "stable_signed_block_development_improved",
+  "source_model_hash": "0x5b54c3ba2baa9d39",
+  "candidate": {
+    "model_hash": "0x48a1a080ed385233",
+    "model_sha256": "2e8f891dd0543dd18ad093e31e6e8bdf083ac7c2bce7c32e7bc2b58bb27e4196",
+    "optimizer_state_hash": "0x1b634d849fff0892",
+    "optimizer_sha256": "9f30f48b2aed1d10a6147986395356ab8c04c41b43d39de1a5a0f5081cf1b143",
+    "total_optimizer_step": 512,
+    "next_epoch": 1,
+    "next_window": 0,
+    "schedule_complete": true
+  },
+  "transaction": {
+    "saturation_policy": "reject_batch_stop",
+    "rejected_batch": null
+  },
+  "health": {
+    "committed_training": {
+      "gradient_saturation_count": 0,
+      "residual_saturation_count": 0,
+      "weight_saturation_count": 0
+    },
+    "rejected_batch_saturation_count": 0,
+    "development_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "development": {
+    "source_total_nll_millibits": 6540187,
+    "candidate_total_nll_millibits": 6540118,
+    "delta_millibits": -69
+  },
+  "movement_l1": {
+    "embeddings": 0,
+    "attention_rms": 0,
+    "mlp_rms": 0,
+    "final_rms": 0,
+    "q": 0,
+    "k": 1152,
+    "v": 998,
+    "o": 58,
+    "up": 0,
+    "gate": 0,
+    "down": 0,
+    "output": 0,
+    "bias": 0
+  },
+  "descent_guard": {
+    "surface": "fixed_disjoint_training_windows",
+    "window_rank_hash": "0x59857d2ef204d60f",
+    "update_window_overlap_count": 0,
+    "initial_nll_millibits": 814931,
+    "final_nll_millibits": 814752,
+    "evaluated_batches": 1,
+    "accepted_batches": 1,
+    "rejected_batches": 0,
+    "accepted_improvement_millibits": 179,
+    "rejected_regression_millibits": 0,
+    "last_rejected_batch": null
+  },
+  "signed_block_trust_region": {
+    "groups": [
+      "embeddings",
+      "k",
+      "v",
+      "o"
+    ],
+    "steps": [
+      -1,
+      0,
+      1
+    ],
+    "source_always_candidate": true,
+    "evaluated_batches": 1,
+    "selected_batches": 1,
+    "last_selection": {
+      "attempted_total_optimizer_step": 487,
+      "start_epoch": 0,
+      "start_window": 1944,
+      "windows": 4,
+      "candidates_evaluated": 81,
+      "before_nll_millibits": 814931,
+      "forward_nll_millibits": 815067,
+      "selected_nll_millibits": 814752,
+      "selected_steps": {
+        "embeddings": 0,
+        "k": 1,
+        "v": -1,
+        "o": 1
+      },
+      "selected_movement_l1": {
+        "embeddings": 0,
+        "attention_rms": 0,
+        "mlp_rms": 0,
+        "final_rms": 0,
+        "q": 0,
+        "k": 1152,
+        "v": 998,
+        "o": 58,
+        "up": 0,
+        "gate": 0,
+        "down": 0,
+        "output": 0,
+        "bias": 0
+      }
+    }
+  },
+  "gates": {
+    "schedule_complete_at_required_step": true,
+    "atomic_saturation_guard_active": true,
+    "no_batch_rejected": true,
+    "committed_training_saturation_zero": true,
+    "rejected_batch_saturation_zero": true,
+    "development_residual_saturation_zero": true,
+    "manifest_residual_saturation_zero": true,
+    "batch_complete_embedding_residual_flush_active": true,
+    "training_only_descent_guard_passed": true,
+    "signed_block_trust_region_passed": true,
+    "required_parameter_groups_moved": true,
+    "frozen_parameter_groups_unchanged": true,
+    "development_strictly_improved": true,
+    "test_partition_not_read": true,
+    "all_stability_liveness_development_gates_passed": true
+  },
+  "authorization": {
+    "diagnostic_only": true,
+    "test_evaluation": false,
+    "quality_postflight": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false
+  }
+}

@@ -742,6 +742,25 @@ This satisfies the exact production-checkpoint gate and authorizes one fresh
 signed full horizon with the same 64-window training-only surface; test and
 quality postflight remain unauthorized.
 
+The fresh representation-v7 signed horizon passes every declared stability,
+liveness, isolation, and development gate. At step 487 the raw forward bundle
+would raise guard NLL by 136 millibits. The trust region evaluates all 81
+candidates and selects embeddings/K/V/O steps `0/+1/-1/+1`, lowering guard NLL
+by 179 millibits. It commits 1,152/998/58 L1 movement in K/V/O and nothing
+else, completes all 512 optimizer steps, and retains zero training,
+development, and manifest saturation. The resulting model hash is
+`0x48a1a080ed385233`; development NLL improves from 6,540,187 to 6,540,118
+millibits, exactly matching the preregistered signed-composition confirmation.
+The frozen result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block.json`.
+This closes the representation optimizer's local stability/liveness/direction
+gap: an integer-live update is now selected using training data only and then
+strictly improves the frozen development panel. It remains a bounded
+2,048-window representation diagnostic, not an LLM quality claim. The next
+production gates are exact restart replay of the selected signed event, broader
+training-horizon replication, and only then a separately authorized quality
+postflight; test and hidden panels remain unread.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
