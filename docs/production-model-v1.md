@@ -756,10 +756,24 @@ The frozen result is
 This closes the representation optimizer's local stability/liveness/direction
 gap: an integer-live update is now selected using training data only and then
 strictly improves the frozen development panel. It remains a bounded
-2,048-window representation diagnostic, not an LLM quality claim. The next
-production gates are exact restart replay of the selected signed event, broader
-training-horizon replication, and only then a separately authorized quality
-postflight; test and hidden panels remain unread.
+2,048-window representation diagnostic, not an LLM quality claim.
+
+The exact restart gate now passes at the signed event itself. A prospectively
+bound replay stops after optimizer step 486/window 1,944, while the model is
+still byte-identical to the source but the full optimizer residual state has
+accumulated. A new process reloads both disk artifacts and encounters step 487
+as its first batch. It evaluates the same 81 candidates, selects the exact same
+embeddings/K/V/O steps `0/+1/-1/+1`, reproduces the 179-millibit guard descent
+and 1,152/998/58 K/V/O movement, then completes the remaining 25 batches with
+zero saturation. The final model and 71 MB optimizer artifacts are
+byte-identical to the uninterrupted horizon, including model hash
+`0x48a1a080ed385233` and optimizer-state hash `0x1b634d849fff0892`. The frozen
+result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block-restart-replay.json`.
+This closes the production restart-determinism gap for the selected signed
+event. The next production gate is broader training-horizon replication,
+followed only by a separately authorized quality postflight; test and hidden
+panels remain unread.
 
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
