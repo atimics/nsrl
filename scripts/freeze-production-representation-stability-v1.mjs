@@ -83,7 +83,11 @@ assert(
           === contract.training.backward_stochastic_seed))
     && (contract.training.embedding_residual_flush === undefined
       || trace.training.embedding_residual_flush
-        === contract.training.embedding_residual_flush),
+        === contract.training.embedding_residual_flush)
+    && (contract.training.descent_guard_windows === undefined
+      || (trace.training.descent_guard_windows === contract.training.descent_guard_windows
+        && trace.training.descent_guard_policy
+          === contract.training.descent_guard_policy)),
   "training geometry mismatch",
 );
 assert(
@@ -139,17 +143,39 @@ const stochasticSignalPassed = stochasticQuantization === null
 const embeddingResidualFlush = contract.training.embedding_residual_flush ?? null;
 const embeddingResidualFlushPassed = embeddingResidualFlush === null
   || trace.gates.batched_embedding_residual_flush === true;
+const descentGuardWindows = contract.training.descent_guard_windows ?? null;
+const descentGuard = descentGuardWindows === null ? null : trace.descent_guard;
+const descentGuardPassed = descentGuard === null
+  ? descentGuardWindows === null
+  : trace.gates.training_only_descent_guard_enabled === true
+    && trace.gates.descent_guard_update_windows_disjoint === true
+    && descentGuard.surface === contract.training.descent_guard_surface
+    && descentGuard.window_rank_hash === contract.training.descent_guard_window_rank_hash
+    && descentGuard.update_window_overlap_count === 0
+    && descentGuard.final_nll_millibits <= descentGuard.initial_nll_millibits
+    && descentGuard.accepted_batches + descentGuard.rejected_batches
+      === descentGuard.evaluated_batches
+    && descentGuard.evaluated_batches
+      >= contract.gates.descent_guard_evaluated_batches_min
+    && descentGuard.accepted_batches
+      >= contract.gates.descent_guard_accepted_batches_min;
 const stabilityPassed = scheduleComplete
   && numericHealthPassed
   && frozenGroupsUnchanged
-  && embeddingResidualFlushPassed;
+  && embeddingResidualFlushPassed
+  && descentGuardPassed;
 const livenessPassed = requiredGroupsMoved;
+const developmentAccepted = contract.gates.development_total_nll_non_regression === true
+  ? developmentDelta <= 0
+  : developmentImproved;
 const allGatesPassed = stabilityPassed
   && stochasticSignalPassed
   && livenessPassed
-  && developmentImproved;
+  && developmentAccepted;
 const outcome = allGatesPassed
-  ? "stable_live_development_improved"
+  ? descentGuardWindows === null
+    ? "stable_live_development_improved"
+    : "stable_guarded_development_nonregressing"
   : !scheduleComplete
     ? "atomic_guard_stopped_before_full_horizon"
     : !numericHealthPassed
@@ -160,6 +186,8 @@ const outcome = allGatesPassed
           ? "full_horizon_stochastic_signal_missing"
           : !embeddingResidualFlushPassed
             ? "batch_complete_embedding_residual_flush_missing"
+            : !descentGuardPassed
+              ? "training_only_descent_guard_failed"
             : !livenessPassed
               ? "stable_but_required_representation_groups_not_live"
               : "stable_live_without_development_improvement";
@@ -201,6 +229,9 @@ const result = {
       backward_quantization_count: trace.diagnostics.backward_quantization_count,
     },
   }),
+  ...(descentGuard === null ? {} : {
+    descent_guard: descentGuard,
+  }),
   gates: {
     schedule_complete_at_required_step: scheduleComplete,
     atomic_saturation_guard_active: true,
@@ -216,9 +247,15 @@ const result = {
     ...(embeddingResidualFlush === null ? {} : {
       batch_complete_embedding_residual_flush_active: embeddingResidualFlushPassed,
     }),
+    ...(descentGuardWindows === null ? {} : {
+      training_only_descent_guard_passed: descentGuardPassed,
+    }),
     required_parameter_groups_moved: requiredGroupsMoved,
     frozen_parameter_groups_unchanged: frozenGroupsUnchanged,
     development_strictly_improved: developmentImproved,
+    ...(contract.gates.development_total_nll_non_regression === true ? {
+      development_did_not_regress: developmentDelta <= 0,
+    } : {}),
     test_partition_not_read: true,
     all_stability_liveness_development_gates_passed: allGatesPassed,
   },
