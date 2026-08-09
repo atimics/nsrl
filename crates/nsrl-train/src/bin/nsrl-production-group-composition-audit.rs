@@ -33,6 +33,7 @@ struct Config {
     max_windows: usize,
     guard_update_windows: Option<usize>,
     signed_group_steps: bool,
+    exact_group_steps: Option<[i8; 4]>,
 }
 
 #[derive(Debug)]
@@ -111,7 +112,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         config.max_windows,
         guard_surface.as_ref(),
     )?;
-    let subsets = if config.signed_group_steps {
+    let subsets = if let Some(steps) = config.exact_group_steps {
+        vec![Composition {
+            id: composition_id(steps),
+            steps,
+        }]
+    } else if config.signed_group_steps {
         (0_u8..81)
             .map(|code| {
                 let mut remaining = code;
@@ -180,7 +186,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .map(|group| format!("\"{group}\""))
             .collect::<Vec<_>>()
             .join(",");
-        let rendered_steps = if config.signed_group_steps {
+        let rendered_steps = if config.signed_group_steps || config.exact_group_steps.is_some() {
             let steps = GROUPS
                 .iter()
                 .zip(selection.steps)
@@ -233,7 +239,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )
         },
     );
-    let candidate_family = if config.signed_group_steps {
+    let candidate_family = if config.exact_group_steps.is_some() {
+        ",\"candidate_family\":\"exact_signed_group_steps\",\"compositions\":1"
+    } else if config.signed_group_steps {
         ",\"candidate_family\":\"signed_ternary_group_steps\",\"compositions\":81"
     } else {
         ""
@@ -415,6 +423,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
     let mut max_windows = 512_usize;
     let mut guard_update_windows = None;
     let mut signed_group_steps = false;
+    let mut exact_group_steps = None;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
         let value = || "missing group composition audit argument value";
@@ -430,8 +439,14 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 guard_update_windows = Some(args.next().ok_or_else(value)?.parse()?)
             }
             "--signed-group-steps" => signed_group_steps = true,
+            "--exact-group-steps" => {
+                exact_group_steps = Some(parse_group_steps(&args.next().ok_or_else(value)?)?)
+            }
             other => return Err(format!("unknown argument: {other}").into()),
         }
+    }
+    if signed_group_steps && exact_group_steps.is_some() {
+        return Err("--signed-group-steps and --exact-group-steps are mutually exclusive".into());
     }
     Ok(Config {
         tokenizer: tokenizer.ok_or("--tokenizer is required")?,
@@ -443,7 +458,19 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
         max_windows,
         guard_update_windows,
         signed_group_steps,
+        exact_group_steps,
     })
+}
+
+fn parse_group_steps(value: &str) -> Result<[i8; 4], Box<dyn std::error::Error>> {
+    let steps = value
+        .split(',')
+        .map(str::parse::<i8>)
+        .collect::<Result<Vec<_>, _>>()?;
+    if steps.len() != 4 || steps.iter().any(|step| !(-1..=1).contains(step)) {
+        return Err("group steps must contain four comma-separated values in -1..=1".into());
+    }
+    Ok(steps.try_into().expect("length checked"))
 }
 
 fn evaluate_composition(
@@ -661,7 +688,9 @@ fn fnv64(bytes: &[u8]) -> u64 {
 mod tests {
     use nsrl_corpus::subword::{BOS_TOKEN_ID, EOS_TOKEN_ID};
 
-    use super::{composition_id, guard_surface, reflect_i8, reflect_i16, signed_delta};
+    use super::{
+        composition_id, guard_surface, parse_group_steps, reflect_i8, reflect_i16, signed_delta,
+    };
 
     #[test]
     fn signed_delta_preserves_direction() {
@@ -696,5 +725,8 @@ mod tests {
             composition_id([-1, 0, 1, 0]),
             "reverse_embeddings_plus_forward_v"
         );
+        assert_eq!(parse_group_steps("1,1,-1,1").unwrap(), [1, 1, -1, 1]);
+        assert!(parse_group_steps("1,1,-1").is_err());
+        assert!(parse_group_steps("1,1,2,1").is_err());
     }
 }
