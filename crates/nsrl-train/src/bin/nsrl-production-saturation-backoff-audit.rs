@@ -223,6 +223,7 @@ fn representation_v2_config(
         evaluation_windows: 64,
         reject_saturated_batch: true,
         flush_batched_embedding_residuals: candidate.flush_batched_embedding_residuals,
+        descent_guard_windows: 0,
         backward_quantization,
         backward_stochastic_seed,
     }

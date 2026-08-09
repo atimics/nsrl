@@ -72,9 +72,9 @@ pub use structure_audit::{
 };
 pub use training::{
     DirectFeatureTrainConfig, DirectFeatureTrainTrace, DirectHeadTrainConfig,
-    DirectTrainWindowBinding, ProductionBackwardQuantization, ProductionFullTrainConfig,
-    ProductionFullTrainTrace, ProductionGradientProposalLane, ProductionOptimizerStateV2,
-    ProductionRejectedBatchTrace, train_production_direct_feature,
+    DirectTrainWindowBinding, ProductionBackwardQuantization, ProductionDescentRejectedBatchTrace,
+    ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionGradientProposalLane,
+    ProductionOptimizerStateV2, ProductionRejectedBatchTrace, train_production_direct_feature,
     train_production_direct_head_search, train_production_full_smoke,
 };
 
@@ -3599,5 +3599,98 @@ mod tests {
         let json = trace.to_json_line();
         assert!(json.contains("\"saturation_policy\":\"reject_batch_stop\""));
         assert!(json.contains("\"saturated_batch_rejected_atomically\":true"));
+    }
+
+    #[test]
+    fn production_descent_guard_rejects_regression_and_resumes_exactly() {
+        let mut initial = ProductionModelV1::new_initial(tiny_config(), 0x1234, 29).expect("model");
+        initial.initialize_output_weights(1).expect("output init");
+        initial.scales.output_shift = 14;
+        initial.validate().expect("scaled model");
+        let tokens = [
+            BOS_TOKEN_ID,
+            300,
+            301,
+            302,
+            303,
+            304,
+            EOS_TOKEN_ID,
+            BOS_TOKEN_ID,
+            300,
+            301,
+            302,
+            303,
+            304,
+            EOS_TOKEN_ID,
+            BOS_TOKEN_ID,
+            300,
+            301,
+            302,
+            303,
+            305,
+            EOS_TOKEN_ID,
+        ];
+        let config = ProductionFullTrainConfig {
+            context_tokens: 4,
+            max_windows: 2,
+            epochs: 1,
+            matrix_learning_rate_shift: 62,
+            vector_learning_rate_shift: 62,
+            embedding_learning_rate_shift: 62,
+            output_learning_rate_shift: 54,
+            final_rms_learning_rate_shift: Some(62),
+            output_bias_learning_rate_shift: Some(0),
+            output_backward_shift: Some(8),
+            probability_gradient_fractional_bits: 23,
+            probability_normalization: SoftmaxNormalization::Q47Newton1,
+            batch_windows: 1,
+            max_optimizer_steps: 2,
+            evaluation_windows: 2,
+            descent_guard_windows: 1,
+            ..ProductionFullTrainConfig::default()
+        };
+
+        let mut uninterrupted = initial.clone();
+        let (trace, uninterrupted_state) =
+            train_production_full_smoke(&mut uninterrupted, &tokens, 0x5678, config, None)
+                .expect("guarded train");
+        assert_eq!(uninterrupted, initial);
+        assert!(trace.schedule_complete);
+        assert_eq!(trace.optimizer_steps, 2);
+        assert_eq!(trace.descent_guard_evaluated_batches, 2);
+        assert_eq!(trace.descent_guard_accepted_batches, 0);
+        assert_eq!(trace.descent_guard_rejected_batches, 2);
+        assert_eq!(
+            trace.descent_guard_initial_nll_millibits,
+            trace.descent_guard_final_nll_millibits
+        );
+        assert!(trace.movement_l1.iter().all(|&movement| movement == 0));
+        assert!(
+            trace
+                .descent_guard_last_rejected_batch
+                .expect("rejected batch")
+                .movement_l1[12]
+                > 0
+        );
+        let json = trace.to_json_line();
+        assert!(
+            json.contains("\"descent_guard_policy\":\"reject_worsening_update_consume_batch\"")
+        );
+        assert!(json.contains("\"training_only_descent_guard_enabled\":true"));
+
+        let mut resumed = initial.clone();
+        let partial_config = ProductionFullTrainConfig {
+            max_optimizer_steps: 1,
+            ..config
+        };
+        let (partial_trace, partial_state) =
+            train_production_full_smoke(&mut resumed, &tokens, 0x5678, partial_config, None)
+                .expect("guarded partial train");
+        assert_eq!(partial_trace.descent_guard_rejected_batches, 1);
+        let (_, resumed_state) =
+            train_production_full_smoke(&mut resumed, &tokens, 0x5678, config, Some(partial_state))
+                .expect("guarded resume");
+        assert_eq!(resumed, uninterrupted);
+        assert_eq!(resumed_state, uninterrupted_state);
     }
 }

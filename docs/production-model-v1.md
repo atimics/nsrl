@@ -630,6 +630,23 @@ every non-source composition measured here is neutral or worse. The next
 optimizer work must gate update direction on a training-only descent surface,
 with development retained for selection rather than used inside each update.
 
+That training-only descent guard is now implemented as an opt-in,
+optimizer-schedule-bound transaction. `--descent-guard-windows N` selects N
+deterministic global window ranks from the training corpus after excluding all
+update-window ranks. A batch that moves weights is evaluated once on this fixed
+canonical-NLL surface; equal or lower loss commits, while higher loss restores
+both the model and optimizer residuals atomically. Rejected batches still
+advance the durable cursor, preventing an exact restart from retrying a known
+bad update forever. The trace binds the guard-window rank hash, initial and
+final loss, accepted and rejected counts, aggregate improvement/regression, and
+the last rejected movement. Default schedules, hashes, and traces remain
+byte-compatible because the guard is absent unless explicitly enabled. Tiny
+opposing-target and resume fixtures prove regression rejection, zero committed
+movement after rollback, and equality between uninterrupted and resumed runs;
+all 144 library tests pass. This implementation does not itself authorize a
+production candidate: the next gate is an exact checkpoint trigger followed by
+a prospectively declared protected horizon.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

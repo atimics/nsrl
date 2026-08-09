@@ -26,12 +26,13 @@
 //! the same seed and data order.
 
 use core::{cmp::Reverse, ops::Range};
-use std::thread;
+use std::{collections::BTreeSet, thread};
 
 use nsrl_core::{
-    GatedMlpI16Params, GatedMlpWorkspace, LinearAttentionWorkspace, RmsNormBackwardWorkspace,
-    SelfAttentionI16Params, SoftmaxNormalization, base2_exp_neg_q15, base2_exp_neg_q47,
-    base2_softmax_i32_q15, base2_softmax_i32_q31_with_normalization,
+    DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS, GatedMlpI16Params, GatedMlpWorkspace,
+    LinearAttentionWorkspace, RmsNormBackwardWorkspace, SelfAttentionI16Params,
+    SoftmaxNormalization, base2_exp_neg_q15, base2_exp_neg_q47, base2_softmax_i32_q15,
+    base2_softmax_i32_q31_with_normalization, base2_softmax_nll_millibits,
     gated_activation_backward_i16_q15, gated_mlp_i16_q15_checked, hard_silu_derivative_q15,
     hard_silu_q15, linear_attention_i16_q15_checked, rms_norm_backward_i16_q15_checked,
     rms_norm_i16_q15_checked, round_shift_rhu_i64, saturate_i8, saturate_i16,
@@ -296,6 +297,7 @@ pub struct ProductionFullTrainConfig {
     pub evaluation_windows: usize,
     pub reject_saturated_batch: bool,
     pub flush_batched_embedding_residuals: bool,
+    pub descent_guard_windows: usize,
     pub backward_quantization: ProductionBackwardQuantization,
     pub backward_stochastic_seed: u64,
 }
@@ -331,6 +333,7 @@ impl Default for ProductionFullTrainConfig {
             evaluation_windows: usize::MAX,
             reject_saturated_batch: false,
             flush_batched_embedding_residuals: false,
+            descent_guard_windows: 0,
             backward_quantization: ProductionBackwardQuantization::RescuedRhu,
             backward_stochastic_seed: 0,
         }
@@ -509,6 +512,18 @@ pub struct ProductionRejectedBatchTrace {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionDescentRejectedBatchTrace {
+    pub attempted_total_optimizer_step: u64,
+    pub start_epoch: u64,
+    pub start_window: u64,
+    pub windows: usize,
+    pub before_nll_millibits: u64,
+    pub after_nll_millibits: u64,
+    pub regression_millibits: u64,
+    pub movement_l1: [u64; 13],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductionFullTrainTrace {
     pub profile: &'static str,
     pub parameter_count: usize,
@@ -558,6 +573,16 @@ pub struct ProductionFullTrainTrace {
     pub optimizer_state_hash: u64,
     pub reject_saturated_batch: bool,
     pub flush_batched_embedding_residuals: bool,
+    pub descent_guard_windows: usize,
+    pub descent_guard_window_rank_hash: u64,
+    pub descent_guard_initial_nll_millibits: u64,
+    pub descent_guard_final_nll_millibits: u64,
+    pub descent_guard_evaluated_batches: usize,
+    pub descent_guard_accepted_batches: usize,
+    pub descent_guard_rejected_batches: usize,
+    pub descent_guard_accepted_improvement_millibits: u64,
+    pub descent_guard_rejected_regression_millibits: u64,
+    pub descent_guard_last_rejected_batch: Option<ProductionDescentRejectedBatchTrace>,
     pub rejected_batch: Option<ProductionRejectedBatchTrace>,
     pub backward_quantization: ProductionBackwardQuantization,
     pub backward_stochastic_seed: u64,
@@ -753,6 +778,66 @@ impl ProductionFullTrainTrace {
             output = output.replace(
                 "\"batched_residual_updates\":true",
                 "\"batched_residual_updates\":true,\"batched_embedding_residual_flush\":true",
+            );
+        }
+        if self.descent_guard_windows > 0 {
+            let last_rejected = self.descent_guard_last_rejected_batch.map_or_else(
+                || "null".to_string(),
+                |batch| {
+                    format!(
+                        concat!(
+                            "{{\"attempted_total_optimizer_step\":{},",
+                            "\"start_epoch\":{},\"start_window\":{},\"windows\":{},",
+                            "\"before_nll_millibits\":{},\"after_nll_millibits\":{},",
+                            "\"regression_millibits\":{},\"movement_l1\":{{{}}}}}"
+                        ),
+                        batch.attempted_total_optimizer_step,
+                        batch.start_epoch,
+                        batch.start_window,
+                        batch.windows,
+                        batch.before_nll_millibits,
+                        batch.after_nll_millibits,
+                        batch.regression_millibits,
+                        render_groups(batch.movement_l1),
+                    )
+                },
+            );
+            output = output.replace(
+                ",\"optimizer_steps\"",
+                &format!(
+                    ",\"descent_guard_windows\":{},\"descent_guard_policy\":\"reject_worsening_update_consume_batch\",\"optimizer_steps\"",
+                    self.descent_guard_windows,
+                ),
+            );
+            output = output.replace(
+                ",\"health\"",
+                &format!(
+                    concat!(
+                        ",\"descent_guard\":{{",
+                        "\"surface\":\"fixed_disjoint_training_windows\",",
+                        "\"window_rank_hash\":\"0x{:016x}\",",
+                        "\"update_window_overlap_count\":0,",
+                        "\"initial_nll_millibits\":{},\"final_nll_millibits\":{},",
+                        "\"evaluated_batches\":{},\"accepted_batches\":{},",
+                        "\"rejected_batches\":{},",
+                        "\"accepted_improvement_millibits\":{},",
+                        "\"rejected_regression_millibits\":{},",
+                        "\"last_rejected_batch\":{}}},\"health\""
+                    ),
+                    self.descent_guard_window_rank_hash,
+                    self.descent_guard_initial_nll_millibits,
+                    self.descent_guard_final_nll_millibits,
+                    self.descent_guard_evaluated_batches,
+                    self.descent_guard_accepted_batches,
+                    self.descent_guard_rejected_batches,
+                    self.descent_guard_accepted_improvement_millibits,
+                    self.descent_guard_rejected_regression_millibits,
+                    last_rejected,
+                ),
+            );
+            output = output.replace(
+                "\"batched_residual_updates\":true",
+                "\"batched_residual_updates\":true,\"training_only_descent_guard_enabled\":true,\"descent_guard_update_windows_disjoint\":true",
             );
         }
         if self.backward_quantization != ProductionBackwardQuantization::RescuedRhu {
@@ -1081,6 +1166,30 @@ pub fn train_production_full_smoke(
     if windows.is_empty() {
         return Err(TrainError::InvalidConfig);
     }
+    let (descent_guard_ranks, descent_guard_surface) = if config.descent_guard_windows > 0 {
+        let total_windows = document_window_count(tokens, config.context_tokens);
+        let update_ranks = update_window_ranks(total_windows, windows.len(), config.spread_windows);
+        let guard_ranks =
+            descent_guard_window_ranks(total_windows, &update_ranks, config.descent_guard_windows)?;
+        let guard_surface = document_windows_at_ranks(tokens, config.context_tokens, &guard_ranks);
+        if guard_surface.len() != config.descent_guard_windows {
+            return Err(TrainError::InvalidConfig);
+        }
+        (guard_ranks, guard_surface)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let descent_guard_window_rank_hash = if descent_guard_ranks.is_empty() {
+        0
+    } else {
+        window_rank_hash(&descent_guard_ranks)
+    };
+    let descent_guard_initial_nll_millibits = if descent_guard_surface.is_empty() {
+        0
+    } else {
+        evaluate_canonical_nll_on_windows(model, &descent_guard_surface)?
+    };
+    let mut descent_guard_current_nll_millibits = descent_guard_initial_nll_millibits;
     let initial_model_hash = model.model_hash();
     let evaluation_windows = config.evaluation_windows.min(windows.len());
     let initial_mistakes = evaluate_mistakes(model, &windows[..evaluation_windows])?;
@@ -1102,6 +1211,12 @@ pub fn train_production_full_smoke(
     let mut optimizer_steps = 0_usize;
     let mut supervised_targets = 0_usize;
     let mut rejected_batch = None;
+    let mut descent_guard_evaluated_batches = 0_usize;
+    let mut descent_guard_accepted_batches = 0_usize;
+    let mut descent_guard_rejected_batches = 0_usize;
+    let mut descent_guard_accepted_improvement_millibits = 0_u64;
+    let mut descent_guard_rejected_regression_millibits = 0_u64;
+    let mut descent_guard_last_rejected_batch = None;
     'training: while state.next_epoch < config.epochs as u64
         && optimizer_steps < config.max_optimizer_steps
     {
@@ -1109,10 +1224,9 @@ pub fn train_production_full_smoke(
         let batch_end = batch_start
             .saturating_add(config.batch_windows)
             .min(windows.len());
-        let model_before = config.reject_saturated_batch.then(|| model.clone());
-        let residuals_before = config
-            .reject_saturated_batch
-            .then(|| state.residuals.clone());
+        let transactional_batch = config.reject_saturated_batch || config.descent_guard_windows > 0;
+        let mut model_before = transactional_batch.then(|| model.clone());
+        let mut residuals_before = transactional_batch.then(|| state.residuals.clone());
         let mut batch_stats = UpdateStats::default();
         let mut batch_supervised_targets = 0_usize;
         let mut batch_embedding_tokens = Vec::new();
@@ -1158,8 +1272,12 @@ pub fn train_production_full_smoke(
             );
         }
         if config.reject_saturated_batch && batch_stats.has_saturation() {
-            *model = model_before.expect("guarded batch has a model snapshot");
-            state.residuals = residuals_before.expect("guarded batch has a residual snapshot");
+            *model = model_before
+                .take()
+                .expect("guarded batch has a model snapshot");
+            state.residuals = residuals_before
+                .take()
+                .expect("guarded batch has a residual snapshot");
             rejected_batch = Some(ProductionRejectedBatchTrace {
                 attempted_total_optimizer_step: state
                     .step
@@ -1181,7 +1299,50 @@ pub fn train_production_full_smoke(
             });
             break 'training;
         }
-        stats.merge(batch_stats);
+        let batch_moved = batch_stats.movement.iter().any(|&value| value > 0);
+        let mut batch_committed = true;
+        if config.descent_guard_windows > 0 && batch_moved {
+            let after_nll_millibits =
+                evaluate_canonical_nll_on_windows(model, &descent_guard_surface)?;
+            let before_nll_millibits = descent_guard_current_nll_millibits;
+            descent_guard_evaluated_batches = descent_guard_evaluated_batches.saturating_add(1);
+            if after_nll_millibits > before_nll_millibits {
+                let regression_millibits = after_nll_millibits.saturating_sub(before_nll_millibits);
+                descent_guard_rejected_batches = descent_guard_rejected_batches.saturating_add(1);
+                descent_guard_rejected_regression_millibits =
+                    descent_guard_rejected_regression_millibits
+                        .saturating_add(regression_millibits);
+                descent_guard_last_rejected_batch = Some(ProductionDescentRejectedBatchTrace {
+                    attempted_total_optimizer_step: state
+                        .step
+                        .checked_add(1)
+                        .ok_or(TrainError::InvalidConfig)?,
+                    start_epoch: state.next_epoch,
+                    start_window: state.next_window,
+                    windows: batch_end - batch_start,
+                    before_nll_millibits,
+                    after_nll_millibits,
+                    regression_millibits,
+                    movement_l1: batch_stats.movement,
+                });
+                *model = model_before
+                    .take()
+                    .expect("descent-guarded batch has a model snapshot");
+                state.residuals = residuals_before
+                    .take()
+                    .expect("descent-guarded batch has a residual snapshot");
+                batch_committed = false;
+            } else {
+                descent_guard_accepted_batches = descent_guard_accepted_batches.saturating_add(1);
+                descent_guard_accepted_improvement_millibits =
+                    descent_guard_accepted_improvement_millibits
+                        .saturating_add(before_nll_millibits - after_nll_millibits);
+                descent_guard_current_nll_millibits = after_nll_millibits;
+            }
+        }
+        if batch_committed {
+            stats.merge(batch_stats);
+        }
         supervised_targets = supervised_targets.saturating_add(batch_supervised_targets);
         state.step = state.step.checked_add(1).ok_or(TrainError::InvalidConfig)?;
         optimizer_steps = optimizer_steps.saturating_add(1);
@@ -1193,6 +1354,15 @@ pub fn train_production_full_smoke(
         }
     }
     state.bound_model_hash = model.model_hash();
+    let descent_guard_final_nll_millibits = if descent_guard_surface.is_empty() {
+        0
+    } else {
+        evaluate_canonical_nll_on_windows(model, &descent_guard_surface)?
+    };
+    debug_assert_eq!(
+        descent_guard_final_nll_millibits,
+        descent_guard_current_nll_millibits
+    );
     let final_mistakes = evaluate_mistakes(model, &windows[..evaluation_windows])?;
     let trace = ProductionFullTrainTrace {
         profile: model.config.profile_id().unwrap_or("custom"),
@@ -1255,6 +1425,16 @@ pub fn train_production_full_smoke(
         optimizer_state_hash: state.state_hash(),
         reject_saturated_batch: config.reject_saturated_batch,
         flush_batched_embedding_residuals: config.flush_batched_embedding_residuals,
+        descent_guard_windows: config.descent_guard_windows,
+        descent_guard_window_rank_hash,
+        descent_guard_initial_nll_millibits,
+        descent_guard_final_nll_millibits,
+        descent_guard_evaluated_batches,
+        descent_guard_accepted_batches,
+        descent_guard_rejected_batches,
+        descent_guard_accepted_improvement_millibits,
+        descent_guard_rejected_regression_millibits,
+        descent_guard_last_rejected_batch,
         rejected_batch,
         backward_quantization: config.backward_quantization,
         backward_stochastic_seed: config.backward_stochastic_seed,
@@ -2998,6 +3178,149 @@ fn document_windows(tokens: &[u32], context: usize, max: usize) -> Vec<(Vec<u32>
     windows
 }
 
+fn document_window_count(tokens: &[u32], context: usize) -> usize {
+    let mut total = 0_usize;
+    let mut document_tokens = 0_usize;
+    let mut active = false;
+    for &token in tokens {
+        if token == BOS_TOKEN_ID {
+            document_tokens = 0;
+            active = true;
+        } else if token == EOS_TOKEN_ID {
+            if active {
+                total = total.saturating_add(document_tokens.saturating_sub(context));
+            }
+            document_tokens = 0;
+            active = false;
+        } else if active {
+            document_tokens = document_tokens.saturating_add(1);
+        }
+    }
+    total
+}
+
+fn update_window_ranks(total: usize, selected: usize, spread: bool) -> Vec<usize> {
+    let selected = selected.min(total);
+    if selected == 0 {
+        return Vec::new();
+    }
+    if !spread {
+        return (0..selected).collect();
+    }
+    if selected == 1 {
+        return vec![total / 2];
+    }
+    (0..selected)
+        .map(|index| ((index as u128) * ((total - 1) as u128) / ((selected - 1) as u128)) as usize)
+        .collect()
+}
+
+fn descent_guard_window_ranks(
+    total: usize,
+    update_ranks: &[usize],
+    guard_windows: usize,
+) -> Result<Vec<usize>, TrainError> {
+    let excluded = update_ranks.iter().copied().collect::<BTreeSet<_>>();
+    if guard_windows == 0 {
+        return Ok(Vec::new());
+    }
+    if total.saturating_sub(excluded.len()) < guard_windows {
+        return Err(TrainError::InvalidConfig);
+    }
+    let mut selected = BTreeSet::new();
+    for index in 0..guard_windows {
+        let target =
+            (((index as u128 * 2 + 1) * total as u128) / (guard_windows as u128 * 2)) as usize;
+        let target = target.min(total - 1);
+        let mut found = None;
+        for distance in 0..total {
+            if let Some(rank) = target.checked_sub(distance)
+                && !excluded.contains(&rank)
+                && !selected.contains(&rank)
+            {
+                found = Some(rank);
+                break;
+            }
+            if distance > 0 {
+                let rank = target.saturating_add(distance);
+                if rank < total && !excluded.contains(&rank) && !selected.contains(&rank) {
+                    found = Some(rank);
+                    break;
+                }
+            }
+        }
+        selected.insert(found.ok_or(TrainError::InvalidConfig)?);
+    }
+    Ok(selected.into_iter().collect())
+}
+
+fn document_windows_at_ranks(
+    tokens: &[u32],
+    context: usize,
+    ranks: &[usize],
+) -> Vec<(Vec<u32>, u32)> {
+    let mut windows = Vec::with_capacity(ranks.len());
+    let mut rank_cursor = 0_usize;
+    let mut current_rank = 0_usize;
+    let mut document = Vec::new();
+    let mut active = false;
+    for &token in tokens {
+        if token == BOS_TOKEN_ID {
+            document.clear();
+            active = true;
+        } else if token == EOS_TOKEN_ID {
+            if active && document.len() > context {
+                for start in 0..document.len() - context {
+                    if rank_cursor < ranks.len() && current_rank == ranks[rank_cursor] {
+                        windows.push((
+                            document[start..start + context].to_vec(),
+                            document[start + context],
+                        ));
+                        rank_cursor += 1;
+                        if rank_cursor == ranks.len() {
+                            return windows;
+                        }
+                    }
+                    current_rank = current_rank.saturating_add(1);
+                }
+            }
+            document.clear();
+            active = false;
+        } else if active {
+            document.push(token);
+        }
+    }
+    windows
+}
+
+fn window_rank_hash(ranks: &[usize]) -> u64 {
+    let mut bytes = Vec::with_capacity(ranks.len() * 8);
+    for &rank in ranks {
+        bytes.extend_from_slice(&(rank as u64).to_le_bytes());
+    }
+    fnv1a(&bytes)
+}
+
+fn evaluate_canonical_nll_on_windows(
+    model: &ProductionModelV1,
+    windows: &[(Vec<u32>, u32)],
+) -> Result<u64, TrainError> {
+    let mut total = 0_u64;
+    for (context, target) in windows {
+        let output = super::forward_production_model(model, context)?;
+        let loss = base2_softmax_nll_millibits(
+            &output.logits_q8,
+            *target as usize,
+            DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS,
+        )
+        .ok_or(TrainError::CoreRejected("production_descent_guard_nll"))?;
+        total = total.checked_add(loss).ok_or(TrainError::CoreRejected(
+            "production_descent_guard_nll_overflow",
+        ))?;
+    }
+    Ok(total)
+}
+
 fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     let mut bytes = Vec::new();
     for value in [c.context_tokens, c.max_windows, c.epochs, c.batch_windows] {
@@ -3052,6 +3375,10 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     }
     if c.flush_batched_embedding_residuals {
         bytes.extend_from_slice(&[0xf8, 1]);
+    }
+    if c.descent_guard_windows > 0 {
+        bytes.extend_from_slice(&[0xf7]);
+        bytes.extend_from_slice(&(c.descent_guard_windows as u64).to_le_bytes());
     }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
@@ -3174,9 +3501,10 @@ mod tests {
     use super::{
         BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME, I16_MAGNITUDE,
         I32_MAGNITUDE, ProductionBackwardQuantization, ProductionFullTrainConfig, UpdateStats,
-        accumulate_residual, causal_suffix_targets, effective_learning_rate_shifts,
-        flush_batched_embedding_residuals, schedule_hash, signed_product_sum_i64_safe,
-        spread_document_windows, systematic_fixed_mass_gradient,
+        accumulate_residual, causal_suffix_targets, descent_guard_window_ranks,
+        effective_learning_rate_shifts, flush_batched_embedding_residuals, schedule_hash,
+        signed_product_sum_i64_safe, spread_document_windows, systematic_fixed_mass_gradient,
+        update_window_ranks,
     };
 
     #[test]
@@ -3335,6 +3663,31 @@ mod tests {
             ..base
         };
         assert_ne!(schedule_hash(base), schedule_hash(embedding_flush));
+        let descent_guard = ProductionFullTrainConfig {
+            descent_guard_windows: 17,
+            ..base
+        };
+        assert_ne!(schedule_hash(base), schedule_hash(descent_guard));
+        assert_ne!(
+            schedule_hash(descent_guard),
+            schedule_hash(ProductionFullTrainConfig {
+                descent_guard_windows: 18,
+                ..descent_guard
+            })
+        );
+    }
+
+    #[test]
+    fn descent_guard_ranks_are_deterministic_and_disjoint_from_update_ranks() {
+        let update_ranks = update_window_ranks(101, 11, true);
+        let left = descent_guard_window_ranks(101, &update_ranks, 17).expect("guard ranks");
+        let right = descent_guard_window_ranks(101, &update_ranks, 17).expect("replay");
+
+        assert_eq!(left, right);
+        assert_eq!(left.len(), 17);
+        assert!(left.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(left.iter().all(|rank| !update_ranks.contains(rank)));
+        assert!(descent_guard_window_ranks(11, &(0..11).collect::<Vec<_>>(), 1).is_err());
     }
 
     #[test]
