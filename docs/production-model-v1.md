@@ -714,6 +714,23 @@ development confirmation. It authorizes implementation of a signed block
 trust region, followed by unit/resume tests and an exact checkpoint trigger
 before another full horizon.
 
+The signed representation trust region is now implemented behind
+`--descent-guard-signed-representation-blocks`. It activates only with a fixed
+training-only descent guard and only when all moving parameters belong to
+embeddings/K/V/O. For such a batch it evaluates all 81 exact block steps in
+`{-1,0,+1}^4`, where `-1` reflects the forward integer delta around the
+pre-batch model. The source model is always a candidate. Selection minimizes
+guard NLL, then active-block count, then the signed step tuple, so it cannot
+worsen the measured surface and drops functionally neutral movement. Forward
+blocks retain post-update residuals; zero or reversed blocks restore their
+pre-batch residuals, making replay deterministic and preventing a reflected
+derivative-free move from inheriting incompatible SGD carry. The mode is bound
+into the optimizer schedule and trace, defaults off without changing legacy
+hashes or JSON, and is covered by exact reflection, all-81-candidate,
+non-worsening, schedule-binding, fallback, and resume tests. All 145 library
+tests pass. The exact step-430 checkpoint trigger remains required before a
+fresh signed horizon.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

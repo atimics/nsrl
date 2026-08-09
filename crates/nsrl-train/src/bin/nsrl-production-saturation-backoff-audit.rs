@@ -39,6 +39,7 @@ struct CandidateSchedule {
     o_learning_rate_shift: u8,
     flush_batched_embedding_residuals: bool,
     descent_guard_windows: usize,
+    descent_guard_signed_representation_blocks: bool,
 }
 
 impl Default for CandidateSchedule {
@@ -51,6 +52,7 @@ impl Default for CandidateSchedule {
             o_learning_rate_shift: 10,
             flush_batched_embedding_residuals: false,
             descent_guard_windows: 0,
+            descent_guard_signed_representation_blocks: false,
         }
     }
 }
@@ -151,6 +153,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "\"candidate_o_learning_rate_shift\":{},",
             "\"candidate_flush_batched_embedding_residuals\":{},",
             "\"candidate_descent_guard_windows\":{},",
+            "\"candidate_descent_guard_signed_representation_blocks\":{},",
             "\"output_backward_shifts\":[{}],",
             "\"candidate_schedule_hash_rebound_in_memory_only\":true,",
             "\"candidate_artifacts_persisted\":false}},",
@@ -181,6 +184,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         config.candidate_schedule.o_learning_rate_shift,
         config.candidate_schedule.flush_batched_embedding_residuals,
         config.candidate_schedule.descent_guard_windows,
+        config
+            .candidate_schedule
+            .descent_guard_signed_representation_blocks,
         shifts,
         rows,
     );
@@ -228,6 +234,8 @@ fn representation_v2_config(
         reject_saturated_batch: true,
         flush_batched_embedding_residuals: candidate.flush_batched_embedding_residuals,
         descent_guard_windows: candidate.descent_guard_windows,
+        descent_guard_signed_representation_blocks: candidate
+            .descent_guard_signed_representation_blocks,
         backward_quantization,
         backward_stochastic_seed,
     }
@@ -293,6 +301,9 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             }
             "--descent-guard-windows" => {
                 candidate_schedule.descent_guard_windows = args.next().ok_or_else(value)?.parse()?
+            }
+            "--descent-guard-signed-representation-blocks" => {
+                candidate_schedule.descent_guard_signed_representation_blocks = true
             }
             other => return Err(format!("unknown argument: {other}").into()),
         }

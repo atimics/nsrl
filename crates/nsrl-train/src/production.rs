@@ -74,8 +74,9 @@ pub use training::{
     DirectFeatureTrainConfig, DirectFeatureTrainTrace, DirectHeadTrainConfig,
     DirectTrainWindowBinding, ProductionBackwardQuantization, ProductionDescentRejectedBatchTrace,
     ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionGradientProposalLane,
-    ProductionOptimizerStateV2, ProductionRejectedBatchTrace, train_production_direct_feature,
-    train_production_direct_head_search, train_production_full_smoke,
+    ProductionOptimizerStateV2, ProductionRejectedBatchTrace, ProductionSignedBlockSelectionTrace,
+    train_production_direct_feature, train_production_direct_head_search,
+    train_production_full_smoke,
 };
 
 pub const PRODUCTION_MODEL_V1_SCHEMA: &str = "nsrl.production_model.v1";
@@ -3647,6 +3648,7 @@ mod tests {
             max_optimizer_steps: 2,
             evaluation_windows: 2,
             descent_guard_windows: 1,
+            descent_guard_signed_representation_blocks: true,
             ..ProductionFullTrainConfig::default()
         };
 
@@ -3660,6 +3662,8 @@ mod tests {
         assert_eq!(trace.descent_guard_evaluated_batches, 2);
         assert_eq!(trace.descent_guard_accepted_batches, 0);
         assert_eq!(trace.descent_guard_rejected_batches, 2);
+        assert!(trace.descent_guard_signed_representation_blocks);
+        assert_eq!(trace.signed_block_evaluated_batches, 0);
         assert_eq!(
             trace.descent_guard_initial_nll_millibits,
             trace.descent_guard_final_nll_millibits
@@ -3677,6 +3681,7 @@ mod tests {
             json.contains("\"descent_guard_policy\":\"reject_worsening_update_consume_batch\"")
         );
         assert!(json.contains("\"training_only_descent_guard_enabled\":true"));
+        assert!(json.contains("\"signed_block_trust_region_enabled\":true"));
 
         let mut resumed = initial.clone();
         let partial_config = ProductionFullTrainConfig {

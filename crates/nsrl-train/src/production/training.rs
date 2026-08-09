@@ -67,6 +67,7 @@ const GROUP_NAMES: [&str; 13] = [
     "output",
     "bias",
 ];
+const SIGNED_REPRESENTATION_GROUPS: [usize; 4] = [0, 5, 6, 7];
 
 fn signed_product_sum_i64_safe(terms: usize, left_magnitude: u128, right_magnitude: u128) -> bool {
     (terms as u128)
@@ -298,6 +299,7 @@ pub struct ProductionFullTrainConfig {
     pub reject_saturated_batch: bool,
     pub flush_batched_embedding_residuals: bool,
     pub descent_guard_windows: usize,
+    pub descent_guard_signed_representation_blocks: bool,
     pub backward_quantization: ProductionBackwardQuantization,
     pub backward_stochastic_seed: u64,
 }
@@ -334,6 +336,7 @@ impl Default for ProductionFullTrainConfig {
             reject_saturated_batch: false,
             flush_batched_embedding_residuals: false,
             descent_guard_windows: 0,
+            descent_guard_signed_representation_blocks: false,
             backward_quantization: ProductionBackwardQuantization::RescuedRhu,
             backward_stochastic_seed: 0,
         }
@@ -524,6 +527,20 @@ pub struct ProductionDescentRejectedBatchTrace {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionSignedBlockSelectionTrace {
+    pub attempted_total_optimizer_step: u64,
+    pub start_epoch: u64,
+    pub start_window: u64,
+    pub windows: usize,
+    pub candidates_evaluated: usize,
+    pub before_nll_millibits: u64,
+    pub forward_nll_millibits: u64,
+    pub selected_nll_millibits: u64,
+    pub selected_steps: [i8; 4],
+    pub selected_movement_l1: [u64; 13],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductionFullTrainTrace {
     pub profile: &'static str,
     pub parameter_count: usize,
@@ -583,6 +600,10 @@ pub struct ProductionFullTrainTrace {
     pub descent_guard_accepted_improvement_millibits: u64,
     pub descent_guard_rejected_regression_millibits: u64,
     pub descent_guard_last_rejected_batch: Option<ProductionDescentRejectedBatchTrace>,
+    pub descent_guard_signed_representation_blocks: bool,
+    pub signed_block_evaluated_batches: usize,
+    pub signed_block_selected_batches: usize,
+    pub signed_block_last_selection: Option<ProductionSignedBlockSelectionTrace>,
     pub rejected_batch: Option<ProductionRejectedBatchTrace>,
     pub backward_quantization: ProductionBackwardQuantization,
     pub backward_stochastic_seed: u64,
@@ -838,6 +859,60 @@ impl ProductionFullTrainTrace {
             output = output.replace(
                 "\"batched_residual_updates\":true",
                 "\"batched_residual_updates\":true,\"training_only_descent_guard_enabled\":true,\"descent_guard_update_windows_disjoint\":true",
+            );
+        }
+        if self.descent_guard_signed_representation_blocks {
+            let last_selection = self.signed_block_last_selection.map_or_else(
+                || "null".to_string(),
+                |selection| {
+                    format!(
+                        concat!(
+                            "{{\"attempted_total_optimizer_step\":{},",
+                            "\"start_epoch\":{},\"start_window\":{},\"windows\":{},",
+                            "\"candidates_evaluated\":{},",
+                            "\"before_nll_millibits\":{},\"forward_nll_millibits\":{},",
+                            "\"selected_nll_millibits\":{},",
+                            "\"selected_steps\":{{\"embeddings\":{},\"k\":{},\"v\":{},\"o\":{}}},",
+                            "\"selected_movement_l1\":{{{}}}}}"
+                        ),
+                        selection.attempted_total_optimizer_step,
+                        selection.start_epoch,
+                        selection.start_window,
+                        selection.windows,
+                        selection.candidates_evaluated,
+                        selection.before_nll_millibits,
+                        selection.forward_nll_millibits,
+                        selection.selected_nll_millibits,
+                        selection.selected_steps[0],
+                        selection.selected_steps[1],
+                        selection.selected_steps[2],
+                        selection.selected_steps[3],
+                        render_groups(selection.selected_movement_l1),
+                    )
+                },
+            );
+            output = output.replace(
+                ",\"optimizer_steps\"",
+                ",\"descent_guard_candidate_family\":\"signed_ternary_embeddings_k_v_o\",\"signed_block_tie_break\":\"minimum_nll_then_fewest_active_blocks_then_lexicographic_steps\",\"optimizer_steps\"",
+            );
+            output = output.replace(
+                ",\"health\"",
+                &format!(
+                    concat!(
+                        ",\"signed_block_trust_region\":{{",
+                        "\"groups\":[\"embeddings\",\"k\",\"v\",\"o\"],",
+                        "\"steps\":[-1,0,1],\"source_always_candidate\":true,",
+                        "\"evaluated_batches\":{},\"selected_batches\":{},",
+                        "\"last_selection\":{}}},\"health\""
+                    ),
+                    self.signed_block_evaluated_batches,
+                    self.signed_block_selected_batches,
+                    last_selection,
+                ),
+            );
+            output = output.replace(
+                "\"batched_residual_updates\":true",
+                "\"batched_residual_updates\":true,\"signed_block_trust_region_enabled\":true,\"signed_block_source_candidate_guarantees_nonworsening\":true",
             );
         }
         if self.backward_quantization != ProductionBackwardQuantization::RescuedRhu {
@@ -1134,6 +1209,7 @@ pub fn train_production_full_smoke(
         || config.batch_windows == 0
         || config.max_optimizer_steps == 0
         || config.evaluation_windows == 0
+        || (config.descent_guard_signed_representation_blocks && config.descent_guard_windows == 0)
         || config.output_backward_shift.is_some_and(|shift| shift > 30)
         || !(15..=31).contains(&config.probability_gradient_fractional_bits)
         || config
@@ -1217,6 +1293,9 @@ pub fn train_production_full_smoke(
     let mut descent_guard_accepted_improvement_millibits = 0_u64;
     let mut descent_guard_rejected_regression_millibits = 0_u64;
     let mut descent_guard_last_rejected_batch = None;
+    let mut signed_block_evaluated_batches = 0_usize;
+    let mut signed_block_selected_batches = 0_usize;
+    let mut signed_block_last_selection = None;
     'training: while state.next_epoch < config.epochs as u64
         && optimizer_steps < config.max_optimizer_steps
     {
@@ -1302,12 +1381,74 @@ pub fn train_production_full_smoke(
         let batch_moved = batch_stats.movement.iter().any(|&value| value > 0);
         let mut batch_committed = true;
         if config.descent_guard_windows > 0 && batch_moved {
-            let after_nll_millibits =
+            let forward_nll_millibits =
                 evaluate_canonical_nll_on_windows(model, &descent_guard_surface)?;
             let before_nll_millibits = descent_guard_current_nll_millibits;
             descent_guard_evaluated_batches = descent_guard_evaluated_batches.saturating_add(1);
-            if after_nll_millibits > before_nll_millibits {
-                let regression_millibits = after_nll_millibits.saturating_sub(before_nll_millibits);
+            let signed_groups_cover_movement =
+                batch_stats
+                    .movement
+                    .iter()
+                    .enumerate()
+                    .all(|(group, &movement)| {
+                        movement == 0 || SIGNED_REPRESENTATION_GROUPS.contains(&group)
+                    });
+            let signed_selection = if config.descent_guard_signed_representation_blocks
+                && signed_groups_cover_movement
+            {
+                Some(select_signed_representation_blocks(
+                    model_before
+                        .as_ref()
+                        .expect("descent-guarded batch has a model snapshot"),
+                    model,
+                    residuals_before
+                        .as_ref()
+                        .expect("descent-guarded batch has a residual snapshot"),
+                    &state.residuals,
+                    &ranges,
+                    &descent_guard_surface,
+                    before_nll_millibits,
+                    forward_nll_millibits,
+                    batch_stats.movement,
+                )?)
+            } else {
+                None
+            };
+            let (after_nll_millibits, selected_steps) = signed_selection
+                .as_ref()
+                .map_or((forward_nll_millibits, None), |selection| {
+                    (selection.nll_millibits, Some(selection.steps))
+                });
+            if let Some(selection) = signed_selection.as_ref() {
+                signed_block_evaluated_batches = signed_block_evaluated_batches.saturating_add(1);
+                signed_block_selected_batches = signed_block_selected_batches
+                    .saturating_add(usize::from(selection.steps.iter().any(|&step| step != 0)));
+                signed_block_last_selection = Some(ProductionSignedBlockSelectionTrace {
+                    attempted_total_optimizer_step: state
+                        .step
+                        .checked_add(1)
+                        .ok_or(TrainError::InvalidConfig)?,
+                    start_epoch: state.next_epoch,
+                    start_window: state.next_window,
+                    windows: batch_end - batch_start,
+                    candidates_evaluated: selection.candidates_evaluated,
+                    before_nll_millibits,
+                    forward_nll_millibits,
+                    selected_nll_millibits: selection.nll_millibits,
+                    selected_steps: selection.steps,
+                    selected_movement_l1: selection.movement_l1,
+                });
+            }
+            if after_nll_millibits > before_nll_millibits
+                || selected_steps.is_some_and(|steps| steps.iter().all(|&step| step == 0))
+            {
+                let rejected_after_nll_millibits = if selected_steps.is_some() {
+                    forward_nll_millibits
+                } else {
+                    after_nll_millibits
+                };
+                let regression_millibits =
+                    rejected_after_nll_millibits.saturating_sub(before_nll_millibits);
                 descent_guard_rejected_batches = descent_guard_rejected_batches.saturating_add(1);
                 descent_guard_rejected_regression_millibits =
                     descent_guard_rejected_regression_millibits
@@ -1321,7 +1462,7 @@ pub fn train_production_full_smoke(
                     start_window: state.next_window,
                     windows: batch_end - batch_start,
                     before_nll_millibits,
-                    after_nll_millibits,
+                    after_nll_millibits: rejected_after_nll_millibits,
                     regression_millibits,
                     movement_l1: batch_stats.movement,
                 });
@@ -1333,6 +1474,21 @@ pub fn train_production_full_smoke(
                     .expect("descent-guarded batch has a residual snapshot");
                 batch_committed = false;
             } else {
+                if let Some(selection) = signed_selection {
+                    *model = selection.model;
+                    state.residuals = selection.residuals;
+                    batch_stats.movement = selection.movement_l1;
+                    for (group, step) in SIGNED_REPRESENTATION_GROUPS
+                        .iter()
+                        .copied()
+                        .zip(selection.steps)
+                    {
+                        if step == 0 {
+                            batch_stats.update_nonzero[group] = 0;
+                            batch_stats.residual_carry[group] = 0;
+                        }
+                    }
+                }
                 descent_guard_accepted_batches = descent_guard_accepted_batches.saturating_add(1);
                 descent_guard_accepted_improvement_millibits =
                     descent_guard_accepted_improvement_millibits
@@ -1435,6 +1591,11 @@ pub fn train_production_full_smoke(
         descent_guard_accepted_improvement_millibits,
         descent_guard_rejected_regression_millibits,
         descent_guard_last_rejected_batch,
+        descent_guard_signed_representation_blocks: config
+            .descent_guard_signed_representation_blocks,
+        signed_block_evaluated_batches,
+        signed_block_selected_batches,
+        signed_block_last_selection,
         rejected_batch,
         backward_quantization: config.backward_quantization,
         backward_stochastic_seed: config.backward_stochastic_seed,
@@ -3321,6 +3482,144 @@ fn evaluate_canonical_nll_on_windows(
     Ok(total)
 }
 
+struct SignedRepresentationSelection {
+    model: ProductionModelV1,
+    residuals: Vec<i64>,
+    steps: [i8; 4],
+    movement_l1: [u64; 13],
+    nll_millibits: u64,
+    candidates_evaluated: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn select_signed_representation_blocks(
+    source: &ProductionModelV1,
+    forward: &ProductionModelV1,
+    source_residuals: &[i64],
+    forward_residuals: &[i64],
+    ranges: &ParameterRanges,
+    guard_surface: &[(Vec<u32>, u32)],
+    source_nll_millibits: u64,
+    forward_nll_millibits: u64,
+    forward_movement_l1: [u64; 13],
+) -> Result<SignedRepresentationSelection, TrainError> {
+    let mut best_model = source.clone();
+    let mut best_steps = [0_i8; 4];
+    let mut best_nll_millibits = source_nll_millibits;
+    let mut best_active_blocks = 0_usize;
+    let mut candidates_evaluated = 1_usize;
+    for code in 0_u8..81 {
+        let mut remaining = code;
+        let mut steps = [0_i8; 4];
+        for step in &mut steps {
+            *step = (remaining % 3) as i8 - 1;
+            remaining /= 3;
+        }
+        if steps.iter().all(|&step| step == 0) {
+            continue;
+        }
+        let (candidate, nll_millibits) = if steps.iter().all(|&step| step == 1) {
+            (forward.clone(), forward_nll_millibits)
+        } else {
+            let Some(candidate) = compose_signed_representation_blocks(source, forward, steps)
+            else {
+                continue;
+            };
+            let nll_millibits = evaluate_canonical_nll_on_windows(&candidate, guard_surface)?;
+            (candidate, nll_millibits)
+        };
+        candidates_evaluated = candidates_evaluated.saturating_add(1);
+        let active_blocks = steps.iter().filter(|&&step| step != 0).count();
+        if (nll_millibits, active_blocks, steps)
+            < (best_nll_millibits, best_active_blocks, best_steps)
+        {
+            best_model = candidate;
+            best_steps = steps;
+            best_nll_millibits = nll_millibits;
+            best_active_blocks = active_blocks;
+        }
+    }
+    let mut residuals = forward_residuals.to_vec();
+    let signed_ranges = [
+        ranges.embeddings.clone(),
+        ranges.k.clone(),
+        ranges.v.clone(),
+        ranges.o.clone(),
+    ];
+    for (range, step) in signed_ranges.into_iter().zip(best_steps) {
+        if step <= 0 {
+            residuals[range.clone()].copy_from_slice(&source_residuals[range]);
+        }
+    }
+    let mut movement_l1 = [0_u64; 13];
+    for (group, step) in SIGNED_REPRESENTATION_GROUPS.iter().copied().zip(best_steps) {
+        if step != 0 {
+            movement_l1[group] = forward_movement_l1[group];
+        }
+    }
+    Ok(SignedRepresentationSelection {
+        model: best_model,
+        residuals,
+        steps: best_steps,
+        movement_l1,
+        nll_millibits: best_nll_millibits,
+        candidates_evaluated,
+    })
+}
+
+fn compose_signed_representation_blocks(
+    source: &ProductionModelV1,
+    forward: &ProductionModelV1,
+    steps: [i8; 4],
+) -> Option<ProductionModelV1> {
+    let mut candidate = source.clone();
+    for (group, step) in steps.into_iter().enumerate() {
+        match (group, step) {
+            (_, 0) => {}
+            (0, 1) => candidate.embeddings.clone_from(&forward.embeddings),
+            (0, -1) => reflect_i16_parameters(
+                &mut candidate.embeddings,
+                &source.embeddings,
+                &forward.embeddings,
+            )?,
+            (1, 1) => candidate.k_weights.clone_from(&forward.k_weights),
+            (1, -1) => reflect_i8_parameters(
+                &mut candidate.k_weights,
+                &source.k_weights,
+                &forward.k_weights,
+            )?,
+            (2, 1) => candidate.v_weights.clone_from(&forward.v_weights),
+            (2, -1) => reflect_i8_parameters(
+                &mut candidate.v_weights,
+                &source.v_weights,
+                &forward.v_weights,
+            )?,
+            (3, 1) => candidate.o_weights.clone_from(&forward.o_weights),
+            (3, -1) => reflect_i8_parameters(
+                &mut candidate.o_weights,
+                &source.o_weights,
+                &forward.o_weights,
+            )?,
+            _ => return None,
+        }
+    }
+    Some(candidate)
+}
+
+fn reflect_i8_parameters(output: &mut [i8], source: &[i8], forward: &[i8]) -> Option<()> {
+    for ((output, &source), &forward) in output.iter_mut().zip(source).zip(forward) {
+        *output = i8::try_from(i16::from(source) * 2 - i16::from(forward)).ok()?;
+    }
+    Some(())
+}
+
+fn reflect_i16_parameters(output: &mut [i16], source: &[i16], forward: &[i16]) -> Option<()> {
+    for ((output, &source), &forward) in output.iter_mut().zip(source).zip(forward) {
+        *output = i16::try_from(i32::from(source) * 2 - i32::from(forward)).ok()?;
+    }
+    Some(())
+}
+
 fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     let mut bytes = Vec::new();
     for value in [c.context_tokens, c.max_windows, c.epochs, c.batch_windows] {
@@ -3379,6 +3678,9 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     if c.descent_guard_windows > 0 {
         bytes.extend_from_slice(&[0xf7]);
         bytes.extend_from_slice(&(c.descent_guard_windows as u64).to_le_bytes());
+    }
+    if c.descent_guard_signed_representation_blocks {
+        bytes.extend_from_slice(&[0xf6, 1]);
     }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
@@ -3498,13 +3800,15 @@ fn vector_group_shift(base: u8, group: usize) -> u8 {
 mod tests {
     use nsrl_core::SoftmaxNormalization;
 
+    use super::super::{ProductionModelConfig, ProductionModelV1};
     use super::{
         BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME, I16_MAGNITUDE,
-        I32_MAGNITUDE, ProductionBackwardQuantization, ProductionFullTrainConfig, UpdateStats,
-        accumulate_residual, causal_suffix_targets, descent_guard_window_ranks,
+        I32_MAGNITUDE, ParameterRanges, ProductionBackwardQuantization, ProductionFullTrainConfig,
+        UpdateStats, accumulate_residual, causal_suffix_targets,
+        compose_signed_representation_blocks, descent_guard_window_ranks,
         effective_learning_rate_shifts, flush_batched_embedding_residuals, schedule_hash,
-        signed_product_sum_i64_safe, spread_document_windows, systematic_fixed_mass_gradient,
-        update_window_ranks,
+        select_signed_representation_blocks, signed_product_sum_i64_safe, spread_document_windows,
+        systematic_fixed_mass_gradient, update_window_ranks,
     };
 
     #[test]
@@ -3675,6 +3979,11 @@ mod tests {
                 ..descent_guard
             })
         );
+        let signed_blocks = ProductionFullTrainConfig {
+            descent_guard_signed_representation_blocks: true,
+            ..descent_guard
+        };
+        assert_ne!(schedule_hash(descent_guard), schedule_hash(signed_blocks));
     }
 
     #[test]
@@ -3688,6 +3997,105 @@ mod tests {
         assert!(left.windows(2).all(|pair| pair[0] < pair[1]));
         assert!(left.iter().all(|rank| !update_ranks.contains(rank)));
         assert!(descent_guard_window_ranks(11, &(0..11).collect::<Vec<_>>(), 1).is_err());
+    }
+
+    #[test]
+    fn signed_representation_candidates_reflect_exactly_and_select_deterministically() {
+        let config = ProductionModelConfig {
+            vocab_size: 320,
+            d_model: 16,
+            heads: 4,
+            layers: 2,
+            hidden_dim: 48,
+            context_tokens: 16,
+        };
+        let mut source = ProductionModelV1::new_initial(config, 0x1234, 37).expect("model");
+        source.initialize_output_weights(1).expect("output init");
+        source.scales.output_shift = 14;
+        source.validate().expect("source");
+        let mut forward = source.clone();
+        let embedding = forward
+            .embeddings
+            .iter()
+            .position(|&value| value < i16::MAX)
+            .expect("embedding coordinate");
+        forward.embeddings[embedding] += 1;
+        let k = forward
+            .k_weights
+            .iter()
+            .position(|&value| value < i8::MAX)
+            .expect("K coordinate");
+        forward.k_weights[k] += 1;
+        let v = forward
+            .v_weights
+            .iter()
+            .position(|&value| value < i8::MAX)
+            .expect("V coordinate");
+        forward.v_weights[v] += 1;
+        let o = forward
+            .o_weights
+            .iter()
+            .position(|&value| value < i8::MAX)
+            .expect("O coordinate");
+        forward.o_weights[o] += 1;
+
+        let reflected = compose_signed_representation_blocks(&source, &forward, [0, 1, -1, 1])
+            .expect("signed candidate");
+        assert_eq!(reflected.embeddings, source.embeddings);
+        assert_eq!(reflected.k_weights[k], forward.k_weights[k]);
+        assert_eq!(reflected.v_weights[v], source.v_weights[v] - 1);
+        assert_eq!(reflected.o_weights[o], forward.o_weights[o]);
+
+        let guard = vec![(vec![300, 301, 302, 303], 304)];
+        let source_nll = super::evaluate_canonical_nll_on_windows(&source, &guard).expect("source");
+        let forward_nll =
+            super::evaluate_canonical_nll_on_windows(&forward, &guard).expect("forward");
+        let ranges = ParameterRanges::new(&source);
+        let source_residuals = vec![0_i64; source.parameter_count()];
+        let forward_residuals = vec![7_i64; source.parameter_count()];
+        let movement = [1_u64, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0];
+        let left = select_signed_representation_blocks(
+            &source,
+            &forward,
+            &source_residuals,
+            &forward_residuals,
+            &ranges,
+            &guard,
+            source_nll,
+            forward_nll,
+            movement,
+        )
+        .expect("selection");
+        let right = select_signed_representation_blocks(
+            &source,
+            &forward,
+            &source_residuals,
+            &forward_residuals,
+            &ranges,
+            &guard,
+            source_nll,
+            forward_nll,
+            movement,
+        )
+        .expect("replay");
+        assert_eq!(left.steps, right.steps);
+        assert_eq!(left.nll_millibits, right.nll_millibits);
+        assert_eq!(left.model, right.model);
+        assert_eq!(left.residuals, right.residuals);
+        assert_eq!(left.candidates_evaluated, 81);
+        assert!(left.nll_millibits <= source_nll);
+        for ((range, step), group) in [ranges.embeddings, ranges.k, ranges.v, ranges.o]
+            .into_iter()
+            .zip(left.steps)
+            .zip([0, 5, 6, 7])
+        {
+            if step <= 0 {
+                assert!(left.residuals[range].iter().all(|&residual| residual == 0));
+            } else {
+                assert!(left.residuals[range].iter().all(|&residual| residual == 7));
+            }
+            assert_eq!(left.movement_l1[group], u64::from(step != 0));
+        }
     }
 
     #[test]
