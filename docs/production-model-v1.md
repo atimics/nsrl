@@ -688,6 +688,19 @@ about +27 millibits. Before implementing group-selective commits, the same
 training-only guard. That preserves development as a selector while testing
 whether the training guard is large enough to predict direction reliably.
 
+The signed block audit expands each of embeddings/K/V/O from forward-or-zero
+to reverse/zero/forward, evaluating all 81 exact integer compositions on the
+same guard. Its best direction is forward K, reverse V, forward O, improving
+guard NLL by 179 millibits; embedding direction is functionally neutral across
+all three signs. By contrast, the original all-forward bundle regresses by 136.
+The frozen evidence is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block-guard-audit.json`.
+This changes the diagnosis: the surrogate identifies active blocks, but V's
+proposed sign is wrong on the measured objective. The preregistered next step is
+read-only development confirmation of the selected signed composition. Only a
+matching development direction can authorize engineering a signed block trust
+region into training.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
