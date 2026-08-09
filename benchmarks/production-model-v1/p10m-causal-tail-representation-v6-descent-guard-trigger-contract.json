@@ -1,0 +1,103 @@
+{
+  "schema": "nsrl.production_representation_descent_guard_trigger_contract.v1",
+  "objective": "verify_atomic_training_only_measured_descent_on_the_exact_step_430_representation_trigger",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "descent_guard_commit": "51495f3d",
+    "audit_commit": "de03a78b",
+    "policy": "reject_worsening_update_consume_batch",
+    "objective": "canonical_integer_base2_softmax_nll_millibits",
+    "surface": "64_fixed_global_training_window_ranks_disjoint_from_update_window_ranks",
+    "tie_policy": "accept_equal_or_improved_nll",
+    "rollback_scope": [
+      "model",
+      "optimizer_residuals"
+    ],
+    "cursor_policy": "advance_after_descent_rejection"
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/model-step-429.nsrlpm",
+    "model_hash": "0x2b5fcca18e6ad700",
+    "model_sha256": "f551732806e1fc123a864e67f44807635dca3e234fa87337e3d14252f928ae78",
+    "optimizer_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v2-stability-localization-r4/optimizer-step-429.nsrlpo",
+    "optimizer_state_hash": "0x00049ca43d5255ad",
+    "optimizer_sha256": "99dfa0c5748e2914d151f47cd3c084833a07e241fb3823003ed2df7dbb014cbb",
+    "total_optimizer_step": 429,
+    "next_epoch": 0,
+    "next_window": 1716
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda"
+  },
+  "candidate_schedule": {
+    "context_tokens": 64,
+    "max_windows": 2048,
+    "spread_windows": true,
+    "targets_per_window": 8,
+    "batch_windows": 4,
+    "max_optimizer_steps": 1,
+    "backward_quantization": "rescued-rhu",
+    "output_backward_shift": 9,
+    "flush_batched_embedding_residuals": true,
+    "descent_guard_windows": 64,
+    "cli_learning_rate_shifts": {
+      "embeddings": 0,
+      "embedding_boost": 3,
+      "k": 21,
+      "v": 23,
+      "o": 9
+    },
+    "effective_learning_rate_shifts": {
+      "embeddings": 0,
+      "k": 24,
+      "v": 26,
+      "o": 12
+    }
+  },
+  "gates": {
+    "descent_guard_enabled": true,
+    "guard_update_window_overlap_count": 0,
+    "evaluated_moving_batches": 1,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "accepted_branch": {
+      "accepted_batches": 1,
+      "rejected_batches": 0,
+      "final_guard_nll_lte_initial": true,
+      "required_committed_moving_groups": [
+        "k",
+        "v",
+        "o"
+      ]
+    },
+    "rejected_branch": {
+      "accepted_batches": 0,
+      "rejected_batches": 1,
+      "final_guard_nll_equals_initial": true,
+      "final_model_hash_equals_source": true,
+      "last_rejected_attempted_moving_groups": [
+        "embeddings",
+        "k",
+        "v",
+        "o"
+      ]
+    },
+    "exactly_one_outcome_branch_must_pass": true,
+    "cursor_must_advance_to_total_optimizer_step": 430,
+    "source_model_and_optimizer_must_not_be_mutated": true,
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "read_only_local_counterfactual": true,
+    "fresh_full_horizon_run_requires_trigger_gate": true,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}
