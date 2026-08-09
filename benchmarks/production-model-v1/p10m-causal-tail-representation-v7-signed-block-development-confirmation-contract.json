@@ -1,0 +1,72 @@
+{
+  "schema": "nsrl.production_signed_block_development_confirmation_contract.v1",
+  "objective": "confirm_the_preselected_training_guard_signed_block_minimum_on_the_frozen_development_panel",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "commit": "3e6ff5b7",
+    "mode": "read_only_exact_signed_group_composition"
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b",
+    "development_total_nll_millibits": 6540187
+  },
+  "forward_candidate": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v5-stability/candidate.nsrlpm",
+    "model_hash": "0xef0d1adc8eecddd6",
+    "model_sha256": "82005038d204b69c867a4624451cffacd0e023ee3029b2ff67a54f6a5a1e43de"
+  },
+  "selected_composition": {
+    "selection_artifact": "benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block-guard-audit.json",
+    "selection_outcome": "forward_k_reverse_v_forward_o_is_strong_training_guard_descent",
+    "tie_break": "lexicographically_first_id_among_equal_minima",
+    "id": "forward_embeddings_plus_forward_k_plus_reverse_v_plus_forward_o",
+    "group_steps": {
+      "embeddings": 1,
+      "k": 1,
+      "v": -1,
+      "o": 1
+    },
+    "expected_model_hash": "0xe188e6fcdb6ecf2a",
+    "training_guard_delta_millibits": -179
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab"
+  },
+  "evaluation": {
+    "partition": "development",
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "context_tokens": 64,
+    "windows": 512,
+    "test_partition_must_not_be_read": true
+  },
+  "gates": {
+    "candidate_difference_must_be_isolated_to_composed_groups": true,
+    "exactly_one_preselected_composition_must_be_evaluated": true,
+    "selected_model_hash_must_match": true,
+    "source_endpoint_must_reproduce": true,
+    "all_reflections_must_remain_in_parameter_range": true,
+    "residual_saturation_max": 0,
+    "development_total_nll_must_strictly_improve": true,
+    "test_partition_must_not_be_read": true
+  },
+  "decision": {
+    "authorize_signed_block_trust_region_only_if_all_gates_pass": true,
+    "development_is_confirmation_not_used_inside_training_updates": true
+  },
+  "authorization": {
+    "read_only_development_confirmation": true,
+    "training": false,
+    "candidate_checkpoint": false,
+    "test_evaluation": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  }
+}
