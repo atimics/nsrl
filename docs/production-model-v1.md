@@ -647,6 +647,20 @@ all 144 library tests pass. This implementation does not itself authorize a
 production candidate: the next gate is an exact checkpoint trigger followed by
 a prospectively declared protected horizon.
 
+The exact step-430 checkpoint trigger passes through the rejection branch. The
+same update that would move embeddings/K/V/O by 23/58,822/54,318/7,415 L1
+raises canonical NLL on 64 fixed disjoint training windows from 814,147 to
+814,476 millibits. The guard therefore restores the source model hash and all
+optimizer residuals, records zero committed movement, and consumes the batch by
+advancing the cursor from step 429/window 1716 to step 430/window 1720. All
+saturation counts are zero. This is direct evidence that the new transaction
+blocks the already-observed harmful representation update before development
+evaluation. The frozen result is
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v6-descent-guard-trigger.json`.
+Its prospective contract authorizes one fresh full protected horizon with the
+same 64-window training-only guard; it does not authorize test evaluation or a
+quality claim.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
