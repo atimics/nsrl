@@ -32,6 +32,13 @@ struct Config {
     context_tokens: usize,
     max_windows: usize,
     guard_update_windows: Option<usize>,
+    signed_group_steps: bool,
+}
+
+#[derive(Debug)]
+struct Composition {
+    id: String,
+    steps: [i8; 4],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -104,47 +111,58 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         config.max_windows,
         guard_surface.as_ref(),
     )?;
-    let subsets = if guard_surface.is_some() {
+    let subsets = if config.signed_group_steps {
+        (0_u8..81)
+            .map(|code| {
+                let mut remaining = code;
+                let mut steps = [0_i8; 4];
+                for step in &mut steps {
+                    *step = (remaining % 3) as i8 - 1;
+                    remaining /= 3;
+                }
+                Composition {
+                    id: composition_id(steps),
+                    steps,
+                }
+            })
+            .collect::<Vec<_>>()
+    } else if guard_surface.is_some() {
         (0_u8..16)
             .map(|mask| {
-                let groups = GROUPS
-                    .iter()
-                    .enumerate()
-                    .filter(|&(index, _)| mask & (1 << index) != 0)
-                    .map(|(_, group)| *group)
-                    .collect::<Vec<_>>();
+                let steps = core::array::from_fn(|index| i8::from(mask & (1 << index) != 0));
                 let id = if mask == 0 {
                     "source".to_string()
                 } else if mask == 15 {
                     "candidate".to_string()
                 } else {
-                    groups.join("_plus_")
+                    selected_groups(steps).join("_plus_")
                 };
-                (id, groups)
+                Composition { id, steps }
             })
             .collect::<Vec<_>>()
     } else {
         vec![
-            ("source".to_string(), Vec::new()),
-            ("embeddings_only".to_string(), vec!["embeddings"]),
-            ("k_only".to_string(), vec!["k"]),
-            ("v_only".to_string(), vec!["v"]),
-            ("o_only".to_string(), vec!["o"]),
-            ("without_embeddings".to_string(), vec!["k", "v", "o"]),
-            ("without_k".to_string(), vec!["embeddings", "v", "o"]),
-            ("without_v".to_string(), vec!["embeddings", "k", "o"]),
-            ("without_o".to_string(), vec!["embeddings", "k", "v"]),
-            ("candidate".to_string(), GROUPS.to_vec()),
+            composition("source", []),
+            composition("embeddings_only", ["embeddings"]),
+            composition("k_only", ["k"]),
+            composition("v_only", ["v"]),
+            composition("o_only", ["o"]),
+            composition("without_embeddings", ["k", "v", "o"]),
+            composition("without_k", ["embeddings", "v", "o"]),
+            composition("without_v", ["embeddings", "k", "o"]),
+            composition("without_o", ["embeddings", "k", "v"]),
+            composition("candidate", GROUPS),
         ]
     };
     let mut rows = String::new();
-    for (index, (id, groups)) in subsets.iter().enumerate() {
-        let model = if groups.is_empty() {
+    for (index, selection) in subsets.iter().enumerate() {
+        let groups = selected_groups(selection.steps);
+        let model = if selection.steps.iter().all(|&step| step == 0) {
             source.clone()
-        } else if groups.len() == GROUPS.len() {
+        } else if selection.steps.iter().all(|&step| step == 1) {
             candidate.clone()
         } else {
-            compose(&source, &candidate, groups)?
+            compose_steps(&source, &candidate, selection.steps)?
         };
         let evaluation = evaluate_composition(
             &model,
@@ -162,17 +180,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .map(|group| format!("\"{group}\""))
             .collect::<Vec<_>>()
             .join(",");
+        let rendered_steps = if config.signed_group_steps {
+            let steps = GROUPS
+                .iter()
+                .zip(selection.steps)
+                .map(|(group, step)| format!("\"{group}\":{step}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("\"group_steps\":{{{steps}}},")
+        } else {
+            String::new()
+        };
         write!(
             rows,
             concat!(
                 "{{\"id\":\"{}\",\"candidate_groups\":[{}],",
+                "{}",
                 "\"model_hash\":\"0x{:016x}\",",
                 "\"total_nll_millibits\":{},\"delta_from_source_millibits\":{},",
                 "\"mistakes\":{},\"zero_probability_windows\":{},",
                 "\"residual_saturation_count\":{}}}"
             ),
-            id,
+            selection.id,
             rendered_groups,
+            rendered_steps,
             evaluation.model_hash,
             evaluation.total_nll_millibits,
             signed_delta(
@@ -202,6 +233,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )
         },
     );
+    let candidate_family = if config.signed_group_steps {
+        ",\"candidate_family\":\"signed_ternary_group_steps\",\"compositions\":81"
+    } else {
+        ""
+    };
 
     let output = format!(
         concat!(
@@ -218,7 +254,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "\"audit_binary_fnv64\":\"0x{:016x}\"}},",
             "\"evaluation\":{{{}}},",
             "\"groups\":[\"embeddings\",\"k\",\"v\",\"o\"],",
-            "\"candidate_diff_isolated_to_groups\":true,",
+            "\"candidate_diff_isolated_to_groups\":true{},",
             "\"rows\":[{}]}}\n"
         ),
         SCHEMA,
@@ -233,6 +269,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         fnv64(AUDIT_SOURCE),
         fnv64(&fs::read(env::current_exe()?)?),
         evaluation_surface,
+        candidate_family,
         rows,
     );
     if let Some(parent) = config.trace.parent() {
@@ -248,18 +285,124 @@ fn compose(
     candidate: &ProductionModelV1,
     groups: &[&str],
 ) -> Result<ProductionModelV1, Box<dyn std::error::Error>> {
-    let mut composed = source.clone();
+    let mut steps = [0_i8; 4];
     for group in groups {
-        match *group {
-            "embeddings" => composed.embeddings.clone_from(&candidate.embeddings),
-            "k" => composed.k_weights.clone_from(&candidate.k_weights),
-            "v" => composed.v_weights.clone_from(&candidate.v_weights),
-            "o" => composed.o_weights.clone_from(&candidate.o_weights),
+        let index = GROUPS
+            .iter()
+            .position(|candidate| candidate == group)
+            .ok_or_else(|| format!("unsupported composition group: {group}"))?;
+        steps[index] = 1;
+    }
+    compose_steps(source, candidate, steps)
+}
+
+fn compose_steps(
+    source: &ProductionModelV1,
+    candidate: &ProductionModelV1,
+    steps: [i8; 4],
+) -> Result<ProductionModelV1, Box<dyn std::error::Error>> {
+    let mut composed = source.clone();
+    for (group, step) in GROUPS.iter().zip(steps) {
+        if !(-1..=1).contains(&step) {
+            return Err(format!("unsupported composition step: {step}").into());
+        }
+        match (*group, step) {
+            (_, 0) => {}
+            ("embeddings", 1) => composed.embeddings.clone_from(&candidate.embeddings),
+            ("embeddings", -1) => {
+                reflect_i16(
+                    &mut composed.embeddings,
+                    &source.embeddings,
+                    &candidate.embeddings,
+                )?;
+            }
+            ("k", 1) => composed.k_weights.clone_from(&candidate.k_weights),
+            ("k", -1) => reflect_i8(
+                &mut composed.k_weights,
+                &source.k_weights,
+                &candidate.k_weights,
+            )?,
+            ("v", 1) => composed.v_weights.clone_from(&candidate.v_weights),
+            ("v", -1) => reflect_i8(
+                &mut composed.v_weights,
+                &source.v_weights,
+                &candidate.v_weights,
+            )?,
+            ("o", 1) => composed.o_weights.clone_from(&candidate.o_weights),
+            ("o", -1) => reflect_i8(
+                &mut composed.o_weights,
+                &source.o_weights,
+                &candidate.o_weights,
+            )?,
             _ => return Err(format!("unsupported composition group: {group}").into()),
         }
     }
     composed.validate()?;
     Ok(composed)
+}
+
+fn reflect_i8(
+    output: &mut [i8],
+    source: &[i8],
+    candidate: &[i8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for ((output, &source), &candidate) in output.iter_mut().zip(source).zip(candidate) {
+        *output = i8::try_from(i16::from(source) * 2 - i16::from(candidate))
+            .map_err(|_| "reflected i8 composition exceeds parameter range")?;
+    }
+    Ok(())
+}
+
+fn reflect_i16(
+    output: &mut [i16],
+    source: &[i16],
+    candidate: &[i16],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for ((output, &source), &candidate) in output.iter_mut().zip(source).zip(candidate) {
+        *output = i16::try_from(i32::from(source) * 2 - i32::from(candidate))
+            .map_err(|_| "reflected i16 composition exceeds parameter range")?;
+    }
+    Ok(())
+}
+
+fn composition<const N: usize>(id: &str, groups: [&str; N]) -> Composition {
+    let mut steps = [0_i8; 4];
+    for group in groups {
+        let index = GROUPS
+            .iter()
+            .position(|candidate| *candidate == group)
+            .expect("known composition group");
+        steps[index] = 1;
+    }
+    Composition {
+        id: id.to_string(),
+        steps,
+    }
+}
+
+fn selected_groups(steps: [i8; 4]) -> Vec<&'static str> {
+    GROUPS
+        .iter()
+        .zip(steps)
+        .filter(|(_, step)| *step != 0)
+        .map(|(group, _)| *group)
+        .collect()
+}
+
+fn composition_id(steps: [i8; 4]) -> String {
+    if steps.iter().all(|&step| step == 0) {
+        return "source".to_string();
+    }
+    if steps.iter().all(|&step| step == 1) {
+        return "candidate".to_string();
+    }
+    GROUPS
+        .iter()
+        .zip(steps)
+        .filter(|(_, step)| *step != 0)
+        .map(|(group, step)| format!("{}_{}", if step < 0 { "reverse" } else { "forward" }, group))
+        .collect::<Vec<_>>()
+        .join("_plus_")
 }
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std::error::Error>> {
@@ -271,6 +414,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
     let mut context_tokens = 64_usize;
     let mut max_windows = 512_usize;
     let mut guard_update_windows = None;
+    let mut signed_group_steps = false;
     let mut args = args.peekable();
     while let Some(arg) = args.next() {
         let value = || "missing group composition audit argument value";
@@ -285,6 +429,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--guard-update-windows" => {
                 guard_update_windows = Some(args.next().ok_or_else(value)?.parse()?)
             }
+            "--signed-group-steps" => signed_group_steps = true,
             other => return Err(format!("unknown argument: {other}").into()),
         }
     }
@@ -297,6 +442,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
         context_tokens,
         max_windows,
         guard_update_windows,
+        signed_group_steps,
     })
 }
 
@@ -515,7 +661,7 @@ fn fnv64(bytes: &[u8]) -> u64 {
 mod tests {
     use nsrl_corpus::subword::{BOS_TOKEN_ID, EOS_TOKEN_ID};
 
-    use super::{guard_surface, signed_delta};
+    use super::{composition_id, guard_surface, reflect_i8, reflect_i16, signed_delta};
 
     #[test]
     fn signed_delta_preserves_direction() {
@@ -533,5 +679,22 @@ mod tests {
         assert_eq!(left.rank_hash, right.rank_hash);
         assert_eq!(left.windows.len(), 3);
         assert_eq!(left.update_windows, 3);
+    }
+
+    #[test]
+    fn signed_group_steps_reflect_exact_integer_deltas() {
+        let mut i8_output = [0_i8; 3];
+        reflect_i8(&mut i8_output, &[4, -7, 12], &[5, -9, 12]).expect("i8 reflection");
+        assert_eq!(i8_output, [3, -5, 12]);
+        let mut i16_output = [0_i16; 2];
+        reflect_i16(&mut i16_output, &[400, -700], &[401, -702]).expect("i16 reflection");
+        assert_eq!(i16_output, [399, -698]);
+        assert!(reflect_i8(&mut [0], &[i8::MAX], &[i8::MAX - 1]).is_err());
+        assert_eq!(composition_id([0, 0, 0, 0]), "source");
+        assert_eq!(composition_id([1, 1, 1, 1]), "candidate");
+        assert_eq!(
+            composition_id([-1, 0, 1, 0]),
+            "reverse_embeddings_plus_forward_v"
+        );
     }
 }
