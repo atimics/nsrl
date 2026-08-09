@@ -1,0 +1,155 @@
+{
+  "schema": "nsrl.production_representation_stability_contract.v1",
+  "objective": "test_the_signed_representation_trust_region_over_the_fresh_full_representation_horizon",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "signed_block_commit": "b3ae6d24",
+    "trigger_gate_commit": "2716fa41",
+    "harness_commit": "d85837d7",
+    "backward_quantization": "rescued-rhu",
+    "flush_batched_embedding_residuals": true,
+    "descent_guard_policy": "reject_worsening_update_consume_batch",
+    "signed_block_policy": "minimum_guard_nll_then_fewest_active_blocks_then_lexicographic_steps"
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b",
+    "development_total_nll_millibits": 6540187
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "manifest_path": "benchmarks/open-generation-v1/manifest.tsv"
+  },
+  "derivation": {
+    "policy": "add_only_the_signed_block_trust_region_relative_to_representation_v6",
+    "artifacts": [
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v6-descent-guard.json",
+        "sha256": "11785f871dd6b52df5cd1646437aa32c6f495b599108a6700987348c6c3a1ad9"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v7-signed-block-trigger.json",
+        "sha256": "956aef4844c1ed872308e04a5b23d1facc75c0bb98321bf5ddf3d07b16c74c10"
+      }
+    ],
+    "trigger_gate_outcome": "forward_k_reverse_v_selected_with_strict_guard_descent",
+    "fresh_optimizer_residuals": true,
+    "test_partition_must_not_be_read": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 2048,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "optimizer_steps": 512,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "output_backward_shift": 9,
+    "embedding_residual_flush": "all_batch_touched_tokens",
+    "embedding_learning_rate_boost_shift": 3,
+    "atomic_saturation_policy": "reject_batch_stop",
+    "descent_guard_windows": 64,
+    "descent_guard_policy": "reject_worsening_update_consume_batch",
+    "descent_guard_surface": "fixed_disjoint_training_windows",
+    "descent_guard_window_rank_hash": "0x59857d2ef204d60f",
+    "signed_block_candidate_family": "signed_ternary_embeddings_k_v_o",
+    "cli_learning_rate_shifts": {
+      "matrix": 59,
+      "embeddings": 0,
+      "vector": 62,
+      "output_bias": 51,
+      "final_rms": 59,
+      "q": 59,
+      "k": 21,
+      "v": 23,
+      "o": 9,
+      "up": 59,
+      "gate": 59,
+      "down": 59,
+      "output": 51
+    },
+    "learning_rate_shifts": {
+      "embeddings": 0,
+      "attention_rms": 61,
+      "mlp_rms": 55,
+      "final_rms": 62,
+      "q": 62,
+      "k": 24,
+      "v": 26,
+      "o": 12,
+      "up": 62,
+      "gate": 62,
+      "down": 62,
+      "output": 54,
+      "bias": 54
+    }
+  },
+  "evaluation": {
+    "metric": "canonical_integer_base2_softmax_nll_millibits",
+    "partition": "development",
+    "context_tokens": 64,
+    "windows": 512,
+    "acceptance": "strict_improvement",
+    "test_evaluation": false,
+    "quality_postflight": false
+  },
+  "gates": {
+    "schedule_complete": true,
+    "required_total_optimizer_step": 512,
+    "gradient_residual_and_weight_saturation_max": 0,
+    "manifest_residual_saturation_max": 0,
+    "descent_guard_evaluated_batches_min": 1,
+    "descent_guard_accepted_batches_min": 1,
+    "signed_block_evaluated_batches_min": 1,
+    "signed_block_selected_batches_min": 1,
+    "signed_block_candidates_evaluated": 81,
+    "required_parameter_groups": [
+      "k",
+      "v",
+      "o"
+    ],
+    "frozen_parameter_groups": [
+      "embeddings",
+      "attention_rms",
+      "mlp_rms",
+      "final_rms",
+      "q",
+      "up",
+      "gate",
+      "down",
+      "output",
+      "bias"
+    ],
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "local_dev_health_stability_run": true,
+    "test_evaluation": false,
+    "quality_postflight": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_2048_window_representation_only_run_not_full_corpus_training",
+    "signed_block_search_is_training_only_and_development_is_post_selection_confirmation",
+    "no_test_or_hidden_evaluation",
+    "no_exact_midpoint_replay_in_this_diagnostic_stage"
+  ]
+}
