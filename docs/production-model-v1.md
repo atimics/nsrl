@@ -831,6 +831,27 @@ next gate is a fresh continuation of this exact model and optimizer chain over
 the complete 8,192-window horizon; test, hidden, generation, and paid scaling
 remain unauthorized.
 
+That broader health-constrained horizon now passes. The fresh trigger chain
+continues through all 8,192 uniformly spread training windows and 2,048
+optimizer steps in four remaining durable model/optimizer chunks. Cursor and
+model hashes chain exactly, the schedule completes, and every training
+gradient, residual, and weight saturation counter remains zero. Two additional
+moving batches materialize late in the final chunk; both pass the 81-way
+health-aware signed trust region and lower guard NLL by a combined 603
+millibits, from 812,233 after the trigger to 811,630. Across the complete run,
+only K and V move, by 70,972 and 347,172 source-relative L1.
+
+The final candidate has model hash `0xd2b9c7b907595967`. Development NLL is
+6,526,624, a 13,563-millibit improvement over the frozen source, while both
+development and public-manifest inference record zero residual saturation. All
+prospectively frozen broader-horizon gates pass, yielding
+`health_constrained_broader_horizon_replicated` in
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v9-health-scale.json`.
+This closes the specific numeric-health and broader-replication gap exposed by
+v8. It does not establish language-model quality: test, hidden, generation,
+quality postflight, promotion, and paid p20m/p30m scaling remain separately
+gated and unread.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
