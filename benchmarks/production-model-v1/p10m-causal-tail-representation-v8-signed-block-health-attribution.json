@@ -1,0 +1,91 @@
+{
+  "schema": "nsrl.production_representation_signed_health_attribution.v1",
+  "objective": "determine_whether_training_guard_residual_saturation_can_exclude_the_unsafe_v8_signed_winner",
+  "evidence_class": "post_hoc_failure_attribution_with_preselected_development_confirmation",
+  "source": {
+    "scale_checkpoint_path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v8-signed-block-scale.json",
+    "scale_checkpoint_sha256": "77cf64ff5d8ad06251acc303fabe4e8890485ebffe3849dd5e176a312483e75b",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "guard_nll_millibits": 814931,
+    "development_nll_millibits": 6540187
+  },
+  "audit": {
+    "artifact_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v8-signed-block-health-audit/audit.json",
+    "artifact_sha256": "32fccb7226b57ea3c10e44e53ad8fa4890489816c624c12aeafaaf8b1173108f",
+    "candidate_family": "all_81_exact_signed_compositions",
+    "surface": "same_fixed_64_window_training_descent_guard",
+    "window_rank_hash": "0x59857d2ef204d60f",
+    "zero_saturation_candidates": 27,
+    "selection_policy": "zero_residual_saturation_then_minimum_nll_then_fewest_active_blocks_then_lexicographic_steps"
+  },
+  "unsafe_nll_winner": {
+    "model_hash": "0x75b57bb066a4ea9e",
+    "audit_steps_relative_to_v8_candidate_delta": {
+      "embeddings": 1,
+      "k": 1,
+      "v": 1,
+      "o": 1
+    },
+    "raw_training_steps": {
+      "embeddings": 1,
+      "k": -1,
+      "v": -1,
+      "o": -1
+    },
+    "guard_nll_millibits": 808158,
+    "guard_delta_millibits": -6773,
+    "guard_residual_saturation_count": 2403,
+    "development_delta_millibits": -14245,
+    "development_residual_saturation_count": 7460,
+    "manifest_residual_saturation_count": 139
+  },
+  "safe_winner": {
+    "model_hash": "0xd52ceacd7f9200f4",
+    "audit_steps_relative_to_v8_candidate_delta": {
+      "embeddings": 0,
+      "k": 1,
+      "v": -1,
+      "o": 0
+    },
+    "raw_training_steps": {
+      "embeddings": 0,
+      "k": -1,
+      "v": 1,
+      "o": 0
+    },
+    "active_blocks": 2,
+    "guard_nll_millibits": 812233,
+    "guard_delta_millibits": -2698,
+    "guard_residual_saturation_count": 0,
+    "development_confirmation": {
+      "artifact_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v8-signed-block-health-audit/development.json",
+      "artifact_sha256": "c57e656bf92e021f246a7506b873aff54d04ffb7afee3f5cfe5b5235b3ece33b",
+      "total_nll_millibits": 6530619,
+      "delta_millibits": -9568,
+      "residual_saturation_count": 0
+    }
+  },
+  "conclusion": {
+    "training_guard_health_separates_unsafe_nll_winner": true,
+    "zero_saturation_safe_candidate_exists": true,
+    "safe_candidate_strictly_improves_guard": true,
+    "safe_candidate_strictly_improves_development": true,
+    "safe_candidate_development_saturation_zero": true,
+    "next_gate": "implement_schedule_bound_zero_saturation_signed_trust_region_and_exact_step_408_trigger"
+  },
+  "authorization": {
+    "training_only_health_selector": true,
+    "development_post_selection_confirmation": true,
+    "test_evaluation": false,
+    "quality_postflight": false,
+    "quality_promotion": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "post_hoc_failure_attribution_not_a_fresh_training_run",
+    "development_confirms_a_training_health_selected_composition",
+    "manifest_was_not_used_to_select_the_safe_composition",
+    "no_test_hidden_or_generation_evaluation"
+  ]
+}

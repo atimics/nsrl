@@ -800,6 +800,19 @@ next trust-region revision must admit only zero-saturation candidates on a
 training-only health surface before comparing NLL; development, test, and the
 manifest must not become update selectors.
 
+The exact 81-composition health attribution confirms that this constraint is
+available on the existing training-only surface. The unsafe NLL winner already
+produces 2,403 residual saturations on the 64 guard windows. Twenty-seven of
+the 81 compositions have zero guard saturation; among those, the deterministic
+minimum is raw K/V steps `-1/+1` with embeddings and O held at zero. It lowers
+guard NLL by 2,698 millibits. A read-only development confirmation selected
+only from that training result lowers NLL by 9,568 millibits and records zero
+residual saturation. Frozen attribution is in
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v8-signed-block-health-attribution.json`.
+This authorizes an opt-in, schedule-bound zero-saturation feasibility filter
+inside the signed trust region, followed by an exact step-408 trigger before a
+fresh broader horizon.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
