@@ -236,6 +236,7 @@ fn representation_v2_config(
         descent_guard_windows: candidate.descent_guard_windows,
         descent_guard_signed_representation_blocks: candidate
             .descent_guard_signed_representation_blocks,
+        descent_guard_signed_representation_zero_saturation: false,
         backward_quantization,
         backward_stochastic_seed,
     }

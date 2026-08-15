@@ -101,6 +101,7 @@ struct Config {
     flush_batched_embedding_residuals: bool,
     descent_guard_windows: usize,
     descent_guard_signed_representation_blocks: bool,
+    descent_guard_signed_representation_zero_saturation: bool,
     backward_quantization: ProductionBackwardQuantization,
     backward_stochastic_seed: u64,
     alignment_coordinates_per_group: usize,
@@ -191,6 +192,8 @@ impl Default for Config {
             descent_guard_windows: full.descent_guard_windows,
             descent_guard_signed_representation_blocks: full
                 .descent_guard_signed_representation_blocks,
+            descent_guard_signed_representation_zero_saturation: full
+                .descent_guard_signed_representation_zero_saturation,
             backward_quantization: full.backward_quantization,
             backward_stochastic_seed: full.backward_stochastic_seed,
             alignment_coordinates_per_group: 1,
@@ -1179,6 +1182,8 @@ fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
         descent_guard_windows: config.descent_guard_windows,
         descent_guard_signed_representation_blocks: config
             .descent_guard_signed_representation_blocks,
+        descent_guard_signed_representation_zero_saturation: config
+            .descent_guard_signed_representation_zero_saturation,
         backward_quantization: config.backward_quantization,
         backward_stochastic_seed: config.backward_stochastic_seed,
     }
@@ -1494,6 +1499,9 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             "--descent-guard-signed-representation-blocks" => {
                 config.descent_guard_signed_representation_blocks = true
             }
+            "--descent-guard-signed-representation-zero-saturation" => {
+                config.descent_guard_signed_representation_zero_saturation = true
+            }
             "--backward-quantization" => {
                 let value = next(&mut args, "--backward-quantization")?;
                 config.backward_quantization = match value.as_str() {
@@ -1654,7 +1662,7 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --flush-batched-embedding-residuals to apply accumulated embedding residuals for every token touched anywhere in a committed batch. Pass --descent-guard-windows N to reject moving batches that worsen canonical NLL on N fixed, disjoint training-corpus windows while still consuming the batch cursor. Add --descent-guard-signed-representation-blocks to search reverse/zero/forward steps for embeddings, K, V, and O, choosing the non-worsening minimum with a sparse deterministic tie-break. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors. Pass --backward-quantization rescued-rhu|late-rhu|late-stochastic to select the schedule-bound intermediate-gradient quantizer; stochastic mode also binds --backward-stochastic-seed N for exact restart replay.\n"
+        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --flush-batched-embedding-residuals to apply accumulated embedding residuals for every token touched anywhere in a committed batch. Pass --descent-guard-windows N to reject moving batches that worsen canonical NLL on N fixed, disjoint training-corpus windows while still consuming the batch cursor. Add --descent-guard-signed-representation-blocks to search reverse/zero/forward steps for embeddings, K, V, and O, choosing the non-worsening minimum with a sparse deterministic tie-break. Add --descent-guard-signed-representation-zero-saturation to discard candidates with any forward residual saturation on that training-only guard before applying the NLL tie-break. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors. Pass --backward-quantization rescued-rhu|late-rhu|late-stochastic to select the schedule-bound intermediate-gradient quantizer; stochastic mode also binds --backward-stochastic-seed N for exact restart replay.\n"
     );
     println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
@@ -1745,6 +1753,10 @@ mod tests {
             "--embedding-learning-rate-boost-shift",
             "1",
             "--flush-batched-embedding-residuals",
+            "--descent-guard-windows",
+            "64",
+            "--descent-guard-signed-representation-blocks",
+            "--descent-guard-signed-representation-zero-saturation",
             "--backward-quantization",
             "late-stochastic",
             "--backward-stochastic-seed",
@@ -1757,6 +1769,9 @@ mod tests {
         assert_eq!(config.output_bias_learning_rate_shift, Some(14));
         assert_eq!(config.embedding_learning_rate_boost_shift, 1);
         assert!(config.flush_batched_embedding_residuals);
+        assert_eq!(config.descent_guard_windows, 64);
+        assert!(config.descent_guard_signed_representation_blocks);
+        assert!(config.descent_guard_signed_representation_zero_saturation);
         assert_eq!(
             config.backward_quantization,
             ProductionBackwardQuantization::LateStochastic

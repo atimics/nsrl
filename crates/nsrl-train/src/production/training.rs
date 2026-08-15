@@ -300,6 +300,7 @@ pub struct ProductionFullTrainConfig {
     pub flush_batched_embedding_residuals: bool,
     pub descent_guard_windows: usize,
     pub descent_guard_signed_representation_blocks: bool,
+    pub descent_guard_signed_representation_zero_saturation: bool,
     pub backward_quantization: ProductionBackwardQuantization,
     pub backward_stochastic_seed: u64,
 }
@@ -337,6 +338,7 @@ impl Default for ProductionFullTrainConfig {
             flush_batched_embedding_residuals: false,
             descent_guard_windows: 0,
             descent_guard_signed_representation_blocks: false,
+            descent_guard_signed_representation_zero_saturation: false,
             backward_quantization: ProductionBackwardQuantization::RescuedRhu,
             backward_stochastic_seed: 0,
         }
@@ -533,9 +535,12 @@ pub struct ProductionSignedBlockSelectionTrace {
     pub start_window: u64,
     pub windows: usize,
     pub candidates_evaluated: usize,
+    pub zero_saturation_candidates: usize,
     pub before_nll_millibits: u64,
     pub forward_nll_millibits: u64,
+    pub forward_residual_saturation_count: usize,
     pub selected_nll_millibits: u64,
+    pub selected_residual_saturation_count: usize,
     pub selected_steps: [i8; 4],
     pub selected_movement_l1: [u64; 13],
 }
@@ -601,6 +606,7 @@ pub struct ProductionFullTrainTrace {
     pub descent_guard_rejected_regression_millibits: u64,
     pub descent_guard_last_rejected_batch: Option<ProductionDescentRejectedBatchTrace>,
     pub descent_guard_signed_representation_blocks: bool,
+    pub descent_guard_signed_representation_zero_saturation: bool,
     pub signed_block_evaluated_batches: usize,
     pub signed_block_selected_batches: usize,
     pub signed_block_last_selection: Option<ProductionSignedBlockSelectionTrace>,
@@ -865,11 +871,25 @@ impl ProductionFullTrainTrace {
             let last_selection = self.signed_block_last_selection.map_or_else(
                 || "null".to_string(),
                 |selection| {
+                    let saturation = if self.descent_guard_signed_representation_zero_saturation {
+                        format!(
+                            concat!(
+                                ",\"zero_saturation_candidates\":{},",
+                                "\"forward_residual_saturation_count\":{},",
+                                "\"selected_residual_saturation_count\":{}"
+                            ),
+                            selection.zero_saturation_candidates,
+                            selection.forward_residual_saturation_count,
+                            selection.selected_residual_saturation_count,
+                        )
+                    } else {
+                        String::new()
+                    };
                     format!(
                         concat!(
                             "{{\"attempted_total_optimizer_step\":{},",
                             "\"start_epoch\":{},\"start_window\":{},\"windows\":{},",
-                            "\"candidates_evaluated\":{},",
+                            "\"candidates_evaluated\":{}{},",
                             "\"before_nll_millibits\":{},\"forward_nll_millibits\":{},",
                             "\"selected_nll_millibits\":{},",
                             "\"selected_steps\":{{\"embeddings\":{},\"k\":{},\"v\":{},\"o\":{}}},",
@@ -880,6 +900,7 @@ impl ProductionFullTrainTrace {
                         selection.start_window,
                         selection.windows,
                         selection.candidates_evaluated,
+                        saturation,
                         selection.before_nll_millibits,
                         selection.forward_nll_millibits,
                         selection.selected_nll_millibits,
@@ -914,6 +935,20 @@ impl ProductionFullTrainTrace {
                 "\"batched_residual_updates\":true",
                 "\"batched_residual_updates\":true,\"signed_block_trust_region_enabled\":true,\"signed_block_source_candidate_guarantees_nonworsening\":true",
             );
+            if self.descent_guard_signed_representation_zero_saturation {
+                output = output.replace(
+                    ",\"optimizer_steps\"",
+                    ",\"signed_block_feasibility\":\"zero_guard_residual_saturation\",\"optimizer_steps\"",
+                );
+                output = output.replace(
+                    "\"source_always_candidate\":true",
+                    "\"source_always_candidate\":true,\"zero_guard_residual_saturation_required\":true",
+                );
+                output = output.replace(
+                    "\"signed_block_source_candidate_guarantees_nonworsening\":true",
+                    "\"signed_block_source_candidate_guarantees_nonworsening\":true,\"signed_block_zero_guard_residual_saturation_enabled\":true,\"signed_block_zero_saturation_feasibility_enforced\":true",
+                );
+            }
         }
         if self.backward_quantization != ProductionBackwardQuantization::RescuedRhu {
             output = output.replace(
@@ -1210,6 +1245,8 @@ pub fn train_production_full_smoke(
         || config.max_optimizer_steps == 0
         || config.evaluation_windows == 0
         || (config.descent_guard_signed_representation_blocks && config.descent_guard_windows == 0)
+        || (config.descent_guard_signed_representation_zero_saturation
+            && !config.descent_guard_signed_representation_blocks)
         || config.output_backward_shift.is_some_and(|shift| shift > 30)
         || !(15..=31).contains(&config.probability_gradient_fractional_bits)
         || config
@@ -1260,11 +1297,22 @@ pub fn train_production_full_smoke(
     } else {
         window_rank_hash(&descent_guard_ranks)
     };
-    let descent_guard_initial_nll_millibits = if descent_guard_surface.is_empty() {
-        0
+    let descent_guard_initial_evaluation = if descent_guard_surface.is_empty() {
+        GuardEvaluation {
+            nll_millibits: 0,
+            residual_saturation_count: 0,
+        }
     } else {
-        evaluate_canonical_nll_on_windows(model, &descent_guard_surface)?
+        evaluate_canonical_guard_on_windows(model, &descent_guard_surface)?
     };
+    if config.descent_guard_signed_representation_zero_saturation
+        && descent_guard_initial_evaluation.residual_saturation_count != 0
+    {
+        return Err(TrainError::CoreRejected(
+            "production_descent_guard_source_residual_saturation",
+        ));
+    }
+    let descent_guard_initial_nll_millibits = descent_guard_initial_evaluation.nll_millibits;
     let mut descent_guard_current_nll_millibits = descent_guard_initial_nll_millibits;
     let initial_model_hash = model.model_hash();
     let evaluation_windows = config.evaluation_windows.min(windows.len());
@@ -1381,8 +1429,9 @@ pub fn train_production_full_smoke(
         let batch_moved = batch_stats.movement.iter().any(|&value| value > 0);
         let mut batch_committed = true;
         if config.descent_guard_windows > 0 && batch_moved {
-            let forward_nll_millibits =
-                evaluate_canonical_nll_on_windows(model, &descent_guard_surface)?;
+            let forward_evaluation =
+                evaluate_canonical_guard_on_windows(model, &descent_guard_surface)?;
+            let forward_nll_millibits = forward_evaluation.nll_millibits;
             let before_nll_millibits = descent_guard_current_nll_millibits;
             descent_guard_evaluated_batches = descent_guard_evaluated_batches.saturating_add(1);
             let signed_groups_cover_movement =
@@ -1409,16 +1458,28 @@ pub fn train_production_full_smoke(
                     &descent_guard_surface,
                     before_nll_millibits,
                     forward_nll_millibits,
+                    forward_evaluation.residual_saturation_count,
                     batch_stats.movement,
+                    config.descent_guard_signed_representation_zero_saturation,
                 )?)
             } else {
                 None
             };
-            let (after_nll_millibits, selected_steps) = signed_selection
-                .as_ref()
-                .map_or((forward_nll_millibits, None), |selection| {
-                    (selection.nll_millibits, Some(selection.steps))
-                });
+            let (after_nll_millibits, after_residual_saturation_count, selected_steps) =
+                signed_selection.as_ref().map_or(
+                    (
+                        forward_nll_millibits,
+                        forward_evaluation.residual_saturation_count,
+                        None,
+                    ),
+                    |selection| {
+                        (
+                            selection.nll_millibits,
+                            selection.residual_saturation_count,
+                            Some(selection.steps),
+                        )
+                    },
+                );
             if let Some(selection) = signed_selection.as_ref() {
                 signed_block_evaluated_batches = signed_block_evaluated_batches.saturating_add(1);
                 signed_block_selected_batches = signed_block_selected_batches
@@ -1432,14 +1493,19 @@ pub fn train_production_full_smoke(
                     start_window: state.next_window,
                     windows: batch_end - batch_start,
                     candidates_evaluated: selection.candidates_evaluated,
+                    zero_saturation_candidates: selection.zero_saturation_candidates,
                     before_nll_millibits,
                     forward_nll_millibits,
+                    forward_residual_saturation_count: forward_evaluation.residual_saturation_count,
                     selected_nll_millibits: selection.nll_millibits,
+                    selected_residual_saturation_count: selection.residual_saturation_count,
                     selected_steps: selection.steps,
                     selected_movement_l1: selection.movement_l1,
                 });
             }
             if after_nll_millibits > before_nll_millibits
+                || (config.descent_guard_signed_representation_zero_saturation
+                    && after_residual_saturation_count != 0)
                 || selected_steps.is_some_and(|steps| steps.iter().all(|&step| step == 0))
             {
                 let rejected_after_nll_millibits = if selected_steps.is_some() {
@@ -1510,14 +1576,22 @@ pub fn train_production_full_smoke(
         }
     }
     state.bound_model_hash = model.model_hash();
-    let descent_guard_final_nll_millibits = if descent_guard_surface.is_empty() {
-        0
+    let descent_guard_final_evaluation = if descent_guard_surface.is_empty() {
+        GuardEvaluation {
+            nll_millibits: 0,
+            residual_saturation_count: 0,
+        }
     } else {
-        evaluate_canonical_nll_on_windows(model, &descent_guard_surface)?
+        evaluate_canonical_guard_on_windows(model, &descent_guard_surface)?
     };
+    let descent_guard_final_nll_millibits = descent_guard_final_evaluation.nll_millibits;
     debug_assert_eq!(
         descent_guard_final_nll_millibits,
         descent_guard_current_nll_millibits
+    );
+    debug_assert!(
+        !config.descent_guard_signed_representation_zero_saturation
+            || descent_guard_final_evaluation.residual_saturation_count == 0
     );
     let final_mistakes = evaluate_mistakes(model, &windows[..evaluation_windows])?;
     let trace = ProductionFullTrainTrace {
@@ -1593,6 +1667,8 @@ pub fn train_production_full_smoke(
         descent_guard_last_rejected_batch,
         descent_guard_signed_representation_blocks: config
             .descent_guard_signed_representation_blocks,
+        descent_guard_signed_representation_zero_saturation: config
+            .descent_guard_signed_representation_zero_saturation,
         signed_block_evaluated_batches,
         signed_block_selected_batches,
         signed_block_last_selection,
@@ -3462,11 +3538,18 @@ fn window_rank_hash(ranks: &[usize]) -> u64 {
     fnv1a(&bytes)
 }
 
-fn evaluate_canonical_nll_on_windows(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GuardEvaluation {
+    nll_millibits: u64,
+    residual_saturation_count: usize,
+}
+
+fn evaluate_canonical_guard_on_windows(
     model: &ProductionModelV1,
     windows: &[(Vec<u32>, u32)],
-) -> Result<u64, TrainError> {
+) -> Result<GuardEvaluation, TrainError> {
     let mut total = 0_u64;
+    let mut residual_saturation_count = 0_usize;
     for (context, target) in windows {
         let output = super::forward_production_model(model, context)?;
         let loss = base2_softmax_nll_millibits(
@@ -3478,8 +3561,24 @@ fn evaluate_canonical_nll_on_windows(
         total = total.checked_add(loss).ok_or(TrainError::CoreRejected(
             "production_descent_guard_nll_overflow",
         ))?;
+        residual_saturation_count = residual_saturation_count
+            .checked_add(output.residual_saturation_count)
+            .ok_or(TrainError::CoreRejected(
+                "production_descent_guard_residual_saturation_overflow",
+            ))?;
     }
-    Ok(total)
+    Ok(GuardEvaluation {
+        nll_millibits: total,
+        residual_saturation_count,
+    })
+}
+
+#[cfg(test)]
+fn evaluate_canonical_nll_on_windows(
+    model: &ProductionModelV1,
+    windows: &[(Vec<u32>, u32)],
+) -> Result<u64, TrainError> {
+    Ok(evaluate_canonical_guard_on_windows(model, windows)?.nll_millibits)
 }
 
 struct SignedRepresentationSelection {
@@ -3488,7 +3587,29 @@ struct SignedRepresentationSelection {
     steps: [i8; 4],
     movement_l1: [u64; 13],
     nll_millibits: u64,
+    residual_saturation_count: usize,
     candidates_evaluated: usize,
+    zero_saturation_candidates: usize,
+}
+
+fn signed_candidate_is_preferred(
+    evaluation: GuardEvaluation,
+    active_blocks: usize,
+    steps: [i8; 4],
+    best_evaluation: GuardEvaluation,
+    best_active_blocks: usize,
+    best_steps: [i8; 4],
+    require_zero_residual_saturation: bool,
+) -> bool {
+    if require_zero_residual_saturation && evaluation.residual_saturation_count != 0 {
+        return false;
+    }
+    (evaluation.nll_millibits, active_blocks, steps)
+        < (
+            best_evaluation.nll_millibits,
+            best_active_blocks,
+            best_steps,
+        )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3501,13 +3622,17 @@ fn select_signed_representation_blocks(
     guard_surface: &[(Vec<u32>, u32)],
     source_nll_millibits: u64,
     forward_nll_millibits: u64,
+    forward_residual_saturation_count: usize,
     forward_movement_l1: [u64; 13],
+    require_zero_residual_saturation: bool,
 ) -> Result<SignedRepresentationSelection, TrainError> {
     let mut best_model = source.clone();
     let mut best_steps = [0_i8; 4];
     let mut best_nll_millibits = source_nll_millibits;
+    let mut best_residual_saturation_count = 0_usize;
     let mut best_active_blocks = 0_usize;
     let mut candidates_evaluated = 1_usize;
+    let mut zero_saturation_candidates = 1_usize;
     for code in 0_u8..81 {
         let mut remaining = code;
         let mut steps = [0_i8; 4];
@@ -3518,24 +3643,45 @@ fn select_signed_representation_blocks(
         if steps.iter().all(|&step| step == 0) {
             continue;
         }
-        let (candidate, nll_millibits) = if steps.iter().all(|&step| step == 1) {
-            (forward.clone(), forward_nll_millibits)
+        let (candidate, evaluation) = if steps.iter().all(|&step| step == 1) {
+            (
+                forward.clone(),
+                GuardEvaluation {
+                    nll_millibits: forward_nll_millibits,
+                    residual_saturation_count: forward_residual_saturation_count,
+                },
+            )
         } else {
             let Some(candidate) = compose_signed_representation_blocks(source, forward, steps)
             else {
                 continue;
             };
-            let nll_millibits = evaluate_canonical_nll_on_windows(&candidate, guard_surface)?;
-            (candidate, nll_millibits)
+            let evaluation = evaluate_canonical_guard_on_windows(&candidate, guard_surface)?;
+            (candidate, evaluation)
         };
         candidates_evaluated = candidates_evaluated.saturating_add(1);
+        zero_saturation_candidates = zero_saturation_candidates
+            .saturating_add(usize::from(evaluation.residual_saturation_count == 0));
+        if require_zero_residual_saturation && evaluation.residual_saturation_count != 0 {
+            continue;
+        }
         let active_blocks = steps.iter().filter(|&&step| step != 0).count();
-        if (nll_millibits, active_blocks, steps)
-            < (best_nll_millibits, best_active_blocks, best_steps)
-        {
+        if signed_candidate_is_preferred(
+            evaluation,
+            active_blocks,
+            steps,
+            GuardEvaluation {
+                nll_millibits: best_nll_millibits,
+                residual_saturation_count: best_residual_saturation_count,
+            },
+            best_active_blocks,
+            best_steps,
+            require_zero_residual_saturation,
+        ) {
             best_model = candidate;
             best_steps = steps;
-            best_nll_millibits = nll_millibits;
+            best_nll_millibits = evaluation.nll_millibits;
+            best_residual_saturation_count = evaluation.residual_saturation_count;
             best_active_blocks = active_blocks;
         }
     }
@@ -3563,7 +3709,9 @@ fn select_signed_representation_blocks(
         steps: best_steps,
         movement_l1,
         nll_millibits: best_nll_millibits,
+        residual_saturation_count: best_residual_saturation_count,
         candidates_evaluated,
+        zero_saturation_candidates,
     })
 }
 
@@ -3681,6 +3829,9 @@ fn schedule_hash(c: ProductionFullTrainConfig) -> u64 {
     }
     if c.descent_guard_signed_representation_blocks {
         bytes.extend_from_slice(&[0xf6, 1]);
+    }
+    if c.descent_guard_signed_representation_zero_saturation {
+        bytes.extend_from_slice(&[0xf5, 1]);
     }
     bytes.iter().fold(FNV_OFFSET, |mut hash, &byte| {
         hash ^= u64::from(byte);
@@ -3802,13 +3953,14 @@ mod tests {
 
     use super::super::{ProductionModelConfig, ProductionModelV1};
     use super::{
-        BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME, I16_MAGNITUDE,
-        I32_MAGNITUDE, ParameterRanges, ProductionBackwardQuantization, ProductionFullTrainConfig,
-        UpdateStats, accumulate_residual, causal_suffix_targets,
+        BackwardQuantizationMode, BackwardQuantizer, FNV_OFFSET, FNV_PRIME, GuardEvaluation,
+        I16_MAGNITUDE, I32_MAGNITUDE, ParameterRanges, ProductionBackwardQuantization,
+        ProductionFullTrainConfig, UpdateStats, accumulate_residual, causal_suffix_targets,
         compose_signed_representation_blocks, descent_guard_window_ranks,
         effective_learning_rate_shifts, flush_batched_embedding_residuals, schedule_hash,
-        select_signed_representation_blocks, signed_product_sum_i64_safe, spread_document_windows,
-        systematic_fixed_mass_gradient, update_window_ranks,
+        select_signed_representation_blocks, signed_candidate_is_preferred,
+        signed_product_sum_i64_safe, spread_document_windows, systematic_fixed_mass_gradient,
+        update_window_ranks,
     };
 
     #[test]
@@ -3984,6 +4136,14 @@ mod tests {
             ..descent_guard
         };
         assert_ne!(schedule_hash(descent_guard), schedule_hash(signed_blocks));
+        let zero_saturation_signed_blocks = ProductionFullTrainConfig {
+            descent_guard_signed_representation_zero_saturation: true,
+            ..signed_blocks
+        };
+        assert_ne!(
+            schedule_hash(signed_blocks),
+            schedule_hash(zero_saturation_signed_blocks)
+        );
     }
 
     #[test]
@@ -4063,7 +4223,9 @@ mod tests {
             &guard,
             source_nll,
             forward_nll,
+            0,
             movement,
+            false,
         )
         .expect("selection");
         let right = select_signed_representation_blocks(
@@ -4075,7 +4237,9 @@ mod tests {
             &guard,
             source_nll,
             forward_nll,
+            0,
             movement,
+            false,
         )
         .expect("replay");
         assert_eq!(left.steps, right.steps);
@@ -4083,6 +4247,8 @@ mod tests {
         assert_eq!(left.model, right.model);
         assert_eq!(left.residuals, right.residuals);
         assert_eq!(left.candidates_evaluated, 81);
+        assert_eq!(left.zero_saturation_candidates, 81);
+        assert_eq!(left.residual_saturation_count, 0);
         assert!(left.nll_millibits <= source_nll);
         for ((range, step), group) in [ranges.embeddings, ranges.k, ranges.v, ranges.o]
             .into_iter()
@@ -4096,6 +4262,50 @@ mod tests {
             }
             assert_eq!(left.movement_l1[group], u64::from(step != 0));
         }
+    }
+
+    #[test]
+    fn signed_representation_zero_saturation_is_a_hard_feasibility_constraint() {
+        let source = GuardEvaluation {
+            nll_millibits: 1_000,
+            residual_saturation_count: 0,
+        };
+        let unsafe_descent = GuardEvaluation {
+            nll_millibits: 100,
+            residual_saturation_count: 1,
+        };
+        let safe_descent = GuardEvaluation {
+            nll_millibits: 900,
+            residual_saturation_count: 0,
+        };
+
+        assert!(!signed_candidate_is_preferred(
+            unsafe_descent,
+            1,
+            [0, 1, 0, 0],
+            source,
+            0,
+            [0, 0, 0, 0],
+            true,
+        ));
+        assert!(signed_candidate_is_preferred(
+            safe_descent,
+            1,
+            [0, 1, 0, 0],
+            source,
+            0,
+            [0, 0, 0, 0],
+            true,
+        ));
+        assert!(signed_candidate_is_preferred(
+            unsafe_descent,
+            1,
+            [0, 1, 0, 0],
+            source,
+            0,
+            [0, 0, 0, 0],
+            false,
+        ));
     }
 
     #[test]

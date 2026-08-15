@@ -3649,6 +3649,7 @@ mod tests {
             evaluation_windows: 2,
             descent_guard_windows: 1,
             descent_guard_signed_representation_blocks: true,
+            descent_guard_signed_representation_zero_saturation: true,
             ..ProductionFullTrainConfig::default()
         };
 
@@ -3663,6 +3664,7 @@ mod tests {
         assert_eq!(trace.descent_guard_accepted_batches, 0);
         assert_eq!(trace.descent_guard_rejected_batches, 2);
         assert!(trace.descent_guard_signed_representation_blocks);
+        assert!(trace.descent_guard_signed_representation_zero_saturation);
         assert_eq!(trace.signed_block_evaluated_batches, 0);
         assert_eq!(
             trace.descent_guard_initial_nll_millibits,
@@ -3682,6 +3684,8 @@ mod tests {
         );
         assert!(json.contains("\"training_only_descent_guard_enabled\":true"));
         assert!(json.contains("\"signed_block_trust_region_enabled\":true"));
+        assert!(json.contains("\"signed_block_zero_guard_residual_saturation_enabled\":true"));
+        assert!(json.contains("\"signed_block_zero_saturation_feasibility_enforced\":true"));
 
         let mut resumed = initial.clone();
         let partial_config = ProductionFullTrainConfig {

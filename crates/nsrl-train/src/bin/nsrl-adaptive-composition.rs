@@ -320,6 +320,7 @@ fn fitting_training_config() -> ProductionFullTrainConfig {
         flush_batched_embedding_residuals: false,
         descent_guard_windows: 0,
         descent_guard_signed_representation_blocks: false,
+        descent_guard_signed_representation_zero_saturation: false,
         backward_quantization: nsrl_train::production::ProductionBackwardQuantization::RescuedRhu,
         backward_stochastic_seed: 0,
     }
