@@ -775,6 +775,31 @@ event. The next production gate is broader training-horizon replication,
 followed only by a separately authorized quality postflight; test and hidden
 panels remain unread.
 
+The prospectively bound four-times broader replication is now complete but
+does not pass its production gates. It trains 8,192 uniformly spread windows
+in four durable 512-step chunks and completes all 2,048 optimizer steps with
+exact cursor/model chaining and zero training gradient, residual, or weight
+saturation. A single moving batch appears at step 408. The raw all-forward
+proposal raises guard NLL from 814,931 to 821,620 millibits, while the signed
+trust region selects embeddings/K/V/O steps `+1/-1/-1/-1` and lowers it to
+808,158, a 6,773-millibit descent. That move changes embeddings by 7,870 L1 and
+K/V/O by 68,828/345,139/189,285 L1; the remaining 1,640 optimizer steps change
+only residual state.
+
+The larger signed move transfers strongly to the frozen development panel:
+NLL improves by 14,245 millibits, from 6,540,187 to 6,525,942. It is still
+unsafe. Development forward evaluation records 7,460 residual saturations and
+the public manifest records 139, concentrated in attention and MLP residuals
+of the later layers. Embedding movement also violates the narrower v7
+K/V/O-only isolation gate. The frozen outcome is
+`broader_horizon_numeric_health_failed` in
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v8-signed-block-scale.json`.
+This exposes the next concrete optimizer gap: signed candidates are selected
+by training-guard NLL without constraining forward residual saturation. The
+next trust-region revision must admit only zero-saturation candidates on a
+training-only health surface before comparing NLL; development, test, and the
+manifest must not become update selectors.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
