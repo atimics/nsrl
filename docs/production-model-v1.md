@@ -813,6 +813,24 @@ This authorizes an opt-in, schedule-bound zero-saturation feasibility filter
 inside the signed trust region, followed by an exact step-408 trigger before a
 fresh broader horizon.
 
+The feasibility filter and exact trigger now pass prospectively. The new
+schedule-bound mode evaluates forward residual saturation on the same fixed,
+disjoint 64-window training guard and excludes every nonzero-saturation signed
+composition before applying the existing NLL/sparsity/lexicographic ranking.
+A fresh replay reaches optimizer step 407 with source-identical model bytes and
+only optimizer residual state changed. At step 408 the raw forward proposal
+has nine guard saturations; 27 of 81 signed compositions are saturation-free,
+and the trainer selects the predeclared embeddings/K/V/O steps `0/-1/+1/0`.
+Only K and V move, by 68,828 and 345,139 L1. Guard NLL falls by 2,698
+millibits, development NLL falls by 9,568, and training, development, and the
+public manifest all record zero residual saturation. The exact candidate hash
+is `0xd52ceacd7f9200f4`. Frozen evidence is in
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v9-health-trigger.json`.
+This closes the concrete candidate-health selection gap exposed by v8. The
+next gate is a fresh continuation of this exact model and optimizer chain over
+the complete 8,192-window horizon; test, hidden, generation, and paid scaling
+remain unauthorized.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
