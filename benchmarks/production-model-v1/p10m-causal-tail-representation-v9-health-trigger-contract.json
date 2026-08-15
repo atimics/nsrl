@@ -1,0 +1,171 @@
+{
+  "schema": "nsrl.production_representation_health_trigger_contract.v1",
+  "objective": "prospectively_verify_zero_saturation_feasibility_selects_the_predicted_safe_step_408_signed_update",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "commit": "a4c2dbf9",
+    "candidate_family": "signed_ternary_embeddings_k_v_o",
+    "feasibility": "zero_guard_residual_saturation",
+    "ranking_after_feasibility": "minimum_nll_then_fewest_active_blocks_then_lexicographic_steps",
+    "schedule_bound": true,
+    "source_always_candidate": true
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b",
+    "guard_nll_millibits": 814931,
+    "development_nll_millibits": 6540187
+  },
+  "bindings": {
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "artifacts": [
+      {
+        "path": "scripts/run-production-causal-tail-representation-v9-health-trigger.sh",
+        "sha256": "53546884492ccc167d5b04f7497887ea62a02050e08e1bbcaa26a749bc13707c"
+      },
+      {
+        "path": "scripts/freeze-production-representation-health-trigger-v1.mjs",
+        "sha256": "3231a8b88c3f3d383069a1cb0daf7c1b7d2c70e3e6aff7d8603ec18513782eca"
+      },
+      {
+        "path": "crates/nsrl-train/src/production/training.rs",
+        "sha256": "120636b3b63f0545919969da12d7f18c234e68c9bf9b89fe930599cfc47d2afc"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-model.rs",
+        "sha256": "c252bb67bfb0eb0df6b5f2f71f69a4a25faa336c179fd2713fa88b50ab6c4c10"
+      },
+      {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+        "sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+        "sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/train.nsrltok",
+        "sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/dev.nsrltok",
+        "sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/manifest.tsv",
+        "sha256": "74f176202c7483ddfa7330325cf34833358e5ef8393ebdd8bb3fa0444f0fd948"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v8-signed-block-health-attribution.json",
+        "sha256": "1721422c0a83bc19afd8104fe50b62a2d73820d6624a04be0682f4b789ea3735"
+      }
+    ]
+  },
+  "derivation": {
+    "prediction_source": "training_only_exact_81_way_post_hoc_failure_attribution",
+    "development_not_used_to_select_candidate": true,
+    "development_confirmation_was_preselected_before_this_fresh_run": true,
+    "manifest_not_used_to_select_candidate": true,
+    "test_partition_must_not_be_read": true
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "training_workers": 8,
+    "windows": 8192,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "embedding_residual_flush": "all_batch_touched_tokens",
+    "descent_guard_windows": 64,
+    "descent_guard_window_rank_hash": "0x59857d2ef204d60f",
+    "candidate_family": "signed_ternary_embeddings_k_v_o",
+    "feasibility": "zero_guard_residual_saturation",
+    "output_backward_shift": 9,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "learning_rate_shifts": {
+      "embeddings": 0,
+      "attention_rms": 61,
+      "mlp_rms": 55,
+      "final_rms": 62,
+      "q": 62,
+      "k": 24,
+      "v": 26,
+      "o": 12,
+      "up": 62,
+      "gate": 62,
+      "down": 62,
+      "output": 54,
+      "bias": 54
+    }
+  },
+  "trigger": {
+    "prefix_optimizer_steps": 407,
+    "total_optimizer_step": 408,
+    "trigger_start_window": 1628,
+    "trigger_next_window": 1632
+  },
+  "expected": {
+    "candidates_evaluated": 81,
+    "zero_saturation_candidates": 27,
+    "forward_nll_millibits": 821620,
+    "forward_residual_saturation_count": 9,
+    "selected_nll_millibits": 812233,
+    "selected_steps": {
+      "embeddings": 0,
+      "k": -1,
+      "v": 1,
+      "o": 0
+    },
+    "selected_movement_l1": {
+      "embeddings": 0,
+      "attention_rms": 0,
+      "mlp_rms": 0,
+      "final_rms": 0,
+      "q": 0,
+      "k": 68828,
+      "v": 345139,
+      "o": 0,
+      "up": 0,
+      "gate": 0,
+      "down": 0,
+      "output": 0,
+      "bias": 0
+    },
+    "model_hash": "0xd52ceacd7f9200f4",
+    "development_nll_millibits": 6530619
+  },
+  "gates": {
+    "gradient_residual_and_weight_saturation_max": 0,
+    "manifest_residual_saturation_max": 0,
+    "allowed_moving_parameter_groups": [
+      "k",
+      "v"
+    ],
+    "development_must_strictly_improve": true,
+    "development_not_read_before_trigger_passes": true,
+    "test_partition_must_not_be_read": true
+  },
+  "authorization": {
+    "fresh_local_training_trigger": true,
+    "preselected_development_confirmation_after_trigger": true,
+    "test_evaluation": false,
+    "quality_postflight": false,
+    "quality_promotion": false,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "one_exact_optimizer_event_not_a_training_horizon_replication",
+    "development_is_post_selection_confirmation_not_an_update_selector",
+    "training_guard_is_a_fixed_64_window_surrogate",
+    "no_test_hidden_generation_or_quality_postflight_evaluation",
+    "a_passing_trigger_would_not_by_itself_establish_llm_quality"
+  ]
+}
