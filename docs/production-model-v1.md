@@ -852,6 +852,22 @@ v8. It does not establish language-model quality: test, hidden, generation,
 quality postflight, promotion, and paid p20m/p30m scaling remain separately
 gated and unread.
 
+The prospectively frozen public quality postflight is now complete and fails
+despite strong held-out likelihood transfer. Public-test NLL is 6,526,743, a
+29,784-millibit improvement over the frozen source, and rollout, context, and
+manifest inference all retain zero residual saturation. Teacher-forced mean
+target rank improves to 1,969 and the prefix/suffix context-effect ratio remains
+inside its historical bound. These gains do not produce usable free-running
+behavior: the eight-window audit has zero top-1 target hits, mean target
+probability remains 5 Q15 units, every one of 120 generated transitions is a
+self-loop, and the 12-prompt panel selects only two unique greedy tokens with
+11 self-loops. The frozen outcome is `public_quality_postflight_failed` in
+`benchmarks/production-model-v1/p10m-causal-tail-representation-v9-quality-postflight.json`.
+The public open-generation rerun is therefore not authorized. The remaining
+gap is no longer numeric health or held-out NLL; it is output-distribution and
+free-running sequence quality. Hidden evaluation, promotion, and paid scaling
+remain closed.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

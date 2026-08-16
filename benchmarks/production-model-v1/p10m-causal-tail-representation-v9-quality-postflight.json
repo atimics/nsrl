@@ -1,0 +1,89 @@
+{
+  "schema": "nsrl.production_representation_quality_postflight.v1",
+  "checked": false,
+  "objective": "confirm_the_health_constrained_broader_candidate_on_public_test_and_the_frozen_open_generation_quality_diagnostics",
+  "outcome": "public_quality_postflight_failed",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v9-quality-postflight-contract.json",
+    "bytes": 6234,
+    "sha256": "4b524ff68f9caca8a9212dda4201e338b6c984138cff973d33ba3062227a1fd3"
+  },
+  "candidate": {
+    "model_hash": "0xd2b9c7b907595967",
+    "model_sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22",
+    "scale_evidence": {
+      "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v9-health-scale.json",
+      "bytes": 11724,
+      "sha256": "ffc6ff341734f8d5cbe7e34c80d7924534f9d9c411bde4062278d6a3b87a742f"
+    }
+  },
+  "measurements": {
+    "development_total_nll_delta_millibits": -13563,
+    "source_test_total_nll_millibits": 6556527,
+    "candidate_test_total_nll_millibits": 6526743,
+    "test_total_nll_delta_millibits": -29784,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 1969,
+    "teacher_forced_mean_target_probability_q15": 5,
+    "free_running_self_loop_transition_per_mille": 1000,
+    "prefix_to_suffix_logit_l1_per_mille": 2682,
+    "context_unique_greedy_tokens": 2,
+    "context_greedy_self_loops": 11,
+    "rollout_residual_saturation_count": 0,
+    "context_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "gates": {
+    "broader_horizon_candidate_passed": true,
+    "development_nll_strictly_improved": true,
+    "public_test_nll_strictly_improved": true,
+    "teacher_forced_top1_minimum": false,
+    "teacher_forced_mean_target_rank_maximum": true,
+    "teacher_forced_mean_target_probability_q15_minimum": false,
+    "free_running_self_loop_per_mille_maximum": false,
+    "prefix_to_suffix_context_effect_per_mille_maximum": true,
+    "context_unique_greedy_tokens_minimum": false,
+    "context_greedy_self_loops_maximum": false,
+    "inference_residual_saturation_maximum": true
+  },
+  "quality_gate_passed": false,
+  "open_generation_rerun_authorized": false,
+  "evidence": {
+    "test": {
+      "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v9-quality-postflight/test.json",
+      "bytes": 581,
+      "sha256": "e394c8ac71a06e0b3f3996f4dd3532a712101475ceca6a22718acb9cce07a04e"
+    },
+    "rollout": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v9-quality-postflight-rollout-divergence.json",
+      "bytes": 9482,
+      "sha256": "0892eb7f1253a366ced95068aa269e8afab8e4025a9fc63980b7b9803b84b5f2"
+    },
+    "context": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v9-quality-postflight-context-sensitivity.json",
+      "bytes": 9949,
+      "sha256": "b7f69243e9fec7cf9b2317073133865e495e2a6f34543b8173c3ccbff694c592"
+    },
+    "saturation": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-representation-v9-quality-postflight-residual-saturation.json",
+      "bytes": 4258,
+      "sha256": "a017de327a9cc7978a8fc9ecc82b7dad2c5ab883f6cabce56f6cfbe0b8edbd3c"
+    }
+  },
+  "authorization": {
+    "public_test_confirmation": true,
+    "public_generation_diagnostics": true,
+    "open_generation_rerun": false,
+    "hidden_panel_access": false,
+    "quality_promotion": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_8192_window_representation_only_run_not_full_corpus_training",
+    "public_test_has_prior_confirmatory_reads_for_earlier_candidates",
+    "public_postflight_metrics_are_not_an_untouched_hidden_evaluation",
+    "postflight_success_authorizes_only_the_public_open_generation_rerun",
+    "complete_promotion_still_requires_baselines_human_review_and_an_untouched_hidden_panel",
+    "paid_p20m_p30m_scaling_remains_unauthorized"
+  ]
+}
