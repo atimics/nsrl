@@ -35,8 +35,13 @@ evaluation_windows="${NSRL_CAUSAL_SEQUENCE_TRAIN_EVALUATION_WINDOWS:-256}"
 midpoint_steps="${NSRL_CAUSAL_SEQUENCE_MIDPOINT_STEPS:-32}"
 optimizer_steps="${NSRL_CAUSAL_SEQUENCE_OPTIMIZER_STEPS:-64}"
 parallel_replay="${NSRL_CAUSAL_SEQUENCE_PARALLEL_REPLAY:-0}"
+reject_saturated_batch="${NSRL_CAUSAL_SEQUENCE_REJECT_SATURATED_BATCH:-0}"
 if [[ "$parallel_replay" != "0" && "$parallel_replay" != "1" ]]; then
   echo "NSRL_CAUSAL_SEQUENCE_PARALLEL_REPLAY must be 0 or 1" >&2
+  exit 2
+fi
+if [[ "$reject_saturated_batch" != "0" && "$reject_saturated_batch" != "1" ]]; then
+  echo "NSRL_CAUSAL_SEQUENCE_REJECT_SATURATED_BATCH must be 0 or 1" >&2
   exit 2
 fi
 
@@ -93,6 +98,9 @@ train_model() {
   fi
   if [[ -n "$output_bias_learning_rate_shift" ]]; then
     args+=(--output-bias-learning-rate-shift "$output_bias_learning_rate_shift")
+  fi
+  if [[ "$reject_saturated_batch" == "1" ]]; then
+    args+=(--reject-saturated-batch)
   fi
   "$binary" "${args[@]}"
 }

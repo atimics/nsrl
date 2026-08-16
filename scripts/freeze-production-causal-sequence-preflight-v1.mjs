@@ -87,6 +87,13 @@ for (const [name, trace] of [["midpoint", midpoint], ["final", final], ["replay"
     assert(trace.training?.training_workers === expectedTraining.training_workers,
       `${name} training worker count does not match the prospective contract`);
   }
+  if (expectedTraining.atomic_saturation_policy !== undefined) {
+    assert(trace.transaction?.saturation_policy === expectedTraining.atomic_saturation_policy
+      && trace.transaction?.rejected_batch === null
+      && trace.gates?.saturated_batch_rejection_enabled === true
+      && trace.gates?.saturated_batch_rejected_atomically === false,
+    `${name} atomic saturation policy does not match the prospective contract`);
+  }
 }
 assert(midpoint.training.optimizer_steps === midpointSteps
   && midpoint.training.total_optimizer_step === midpointSteps
