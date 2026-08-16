@@ -868,6 +868,40 @@ gap is no longer numeric health or held-out NLL; it is output-distribution and
 free-running sequence quality. Hidden evaluation, promotion, and paid scaling
 remain closed.
 
+The prospectively frozen v10 output-only calibration tests that gap directly.
+It starts from the healthy v9 model, freezes bias and every trunk group, and
+applies the previously validated effective output update shift 41 over 2,048
+uniformly spread windows and 512 optimizer steps. Atomic saturation rejection
+is enabled. Exact midpoint replay reproduces the final model, optimizer, and
+trace byte-for-byte. Only the output matrix moves, by 99,989 L1; bias and all
+12 other groups remain unchanged, and training records zero gradient,
+residual, and weight saturation. The candidate hash is
+`0x011da7a107200d14`.
+
+Likelihood calibration improves substantially. Development NLL falls by
+121,238 millibits, from 6,526,624 to 6,405,386, and public-test NLL falls by
+123,879, from 6,526,743 to 6,402,864. Teacher-forced mean target rank improves
+from 1,969 to 1,895 and mean target probability rises from 5 to 8 Q15 units.
+That still does not solve sequence quality: top-1 target hits remain zero,
+free-running self-loops fall only from 1,000 to 966 per mille, the prompt panel
+still selects only two unique greedy tokens, and all 12 prompt predictions are
+self-loops. The frozen quality gate therefore fails.
+
+The run also exposed an evidence-contract defect rather than a new training
+failure. The bound v9 source already has one residual clip on the 512-window
+public-test evaluation, and v10 retains the same count; the prospective
+freezer had assumed the source count was zero. The original schedule contract
+at commit `4670171a` remains immutable. A clearly postflight evidence amendment
+records the observed source baseline, preserves the zero-saturation candidate
+gate, and consequently freezes the numeric preflight as failed. Evidence is in
+`benchmarks/production-model-v1/p10m-causal-tail-output-calibration-v10.json`,
+`benchmarks/production-model-v1/p10m-causal-tail-output-calibration-v10-quality-gate.json`,
+and the corresponding `-evidence-contract.json`. This result does not authorize
+the public open-generation rerun, hidden evaluation, promotion, or paid
+p20m/p30m scaling. It narrows the remaining engineering problem to suppressing
+global-token/self-loop attractors while retaining the output matrix's clear
+held-out likelihood gain.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent

@@ -1,0 +1,74 @@
+{
+  "schema": "nsrl.production_causal_tail_context_quality_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-output-calibration-v10-evidence-contract.json",
+    "bytes": 9214,
+    "fnv64": "0x6829a15acb742653",
+    "sha256": "bc7b6a3c1e5dcf198e76364108e41d2d7e49b83eeb0e3b3c5481dcc49c741e36"
+  },
+  "preflight": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-output-calibration-v10.json",
+    "bytes": 7977,
+    "fnv64": "0x13caa7598315fb0c",
+    "sha256": "238157c7f4fecb42284400f28f2de9597b859b53756374669feba617c9403619"
+  },
+  "candidate_model_hash": "0x011da7a107200d14",
+  "measurements": {
+    "development_total_nll_delta_millibits": -121238,
+    "test_total_nll_delta_millibits": -123879,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 1895,
+    "teacher_forced_mean_target_probability_q15": 8,
+    "free_running_self_loop_transition_per_mille": 966,
+    "prefix_to_suffix_logit_l1_per_mille": 3289,
+    "context_unique_greedy_tokens": 2,
+    "context_greedy_self_loops": 12,
+    "rollout_residual_saturation_count": 0,
+    "context_residual_saturation_count": 0,
+    "manifest_residual_saturation_count": 0
+  },
+  "gates": {
+    "preflight_passed": false,
+    "teacher_forced_top1_minimum": false,
+    "teacher_forced_mean_target_rank_maximum": true,
+    "teacher_forced_mean_target_probability_q15_minimum": true,
+    "free_running_self_loop_per_mille_maximum": false,
+    "prefix_to_suffix_context_effect_per_mille_maximum": true,
+    "context_unique_greedy_tokens_minimum": false,
+    "context_greedy_self_loops_maximum": false,
+    "inference_residual_saturation_maximum": true
+  },
+  "quality_gate_passed": false,
+  "open_generation_rerun_authorized": false,
+  "evidence": {
+    "rollout": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-output-calibration-v10-rollout-divergence.json",
+      "bytes": 9633,
+      "fnv64": "0xd792d5e263611820",
+      "sha256": "0f8d1eee10cf9c6189e83a83009bd4c5ff3bdbb5fafedfb3afa5cc1bdff8f030"
+    },
+    "context": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-output-calibration-v10-context-sensitivity.json",
+      "bytes": 10032,
+      "fnv64": "0xaf35cecd4d790573",
+      "sha256": "d0f7ddc3af46dc22c2e088ef2d3f0816748900cc4c857aaecbbba38ef887a7f8"
+    },
+    "saturation": {
+      "path": "benchmarks/open-generation-v1/p10m-causal-tail-output-calibration-v10-residual-saturation.json",
+      "bytes": 4258,
+      "fnv64": "0x32e58e20a3c17e05",
+      "sha256": "b477ffd8c4e5e6a98e67fdc6e2184f0411d2842aa582d1a05b329df7c7c4d17e"
+    }
+  },
+  "hidden_panel_opened": false,
+  "known_non_claims": [
+    "this_evidence_contract_was_created_after_the_candidate_and_public_metrics_were_observed",
+    "only_the_candidate_schedule_and_quality_thresholds_were_prospectively_bound_by_commit_4670171a",
+    "the_zero_saturation_preflight_gate_remains_failed",
+    "bounded_2048_window_output_only_continuation_not_full_corpus_training",
+    "public_test_has_prior_confirmatory_reads_for_earlier_candidates",
+    "postflight_public_metrics_are_development_gates_not_hidden_evaluation",
+    "complete_promotion_still_requires_baselines_human_review_and_an_untouched_hidden_panel",
+    "paid_p20m_p30m_scaling_remains_unauthorized"
+  ]
+}

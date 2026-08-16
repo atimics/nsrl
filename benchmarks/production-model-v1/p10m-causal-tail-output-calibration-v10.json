@@ -1,0 +1,210 @@
+{
+  "schema": "nsrl.production_causal_sequence_preflight.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-causal-tail-output-calibration-v10-evidence-contract.json",
+    "bytes": 9214,
+    "fnv64": "0x6829a15acb742653",
+    "sha256": "bc7b6a3c1e5dcf198e76364108e41d2d7e49b83eeb0e3b3c5481dcc49c741e36"
+  },
+  "source": {
+    "model_hash": "0xd2b9c7b907595967",
+    "development": {
+      "context_tokens": 64,
+      "windows": 512,
+      "mistakes": 512,
+      "total_nll_millibits": 6526624,
+      "mean_nll_millibits": 12747,
+      "zero_probability_floor_millibits": 32000,
+      "zero_probability_windows": 0
+    },
+    "development_health": {
+      "residual_saturation_count": 0
+    },
+    "test": {
+      "context_tokens": 64,
+      "windows": 512,
+      "mistakes": 512,
+      "total_nll_millibits": 6526743,
+      "mean_nll_millibits": 12748,
+      "zero_probability_floor_millibits": 32000,
+      "zero_probability_windows": 0
+    },
+    "test_health": {
+      "residual_saturation_count": 1
+    }
+  },
+  "candidate": {
+    "model_hash": "0x011da7a107200d14",
+    "development": {
+      "context_tokens": 64,
+      "windows": 512,
+      "mistakes": 511,
+      "total_nll_millibits": 6405386,
+      "mean_nll_millibits": 12511,
+      "zero_probability_floor_millibits": 32000,
+      "zero_probability_windows": 0
+    },
+    "development_health": {
+      "residual_saturation_count": 0
+    },
+    "test": {
+      "context_tokens": 64,
+      "windows": 512,
+      "mistakes": 508,
+      "total_nll_millibits": 6402864,
+      "mean_nll_millibits": 12506,
+      "zero_probability_floor_millibits": 32000,
+      "zero_probability_windows": 0
+    },
+    "test_health": {
+      "residual_saturation_count": 1
+    }
+  },
+  "training": {
+    "target_policy": "causal_suffix_mean_v1",
+    "targets_per_window": 8,
+    "training_workers": 8,
+    "supervised_targets": 16384,
+    "optimizer_steps": 512,
+    "movement_l1": {
+      "embeddings": 0,
+      "attention_rms": 0,
+      "mlp_rms": 0,
+      "final_rms": 0,
+      "q": 0,
+      "k": 0,
+      "v": 0,
+      "o": 0,
+      "up": 0,
+      "gate": 0,
+      "down": 0,
+      "output": 99989,
+      "bias": 0
+    }
+  },
+  "deltas": {
+    "development_total_nll_millibits": -121238,
+    "test_total_nll_millibits": -123879
+  },
+  "gates": {
+    "development_total_nll_strictly_improves": true,
+    "test_total_nll_strictly_improves": true,
+    "required_parameter_groups_move": true,
+    "frozen_parameter_groups_unchanged": true,
+    "gradient_residual_and_weight_saturation_max": false,
+    "exact_restart_replay": true
+  },
+  "preflight_passed": false,
+  "open_generation_rerun_authorized": false,
+  "test_candidate_scored": true,
+  "provenance": {
+    "binary": {
+      "path": "target/release/nsrl-production-model",
+      "bytes": 1158544,
+      "fnv64": "0x65c208cdb880e08d",
+      "sha256": "e2e569f2ed93c37d3f122130befe9d49d496e5e8079931f44dcd627c51c8ceb1"
+    },
+    "training_source": {
+      "path": "crates/nsrl-train/src/production/training.rs",
+      "bytes": 223706,
+      "fnv64": "0xd9b0d3bb03174776",
+      "sha256": "120636b3b63f0545919969da12d7f18c234e68c9bf9b89fe930599cfc47d2afc"
+    },
+    "cli_source": {
+      "path": "crates/nsrl-train/src/bin/nsrl-production-model.rs",
+      "bytes": 84710,
+      "fnv64": "0xddc4bc875096fe1e",
+      "sha256": "c252bb67bfb0eb0df6b5f2f71f69a4a25faa336c179fd2713fa88b50ab6c4c10"
+    },
+    "artifacts": {
+      "source-dev.json": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/source-dev.json",
+        "bytes": 581,
+        "fnv64": "0x904daa9cb6b8ea76",
+        "sha256": "b46ff6fc5135180ed085ebd582b7538c132bf7c0746e830fcf61f893116f2fe6"
+      },
+      "source-test.json": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/source-test.json",
+        "bytes": 581,
+        "fnv64": "0x081d1d99753fdf9b",
+        "sha256": "e394c8ac71a06e0b3f3996f4dd3532a712101475ceca6a22718acb9cce07a04e"
+      },
+      "train-midpoint.json": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/train-midpoint.json",
+        "bytes": 3243,
+        "fnv64": "0x245be19a8fb08541",
+        "sha256": "18ae7b4d812d6e5bf4a85c59cee9ea571de0b41c106be708cb686961e569df33"
+      },
+      "midpoint.nsrlpm": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/midpoint.nsrlpm",
+        "bytes": 13539906,
+        "fnv64": "0x0d9522af73027800",
+        "sha256": "892f09ef9cf2ebd41a482688e9180d29030c0d8501e1c1b01c7522ee2c8668ce"
+      },
+      "midpoint.nsrlpo": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/midpoint.nsrlpo",
+        "bytes": 74541140,
+        "fnv64": "0x0feb551e784adcee",
+        "sha256": "79ceca23da33d33a1770bebcfabc78fda2689266134cfc83121aaab3aa2c9139"
+      },
+      "train-final.json": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/train-final.json",
+        "bytes": 3250,
+        "fnv64": "0xd23af03976a44083",
+        "sha256": "98d1d7e051d360665cb430bff4e9ea513c73f70070affbc260780dbc6f061dd7"
+      },
+      "candidate.nsrlpm": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/candidate.nsrlpm",
+        "bytes": 13539906,
+        "fnv64": "0xc229d9f936b73670",
+        "sha256": "d1e323aa94170b3d0d049c1c70be2d5bebdd1cc7f57e5fc549da13ecdbb5f1be"
+      },
+      "candidate.nsrlpo": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/candidate.nsrlpo",
+        "bytes": 74541140,
+        "fnv64": "0x12d0da92cfbaa62a",
+        "sha256": "d07df1733af9863d90ca8b230f4c192c223f3c3157d4042add877fdebe54f09f"
+      },
+      "train-replay.json": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/train-replay.json",
+        "bytes": 3250,
+        "fnv64": "0xd23af03976a44083",
+        "sha256": "98d1d7e051d360665cb430bff4e9ea513c73f70070affbc260780dbc6f061dd7"
+      },
+      "replay.nsrlpm": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/replay.nsrlpm",
+        "bytes": 13539906,
+        "fnv64": "0xc229d9f936b73670",
+        "sha256": "d1e323aa94170b3d0d049c1c70be2d5bebdd1cc7f57e5fc549da13ecdbb5f1be"
+      },
+      "replay.nsrlpo": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/replay.nsrlpo",
+        "bytes": 74541140,
+        "fnv64": "0x12d0da92cfbaa62a",
+        "sha256": "d07df1733af9863d90ca8b230f4c192c223f3c3157d4042add877fdebe54f09f"
+      },
+      "candidate-dev.json": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/candidate-dev.json",
+        "bytes": 581,
+        "fnv64": "0x22da8feeef899693",
+        "sha256": "e780dba462c8261b42e6049b8c84d3cc1e9e3e5a357cce45c20be7fca029efeb"
+      },
+      "candidate-test.json": {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/candidate-test.json",
+        "bytes": 581,
+        "fnv64": "0x4cb7ab740fa377b9",
+        "sha256": "81b543aad6379300f78b6c7f7860481e04ad3ca8d591148778d49fa6034c2ba6"
+      }
+    }
+  },
+  "known_non_claims": [
+    "this_evidence_contract_was_created_after_the_candidate_and_public_metrics_were_observed",
+    "only_the_candidate_schedule_and_quality_thresholds_were_prospectively_bound_by_commit_4670171a",
+    "the_zero_saturation_preflight_gate_remains_failed",
+    "bounded_2048_window_output_only_continuation_not_full_corpus_training",
+    "public_test_has_prior_confirmatory_reads_for_earlier_candidates",
+    "postflight_public_metrics_are_development_gates_not_hidden_evaluation",
+    "complete_promotion_still_requires_baselines_human_review_and_an_untouched_hidden_panel",
+    "paid_p20m_p30m_scaling_remains_unauthorized"
+  ]
+}

@@ -125,11 +125,13 @@ assert(fs.readFileSync(path.join(config.runDir, "candidate.nsrlpm"))
     .equals(fs.readFileSync(path.join(config.runDir, "train-replay.json"))),
 "causal sequence midpoint replay is not byte-identical");
 
-verifyEval(sourceDev, contract.bindings.dev_token_stream_hash, contract.source.model_hash, true);
-verifyEval(sourceTest, contract.bindings.test_token_stream_hash, contract.source.model_hash, true);
-verifyEval(candidateDev, contract.bindings.dev_token_stream_hash, final.hashes.final_model, false);
+verifyEval(sourceDev, contract.bindings.dev_token_stream_hash, contract.source.model_hash,
+  contract.evaluation.source_dev_residual_saturation_count ?? 0);
+verifyEval(sourceTest, contract.bindings.test_token_stream_hash, contract.source.model_hash,
+  contract.evaluation.source_test_residual_saturation_count ?? 0);
+verifyEval(candidateDev, contract.bindings.dev_token_stream_hash, final.hashes.final_model, null);
 if (candidateTest) {
-  verifyEval(candidateTest, contract.bindings.test_token_stream_hash, final.hashes.final_model, false);
+  verifyEval(candidateTest, contract.bindings.test_token_stream_hash, final.hashes.final_model, null);
 }
 assert(sourceDev.evaluation.total_nll_millibits
     === contract.evaluation.source_dev_total_nll_millibits
@@ -198,12 +200,16 @@ const result = {
   source: {
     model_hash: contract.source.model_hash,
     development: sourceDev.evaluation,
+    development_health: sourceDev.health,
     test: sourceTest.evaluation,
+    test_health: sourceTest.health,
   },
   candidate: {
     model_hash: final.hashes.final_model,
     development: candidateDev.evaluation,
+    development_health: candidateDev.health,
     test: candidateTest?.evaluation ?? null,
+    test_health: candidateTest?.health ?? null,
   },
   training: {
     target_policy: expectedTraining.target_policy,
@@ -258,7 +264,7 @@ process.stdout.write(`${JSON.stringify({
   out: config.out,
 })}\n`);
 
-function verifyEval(trace, tokenStreamHash, modelHash, requireZeroSaturation) {
+function verifyEval(trace, tokenStreamHash, modelHash, expectedResidualSaturation) {
   assert(trace.schema === "nsrl.production_model_canonical_eval.v2"
     && trace.objective === "integer_base2_softmax_nll_millibits"
     && trace.profile === contract.profile
@@ -268,7 +274,8 @@ function verifyEval(trace, tokenStreamHash, modelHash, requireZeroSaturation) {
     && trace.evaluation?.context_tokens === contract.evaluation.context_tokens
     && trace.evaluation?.windows === contract.evaluation.windows
     && trace.evaluation?.zero_probability_windows === 0
-    && (!requireZeroSaturation || trace.health?.residual_saturation_count === 0)
+    && (expectedResidualSaturation === null
+      || trace.health?.residual_saturation_count === expectedResidualSaturation)
     && trace.model_hash === modelHash,
   "causal sequence canonical evaluation is invalid");
 }
