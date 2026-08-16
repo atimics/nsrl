@@ -1,0 +1,143 @@
+{
+  "schema": "nsrl.production_representation_quality_postflight_contract.v1",
+  "name": "p10m-causal-tail-representation-v9-quality-postflight",
+  "objective": "confirm_the_health_constrained_broader_candidate_on_public_test_and_the_frozen_open_generation_quality_diagnostics",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "candidate": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v9-health-scale/chunk-3/model.nsrlpm",
+    "model_hash": "0xd2b9c7b907595967",
+    "model_sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22",
+    "scale_evidence_path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v9-health-scale.json",
+    "scale_evidence_sha256": "ffc6ff341734f8d5cbe7e34c80d7924534f9d9c411bde4062278d6a3b87a742f",
+    "development_nll_millibits": 6526624,
+    "development_delta_millibits": -13563
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+    "model_hash": "0x5b54c3ba2baa9d39",
+    "model_sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b",
+    "development_nll_millibits": 6540187,
+    "test_nll_millibits": 6556527
+  },
+  "bindings": {
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "artifacts": [
+      {
+        "path": "scripts/run-production-causal-tail-representation-v9-quality-postflight.sh",
+        "sha256": "05209db509a971c5fc03cefc61000d883f2713fa4e6db20c9494699a0c7eae84"
+      },
+      {
+        "path": "scripts/freeze-production-representation-quality-postflight-v1.mjs",
+        "sha256": "43ef7c7f504fb7288d68163741585e8765201255b7290125b3dec11acac4ab4c"
+      },
+      {
+        "path": "crates/nsrl-train/src/production.rs",
+        "sha256": "0c79981af8b5025b24e68b52a4271964f08dbd7c23894788141a4b764162f9ac"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-model.rs",
+        "sha256": "c252bb67bfb0eb0df6b5f2f71f69a4a25faa336c179fd2713fa88b50ab6c4c10"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-rollout-divergence-audit.rs",
+        "sha256": "a1199dd338d11dee7f5648a5e7a67b033880f4fa440b28081011236935d1fa6b"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-context-sensitivity-audit.rs",
+        "sha256": "31c1e1b70ba5cbddaeffcbb0886a905d3d81a4ec169bfe7cb61c31a41f61d454"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-residual-saturation-audit.rs",
+        "sha256": "7b245a6557eb84bae20d3ae893ed04e7b56634b3ca29dee56e71cf45a9da0e27"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v9-health-scale.json",
+        "sha256": "ffc6ff341734f8d5cbe7e34c80d7924534f9d9c411bde4062278d6a3b87a742f"
+      },
+      {
+        "path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v1-contract.json",
+        "sha256": "e4d7bef1447a66ad92c9a81871d107e8376365150d45eb23e6004be98481cdb8"
+      },
+      {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v9-health-scale/chunk-3/model.nsrlpm",
+        "sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22"
+      },
+      {
+        "path": "data/experiments/production-model-v1/p10m-causal-tail-full-v1/candidate.nsrlpm",
+        "sha256": "0cc8843b29925d28ecb0835fe08b051211f5061dd79adc3ac18ee6b3fd70d45b"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+        "sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/dev.nsrltok",
+        "sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8"
+      },
+      {
+        "path": "data/processed/production-corpus-v1/test.nsrltok",
+        "sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+      },
+      {
+        "path": "benchmarks/open-generation-v1/manifest.tsv",
+        "sha256": "74f176202c7483ddfa7330325cf34833358e5ef8393ebdd8bb3fa0444f0fd948"
+      }
+    ]
+  },
+  "derivation": {
+    "threshold_source": "unchanged_p10m_causal_tail_representation_v1_public_quality_protocol",
+    "threshold_source_path": "benchmarks/production-model-v1/p10m-causal-tail-representation-v1-contract.json",
+    "candidate_selected_without_test_or_generation_quality_metrics": true,
+    "development_and_numeric_health_gate_passed_before_public_test_read": true,
+    "public_test_has_prior_confirmatory_reads_for_earlier_candidates": true,
+    "hidden_panel_must_remain_unopened": true
+  },
+  "postflight": {
+    "test": {
+      "context_tokens": 64,
+      "windows": 512,
+      "candidate_must_strictly_improve_source_nll": true
+    },
+    "rollout": {
+      "windows": 8,
+      "context_tokens": 64,
+      "rollout_tokens": 16,
+      "evaluated_positions": 128,
+      "minimum_teacher_forced_top1_matches": 1,
+      "maximum_mean_target_rank": 2200,
+      "minimum_mean_target_probability_q15": 7,
+      "maximum_self_loop_transition_per_mille": 950,
+      "maximum_prefix_to_suffix_logit_l1_per_mille": 5000
+    },
+    "context": {
+      "prompts": 12,
+      "top_k": 8,
+      "minimum_unique_greedy_tokens": 6,
+      "maximum_greedy_self_loops": 10
+    },
+    "saturation": {
+      "prompts": 12,
+      "layers": 6,
+      "maximum_residual_saturation_count": 0
+    }
+  },
+  "authorization": {
+    "local_public_test_confirmation": true,
+    "public_generation_quality_diagnostics": true,
+    "open_generation_rerun_on_pass": true,
+    "hidden_panel_access": false,
+    "quality_promotion": false,
+    "paid_scaling": false
+  },
+  "known_non_claims": [
+    "bounded_8192_window_representation_only_run_not_full_corpus_training",
+    "public_test_has_prior_confirmatory_reads_for_earlier_candidates",
+    "public_postflight_metrics_are_not_an_untouched_hidden_evaluation",
+    "postflight_success_authorizes_only_the_public_open_generation_rerun",
+    "complete_promotion_still_requires_baselines_human_review_and_an_untouched_hidden_panel",
+    "paid_p20m_p30m_scaling_remains_unauthorized"
+  ]
+}
