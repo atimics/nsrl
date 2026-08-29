@@ -1221,3 +1221,24 @@ minimizer and the joint block is the transfer minimizer. This is post-hoc
 four-document calibration, so the next bounded experiment is a prospectively
 frozen head-versus-joint comparison on unseen document blocks. It does not
 authorize an optimizer or paid scale.
+
+The prospective `p10m_target_margin_head_v1` pilot is also complete and
+falsified its scale-up hypothesis. It froze the healthy v9 trunk and output
+bias, then updated only the output matrix with a hard-negative Q8 hinge loss.
+All three 64-window feature-shift preflights passed; the frozen selector chose
+shift 14 after mean target rank improved from 2,190.919 to 895.808 on that
+small surface. The full 2,048-window run remained zero-saturation, preserved
+every frozen parameter hash, and replayed the final model and optimizer
+byte-for-byte. It did not generalize: on the full run's 512-target audit mean
+rank worsened from 2,133.306 to 4,072.675, top-10 hits fell from 21 to 6, and
+public development NLL regressed by 2,004,452 millibits (308 per mille).
+
+The prospective development gate therefore denied public test evaluation and
+the open-generation confirmation. This is evidence against repeated
+unregularized hard-negative perceptron updates at this horizon, not evidence
+against all ranking objectives. A future bounded attempt would need a fixed
+disjoint selection surface and a development guard or trust region; no such
+attempt, hidden-panel read, or paid scaling is authorized by this result.
+Frozen evidence is in
+`benchmarks/production-model-v1/p10m-target-margin-head-v1-preflight.json` and
+`benchmarks/production-model-v1/p10m-target-margin-head-v1-development-gate.json`.
