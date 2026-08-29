@@ -73,17 +73,17 @@
     },
     "fixture_prior_receipt": {
       "path": "benchmarks/solomon-council-v0/fixtures/select-receipt.json",
-      "sha256": "e371f94538fa8837cb93bf57323b8ff598bf23ed3c907cb2e8145cbe274774d4",
+      "sha256": "d6aeba5a1cb18de762607e07550f75527ed208c3aef6d96bbe9c744c8289949e",
       "bytes": 21951
     },
     "fixture_observation": {
       "path": "benchmarks/solomon-council-v0/fixtures/select-observation.json",
-      "sha256": "daf0bc0c453e626fe3f51511ed6142721b7da1b0c8d2f3052f5f9f1cbcb13a57",
+      "sha256": "a57f333b379a5e245fb60797641bdf0e48e0503e4aa747863008916a5f763c77",
       "bytes": 737
     },
     "fixture_revised_receipt": {
       "path": "benchmarks/solomon-council-v0/fixtures/select-revised-receipt.json",
-      "sha256": "4a2aa083a67e6a2ce6f11c0974aeaf093f75d1d700bdcad10b4ec96c3aebf6a1",
+      "sha256": "35ad475b4f068acab8d6053c8b992d5e922b3e3af841033e74e7e8e4ce3d2948",
       "bytes": 22918
     },
     "auditor": {
