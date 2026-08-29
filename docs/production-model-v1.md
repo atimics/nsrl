@@ -902,6 +902,26 @@ p20m/p30m scaling. It narrows the remaining engineering problem to suppressing
 global-token/self-loop attractors while retaining the output matrix's clear
 held-out likelihood gain.
 
+The prospectively frozen read-only attractor recovery audit now rejects a
+one-variable anti-loop continuation. Incremental decoding matches full
+recomputation exactly on every real v9 and v10 public prompt endpoint, and the
+two checkpoints produce byte-identical prompt features. Reversing each prefix
+while holding its final token fixed changes all 12 feature and logit vectors;
+the argmax changes for three v9 and four v10 prompts. The trunk therefore
+contains sequence-order signal, and v10 output calibration did not create the
+underlying collapse.
+
+The attractors are nevertheless structural. Eleven of 12 v9 prompt winners and
+all 12 v10 winners are immediate feedback fixed points; ten winners in each
+model are fixed points even when evaluated as isolated one-token contexts.
+Masking only the immediately previous token recovers zero of 128 public
+continuation targets. V10 then uses exactly two tokens in every 16-token window
+and enters a two-token cycle at all 112 eligible positions; v9 is nearly the
+same at 109 of 112. The predeclared training gate fails, so this bounded sprint
+stops before training. A repetition penalty would hide one attractor while
+leaving the ranking failure intact. The frozen evidence is in
+`benchmarks/production-model-v1/p10m-attractor-recovery-audit-v1.json`.
+
 The controlled p10m train/dev pilot completed on a c8g.2xlarge Graviton runner.
 Its frozen schedule used 1,024 train windows and 256 held-out dev windows at
 context 64, with durable chunking, a midpoint replay, and concurrent
