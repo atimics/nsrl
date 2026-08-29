@@ -1243,19 +1243,24 @@ Frozen evidence is in
 `benchmarks/production-model-v1/p10m-target-margin-head-v1-preflight.json` and
 `benchmarks/production-model-v1/p10m-target-margin-head-v1-development-gate.json`.
 
-The prospective `p10m_target_margin_trust_region_v1` follow-up is frozen but
-has not yet been run. It corrects the earlier selection mismatch by binding
-short and full runs to one 2,048-window update schedule. Candidate choice uses
-only 32 fixed training-corpus windows that are disjoint from that complete
-schedule. Every moving batch must weakly improve canonical NLL on this guard or
-the output matrix is restored atomically while the replay cursor is consumed.
-The full run must reproduce exact model and optimizer bytes, strictly improve
-guard NLL, and improve guard mean rank by at least 5 percent.
+The prospective `p10m_target_margin_trust_region_v1` follow-up is complete and
+stopped at preflight. It corrected the earlier selection mismatch by binding
+all three short runs to one 2,048-window update schedule. Candidate choice used
+only 32 fixed training-corpus windows disjoint from that complete schedule.
+Every moving batch had to weakly improve canonical NLL on this guard or the
+output matrix was restored atomically while the replay cursor was consumed.
 
-Public test remains closed until the candidate also matches or improves public
-development NLL, improves development rollout mean target rank by at least 10
-percent, produces a top-1 teacher-forced match, and does not reduce mean target
-probability. Manifest/open-generation checks remain closed until an equivalent
-public-test confirmation passes. The hidden panel and paid p20m/p30m scaling
-remain unauthorized. The frozen contract is
-`benchmarks/production-model-v1/p10m-target-margin-trust-region-v1-contract.json`.
+For feature shifts 13, 14, and 15, all 16 proposed batches worsened guard NLL
+and were rejected. The three runs therefore had zero accepted batches, zero
+updates, and zero output-matrix movement. The guard remained byte-stable at
+407,206 total millibits, mean target rank 2,289.312, and one top-10 hit. All
+runs completed their replay cursor with zero saturation, identical update and
+guard rank hashes, frozen trunk parameters, and frozen output bias. No feature
+shift passed, so no full candidate was selected.
+
+The result is evidence that the tested hard-negative direction conflicts with
+canonical NLL immediately, not only after the old 2,048-window accumulation.
+The runner did not open development, public test, manifest/open-generation, or
+hidden-panel data. Paid p20m/p30m scaling remains unauthorized. Frozen evidence
+is in
+`benchmarks/production-model-v1/p10m-target-margin-trust-region-v1-preflight.json`.
