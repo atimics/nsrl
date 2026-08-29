@@ -209,6 +209,29 @@ function validateFloatTrace(trace, manifest) {
   }
 }
 
+function validateFloatLogits(logitsPath, trace, manifest) {
+  const bytes = fs.readFileSync(logitsPath);
+  const headerBytes = 40;
+  const footerBytes = 8;
+  const expectedBytes = headerBytes + (frozenTargets * 256 * 4) + footerBytes;
+  if (bytes.length !== expectedBytes
+      || !bytes.subarray(0, 8).equals(Buffer.from("NSRLFT2\n"))
+      || bytes.readUInt32LE(8) !== 1
+      || bytes.readUInt32LE(12) !== manifest.context
+      || bytes.readUInt32LE(16) !== frozenTargets
+      || bytes.readUInt32LE(20) !== 256
+      || hex64(bytes.readBigUInt64LE(24)) !== manifest.datasetHash
+      || hex64(bytes.readBigUInt64LE(32)) !== trace.model?.final_hash) {
+    throw new Error("float transformer logits header is invalid");
+  }
+  const replayOffset = bytes.length - footerBytes;
+  const replayHash = fnv64(bytes.subarray(0, replayOffset));
+  if (bytes.readBigUInt64LE(replayOffset) !== replayHash
+      || trace.evaluation?.q8_logits_artifact_hash !== hex64(replayHash)) {
+    throw new Error("float transformer logits replay hash is invalid");
+  }
+}
+
 function validateTrainingTrace(trace, manifest, candidateArtifactHash) {
   const expectedTrainTargets = fs.readFileSync(manifest.trainPath).length - manifest.context;
   if (trace.schema !== "nsrl.integer_transformer_successor_train.v1"
@@ -243,6 +266,7 @@ function publishedPaths(manifest) {
     trainingTrace: path.join(manifest.directory, "successor-v2-training.json"),
     matrix: path.join(manifest.directory, "successor-v2-matrix.tsv"),
     evidence: path.join(manifest.directory, "successor-v2-evidence.json"),
+    floatLogits: path.join(manifest.directory, "successor-v2-float-transformer.logits"),
     floatTrace: path.join(manifest.directory, "successor-v2-float-transformer.json"),
   };
 }
@@ -258,6 +282,7 @@ function main() {
   const manifest = loadManifest(config.manifest);
   const actualEvaluatorHash = sourceSetHash();
   const actualRunnerHash = runnerHash();
+  const published = publishedPaths(manifest);
   if (!config.allowUnfrozen && manifest.evaluatorHash !== actualEvaluatorHash) {
     throw new Error(`evaluator hash mismatch: ${manifest.evaluatorHash} != ${actualEvaluatorHash}`);
   }
@@ -298,15 +323,21 @@ function main() {
     throw new Error("replayed successor candidate does not match the frozen manifest");
   }
 
-  command("python3", [
-    "scripts/run-float-transformer-successor-v2.py",
-    "--train", path.relative(root, manifest.trainPath),
-    "--eval", path.relative(root, manifest.evalPath),
-    "--out-logits", floatLogits,
-    "--out-trace", floatTrace,
-  ]);
+  if (config.mode === "freeze" || config.allowUnfrozen) {
+    command("python3", [
+      "scripts/run-float-transformer-successor-v2.py",
+      "--train", path.relative(root, manifest.trainPath),
+      "--eval", path.relative(root, manifest.evalPath),
+      "--out-logits", floatLogits,
+      "--out-trace", floatTrace,
+    ]);
+  } else {
+    fs.copyFileSync(published.floatLogits, floatLogits);
+    fs.copyFileSync(published.floatTrace, floatTrace);
+  }
   const floatTraceValue = JSON.parse(fs.readFileSync(floatTrace, "utf8"));
   validateFloatTrace(floatTraceValue, manifest);
+  validateFloatLogits(floatLogits, floatTraceValue, manifest);
   const floatTraceHash = hex64(fnv64(fs.readFileSync(floatTrace)));
 
   command(path.join(root, "target/release/nsrl-successor-eval"), [
@@ -353,12 +384,12 @@ function main() {
     }
   }
 
-  const published = publishedPaths(manifest);
   if (config.mode === "freeze") {
     fs.copyFileSync(candidate, published.candidate);
     fs.copyFileSync(trainingTrace, published.trainingTrace);
     fs.copyFileSync(matrix, published.matrix);
     fs.copyFileSync(evidence, published.evidence);
+    fs.copyFileSync(floatLogits, published.floatLogits);
     fs.copyFileSync(floatTrace, published.floatTrace);
     const manifestFields = [
       manifestSchema, contract, path.basename(manifest.trainPath), path.basename(manifest.evalPath),
@@ -373,6 +404,7 @@ function main() {
     byteEqual(trainingTrace, published.trainingTrace, "published training trace");
     byteEqual(matrix, published.matrix, "published matrix");
     byteEqual(evidence, published.evidence, "published evidence");
+    byteEqual(floatLogits, published.floatLogits, "published float-transformer logits");
     byteEqual(floatTrace, published.floatTrace, "published float-transformer trace");
   }
 

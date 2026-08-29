@@ -23,14 +23,6 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-
-      - name: Install Python replay dependencies
-        run: python3 -m pip install numpy==2.4.4
-
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 

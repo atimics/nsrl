@@ -1,12 +1,12 @@
 {
   "schema": "nsrl.wisdom_receipt.v0",
-  "receipt_id": "wisdom-0e07966304e4337e57154742",
+  "receipt_id": "wisdom-520c94194f5853f438531c4c",
   "recorded_at": "2026-07-15T21:30:00Z",
   "mode": "shadow",
   "request": {
     "request_id": "successor-v2-status-shadow-001",
     "question": "Should the repaired native successor be recorded as passing its frozen substrate promotion gate?",
-    "request_sha256": "0e07966304e4337e571547428c2498f2a4041a017206c83f77a6e6f78682911f"
+    "request_sha256": "520c94194f5853f438531c4c05ecf9b7e89f6f15dcdcd0938c9be051624e0da1"
   },
   "bindings": {
     "models": [
@@ -32,8 +32,8 @@
       {
         "evidence_id": "evaluation-evidence",
         "source_uri": "benchmarks/integer-transformer-proof-v1/successor-v2-evidence.json",
-        "source_sha256": "34a1ff336c9d054081248e2cddc58b45a2c4cacdc23123e4364cc3719e9c731f",
-        "content_sha256": "34a1ff336c9d054081248e2cddc58b45a2c4cacdc23123e4364cc3719e9c731f"
+        "source_sha256": "d81215050c70134e88d8fb85b3234c56f3ad0dd0c750348a13371d53badc8bb0",
+        "content_sha256": "d81215050c70134e88d8fb85b3234c56f3ad0dd0c750348a13371d53badc8bb0"
       }
     ]
   },
@@ -61,8 +61,8 @@
     {
       "evidence_id": "evaluation-evidence",
       "source_uri": "benchmarks/integer-transformer-proof-v1/successor-v2-evidence.json",
-      "source_sha256": "34a1ff336c9d054081248e2cddc58b45a2c4cacdc23123e4364cc3719e9c731f",
-      "content_sha256": "34a1ff336c9d054081248e2cddc58b45a2c4cacdc23123e4364cc3719e9c731f",
+      "source_sha256": "d81215050c70134e88d8fb85b3234c56f3ad0dd0c750348a13371d53badc8bb0",
+      "content_sha256": "d81215050c70134e88d8fb85b3234c56f3ad0dd0c750348a13371d53badc8bb0",
       "retrieved_at": "2026-07-15T21:25:00Z",
       "summary": "Five-system frozen evaluation showing 25,347,655 millibits, zero zero-probability windows, and exact replay hashes.",
       "claim_ids": [
@@ -464,8 +464,8 @@
           "skeptic"
         ],
         "distinct_cited_source_hashes": [
-          "34a1ff336c9d054081248e2cddc58b45a2c4cacdc23123e4364cc3719e9c731f",
-          "42a6fa80102fd787ace7cd3655fe600c2b09c82a78e932d5b05160309cb8e48c"
+          "42a6fa80102fd787ace7cd3655fe600c2b09c82a78e932d5b05160309cb8e48c",
+          "d81215050c70134e88d8fb85b3234c56f3ad0dd0c750348a13371d53badc8bb0"
         ],
         "hard_contradictions": [],
         "missing_information": [],
@@ -723,8 +723,8 @@
       "revision_index": 1,
       "recorded_at": "2026-07-15T21:45:00Z",
       "observer": "nsrl-status-exact-replay",
-      "prior_receipt_sha256": "819b5b4dcd3a37b44da02b1d4699692a1622c06e107bc43c97f8732592d6af62",
-      "observation_sha256": "d60a966892d505614bb0d334dbed62daf9500b2cde3552eefdf1215f6db87627",
+      "prior_receipt_sha256": "004b7d52be786ce7a35e059b75f4aa00cd543a1d215e64b15dfb127f8c69a292",
+      "observation_sha256": "e454f017e1f93ce6c44f584071db44502cd6f64a834f8e4c4807581f9e0caf14",
       "reason": "Independent status replay increased confidence without changing the shadow recommendation.",
       "prior_confidence_milli": 820,
       "revised_confidence_milli": 970,
@@ -734,6 +734,6 @@
   ],
   "identity": {
     "canonicalization": "recursive lexicographic JSON keys, UTF-8, no insignificant whitespace",
-    "receipt_sha256": "c5962e231f8b2c287ca176fbf3d8ed185c2e62f61eda2f38b26f35562b1542e3"
+    "receipt_sha256": "a32bd31f27d4821a95395133c290627a8fa28ccc54d26177be2b88c3b7a85a03"
   }
 }
