@@ -12,8 +12,8 @@
 //! ```
 //!
 //! The activation is a power-of-two Hard SiLU: `x · σ(x)` where σ is
-//! approximated as `clamp(x/4 + 1/2, 0, 1)`. The shift (2) and bias (0.5
-//! in Q15 = 16,384) are exposed as [`HARD_SILU_GATE_SHIFT`] and
+//! approximated as `clamp(x/4 + 1/2, 0, 1)`. The shift is 2 and the bias is
+//! one half (16,384 in Q15); both are exposed as [`HARD_SILU_GATE_SHIFT`] and
 //! [`HARD_SILU_GATE_BIAS_Q15`].
 //!
 //! # Residual block
