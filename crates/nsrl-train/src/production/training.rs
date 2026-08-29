@@ -4741,6 +4741,7 @@ pub fn train_production_direct_feature(
                 probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
                 probability_normalization: config.probability_normalization,
                 sample_seed: config.sample_seed.wrapping_add(round_index as u64),
+                require_dev_nll_nonworsening: false,
             },
             output_weight_count,
         )?;
@@ -4959,6 +4960,7 @@ pub struct DirectHeadTrainConfig {
     pub probability_gradient_fractional_bits: u8,
     pub probability_normalization: SoftmaxNormalization,
     pub sample_seed: u64,
+    pub require_dev_nll_nonworsening: bool,
 }
 
 impl Default for DirectHeadTrainConfig {
@@ -4973,6 +4975,7 @@ impl Default for DirectHeadTrainConfig {
             probability_gradient_fractional_bits: 23,
             probability_normalization: SoftmaxNormalization::Q47Newton1,
             sample_seed: 0,
+            require_dev_nll_nonworsening: false,
         }
     }
 }
@@ -4993,6 +4996,7 @@ pub struct DirectHeadTrainRound {
     pub output_gradient_sum: i64,
     pub weight_saturation_count: usize,
     pub function_visible: bool,
+    pub dev_guard_rejected: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5011,6 +5015,8 @@ pub struct DirectHeadTrainTrace {
     pub sample_seed: u64,
     pub initial_model_hash: u64,
     pub final_model_hash: u64,
+    pub initial_frozen_parameter_hash: u64,
+    pub final_frozen_parameter_hash: u64,
     pub initial_train_nll_q20: u64,
     pub final_train_nll_q20: u64,
     pub initial_dev_nll_q20: u64,
@@ -5023,6 +5029,8 @@ pub struct DirectHeadTrainTrace {
     pub output_rounds: usize,
     pub bias_rounds: usize,
     pub rounds_with_descent: usize,
+    pub dev_guard_rejections: usize,
+    pub require_dev_nll_nonworsening: bool,
     pub train_bindings: Vec<DirectTrainWindowBinding>,
     pub dev_bindings: Vec<DirectTrainWindowBinding>,
     pub round_traces: Vec<DirectHeadTrainRound>,
@@ -5046,7 +5054,7 @@ impl DirectHeadTrainTrace {
                 "\"token_stream_hash\":\"0x{:016x}\"}},",
                 "\"training\":{{\"context_tokens\":{},\"train_windows\":{},",
                 "\"dev_windows\":{},\"candidates_per_round\":{},",
-                "\"max_rounds\":{},",
+                "\"max_rounds\":{},\"require_dev_nll_nonworsening\":{},",
                 "\"probability_gradient_fractional_bits\":{},",
                 "\"probability_normalization\":\"{}\",\"sample_seed\":{}}},",
                 "\"quality\":{{\"initial_train_nll_q20\":{},",
@@ -5054,11 +5062,17 @@ impl DirectHeadTrainTrace {
                 "\"initial_dev_nll_q20\":{},\"final_dev_nll_q20\":{},",
                 "\"initial_dev_mistakes\":{},\"final_dev_mistakes\":{}}},",
                 "\"hashes\":{{\"initial_model\":\"0x{:016x}\",",
-                "\"final_model\":\"0x{:016x}\"}},",
+                "\"final_model\":\"0x{:016x}\",",
+                "\"initial_frozen_parameters\":\"0x{:016x}\",",
+                "\"final_frozen_parameters\":\"0x{:016x}\"}},",
+                "\"gates\":{{\"frozen_parameters_unchanged\":{},",
+                "\"dev_nll_nonworsening\":{},",
+                "\"source_always_candidate\":true}},",
                 "\"stats\":{{\"rounds\":{},\"rounds_with_descent\":{},",
                 "\"output_rounds\":{},\"bias_rounds\":{},",
                 "\"total_descent_steps\":{},",
-                "\"total_candidates_evaluated\":{}}},\"rounds\":["
+                "\"total_candidates_evaluated\":{},",
+                "\"dev_guard_rejections\":{}}},\"rounds\":["
             ),
             self.profile,
             self.parameter_count,
@@ -5069,6 +5083,7 @@ impl DirectHeadTrainTrace {
             self.dev_windows,
             self.candidates_per_round,
             self.max_rounds,
+            self.require_dev_nll_nonworsening,
             self.probability_gradient_fractional_bits,
             self.probability_normalization,
             self.sample_seed,
@@ -5080,12 +5095,18 @@ impl DirectHeadTrainTrace {
             self.final_dev_mistakes,
             self.initial_model_hash,
             self.final_model_hash,
+            self.initial_frozen_parameter_hash,
+            self.final_frozen_parameter_hash,
+            self.initial_frozen_parameter_hash == self.final_frozen_parameter_hash,
+            !self.require_dev_nll_nonworsening
+                || self.final_dev_nll_q20 <= self.initial_dev_nll_q20,
             self.rounds,
             self.rounds_with_descent,
             self.output_rounds,
             self.bias_rounds,
             self.total_descent_steps,
             self.total_candidates_evaluated,
+            self.dev_guard_rejections,
         )
         .expect("writing direct head train JSON cannot fail");
         for (index, round) in self.round_traces.iter().enumerate() {
@@ -5135,7 +5156,8 @@ impl DirectHeadTrainTrace {
                     "\"dev_nll_q20_after\":{},\"dev_mistakes\":{},",
                     "\"output_gradient_sum\":{},",
                     "\"weight_saturation_count\":{},",
-                    "\"function_visible\":{}}}"
+                    "\"function_visible\":{},",
+                    "\"dev_guard_rejected\":{}}}"
                 ),
                 round.applied_delta,
                 round.train_nll_q20_after,
@@ -5144,6 +5166,7 @@ impl DirectHeadTrainTrace {
                 round.output_gradient_sum,
                 round.weight_saturation_count,
                 round.function_visible,
+                round.dev_guard_rejected,
             )
             .expect("writing round tail");
         }
@@ -5185,6 +5208,7 @@ pub fn train_production_direct_head_search(
     let train_windows = train_surface.as_slice();
     let dev_windows = dev_surface.as_slice();
     let initial_model_hash = model.model_hash();
+    let initial_frozen_parameter_hash = super::margin_training::frozen_parameter_hash(model);
     let initial_train = evaluate_surface(model, train_windows)?;
     let initial_dev = evaluate_surface(model, dev_windows)?;
     let initial_dev_mistakes = count_mistakes(model, dev_windows)?;
@@ -5198,6 +5222,7 @@ pub fn train_production_direct_head_search(
     let mut output_rounds = 0_usize;
     let mut bias_rounds = 0_usize;
     let mut rounds_with_descent = 0_usize;
+    let mut dev_guard_rejections = 0_usize;
     // Score candidates on a small probe subset, then verify on full train
     let probe_windows = train_windows.len().min(16);
     let score_surface = &train_windows[..probe_windows];
@@ -5277,6 +5302,35 @@ pub fn train_production_direct_head_search(
                     output_gradient_sum,
                     weight_saturation_count: 0,
                     function_visible: false,
+                    dev_guard_rejected: false,
+                });
+                break;
+            }
+            let candidate_dev =
+                evaluate_parameter_delta(model, group, local, best_delta, dev_windows)?;
+            let best_dev_delta = signed_nll_improvement(round_dev_nll, candidate_dev.nll_q20);
+            if !direct_dev_guard_allows(
+                config.require_dev_nll_nonworsening,
+                round_dev_nll,
+                candidate_dev.nll_q20,
+            ) {
+                dev_guard_rejections = dev_guard_rejections.saturating_add(1);
+                round_traces.push(DirectHeadTrainRound {
+                    round: round_index,
+                    candidates_evaluated: round_candidates_evaluated,
+                    candidates_with_descent,
+                    best_delta_train_nll_q20: full_train_delta,
+                    best_delta_dev_nll_q20: best_dev_delta,
+                    output_weight_coordinate: if best_is_bias { None } else { Some(local) },
+                    output_bias_coordinate: if best_is_bias { Some(local) } else { None },
+                    applied_delta: 0,
+                    train_nll_q20_after: round_train_nll,
+                    dev_nll_q20_after: round_dev_nll,
+                    dev_mistakes: current_dev_mistakes,
+                    output_gradient_sum,
+                    weight_saturation_count: 0,
+                    function_visible: false,
+                    dev_guard_rejected: true,
                 });
                 break;
             }
@@ -5288,7 +5342,7 @@ pub fn train_production_direct_head_search(
             }
             rounds_with_descent = rounds_with_descent.saturating_add(1);
             total_descent_steps = total_descent_steps.saturating_add(1);
-            let post_dev = evaluate_surface(model, dev_windows)?;
+            let post_dev = candidate_dev;
             let post_dev_mistakes = count_mistakes(model, dev_windows)?;
             let best_dev_delta = signed_nll_improvement(round_dev_nll, post_dev.nll_q20);
             let function_visible = post_dev.logits != current_dev.logits;
@@ -5307,6 +5361,7 @@ pub fn train_production_direct_head_search(
                 output_gradient_sum,
                 weight_saturation_count: 0,
                 function_visible,
+                dev_guard_rejected: false,
             });
         } else {
             round_traces.push(DirectHeadTrainRound {
@@ -5324,6 +5379,7 @@ pub fn train_production_direct_head_search(
                 output_gradient_sum,
                 weight_saturation_count: 0,
                 function_visible: false,
+                dev_guard_rejected: false,
             });
             break;
         }
@@ -5346,6 +5402,8 @@ pub fn train_production_direct_head_search(
         sample_seed: config.sample_seed,
         initial_model_hash,
         final_model_hash: model.model_hash(),
+        initial_frozen_parameter_hash,
+        final_frozen_parameter_hash: super::margin_training::frozen_parameter_hash(model),
         initial_train_nll_q20: initial_train_nll,
         final_train_nll_q20: final_train.nll_q20,
         initial_dev_nll_q20: initial_dev_nll,
@@ -5358,6 +5416,8 @@ pub fn train_production_direct_head_search(
         output_rounds,
         bias_rounds,
         rounds_with_descent,
+        dev_guard_rejections,
+        require_dev_nll_nonworsening: config.require_dev_nll_nonworsening,
         train_bindings: direct_window_bindings(train_windows),
         dev_bindings: direct_window_bindings(dev_windows),
         round_traces,
@@ -5383,6 +5443,10 @@ fn count_mistakes(
         }
     }
     Ok(mistakes)
+}
+
+fn direct_dev_guard_allows(required: bool, current_nll_q20: u64, candidate_nll_q20: u64) -> bool {
+    !required || candidate_nll_q20 <= current_nll_q20
 }
 
 fn select_top_gradient_candidates(
@@ -5712,6 +5776,57 @@ mod direct_search_tests {
         assert_eq!(feature_trace.dev_bindings[0].document, 1);
         assert!(!json.contains("no_backprop"));
         assert!(!json.contains("residual_feature"));
+    }
+
+    #[test]
+    fn direct_head_dev_guard_is_nonworsening_and_exactly_replayable() {
+        let tokens = token_fixture();
+        let config = DirectHeadTrainConfig {
+            context_tokens: 2,
+            train_windows: 2,
+            dev_windows: 2,
+            candidates_per_round: 8,
+            max_rounds: 4,
+            require_dev_nll_nonworsening: true,
+            ..DirectHeadTrainConfig::default()
+        };
+        let source = tiny_model();
+        let mut left = source.clone();
+        let mut right = source;
+        let left_trace = train_production_direct_head_search(&mut left, &tokens, 0x2222, config)
+            .expect("guarded direct head train");
+        let right_trace = train_production_direct_head_search(&mut right, &tokens, 0x2222, config)
+            .expect("guarded direct head replay");
+        assert_eq!(left, right);
+        assert_eq!(left_trace, right_trace);
+        assert_eq!(
+            left_trace.initial_frozen_parameter_hash,
+            left_trace.final_frozen_parameter_hash
+        );
+        assert!(left_trace.final_train_nll_q20 <= left_trace.initial_train_nll_q20);
+        assert!(left_trace.final_dev_nll_q20 <= left_trace.initial_dev_nll_q20);
+        assert_eq!(
+            left_trace.dev_guard_rejections,
+            left_trace
+                .round_traces
+                .iter()
+                .filter(|round| round.dev_guard_rejected)
+                .count()
+        );
+        assert!(direct_dev_guard_allows(true, 100, 100));
+        assert!(direct_dev_guard_allows(true, 100, 99));
+        assert!(!direct_dev_guard_allows(true, 100, 101));
+        assert!(direct_dev_guard_allows(false, 100, 101));
+        assert!(
+            left_trace
+                .to_json_line()
+                .contains("\"require_dev_nll_nonworsening\":true")
+        );
+        assert!(
+            left_trace
+                .to_json_line()
+                .contains("\"frozen_parameters_unchanged\":true")
+        );
     }
 
     #[test]
