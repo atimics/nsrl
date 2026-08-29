@@ -1242,3 +1242,20 @@ attempt, hidden-panel read, or paid scaling is authorized by this result.
 Frozen evidence is in
 `benchmarks/production-model-v1/p10m-target-margin-head-v1-preflight.json` and
 `benchmarks/production-model-v1/p10m-target-margin-head-v1-development-gate.json`.
+
+The prospective `p10m_target_margin_trust_region_v1` follow-up is frozen but
+has not yet been run. It corrects the earlier selection mismatch by binding
+short and full runs to one 2,048-window update schedule. Candidate choice uses
+only 32 fixed training-corpus windows that are disjoint from that complete
+schedule. Every moving batch must weakly improve canonical NLL on this guard or
+the output matrix is restored atomically while the replay cursor is consumed.
+The full run must reproduce exact model and optimizer bytes, strictly improve
+guard NLL, and improve guard mean rank by at least 5 percent.
+
+Public test remains closed until the candidate also matches or improves public
+development NLL, improves development rollout mean target rank by at least 10
+percent, produces a top-1 teacher-forced match, and does not reduce mean target
+probability. Manifest/open-generation checks remain closed until an equivalent
+public-test confirmation passes. The hidden panel and paid p20m/p30m scaling
+remain unauthorized. The frozen contract is
+`benchmarks/production-model-v1/p10m-target-margin-trust-region-v1-contract.json`.
