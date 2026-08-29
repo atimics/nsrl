@@ -2,6 +2,8 @@
 
 use std::{fmt::Write, thread};
 
+use nsrl_core::{DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS, base2_softmax_nll_millibits};
+
 use super::{
     FNV_OFFSET, FNV_PRIME, ProductionModelV1, TrainError, argmax_except, document_windows, fnv1a,
     output_logits, spread_document_windows, update_i16,
@@ -14,6 +16,7 @@ const MARGIN_OPTIMIZER_VERSION: u32 = 1;
 pub struct ProductionMarginTrainConfig {
     pub context_tokens: usize,
     pub max_windows: usize,
+    pub window_schedule_windows: usize,
     pub spread_windows: bool,
     pub targets_per_window: usize,
     pub training_workers: usize,
@@ -23,6 +26,7 @@ pub struct ProductionMarginTrainConfig {
     pub batch_windows: usize,
     pub max_optimizer_steps: usize,
     pub evaluation_windows: usize,
+    pub descent_guard_windows: usize,
 }
 
 impl Default for ProductionMarginTrainConfig {
@@ -30,6 +34,7 @@ impl Default for ProductionMarginTrainConfig {
         Self {
             context_tokens: 4,
             max_windows: 8,
+            window_schedule_windows: 0,
             spread_windows: false,
             targets_per_window: 1,
             training_workers: 1,
@@ -39,6 +44,7 @@ impl Default for ProductionMarginTrainConfig {
             batch_windows: 4,
             max_optimizer_steps: usize::MAX,
             evaluation_windows: usize::MAX,
+            descent_guard_windows: 0,
         }
     }
 }
@@ -194,6 +200,9 @@ pub struct ProductionMarginTrainTrace {
     pub token_stream_hash: u64,
     pub context_tokens: usize,
     pub windows: usize,
+    pub window_schedule_windows: usize,
+    pub window_schedule_rank_hash: u64,
+    pub training_window_rank_hash: u64,
     pub evaluation_windows: usize,
     pub targets_per_window: usize,
     pub training_workers: usize,
@@ -207,6 +216,15 @@ pub struct ProductionMarginTrainTrace {
     pub movement_l1: u64,
     pub weight_saturation_count: usize,
     pub rejected_batch_start_window: Option<u64>,
+    pub descent_guard_windows: usize,
+    pub descent_guard_window_rank_hash: u64,
+    pub descent_guard_batches_evaluated: usize,
+    pub descent_guard_batches_accepted: usize,
+    pub descent_guard_batches_rejected: usize,
+    pub descent_guard_initial_nll_millibits: u64,
+    pub descent_guard_final_nll_millibits: u64,
+    pub descent_guard_initial_evaluation: ProductionMarginEvaluation,
+    pub descent_guard_final_evaluation: ProductionMarginEvaluation,
     pub start_epoch: u64,
     pub start_window: u64,
     pub next_epoch: u64,
@@ -236,6 +254,8 @@ impl ProductionMarginTrainTrace {
                 "\"training\":{{\"objective\":\"hard_negative_hinge_q8\",",
                 "\"parameter_scope\":\"output_matrix_only\",\"output_bias_frozen\":true,",
                 "\"context_tokens\":{},\"windows\":{},\"evaluation_windows\":{},",
+                "\"window_schedule_windows\":{},\"window_schedule_rank_hash\":\"0x{:016x}\",",
+                "\"training_window_rank_hash\":\"0x{:016x}\",",
                 "\"targets_per_window\":{},\"epochs\":{},\"feature_shift\":{},",
                 "\"margin_q8\":{},\"batch_windows\":{},\"optimizer_steps\":{},",
                 "\"total_optimizer_step\":{},\"updates\":{},\"movement_l1\":{}}},",
@@ -244,13 +264,20 @@ impl ProductionMarginTrainTrace {
                 "\"next_epoch\":{},\"next_window\":{},\"schedule_complete\":{}}},",
                 "\"transaction\":{{\"saturation_policy\":\"reject_batch_stop\",",
                 "\"rejected_batch_start_window\":{}}},",
+                "\"descent_guard\":{{\"policy\":\"reject_worsening_batch_consume_cursor\",",
+                "\"windows\":{},\"window_rank_hash\":\"0x{:016x}\",",
+                "\"batches_evaluated\":{},\"batches_accepted\":{},\"batches_rejected\":{},",
+                "\"initial_nll_millibits\":{},\"final_nll_millibits\":{},",
+                "\"initial_evaluation\":{},\"final_evaluation\":{}}},",
                 "\"health\":{{\"weight_saturation_count\":{}}},",
                 "\"hashes\":{{\"initial_model\":\"0x{:016x}\",\"final_model\":\"0x{:016x}\",",
                 "\"optimizer_state\":\"0x{:016x}\",",
                 "\"initial_frozen_parameters\":\"0x{:016x}\",\"final_frozen_parameters\":\"0x{:016x}\",",
                 "\"initial_output_bias\":\"0x{:016x}\",\"final_output_bias\":\"0x{:016x}\"}},",
                 "\"gates\":{{\"frozen_parameters_unchanged\":{},\"output_bias_unchanged\":{},",
-                "\"zero_weight_saturation\":{},\"resumable_optimizer_state\":true}},",
+                "\"zero_weight_saturation\":{},\"descent_guard_nonworsening\":{},",
+                "\"descent_guard_disjoint_from_window_schedule\":true,",
+                "\"resumable_optimizer_state\":true}},",
                 "\"known_non_claims\":[\"bounded_output_matrix_pilot_not_scaling_run\",",
                 "\"training_surface_metrics_not_held_out_quality\",\"not_open_generation_quality\"]}}\n"
             ),
@@ -261,6 +288,9 @@ impl ProductionMarginTrainTrace {
             self.context_tokens,
             self.windows,
             self.evaluation_windows,
+            self.window_schedule_windows,
+            self.window_schedule_rank_hash,
+            self.training_window_rank_hash,
             self.targets_per_window,
             self.epochs,
             self.feature_shift,
@@ -279,6 +309,15 @@ impl ProductionMarginTrainTrace {
             self.schedule_complete,
             self.rejected_batch_start_window
                 .map_or_else(|| "null".to_string(), |value| value.to_string()),
+            self.descent_guard_windows,
+            self.descent_guard_window_rank_hash,
+            self.descent_guard_batches_evaluated,
+            self.descent_guard_batches_accepted,
+            self.descent_guard_batches_rejected,
+            self.descent_guard_initial_nll_millibits,
+            self.descent_guard_final_nll_millibits,
+            self.descent_guard_initial_evaluation.to_json(),
+            self.descent_guard_final_evaluation.to_json(),
             self.weight_saturation_count,
             self.initial_model_hash,
             self.final_model_hash,
@@ -290,6 +329,8 @@ impl ProductionMarginTrainTrace {
             self.initial_frozen_parameter_hash == self.final_frozen_parameter_hash,
             self.initial_output_bias_hash == self.final_output_bias_hash,
             self.weight_saturation_count == 0,
+            self.descent_guard_final_nll_millibits
+                <= self.descent_guard_initial_nll_millibits,
         )
         .expect("writing JSON to String cannot fail");
         if self.spread_windows {
@@ -330,12 +371,39 @@ pub fn train_production_target_margin(
 ) -> Result<(ProductionMarginTrainTrace, ProductionMarginOptimizerStateV1), TrainError> {
     model.validate()?;
     validate_config(model, tokens, config)?;
-    let windows = if config.spread_windows {
-        spread_document_windows(tokens, config.context_tokens, config.max_windows)
+    let requested_schedule_windows = if config.window_schedule_windows == 0 {
+        config.max_windows
     } else {
-        document_windows(tokens, config.context_tokens, config.max_windows)
+        config.window_schedule_windows
     };
+    let scheduled_windows = if config.spread_windows {
+        spread_document_windows(tokens, config.context_tokens, requested_schedule_windows)
+    } else {
+        document_windows(tokens, config.context_tokens, requested_schedule_windows)
+    };
+    let window_schedule_windows = scheduled_windows.len();
+    let windows = scheduled_windows[..config.max_windows.min(scheduled_windows.len())].to_vec();
     if windows.is_empty() {
+        return Err(TrainError::InvalidConfig);
+    }
+    let total_windows = super::training::document_window_count(tokens, config.context_tokens);
+    let window_schedule_ranks = super::training::update_window_ranks(
+        total_windows,
+        window_schedule_windows,
+        config.spread_windows,
+    );
+    let training_window_ranks = window_schedule_ranks[..windows.len()].to_vec();
+    let descent_guard_ranks = super::training::descent_guard_window_ranks(
+        total_windows,
+        &window_schedule_ranks,
+        config.descent_guard_windows,
+    )?;
+    let descent_guard_windows = super::training::document_windows_at_ranks(
+        tokens,
+        config.context_tokens,
+        &descent_guard_ranks,
+    );
+    if descent_guard_windows.len() != config.descent_guard_windows {
         return Err(TrainError::InvalidConfig);
     }
 
@@ -347,6 +415,13 @@ pub fn train_production_target_margin(
     let evaluation_targets = evaluation_windows * config.targets_per_window;
     let initial_evaluation =
         summarize_decisions(&source_decisions[..evaluation_targets], config.margin_q8);
+    let descent_guard_targets =
+        cache_final_targets(model, &descent_guard_windows, config.training_workers)?;
+    let (mut descent_guard_current_nll_millibits, descent_guard_source_decisions) =
+        evaluate_guard(model, &descent_guard_targets)?;
+    let descent_guard_initial_nll_millibits = descent_guard_current_nll_millibits;
+    let descent_guard_initial_evaluation =
+        summarize_decisions(&descent_guard_source_decisions, config.margin_q8);
 
     let mut state = state
         .unwrap_or_else(|| ProductionMarginOptimizerStateV1::new(model, token_stream_hash, config));
@@ -367,6 +442,9 @@ pub fn train_production_target_margin(
     let mut movement_l1 = 0_u64;
     let mut weight_saturation_count = 0_usize;
     let mut rejected_batch_start_window = None;
+    let mut descent_guard_batches_evaluated = 0_usize;
+    let mut descent_guard_batches_accepted = 0_usize;
+    let mut descent_guard_batches_rejected = 0_usize;
 
     while state.next_epoch < config.epochs as u64 && optimizer_steps < config.max_optimizer_steps {
         let batch_start = state.next_window as usize;
@@ -420,8 +498,26 @@ pub fn train_production_target_margin(
             break;
         }
 
-        updates = updates.saturating_add(batch_updates);
-        movement_l1 = movement_l1.saturating_add(batch_movement);
+        let guard_accepted = if descent_guard_targets.is_empty() {
+            true
+        } else {
+            descent_guard_batches_evaluated = descent_guard_batches_evaluated.saturating_add(1);
+            let (candidate_nll_millibits, _) = evaluate_guard(model, &descent_guard_targets)?;
+            if candidate_nll_millibits <= descent_guard_current_nll_millibits {
+                descent_guard_current_nll_millibits = candidate_nll_millibits;
+                descent_guard_batches_accepted = descent_guard_batches_accepted.saturating_add(1);
+                true
+            } else {
+                model.output_weights = output_before;
+                descent_guard_batches_rejected = descent_guard_batches_rejected.saturating_add(1);
+                false
+            }
+        };
+
+        if guard_accepted {
+            updates = updates.saturating_add(batch_updates);
+            movement_l1 = movement_l1.saturating_add(batch_movement);
+        }
         optimizer_steps = optimizer_steps.saturating_add(1);
         state.step = state.step.checked_add(1).ok_or(TrainError::InvalidConfig)?;
         state.next_window = batch_end as u64;
@@ -441,6 +537,10 @@ pub fn train_production_target_margin(
         config.training_workers,
     )?;
     let final_evaluation = summarize_decisions(&final_decisions, config.margin_q8);
+    let (descent_guard_final_nll_millibits, descent_guard_final_decisions) =
+        evaluate_guard(model, &descent_guard_targets)?;
+    let descent_guard_final_evaluation =
+        summarize_decisions(&descent_guard_final_decisions, config.margin_q8);
     let final_model_hash = model.model_hash();
     let final_frozen_parameter_hash = frozen_parameter_hash(model);
     let final_output_bias_hash = i32_slice_hash(&model.output_bias_q8);
@@ -452,6 +552,9 @@ pub fn train_production_target_margin(
         token_stream_hash,
         context_tokens: config.context_tokens,
         windows: windows.len(),
+        window_schedule_windows,
+        window_schedule_rank_hash: super::training::window_rank_hash(&window_schedule_ranks),
+        training_window_rank_hash: super::training::window_rank_hash(&training_window_ranks),
         evaluation_windows,
         targets_per_window: config.targets_per_window,
         training_workers: config.training_workers,
@@ -465,6 +568,15 @@ pub fn train_production_target_margin(
         movement_l1,
         weight_saturation_count,
         rejected_batch_start_window,
+        descent_guard_windows: descent_guard_windows.len(),
+        descent_guard_window_rank_hash: super::training::window_rank_hash(&descent_guard_ranks),
+        descent_guard_batches_evaluated,
+        descent_guard_batches_accepted,
+        descent_guard_batches_rejected,
+        descent_guard_initial_nll_millibits,
+        descent_guard_final_nll_millibits,
+        descent_guard_initial_evaluation,
+        descent_guard_final_evaluation,
         start_epoch,
         start_window,
         next_epoch: state.next_epoch,
@@ -492,6 +604,8 @@ fn validate_config(
     if config.context_tokens == 0
         || config.context_tokens > model.config.context_tokens
         || config.max_windows == 0
+        || (config.window_schedule_windows != 0
+            && config.window_schedule_windows < config.max_windows)
         || config.targets_per_window == 0
         || config.targets_per_window > config.context_tokens
         || config.training_workers == 0
@@ -545,6 +659,50 @@ fn cache_targets(
         }
     }
     Ok((cached, decisions))
+}
+
+fn cache_final_targets(
+    model: &ProductionModelV1,
+    windows: &[(Vec<u32>, u32)],
+    workers: usize,
+) -> Result<Vec<FrozenTarget>, TrainError> {
+    windows
+        .iter()
+        .map(|(context, target)| {
+            let (features, _) = super::training::frozen_target_rows(model, context, 1, workers)?;
+            Ok(FrozenTarget {
+                features,
+                target: *target as usize,
+            })
+        })
+        .collect()
+}
+
+fn evaluate_guard(
+    model: &ProductionModelV1,
+    targets: &[FrozenTarget],
+) -> Result<(u64, Vec<TargetDecision>), TrainError> {
+    let mut total_nll_millibits = 0_u64;
+    let mut decisions = Vec::with_capacity(targets.len());
+    for row in targets {
+        let logits = output_logits(model, &row.features)?;
+        let nll_millibits = base2_softmax_nll_millibits(
+            &logits,
+            row.target,
+            DEFAULT_ZERO_PROBABILITY_NLL_MILLIBITS,
+        )
+        .ok_or(TrainError::CoreRejected(
+            "production_margin_descent_guard_nll",
+        ))?;
+        total_nll_millibits =
+            total_nll_millibits
+                .checked_add(nll_millibits)
+                .ok_or(TrainError::CoreRejected(
+                    "production_margin_descent_guard_nll_overflow",
+                ))?;
+        decisions.push(decision_from_logits(&logits, row.target));
+    }
+    Ok((total_nll_millibits, decisions))
 }
 
 fn evaluate_targets(
@@ -663,6 +821,11 @@ fn margin_schedule_hash(config: ProductionMarginTrainConfig) -> u64 {
     }
     bytes.extend_from_slice(&[u8::from(config.spread_windows), config.feature_shift]);
     bytes.extend_from_slice(&config.margin_q8.to_le_bytes());
+    if config.window_schedule_windows != 0 || config.descent_guard_windows != 0 {
+        bytes.extend_from_slice(b"margin-trust-region-v1");
+        bytes.extend_from_slice(&(config.window_schedule_windows as u64).to_le_bytes());
+        bytes.extend_from_slice(&(config.descent_guard_windows as u64).to_le_bytes());
+    }
     fnv1a(&bytes)
 }
 
@@ -769,6 +932,13 @@ mod tests {
         ]
     }
 
+    fn long_tokens() -> Vec<u32> {
+        let mut tokens = vec![BOS_TOKEN_ID];
+        tokens.extend((0..48).map(|index| 300 + index % 20));
+        tokens.push(EOS_TOKEN_ID);
+        tokens
+    }
+
     fn config() -> ProductionMarginTrainConfig {
         ProductionMarginTrainConfig {
             context_tokens: 4,
@@ -848,6 +1018,97 @@ mod tests {
             Some(midpoint_state),
         )
         .expect("resume");
+        assert_eq!(midpoint, uninterrupted);
+        assert_eq!(resumed_state, uninterrupted_state);
+    }
+
+    #[test]
+    fn short_and_full_runs_share_one_bound_schedule_and_disjoint_guard() {
+        let tokens = long_tokens();
+        let total = super::super::training::document_window_count(&tokens, 4);
+        let schedule = super::super::training::update_window_ranks(total, 24, true);
+        let short_schedule = super::super::training::update_window_ranks(total, 24, true);
+        let guard = super::super::training::descent_guard_window_ranks(total, &schedule, 8)
+            .expect("guard ranks");
+        assert_eq!(short_schedule, schedule);
+        assert_eq!(&short_schedule[..6], &schedule[..6]);
+        assert!(
+            guard
+                .iter()
+                .all(|rank| schedule.binary_search(rank).is_err())
+        );
+
+        let mut model = tiny_model();
+        let guarded = ProductionMarginTrainConfig {
+            context_tokens: 4,
+            max_windows: 6,
+            window_schedule_windows: 24,
+            spread_windows: true,
+            targets_per_window: 1,
+            training_workers: 2,
+            epochs: 1,
+            feature_shift: 13,
+            margin_q8: 8,
+            batch_windows: 1,
+            max_optimizer_steps: usize::MAX,
+            evaluation_windows: 6,
+            descent_guard_windows: 8,
+        };
+        let (trace, _) = train_production_target_margin(&mut model, &tokens, 0x9876, guarded, None)
+            .expect("guarded train");
+        assert_eq!(trace.windows, 6);
+        assert_eq!(trace.window_schedule_windows, 24);
+        assert_eq!(trace.descent_guard_windows, 8);
+        assert_eq!(
+            trace.descent_guard_batches_evaluated,
+            trace.descent_guard_batches_accepted + trace.descent_guard_batches_rejected
+        );
+        assert!(trace.descent_guard_batches_rejected > 0);
+        assert!(
+            trace.descent_guard_final_nll_millibits <= trace.descent_guard_initial_nll_millibits
+        );
+    }
+
+    #[test]
+    fn guarded_midpoint_restart_is_byte_exact() {
+        let tokens = long_tokens();
+        let guarded = ProductionMarginTrainConfig {
+            context_tokens: 4,
+            max_windows: 12,
+            window_schedule_windows: 24,
+            spread_windows: true,
+            targets_per_window: 2,
+            training_workers: 2,
+            epochs: 2,
+            feature_shift: 13,
+            margin_q8: 8,
+            batch_windows: 2,
+            max_optimizer_steps: usize::MAX,
+            evaluation_windows: 12,
+            descent_guard_windows: 8,
+        };
+        let mut uninterrupted = tiny_model();
+        let source = uninterrupted.clone();
+        let (_, uninterrupted_state) =
+            train_production_target_margin(&mut uninterrupted, &tokens, 0x9876, guarded, None)
+                .expect("uninterrupted guarded train");
+
+        let mut midpoint = source;
+        let partial = ProductionMarginTrainConfig {
+            max_optimizer_steps: 5,
+            ..guarded
+        };
+        let (_, midpoint_state) =
+            train_production_target_margin(&mut midpoint, &tokens, 0x9876, partial, None)
+                .expect("guarded midpoint");
+        let (_, resumed_state) = train_production_target_margin(
+            &mut midpoint,
+            &tokens,
+            0x9876,
+            guarded,
+            Some(midpoint_state),
+        )
+        .expect("guarded resume");
         assert_eq!(midpoint, uninterrupted);
         assert_eq!(resumed_state, uninterrupted_state);
     }
