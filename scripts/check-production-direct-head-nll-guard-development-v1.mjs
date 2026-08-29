@@ -48,7 +48,8 @@ assert(train.objective === contract.implementation.objective
   && train.training.probability_gradient_fractional_bits
     === expected.probability_gradient_fractional_bits
   && train.training.probability_normalization === expected.probability_normalization
-  && train.training.sample_seed === expected.sample_seed,
+  && train.training.sample_seed === expected.sample_seed
+  && train.window_selection === expected.window_selection,
 "direct-head training geometry is invalid");
 assert(train.bindings.tokenizer_hash === contract.bindings.tokenizer_hash
   && train.bindings.token_stream_hash === contract.bindings.train_token_stream_hash
@@ -75,7 +76,23 @@ const roundSaturation = train.rounds.reduce(
   (sum, round) => sum + round.weight_saturation_count, 0);
 const guardRegressionQ20 = Math.max(0,
   train.quality.final_dev_nll_q20 - train.quality.initial_dev_nll_q20);
+const trainingDocuments = uniqueDocuments(train.window_bindings.train);
+const guardDocuments = uniqueDocuments(train.window_bindings.dev);
+const rejectedCandidates = train.rounds
+  .filter((round) => round.dev_guard_rejected)
+  .map((round) => ({
+    round: round.round,
+    output_weight_coordinate: round.output_weight_coordinate,
+    output_bias_coordinate: round.output_bias_coordinate,
+    train_nll_improvement_q20: round.best_delta_train_nll_q20,
+    guard_nll_improvement_q20: round.best_delta_dev_nll_q20,
+    applied_delta: round.applied_delta,
+  }));
 const measurements = {
+  training_documents: trainingDocuments,
+  guard_documents: guardDocuments,
+  training_guard_document_overlap:
+    trainingDocuments.filter((document) => guardDocuments.includes(document)),
   training_initial_nll_q20: train.quality.initial_train_nll_q20,
   training_final_nll_q20: train.quality.final_train_nll_q20,
   training_nll_improvement_q20:
@@ -110,6 +127,7 @@ const measurements = {
     sourceRollout.teacher_forced.mean_target_probability_q15,
   candidate_development_teacher_forced_mean_target_probability_q15:
     candidateRollout.teacher_forced.mean_target_probability_q15,
+  rejected_candidates: rejectedCandidates,
 };
 const expectedGates = contract.development_gates;
 const gates = {
@@ -200,6 +218,10 @@ if (!passed) process.exitCode = 1;
 
 function improvementPerMille(source, candidate) {
   return Math.floor((source - candidate) * 1000 / Math.max(1, source));
+}
+
+function uniqueDocuments(bindings) {
+  return [...new Set(bindings.map((binding) => binding.document))].sort((a, b) => a - b);
 }
 
 function binding(file, bytes) {

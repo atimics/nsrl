@@ -1265,21 +1265,26 @@ hidden-panel data. Paid p20m/p30m scaling remains unauthorized. Frozen evidence
 is in
 `benchmarks/production-model-v1/p10m-target-margin-trust-region-v1-preflight.json`.
 
-The next experiment is prospectively frozen as
-`p10m_direct_head_nll_guard_v1`. It returns to the canonical objective instead
-of changing the hard-negative hinge rule again. The healthy v9 trunk stays
-frozen. Each round ranks output-head coordinates with the existing gradient,
-chooses a unit move on a small probe, verifies strict NLL descent on all 64
-proposal windows, and then requires non-worsening NLL on 32 fixed
-training-corpus windows selected from different documents when possible. A
-guard rejection restores the source atomically and stops the eight-round run.
+The prospective `p10m_direct_head_nll_guard_v1` follow-up is complete and also
+stopped before public test. It returned to canonical NLL while freezing the
+healthy v9 trunk. The 64 proposal windows came from document 0 and the 32 guard
+windows from document 1. Both complete runs reproduced model and trace bytes
+exactly, retained the frozen-trunk hash `0x847bca28ae53d52e`, and had zero weight
+saturation.
 
-The complete run is repeated from the source and must reproduce both model and
-trace bytes. At least one exact descent step, strict proposal NLL improvement,
-an unchanged frozen-trunk hash, zero weight saturation, a non-worsening
-training guard, and non-worsening public development NLL, target rank, top-1,
-target probability, and residual saturation are required before public test is
-opened. Public test then applies the same non-worsening quality rule before
-open-generation checks. Hidden data, p20m/p30m execution, and paid scaling stay
-closed. The frozen contract is
-`benchmarks/production-model-v1/p10m-direct-head-nll-guard-v1-contract.json`.
+All eight ranked coordinates descended on the proposal probe. The selected
+output-weight coordinate 8,445 also improved exact full-proposal NLL by 57,212
+Q20 units, but worsened exact guard NLL by 586 Q20 units. The guard rejected it
+atomically in round zero, so the final model remained the source model
+`0xd2b9c7b907595967` with zero descent steps. Public development was therefore
+unchanged at 6,526,624 total NLL millibits, mean target rank 2,066, five top-1
+matches, mean target probability 5 Q15, and zero canonical-evaluation residual
+saturation. The required movement and strict training-NLL gates failed.
+
+This is evidence against accepting the single proposal-selected coordinate,
+not evidence that all eight ranked coordinates conflict with the guard. A
+fresh follow-up would need to evaluate every ranked coordinate on both exact
+surfaces and select the best safe coordinate with the source retained as an
+explicit candidate. Public test, open generation, hidden data, p20m/p30m
+execution, and paid scaling were not opened. Frozen evidence is in
+`benchmarks/production-model-v1/p10m-direct-head-nll-guard-v1-development-gate.json`.
