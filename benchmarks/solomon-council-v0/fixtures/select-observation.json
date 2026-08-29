@@ -1,6 +1,6 @@
 {
   "schema": "nsrl.wisdom_outcome_observation.v0",
-  "receipt_id": "wisdom-b894a4cf42347b80dedfd208",
+  "receipt_id": "wisdom-0e07966304e4337e57154742",
   "observed_at": "2026-07-15T21:45:00Z",
   "observer": "nsrl-status-exact-replay",
   "metrics": [
