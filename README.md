@@ -260,6 +260,13 @@ cargo build --release -p nsrl-train \
 ./scripts/check.sh
 ```
 
+The default check works from a clean clone. To also replay the large local
+production optimizer artifacts, run:
+
+```bash
+NSRL_CHECK_LOCAL_PRODUCTION_ARTIFACTS=1 ./scripts/check.sh
+```
+
 ## Agentic Research Harness
 
 `scripts/research-harness.mjs` turns experiment proposals, frozen contracts,
