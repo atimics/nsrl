@@ -175,9 +175,9 @@ pre-action phase features required by MJ-12. Do not use documents `72--135` or
 - Result SHA-256:
   `7d7432057cfa2b86796abdcaf73604541699a9fed1a939a57ad94b42bf9ce7ca`
 - Harmonic result SHA-256:
-  `9141c8d95b352e3144f02f47f13c4b4e937ab68df294d28cf751152f1c70e26b`
+  `9be71c324e8567ad374f01df86db7d33e0205bd7d12821670d12f3acca199209`
 - Harmonic analyzer SHA-256:
-  `3f12e41656f8888804a467e69c6da795c3374fd90ebe3d349c9c6d1f819c2b98`
+  `6b678aacbb8f7ffe695c1046e32c874d0c868418119455720d727ac658d15f15`
 - Source FNV-1a: `0xc19b8402483e9d33`
 - Binary FNV-1a: `0xfa0351bca0c5631e`
 - Manifest FNV-1a: `0x2ce8888292aa6852`
