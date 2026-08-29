@@ -1,0 +1,117 @@
+{
+  "schema": "nsrl.production_direct_head_nll_guard_development_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-direct-head-nll-guard-v1-contract.json",
+    "bytes": 6623,
+    "sha256": "592ee07674b8d932f7f06319c1a365b5239fb1c5db98dc28ebb6b9d7daee9387"
+  },
+  "training": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-guard-v1/train.json",
+    "bytes": 10677,
+    "sha256": "9c7b263624dab74fd035375923c7b0dad779c9b14795ab772f35595d71af6634"
+  },
+  "replay_training": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-guard-v1/replay-train.json",
+    "bytes": 10677,
+    "sha256": "9c7b263624dab74fd035375923c7b0dad779c9b14795ab772f35595d71af6634"
+  },
+  "candidate": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-guard-v1/candidate.nsrlpm",
+    "bytes": 13539906,
+    "sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22"
+  },
+  "replay_candidate": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-guard-v1/replay-candidate.nsrlpm",
+    "bytes": 13539906,
+    "sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22"
+  },
+  "source_development": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-guard-v1/source-dev.json",
+    "bytes": 581,
+    "sha256": "b46ff6fc5135180ed085ebd582b7538c132bf7c0746e830fcf61f893116f2fe6"
+  },
+  "candidate_development": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-guard-v1/candidate-dev.json",
+    "bytes": 581,
+    "sha256": "b46ff6fc5135180ed085ebd582b7538c132bf7c0746e830fcf61f893116f2fe6"
+  },
+  "source_development_rollout": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-guard-v1/source-dev-rollout.json",
+    "bytes": 65892,
+    "sha256": "479f90ba4f63ee97f8d9bfd9c4c9022be84f006205a36e0728af291cc82fc870"
+  },
+  "candidate_development_rollout": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-guard-v1/candidate-dev-rollout.json",
+    "bytes": 65892,
+    "sha256": "479f90ba4f63ee97f8d9bfd9c4c9022be84f006205a36e0728af291cc82fc870"
+  },
+  "candidate_model_hash": "0xd2b9c7b907595967",
+  "measurements": {
+    "training_documents": [
+      0
+    ],
+    "guard_documents": [
+      1
+    ],
+    "training_guard_document_overlap": [],
+    "training_initial_nll_q20": 833298369,
+    "training_final_nll_q20": 833298369,
+    "training_nll_improvement_q20": 0,
+    "guard_initial_nll_q20": 428748538,
+    "guard_final_nll_q20": 428748538,
+    "guard_nll_regression_q20": 0,
+    "guard_initial_mistakes": 32,
+    "guard_final_mistakes": 32,
+    "rounds": 1,
+    "descent_steps": 0,
+    "candidates_evaluated": 8,
+    "guard_rejections": 1,
+    "round_weight_saturation_count": 0,
+    "development_source_total_nll_millibits": 6526624,
+    "development_candidate_total_nll_millibits": 6526624,
+    "development_nll_delta_millibits": 0,
+    "development_nll_regression_per_mille": 0,
+    "source_development_residual_saturation_count": 0,
+    "candidate_development_residual_saturation_count": 0,
+    "source_development_teacher_forced_top1_matches": 5,
+    "candidate_development_teacher_forced_top1_matches": 5,
+    "source_development_teacher_forced_mean_target_rank": 2066,
+    "candidate_development_teacher_forced_mean_target_rank": 2066,
+    "development_teacher_forced_rank_improvement_per_mille": 0,
+    "source_development_teacher_forced_mean_target_probability_q15": 5,
+    "candidate_development_teacher_forced_mean_target_probability_q15": 5,
+    "rejected_candidates": [
+      {
+        "round": 0,
+        "output_weight_coordinate": 8445,
+        "output_bias_coordinate": null,
+        "train_nll_improvement_q20": 57212,
+        "guard_nll_improvement_q20": -586,
+        "applied_delta": 0
+      }
+    ]
+  },
+  "gates": {
+    "candidate_model_exact_rerun_replay": true,
+    "training_trace_exact_rerun_replay": true,
+    "source_model_was_a_candidate": true,
+    "model_movement_required": false,
+    "descent_steps_minimum": false,
+    "training_nll_strictly_improves": false,
+    "guard_nll_regression_q20_maximum": true,
+    "guard_mistakes_must_not_increase": true,
+    "frozen_parameters_unchanged": true,
+    "every_applied_round_is_guard_safe": true,
+    "every_rejected_round_is_atomic": true,
+    "weight_saturation_maximum": true,
+    "development_nll_regression_per_mille_maximum": true,
+    "development_residual_saturation_must_not_increase": true,
+    "development_teacher_forced_mean_target_rank_improvement_per_mille_minimum": true,
+    "development_teacher_forced_top1_must_not_decrease": true,
+    "development_teacher_forced_mean_target_probability_must_not_decrease": true
+  },
+  "development_gate_passed": false,
+  "public_test_authorized": false,
+  "public_test_opened": false,
+  "hidden_panel_opened": false
+}
