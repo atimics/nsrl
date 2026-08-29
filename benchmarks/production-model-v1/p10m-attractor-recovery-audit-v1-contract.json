@@ -1,0 +1,85 @@
+{
+  "schema": "nsrl.production_attractor_recovery_audit_contract.v1",
+  "experiment": "p10m-attractor-recovery-audit-v1",
+  "status": "authorized_unexecuted",
+  "source_commit": "94515eabc301e759226095a14fada7020d1c5dd8",
+  "models": {
+    "source": {
+      "role": "healthy_representation_v9_before_output_calibration",
+      "path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v9-health-scale/chunk-3/model.nsrlpm",
+      "sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22",
+      "bytes": 13539906,
+      "model_hash": "0xd2b9c7b907595967"
+    },
+    "candidate": {
+      "role": "output_calibration_v10",
+      "path": "data/experiments/production-model-v1/p10m-causal-tail-output-calibration-v10/candidate.nsrlpm",
+      "sha256": "d1e323aa94170b3d0d049c1c70be2d5bebdd1cc7f57e5fc549da13ecdbb5f1be",
+      "bytes": 13539906,
+      "model_hash": "0x011da7a107200d14"
+    }
+  },
+  "public_inputs": {
+    "tokenizer": {
+      "path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+      "sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+      "bytes": 63496
+    },
+    "development_tokens": {
+      "path": "data/processed/production-corpus-v1/dev.nsrltok",
+      "sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+      "bytes": 660608
+    },
+    "development_manifest": {
+      "path": "benchmarks/open-generation-v1/manifest.tsv",
+      "sha256": "74f176202c7483ddfa7330325cf34833358e5ef8393ebdd8bb3fa0444f0fd948",
+      "bytes": 658
+    }
+  },
+  "implementation": {
+    "audit_source": {
+      "path": "crates/nsrl-train/src/bin/nsrl-production-attractor-recovery-audit.rs",
+      "sha256": "abab0a9133bff2460a82162f56804b40dce74d27419f9e1d5128a61f8e4b0d4b",
+      "bytes": 24926
+    },
+    "runner": {
+      "path": "scripts/run-production-attractor-recovery-audit-v1.sh",
+      "sha256": "64d2340ddd54ce2ee682c97302156c2116812b9cd8f49ea2835f733347021475",
+      "bytes": 2058
+    }
+  },
+  "surface": {
+    "development_prompts": 12,
+    "spread_development_windows": 8,
+    "context_tokens": 64,
+    "rollout_tokens": 16,
+    "hidden_panel_opened": false
+  },
+  "questions": [
+    "does the incremental decoder exactly match full recomputation on the real v9 and v10 prompt endpoints",
+    "does output-only v10 calibration leave the prompt features byte-identical to v9",
+    "are the public prompt winners immediate and isolated one-token fixed points",
+    "does reversing the prefix while holding the final token fixed change features logits or argmax",
+    "does masking only the immediately previous token reveal useful free-running continuation behavior"
+  ],
+  "training_candidate_gate": {
+    "candidate_cache_mismatches_maximum": 0,
+    "cross_model_prompt_feature_mismatches_maximum": 0,
+    "loop_masked_reference_match_per_mille_minimum": 50,
+    "loop_masked_minimum_unique_tokens_per_window": 8,
+    "loop_masked_two_cycle_per_mille_maximum": 250,
+    "loop_masked_residual_saturation_maximum": 0,
+    "all_conditions_required": true
+  },
+  "decision_rule": {
+    "pass": "authorize one bounded anti-attractor training candidate with a separately frozen schedule",
+    "fail": "do not train; retain v10 as a failure baseline and redirect the next architecture experiment toward representation or sequence-order capacity"
+  },
+  "known_non_claims": [
+    "this is a read-only public-development diagnostic",
+    "loop masking is a causal probe and not a proposed production decoder",
+    "a passing diagnostic does not promote either checkpoint",
+    "the hidden panel remains unopened",
+    "no training run is authorized by this contract alone"
+  ]
+}
