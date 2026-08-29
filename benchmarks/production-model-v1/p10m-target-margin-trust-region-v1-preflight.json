@@ -1,0 +1,169 @@
+{
+  "schema": "nsrl.production_target_margin_trust_region_preflight_selection.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-target-margin-trust-region-v1-contract.json",
+    "bytes": 8029,
+    "sha256": "e2dd108669787c077ab3da8085e3dfd011f250bd4abd586201b0f86183265be7"
+  },
+  "candidates": [
+    {
+      "feature_shift": 13,
+      "trace": {
+        "path": "data/experiments/production-model-v1/p10m-target-margin-trust-region-v1/preflight-shift-13/train.json",
+        "bytes": 2759,
+        "sha256": "3b61918b784d5bc6cef3e1e08c8883ca920473deb3c36694119a581e485b14c3"
+      },
+      "window_schedule_rank_hash": "0xcb4d44618dbd7ff8",
+      "descent_guard_window_rank_hash": "0xcd4717322d25781f",
+      "guard_initial_nll_millibits": 407206,
+      "guard_final_nll_millibits": 407206,
+      "guard_initial_evaluation": {
+        "supervised_targets": 32,
+        "mistakes": 32,
+        "top1_hits": 0,
+        "top5_hits": 1,
+        "top10_hits": 1,
+        "margin_satisfied": 0,
+        "mean_target_rank_x1000": 2289312,
+        "mean_target_margin_q8": -607,
+        "minimum_target_margin_q8": -898
+      },
+      "guard_final_evaluation": {
+        "supervised_targets": 32,
+        "mistakes": 32,
+        "top1_hits": 0,
+        "top5_hits": 1,
+        "top10_hits": 1,
+        "margin_satisfied": 0,
+        "mean_target_rank_x1000": 2289312,
+        "mean_target_margin_q8": -607,
+        "minimum_target_margin_q8": -898
+      },
+      "gates": {
+        "schedule_complete": true,
+        "output_matrix_movement_minimum": false,
+        "accepted_guard_batches_minimum": false,
+        "frozen_parameters_unchanged": true,
+        "output_bias_unchanged": true,
+        "weight_saturation_maximum": true,
+        "guard_nonworsening_invariant": true,
+        "guard_disjoint_from_window_schedule": true,
+        "guard_nll_strictly_improves": false,
+        "guard_mean_target_rank_must_not_worsen": true,
+        "guard_top10_hits_must_not_decrease": true
+      },
+      "passed": false
+    },
+    {
+      "feature_shift": 14,
+      "trace": {
+        "path": "data/experiments/production-model-v1/p10m-target-margin-trust-region-v1/preflight-shift-14/train.json",
+        "bytes": 2759,
+        "sha256": "ce8f60663b9263f3780fbd5787c1f5ad286712859d65ba964d4a15b57f36dc84"
+      },
+      "window_schedule_rank_hash": "0xcb4d44618dbd7ff8",
+      "descent_guard_window_rank_hash": "0xcd4717322d25781f",
+      "guard_initial_nll_millibits": 407206,
+      "guard_final_nll_millibits": 407206,
+      "guard_initial_evaluation": {
+        "supervised_targets": 32,
+        "mistakes": 32,
+        "top1_hits": 0,
+        "top5_hits": 1,
+        "top10_hits": 1,
+        "margin_satisfied": 0,
+        "mean_target_rank_x1000": 2289312,
+        "mean_target_margin_q8": -607,
+        "minimum_target_margin_q8": -898
+      },
+      "guard_final_evaluation": {
+        "supervised_targets": 32,
+        "mistakes": 32,
+        "top1_hits": 0,
+        "top5_hits": 1,
+        "top10_hits": 1,
+        "margin_satisfied": 0,
+        "mean_target_rank_x1000": 2289312,
+        "mean_target_margin_q8": -607,
+        "minimum_target_margin_q8": -898
+      },
+      "gates": {
+        "schedule_complete": true,
+        "output_matrix_movement_minimum": false,
+        "accepted_guard_batches_minimum": false,
+        "frozen_parameters_unchanged": true,
+        "output_bias_unchanged": true,
+        "weight_saturation_maximum": true,
+        "guard_nonworsening_invariant": true,
+        "guard_disjoint_from_window_schedule": true,
+        "guard_nll_strictly_improves": false,
+        "guard_mean_target_rank_must_not_worsen": true,
+        "guard_top10_hits_must_not_decrease": true
+      },
+      "passed": false
+    },
+    {
+      "feature_shift": 15,
+      "trace": {
+        "path": "data/experiments/production-model-v1/p10m-target-margin-trust-region-v1/preflight-shift-15/train.json",
+        "bytes": 2759,
+        "sha256": "7d69404f5c90172fc21649d7e049b98f236f2c6d73965de9e6209b641fc3d5ee"
+      },
+      "window_schedule_rank_hash": "0xcb4d44618dbd7ff8",
+      "descent_guard_window_rank_hash": "0xcd4717322d25781f",
+      "guard_initial_nll_millibits": 407206,
+      "guard_final_nll_millibits": 407206,
+      "guard_initial_evaluation": {
+        "supervised_targets": 32,
+        "mistakes": 32,
+        "top1_hits": 0,
+        "top5_hits": 1,
+        "top10_hits": 1,
+        "margin_satisfied": 0,
+        "mean_target_rank_x1000": 2289312,
+        "mean_target_margin_q8": -607,
+        "minimum_target_margin_q8": -898
+      },
+      "guard_final_evaluation": {
+        "supervised_targets": 32,
+        "mistakes": 32,
+        "top1_hits": 0,
+        "top5_hits": 1,
+        "top10_hits": 1,
+        "margin_satisfied": 0,
+        "mean_target_rank_x1000": 2289312,
+        "mean_target_margin_q8": -607,
+        "minimum_target_margin_q8": -898
+      },
+      "gates": {
+        "schedule_complete": true,
+        "output_matrix_movement_minimum": false,
+        "accepted_guard_batches_minimum": false,
+        "frozen_parameters_unchanged": true,
+        "output_bias_unchanged": true,
+        "weight_saturation_maximum": true,
+        "guard_nonworsening_invariant": true,
+        "guard_disjoint_from_window_schedule": true,
+        "guard_nll_strictly_improves": false,
+        "guard_mean_target_rank_must_not_worsen": true,
+        "guard_top10_hits_must_not_decrease": true
+      },
+      "passed": false
+    }
+  ],
+  "selected_feature_shift": null,
+  "selected_window_schedule_rank_hash": null,
+  "selected_descent_guard_window_rank_hash": null,
+  "selected_guard_initial_nll_millibits": null,
+  "selected_guard_initial_evaluation": null,
+  "passing_feature_shifts": [],
+  "selection_order": [
+    "lowest_guard_final_nll",
+    "lowest_guard_final_mean_target_rank",
+    "highest_guard_final_top10_hits",
+    "highest_feature_shift"
+  ],
+  "preflight_passed": false,
+  "public_test_opened": false,
+  "hidden_panel_opened": false
+}
