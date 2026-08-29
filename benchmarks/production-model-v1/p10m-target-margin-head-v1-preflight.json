@@ -1,0 +1,147 @@
+{
+  "schema": "nsrl.production_target_margin_preflight_selection.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-target-margin-head-v1-contract.json",
+    "bytes": 6902,
+    "sha256": "d6b6059e8454fa5be59d29e37c1da3572495d9448e6ece821fb526f3cf902381"
+  },
+  "candidates": [
+    {
+      "feature_shift": 13,
+      "trace": {
+        "path": "data/experiments/production-model-v1/p10m-target-margin-head-v1/preflight-shift-13/train.json",
+        "bytes": 1875,
+        "sha256": "a521f7a6cfc9cc15c721d8abf4fb02b4bc2a2dd131a2e7b436abbf9da18ea741"
+      },
+      "initial": {
+        "supervised_targets": 512,
+        "mistakes": 509,
+        "top1_hits": 3,
+        "top5_hits": 11,
+        "top10_hits": 17,
+        "margin_satisfied": 2,
+        "mean_target_rank_x1000": 2190919,
+        "mean_target_margin_q8": -638,
+        "minimum_target_margin_q8": -900
+      },
+      "final": {
+        "supervised_targets": 512,
+        "mistakes": 508,
+        "top1_hits": 4,
+        "top5_hits": 53,
+        "top10_hits": 86,
+        "margin_satisfied": 4,
+        "mean_target_rank_x1000": 1087429,
+        "mean_target_margin_q8": -2752,
+        "minimum_target_margin_q8": -13352
+      },
+      "gates": {
+        "schedule_complete": true,
+        "output_matrix_movement_minimum": true,
+        "frozen_parameters_unchanged": true,
+        "output_bias_unchanged": true,
+        "weight_saturation_maximum": true,
+        "mean_target_rank_strictly_improves": true,
+        "mistakes_must_not_increase": true,
+        "margin_satisfied_strictly_increases": true
+      },
+      "passed": true
+    },
+    {
+      "feature_shift": 14,
+      "trace": {
+        "path": "data/experiments/production-model-v1/p10m-target-margin-head-v1/preflight-shift-14/train.json",
+        "bytes": 1873,
+        "sha256": "0cccd05a2a4ed346356e606e4c66d4cacc137060e1c2a7c6fe8ef434f6031c58"
+      },
+      "initial": {
+        "supervised_targets": 512,
+        "mistakes": 509,
+        "top1_hits": 3,
+        "top5_hits": 11,
+        "top10_hits": 17,
+        "margin_satisfied": 2,
+        "mean_target_rank_x1000": 2190919,
+        "mean_target_margin_q8": -638,
+        "minimum_target_margin_q8": -900
+      },
+      "final": {
+        "supervised_targets": 512,
+        "mistakes": 507,
+        "top1_hits": 5,
+        "top5_hits": 33,
+        "top10_hits": 70,
+        "margin_satisfied": 4,
+        "mean_target_rank_x1000": 895808,
+        "mean_target_margin_q8": -1343,
+        "minimum_target_margin_q8": -6497
+      },
+      "gates": {
+        "schedule_complete": true,
+        "output_matrix_movement_minimum": true,
+        "frozen_parameters_unchanged": true,
+        "output_bias_unchanged": true,
+        "weight_saturation_maximum": true,
+        "mean_target_rank_strictly_improves": true,
+        "mistakes_must_not_increase": true,
+        "margin_satisfied_strictly_increases": true
+      },
+      "passed": true
+    },
+    {
+      "feature_shift": 15,
+      "trace": {
+        "path": "data/experiments/production-model-v1/p10m-target-margin-head-v1/preflight-shift-15/train.json",
+        "bytes": 1872,
+        "sha256": "cd8664efd4ba62a1114d6eef59e710ee1b783e2f63d0233e4eab4a1dd01ea820"
+      },
+      "initial": {
+        "supervised_targets": 512,
+        "mistakes": 509,
+        "top1_hits": 3,
+        "top5_hits": 11,
+        "top10_hits": 17,
+        "margin_satisfied": 2,
+        "mean_target_rank_x1000": 2190919,
+        "mean_target_margin_q8": -638,
+        "minimum_target_margin_q8": -900
+      },
+      "final": {
+        "supervised_targets": 512,
+        "mistakes": 504,
+        "top1_hits": 8,
+        "top5_hits": 35,
+        "top10_hits": 50,
+        "margin_satisfied": 7,
+        "mean_target_rank_x1000": 911726,
+        "mean_target_margin_q8": -923,
+        "minimum_target_margin_q8": -4346
+      },
+      "gates": {
+        "schedule_complete": true,
+        "output_matrix_movement_minimum": true,
+        "frozen_parameters_unchanged": true,
+        "output_bias_unchanged": true,
+        "weight_saturation_maximum": true,
+        "mean_target_rank_strictly_improves": true,
+        "mistakes_must_not_increase": true,
+        "margin_satisfied_strictly_increases": true
+      },
+      "passed": true
+    }
+  ],
+  "selected_feature_shift": 14,
+  "passing_feature_shifts": [
+    14,
+    15,
+    13
+  ],
+  "selection_order": [
+    "lowest_final_mean_target_rank",
+    "lowest_final_mistakes",
+    "highest_final_margin_satisfied",
+    "highest_feature_shift"
+  ],
+  "preflight_passed": true,
+  "hidden_panel_opened": false
+}
