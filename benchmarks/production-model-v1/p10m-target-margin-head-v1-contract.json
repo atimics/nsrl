@@ -1,0 +1,164 @@
+{
+  "schema": "nsrl.production_target_margin_contract.v1",
+  "objective": "test_whether_direct_hard_negative_margin_updates_can_turn_the_healthy_v9_representation_into_rank_and_generation_improvements",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "support_commit": "5b379c574046371c465e577065a323c7e3191a7a",
+    "command": "nsrl-production-model target-margin-train",
+    "objective": "max_0_margin_q8_minus_target_logit_q8_minus_best_wrong_logit_q8",
+    "best_wrong_policy": "highest_logit_wrong_token_with_lowest_token_id_tie_break",
+    "parameter_scope": "output_matrix_only",
+    "frozen_parameter_groups": [
+      "embeddings", "attention_rms", "mlp_rms", "final_rms", "q", "k", "v", "o", "up", "gate", "down", "bias"
+    ],
+    "artifacts": [
+      {
+        "path": "crates/nsrl-train/src/production/margin_training.rs",
+        "sha256": "c3adc36663e2b5ad28e067443a713b423d03585c0885aae3aaf8980250253e1c"
+      },
+      {
+        "path": "crates/nsrl-train/src/production/training.rs",
+        "sha256": "6606a5615eb8dc52e3f93c3808f3326bc60a19a18588da347147a31a7747c616"
+      },
+      {
+        "path": "crates/nsrl-train/src/production.rs",
+        "sha256": "eb10ca54aa85b1dffbfc647cd5576b806c9606809bd57e92dbba1d3db59d9430"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-model.rs",
+        "sha256": "909a4fc30068d8a55899f5d78d9599511430e27dd4aee11f154969ee53d03b4f"
+      }
+    ]
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v9-health-scale/chunk-3/model.nsrlpm",
+    "model_hash": "0xd2b9c7b907595967",
+    "artifact_sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22",
+    "development_total_nll_millibits": 6526624,
+    "test_total_nll_millibits": 6526743,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 1969,
+    "free_running_self_loop_transition_per_mille": 1000,
+    "context_unique_greedy_tokens": 2,
+    "context_greedy_self_loops": 11
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "preflight": {
+    "feature_shifts": [13, 14, 15],
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 64,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "optimizer_steps": 16,
+    "margin_q8": 8,
+    "candidate_gates": {
+      "schedule_complete": true,
+      "output_matrix_movement_minimum": 1,
+      "frozen_parameters_unchanged": true,
+      "output_bias_unchanged": true,
+      "weight_saturation_maximum": 0,
+      "mean_target_rank_strictly_improves": true,
+      "mistakes_must_not_increase": true,
+      "margin_satisfied_strictly_increases": true
+    },
+    "selection_order": [
+      "lowest_final_mean_target_rank",
+      "lowest_final_mistakes",
+      "highest_final_margin_satisfied",
+      "highest_feature_shift"
+    ]
+  },
+  "training": {
+    "context_tokens": 64,
+    "targets_per_window": 8,
+    "target_policy": "causal_suffix_mean_v1",
+    "window_selection": "deterministic_uniform_target_rank_over_all_documents",
+    "training_workers": 8,
+    "windows": 2048,
+    "evaluation_windows": 64,
+    "epochs": 1,
+    "batch_windows": 4,
+    "midpoint_optimizer_steps": 256,
+    "optimizer_steps": 512,
+    "margin_q8": 8,
+    "feature_shift": "selected_by_the_frozen_preflight_rule",
+    "atomic_saturation_policy": "reject_batch_stop",
+    "exact_restart_replay": true
+  },
+  "development_gates": {
+    "schedule_complete": true,
+    "total_optimizer_steps": 512,
+    "output_matrix_movement_minimum": 1,
+    "frozen_parameters_unchanged": true,
+    "output_bias_unchanged": true,
+    "weight_saturation_maximum": 0,
+    "candidate_model_exact_restart_replay": true,
+    "optimizer_state_exact_restart_replay": true,
+    "training_mean_target_rank_improvement_per_mille_minimum": 100,
+    "training_mistakes_strictly_improve": true,
+    "training_top5_hits_strictly_improve": true,
+    "training_top10_hits_strictly_improve": true,
+    "training_margin_satisfied_strictly_improves": true,
+    "development_nll_regression_per_mille_maximum": 10,
+    "development_residual_saturation_must_not_increase": true
+  },
+  "confirmation_gates": {
+    "test_nll_regression_per_mille_maximum": 10,
+    "test_residual_saturation_must_not_increase": true,
+    "rollout_windows": 64,
+    "rollout_tokens": 16,
+    "teacher_forced_mean_target_rank_improvement_per_mille_minimum": 100,
+    "teacher_forced_top1_matches_minimum": 1,
+    "teacher_forced_mean_target_probability_must_not_decrease": true,
+    "free_running_self_loop_transition_per_mille_must_not_increase": true,
+    "context_unique_greedy_tokens_minimum": 4,
+    "context_greedy_self_loops_maximum": 10,
+    "rollout_context_and_manifest_residual_saturation_maximum": 0
+  },
+  "authorization": {
+    "local_cpu_preflight": true,
+    "local_cpu_full_pilot": true,
+    "public_development_and_test_evaluation": true,
+    "open_generation_rerun_only_after_all_public_gates": true,
+    "hidden_panel_access": false,
+    "paid_scaling": false,
+    "p20m_p30m_scaling": false
+  },
+  "research_basis": [
+    {
+      "claim": "penalizing likely negative continuations directly can reduce neural text degeneration",
+      "source": "https://arxiv.org/abs/1908.04319"
+    },
+    {
+      "claim": "large-margin objectives directly optimize separation between the target and competing labels",
+      "source": "https://proceedings.mlr.press/v9/bordes10a.html"
+    }
+  ],
+  "known_non_claims": [
+    "bounded_public_p10m_pilot_not_full_corpus_training",
+    "preflight_and_training_metrics_reuse_public_training_windows",
+    "public_test_has_prior_confirmatory_reads_for_earlier_candidates",
+    "output_matrix_only_updates_do_not_test_trunk_learning",
+    "success_does_not_establish_human_language_quality",
+    "complete_promotion_requires_baselines_human_review_and_an_untouched_hidden_panel",
+    "paid_scaling_remains_unauthorized"
+  ]
+}
