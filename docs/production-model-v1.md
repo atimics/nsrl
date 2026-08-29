@@ -1264,3 +1264,22 @@ The runner did not open development, public test, manifest/open-generation, or
 hidden-panel data. Paid p20m/p30m scaling remains unauthorized. Frozen evidence
 is in
 `benchmarks/production-model-v1/p10m-target-margin-trust-region-v1-preflight.json`.
+
+The next experiment is prospectively frozen as
+`p10m_direct_head_nll_guard_v1`. It returns to the canonical objective instead
+of changing the hard-negative hinge rule again. The healthy v9 trunk stays
+frozen. Each round ranks output-head coordinates with the existing gradient,
+chooses a unit move on a small probe, verifies strict NLL descent on all 64
+proposal windows, and then requires non-worsening NLL on 32 fixed
+training-corpus windows selected from different documents when possible. A
+guard rejection restores the source atomically and stops the eight-round run.
+
+The complete run is repeated from the source and must reproduce both model and
+trace bytes. At least one exact descent step, strict proposal NLL improvement,
+an unchanged frozen-trunk hash, zero weight saturation, a non-worsening
+training guard, and non-worsening public development NLL, target rank, top-1,
+target probability, and residual saturation are required before public test is
+opened. Public test then applies the same non-worsening quality rule before
+open-generation checks. Hidden data, p20m/p30m execution, and paid scaling stay
+closed. The frozen contract is
+`benchmarks/production-model-v1/p10m-direct-head-nll-guard-v1-contract.json`.
