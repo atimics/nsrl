@@ -1878,6 +1878,23 @@ fn forward_cache_for_target_rows(
     })
 }
 
+pub(super) fn frozen_target_rows(
+    model: &ProductionModelV1,
+    context_tokens: &[u32],
+    target_rows: usize,
+    training_workers: usize,
+) -> Result<(Vec<i16>, Vec<i32>), TrainError> {
+    let cache = forward_cache_for_target_rows(
+        model,
+        context_tokens,
+        target_rows,
+        training_workers,
+        15,
+        SoftmaxNormalization::LegacyQ31Lut,
+    )?;
+    Ok((cache.features, cache.logits))
+}
+
 fn output_gradient(
     cache: &ForwardCache,
     target: usize,

@@ -15,7 +15,8 @@ use nsrl_train::production::{
     ProductionBooleanJetMove, ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
     ProductionBooleanJetProtocolBindings, ProductionBooleanJetProtocolVersion,
     ProductionBooleanJetRankTwoConfig, ProductionFullTrainConfig, ProductionGenerationConfig,
-    ProductionGradientAlignmentConfig, ProductionModelConfig, ProductionModelV1,
+    ProductionGradientAlignmentConfig, ProductionMarginOptimizerStateV1,
+    ProductionMarginTrainConfig, ProductionModelConfig, ProductionModelV1,
     ProductionNumericContract, ProductionOptimizerStateV2, ProductionProjectionScales,
     ProductionSmokeConfig, ProductionTrainingNumericContract, audit_production_atomic_structure,
     audit_production_boolean_jet_confirmation, audit_production_boolean_jet_confirmation_v2,
@@ -28,7 +29,7 @@ use nsrl_train::production::{
     generate_production_model, production_boolean_jet_binary_fnv64,
     production_boolean_jet_source_fnv64, train_production_direct_feature,
     train_production_direct_head_search, train_production_full_smoke,
-    train_production_output_smoke,
+    train_production_output_smoke, train_production_target_margin,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -239,6 +240,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "inspect" => inspect(config),
         "numeric-contract" => numeric_contract(config),
         "smoke-train" => smoke_train(config),
+        "target-margin-train" => target_margin_train(config),
         "full-train-smoke" => full_train_smoke(config),
         "direct-head-train" => direct_head_train(config),
         "direct-feature-train" => direct_feature_train(config),
@@ -265,7 +267,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         _ => Err(
-            "expected init, inspect, numeric-contract, smoke-train, full-train-smoke, direct-head-train, direct-feature-train, generate, evaluate, evaluate-canonical, gradient-alignment-audit, boolean-jet-rank-two-audit, boolean-jet-audit, boolean-jet-freeze-matched-control, boolean-jet-confirmation-audit, boolean-jet-stability-confirmation-v2, boolean-jet-protocol-bindings, boolean-jet-atomic-structure-contract, boolean-jet-atomic-structure-audit, compare-evaluate, probability-resolution-audit, probability-normalization-audit, or probability-normalization-signal-attribution-audit"
+            "expected init, inspect, numeric-contract, smoke-train, target-margin-train, full-train-smoke, direct-head-train, direct-feature-train, generate, evaluate, evaluate-canonical, gradient-alignment-audit, boolean-jet-rank-two-audit, boolean-jet-audit, boolean-jet-freeze-matched-control, boolean-jet-confirmation-audit, boolean-jet-stability-confirmation-v2, boolean-jet-protocol-bindings, boolean-jet-atomic-structure-contract, boolean-jet-atomic-structure-audit, compare-evaluate, probability-resolution-audit, probability-normalization-audit, or probability-normalization-signal-attribution-audit"
                 .into(),
         ),
     }
@@ -1149,6 +1151,57 @@ fn full_train_smoke(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn target_margin_train(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    let training_config = ProductionMarginTrainConfig {
+        context_tokens: config.context_tokens,
+        max_windows: config.max_windows,
+        spread_windows: config.spread_windows,
+        targets_per_window: config.targets_per_window,
+        training_workers: config.training_workers,
+        epochs: config.epochs,
+        feature_shift: config.feature_shift,
+        margin_q8: config.margin_q8,
+        batch_windows: config.batch_windows,
+        max_optimizer_steps: config.max_optimizer_steps,
+        evaluation_windows: config.evaluation_windows,
+    };
+    let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
+    let tokens_path = required(config.tokens, "--tokens")?;
+    let model_path = required(config.model, "--model")?;
+    let model_out = required(config.model_out, "--model-out")?;
+    let optimizer_out = required(config.optimizer_state_out, "--optimizer-state-out")?;
+    let trace_path = required(config.trace, "--trace")?;
+    let tokenizer = SubwordTokenizer::from_bytes(&fs::read(tokenizer_path)?)?;
+    let mut model = ProductionModelV1::from_bytes(&fs::read(model_path)?)?;
+    if tokenizer.tokenizer_hash() != model.tokenizer_hash
+        || tokenizer.vocab_size() != model.config.vocab_size
+    {
+        return Err("model and tokenizer binding mismatch".into());
+    }
+    let (tokens, token_stream_hash) = decode_bound_token_stream(
+        &fs::read(tokens_path)?,
+        model.tokenizer_hash,
+        model.config.vocab_size,
+    )?;
+    let optimizer = config
+        .optimizer_state
+        .map(fs::read)
+        .transpose()?
+        .map(|bytes| ProductionMarginOptimizerStateV1::from_bytes(&bytes))
+        .transpose()?;
+    let (trace, optimizer) = train_production_target_margin(
+        &mut model,
+        &tokens,
+        token_stream_hash,
+        training_config,
+        optimizer,
+    )?;
+    fs::write(model_out, model.try_to_bytes()?)?;
+    fs::write(optimizer_out, optimizer.try_to_bytes()?)?;
+    fs::write(trace_path, trace.to_json_line())?;
+    Ok(())
+}
+
 fn production_full_train_config(config: &Config) -> ProductionFullTrainConfig {
     ProductionFullTrainConfig {
         context_tokens: config.context_tokens,
@@ -1313,6 +1366,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             | "inspect"
             | "numeric-contract"
             | "smoke-train"
+            | "target-margin-train"
             | "full-train-smoke"
             | "direct-head-train"
             | "direct-feature-train"
@@ -1674,7 +1728,7 @@ fn print_help() {
         "Prospective confirmation:\n  nsrl-production-model boolean-jet-confirmation-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH --expected-base-model-hash U64 --expected-tokenizer-hash U64 --expected-token-stream-hash U64 --expected-move-fingerprint U64 --expected-manifest-hash U64 --trunk-move GROUP:COORDINATE:DELTA... --head-move GROUP:COORDINATE:DELTA... --control-move GROUP:COORDINATE:DELTA... [--proposal-document-start N] [--proposal-documents N] [--transfer-document-start N] [--transfer-documents N] [--windows-per-document N] [--minimum-documents N]\n"
     );
     println!(
-        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model numeric-contract [--profile p10m|p20m|p30m | --model PATH] [--trace PATH] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model generate --tokenizer PATH --model PATH (--prompt TEXT | --prompt-file PATH) --trace PATH [--generated-out PATH] [--context-tokens N] [--max-new-tokens N] [--top-k N] [--seed N] [--no-stop-on-eos]\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model evaluate-canonical --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model gradient-alignment-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N] [--transfer-windows N] [--documents-per-surface N] [--rescue-stratified-sampling] [--include-mass-corrected-no-rescue] [--coordinates-per-group N] [--seed N] [training numeric options]\n  nsrl-production-model compare-evaluate --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-resolution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-signal-attribution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--targets-per-window N] [--spread-windows] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--reject-saturated-batch] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--embedding-learning-rate-boost-shift N] [--output-learning-rate-shift N] [--output-backward-shift N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division]
+        "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model numeric-contract [--profile p10m|p20m|p30m | --model PATH] [--trace PATH] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model generate --tokenizer PATH --model PATH (--prompt TEXT | --prompt-file PATH) --trace PATH [--generated-out PATH] [--context-tokens N] [--max-new-tokens N] [--top-k N] [--seed N] [--no-stop-on-eos]\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model evaluate-canonical --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model gradient-alignment-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N] [--transfer-windows N] [--documents-per-surface N] [--rescue-stratified-sampling] [--include-mass-corrected-no-rescue] [--coordinates-per-group N] [--seed N] [training numeric options]\n  nsrl-production-model compare-evaluate --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-resolution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-signal-attribution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model target-margin-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--targets-per-window N] [--training-workers N] [--spread-windows] [--max-windows N] [--evaluation-windows N] [--epochs N] [--feature-shift N] [--margin-q8 N] [--batch-windows N] [--max-optimizer-steps N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--targets-per-window N] [--spread-windows] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--reject-saturated-batch] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--embedding-learning-rate-boost-shift N] [--output-learning-rate-shift N] [--output-backward-shift N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division]
   nsrl-production-model direct-head-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]
   nsrl-production-model direct-feature-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]"
     );
