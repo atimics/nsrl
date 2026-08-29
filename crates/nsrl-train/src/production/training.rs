@@ -3432,7 +3432,7 @@ fn document_windows(tokens: &[u32], context: usize, max: usize) -> Vec<(Vec<u32>
     windows
 }
 
-fn document_window_count(tokens: &[u32], context: usize) -> usize {
+pub(super) fn document_window_count(tokens: &[u32], context: usize) -> usize {
     let mut total = 0_usize;
     let mut document_tokens = 0_usize;
     let mut active = false;
@@ -3453,7 +3453,7 @@ fn document_window_count(tokens: &[u32], context: usize) -> usize {
     total
 }
 
-fn update_window_ranks(total: usize, selected: usize, spread: bool) -> Vec<usize> {
+pub(super) fn update_window_ranks(total: usize, selected: usize, spread: bool) -> Vec<usize> {
     let selected = selected.min(total);
     if selected == 0 {
         return Vec::new();
@@ -3469,7 +3469,7 @@ fn update_window_ranks(total: usize, selected: usize, spread: bool) -> Vec<usize
         .collect()
 }
 
-fn descent_guard_window_ranks(
+pub(super) fn descent_guard_window_ranks(
     total: usize,
     update_ranks: &[usize],
     guard_windows: usize,
@@ -3508,7 +3508,7 @@ fn descent_guard_window_ranks(
     Ok(selected.into_iter().collect())
 }
 
-fn document_windows_at_ranks(
+pub(super) fn document_windows_at_ranks(
     tokens: &[u32],
     context: usize,
     ranks: &[usize],
@@ -3547,7 +3547,7 @@ fn document_windows_at_ranks(
     windows
 }
 
-fn window_rank_hash(ranks: &[usize]) -> u64 {
+pub(super) fn window_rank_hash(ranks: &[usize]) -> u64 {
     let mut bytes = Vec::with_capacity(ranks.len() * 8);
     for &rank in ranks {
         bytes.extend_from_slice(&(rank as u64).to_le_bytes());

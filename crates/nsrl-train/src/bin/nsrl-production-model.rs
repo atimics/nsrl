@@ -74,6 +74,7 @@ struct Config {
     targets_per_window: usize,
     training_workers: usize,
     max_windows: usize,
+    window_schedule_windows: usize,
     epochs: usize,
     feature_shift: u8,
     bias_step_q8: i32,
@@ -164,6 +165,7 @@ impl Default for Config {
             targets_per_window: full.targets_per_window,
             training_workers: full.training_workers,
             max_windows: smoke.max_windows,
+            window_schedule_windows: 0,
             epochs: smoke.epochs,
             feature_shift: smoke.feature_shift,
             bias_step_q8: smoke.bias_step_q8,
@@ -1155,6 +1157,7 @@ fn target_margin_train(config: Config) -> Result<(), Box<dyn std::error::Error>>
     let training_config = ProductionMarginTrainConfig {
         context_tokens: config.context_tokens,
         max_windows: config.max_windows,
+        window_schedule_windows: config.window_schedule_windows,
         spread_windows: config.spread_windows,
         targets_per_window: config.targets_per_window,
         training_workers: config.training_workers,
@@ -1164,6 +1167,7 @@ fn target_margin_train(config: Config) -> Result<(), Box<dyn std::error::Error>>
         batch_windows: config.batch_windows,
         max_optimizer_steps: config.max_optimizer_steps,
         evaluation_windows: config.evaluation_windows,
+        descent_guard_windows: config.descent_guard_windows,
     };
     let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
     let tokens_path = required(config.tokens, "--tokens")?;
@@ -1449,6 +1453,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 config.training_workers = next(&mut args, "--training-workers")?.parse()?
             }
             "--max-windows" => config.max_windows = next(&mut args, "--max-windows")?.parse()?,
+            "--window-schedule-windows" => {
+                config.window_schedule_windows =
+                    next(&mut args, "--window-schedule-windows")?.parse()?
+            }
             "--epochs" => config.epochs = next(&mut args, "--epochs")?.parse()?,
             "--feature-shift" => {
                 config.feature_shift = next(&mut args, "--feature-shift")?.parse()?
@@ -1716,7 +1724,7 @@ fn required(value: Option<PathBuf>, option: &str) -> Result<PathBuf, Box<dyn std
 
 fn print_help() {
     println!(
-        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --flush-batched-embedding-residuals to apply accumulated embedding residuals for every token touched anywhere in a committed batch. Pass --descent-guard-windows N to reject moving batches that worsen canonical NLL on N fixed, disjoint training-corpus windows while still consuming the batch cursor. Add --descent-guard-signed-representation-blocks to search reverse/zero/forward steps for embeddings, K, V, and O, choosing the non-worsening minimum with a sparse deterministic tie-break. Add --descent-guard-signed-representation-zero-saturation to discard candidates with any forward residual saturation on that training-only guard before applying the NLL tie-break. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors. Pass --backward-quantization rescued-rhu|late-rhu|late-stochastic to select the schedule-bound intermediate-gradient quantizer; stochastic mode also binds --backward-stochastic-seed N for exact restart replay.\n"
+        "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. For target-margin-train, pass --window-schedule-windows N to bind short and full runs to the same N-window update schedule; --max-windows then selects a prefix of that schedule. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --flush-batched-embedding-residuals to apply accumulated embedding residuals for every token touched anywhere in a committed batch. Pass --descent-guard-windows N to reject moving batches that worsen canonical NLL on N fixed windows disjoint from the complete bound update schedule while still consuming the batch cursor. Add --descent-guard-signed-representation-blocks to search reverse/zero/forward steps for embeddings, K, V, and O, choosing the non-worsening minimum with a sparse deterministic tie-break. Add --descent-guard-signed-representation-zero-saturation to discard candidates with any forward residual saturation on that training-only guard before applying the NLL tie-break. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors. Pass --backward-quantization rescued-rhu|late-rhu|late-stochastic to select the schedule-bound intermediate-gradient quantizer; stochastic mode also binds --backward-stochastic-seed N for exact restart replay.\n"
     );
     println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
@@ -1831,6 +1839,24 @@ mod tests {
             ProductionBackwardQuantization::LateStochastic
         );
         assert_eq!(config.backward_stochastic_seed, 29);
+    }
+
+    #[test]
+    fn target_margin_accepts_bound_schedule_and_guard_arguments() {
+        let config = parse_args(args(&[
+            "target-margin-train",
+            "--max-windows",
+            "64",
+            "--window-schedule-windows",
+            "2048",
+            "--descent-guard-windows",
+            "32",
+        ]))
+        .expect("target margin trust region arguments");
+        assert_eq!(config.command, "target-margin-train");
+        assert_eq!(config.max_windows, 64);
+        assert_eq!(config.window_schedule_windows, 2048);
+        assert_eq!(config.descent_guard_windows, 32);
     }
 
     #[test]
