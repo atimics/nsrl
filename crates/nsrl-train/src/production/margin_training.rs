@@ -829,7 +829,7 @@ fn margin_schedule_hash(config: ProductionMarginTrainConfig) -> u64 {
     fnv1a(&bytes)
 }
 
-fn frozen_parameter_hash(model: &ProductionModelV1) -> u64 {
+pub(super) fn frozen_parameter_hash(model: &ProductionModelV1) -> u64 {
     let mut hash = FNV_OFFSET;
     let mut update = |bytes: &[u8]| {
         for &byte in bytes {
