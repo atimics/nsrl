@@ -170,7 +170,6 @@ const result = {
   vertices,
   walsh_normalization_denominator: vertices,
   analysis_source_sha256: crypto.createHash("sha256").update(analysisSourceBytes).digest("hex"),
-  node_runtime: process.version,
   source_result_sha256: crypto.createHash("sha256").update(inputBytes).digest("hex"),
   bindings: source.bindings,
   source_population: source.source_population,
