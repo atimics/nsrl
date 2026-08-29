@@ -4,8 +4,7 @@
   "rank": 6,
   "vertices": 64,
   "walsh_normalization_denominator": 64,
-  "analysis_source_sha256": "3f12e41656f8888804a467e69c6da795c3374fd90ebe3d349c9c6d1f819c2b98",
-  "node_runtime": "v24.10.0",
+  "analysis_source_sha256": "6b678aacbb8f7ffe695c1046e32c874d0c868418119455720d727ac658d15f15",
   "source_result_sha256": "7d7432057cfa2b86796abdcaf73604541699a9fed1a939a57ad94b42bf9ce7ca",
   "bindings": {
     "source_fnv64": "0xc19b8402483e9d33",

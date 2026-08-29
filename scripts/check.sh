@@ -107,14 +107,18 @@ node scripts/freeze-production-kv-scaling-readiness-v1.mjs --check
 node scripts/freeze-production-gate-boundary-preflight-v1.mjs --check
 node scripts/freeze-production-up-useful-update-v1.mjs --check
 node scripts/freeze-production-up-shift22-breakthrough-v1.mjs --check
-node scripts/freeze-production-up-functional-comparison-v1.mjs --check
-node scripts/freeze-production-up-forward-scale-sensitivity-v1.mjs --check
-node scripts/freeze-production-up-forward-scale-training-v1.mjs --check
-node scripts/freeze-production-target-probability-resolution-v1.mjs --check
-node scripts/freeze-production-wide-probability-gradient-preflight-v1.mjs --check
-node scripts/freeze-production-probability-normalization-accuracy-v1.mjs --check
-node scripts/freeze-production-probability-normalization-signal-attribution-v1.mjs --check
-node scripts/freeze-production-normalized-wide-gradient-preflight-v1.mjs --check
+if [[ "${NSRL_CHECK_LOCAL_PRODUCTION_ARTIFACTS:-0}" == "1" ]]; then
+  node scripts/freeze-production-up-functional-comparison-v1.mjs --check
+  node scripts/freeze-production-up-forward-scale-sensitivity-v1.mjs --check
+  node scripts/freeze-production-up-forward-scale-training-v1.mjs --check
+  node scripts/freeze-production-target-probability-resolution-v1.mjs --check
+  node scripts/freeze-production-wide-probability-gradient-preflight-v1.mjs --check
+  node scripts/freeze-production-probability-normalization-accuracy-v1.mjs --check
+  node scripts/freeze-production-probability-normalization-signal-attribution-v1.mjs --check
+  node scripts/freeze-production-normalized-wide-gradient-preflight-v1.mjs --check
+else
+  echo "large local production artifact replays skipped; set NSRL_CHECK_LOCAL_PRODUCTION_ARTIFACTS=1 to require them"
+fi
 node scripts/check-production-model-v1.mjs
 node scripts/check-production-optimization-v1.mjs
 cargo fmt --all --check

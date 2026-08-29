@@ -16,8 +16,24 @@ patterns=(
 )
 
 failed=0
+if command -v rg >/dev/null 2>&1; then
+  search_rust_sources() {
+    rg --line-number --glob '*.rs' --regexp "$1" crates
+  }
+  search_dataset_builder() {
+    rg --line-number --regexp "$1" scripts/build-solomon-bitmap-denoise-dataset.mjs
+  }
+else
+  search_rust_sources() {
+    grep --extended-regexp --recursive --line-number --include='*.rs' -- "$1" crates
+  }
+  search_dataset_builder() {
+    grep --extended-regexp --line-number -- "$1" scripts/build-solomon-bitmap-denoise-dataset.mjs
+  }
+fi
+
 for pattern in "${patterns[@]}"; do
-  if rg --line-number --glob '*.rs' --regexp "$pattern" crates; then
+  if search_rust_sources "$pattern"; then
     failed=1
   fi
 done
@@ -30,7 +46,7 @@ dataset_patterns=(
 )
 
 for pattern in "${dataset_patterns[@]}"; do
-  if rg --line-number --regexp "$pattern" scripts/build-solomon-bitmap-denoise-dataset.mjs; then
+  if search_dataset_builder "$pattern"; then
     failed=1
   fi
 done
