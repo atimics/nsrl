@@ -21,6 +21,7 @@ use crate::{PRODUCTION_MODEL_V1_MAGIC, TrainError};
 mod alignment;
 mod boolean_jet;
 mod generation;
+mod margin_training;
 mod numeric_contract;
 mod structure_audit;
 mod training;
@@ -53,6 +54,10 @@ pub use boolean_jet::{
 pub use generation::{
     PRODUCTION_GENERATION_SCHEMA, ProductionDecoder, ProductionGenerationConfig,
     ProductionGenerationStepTrace, ProductionGenerationTrace, generate_production_model,
+};
+pub use margin_training::{
+    ProductionMarginEvaluation, ProductionMarginOptimizerStateV1, ProductionMarginTrainConfig,
+    ProductionMarginTrainTrace, train_production_target_margin,
 };
 pub use numeric_contract::{
     PRODUCTION_ACTIVATION_FRACTIONAL_BITS, PRODUCTION_LOGIT_FRACTIONAL_BITS,
