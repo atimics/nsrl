@@ -1,0 +1,44 @@
+{
+  "schema": "nsrl.q22_solomon_prospective_result.v1",
+  "contract_sha256": "b3b2e2d2648802ac99395c0d1110207409f240cc5e4b83d8c89186c36238ccc0",
+  "model_freeze_sha256": "ff6ae1d63b98b42a88e575e577a1e504487a31fb6f89cfb8cfada0888ed8f327",
+  "eval_sha256": "9270ea2b72af90235407bd7924a0864b8eba35b2969e1657ed1c15bf04449519",
+  "seeds": [
+    {
+      "seed": 1,
+      "schema": "nsrl.q22_shared_task_check.v1",
+      "contract": "zero-solomon.q22-operation.v1",
+      "eval_sha256": "9270ea2b72af90235407bd7924a0864b8eba35b2969e1657ed1c15bf04449519",
+      "cases": 500,
+      "operation_exact": 500,
+      "operation_exact_rate_ppm": 1000000,
+      "valid": true
+    },
+    {
+      "seed": 2,
+      "schema": "nsrl.q22_shared_task_check.v1",
+      "contract": "zero-solomon.q22-operation.v1",
+      "eval_sha256": "9270ea2b72af90235407bd7924a0864b8eba35b2969e1657ed1c15bf04449519",
+      "cases": 500,
+      "operation_exact": 500,
+      "operation_exact_rate_ppm": 1000000,
+      "valid": true
+    },
+    {
+      "seed": 3,
+      "schema": "nsrl.q22_shared_task_check.v1",
+      "contract": "zero-solomon.q22-operation.v1",
+      "eval_sha256": "9270ea2b72af90235407bd7924a0864b8eba35b2969e1657ed1c15bf04449519",
+      "cases": 500,
+      "operation_exact": 500,
+      "operation_exact_rate_ppm": 1000000,
+      "valid": true
+    }
+  ],
+  "minimum_operation_exact_rate_ppm": 1000000,
+  "mean_operation_exact_rate_ppm": 1000000,
+  "all_seed_agreement_cases": 500,
+  "all_seed_agreement_rate_ppm": 1000000,
+  "family_passed": true,
+  "outcome": "go"
+}
