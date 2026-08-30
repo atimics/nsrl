@@ -1,0 +1,102 @@
+{
+  "schema": "nsrl.production_direct_head_cross_document_stability_contract.v1",
+  "objective": "measure_whether_the_eight_previously_observed_proposal_descent_directions_are_stable_across_new_training_documents_before_authorizing_any_joint_move_followup",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "support_commit": "efce17c7e808377fe299c431efdc99af35bae1db",
+    "command": "nsrl-production-model direct-head-cross-document-audit",
+    "objective": "integer_base2_softmax_nll_q20",
+    "method": "exact_frozen_direction_cross_document_matrix",
+    "parameter_scope": "output_matrix_only",
+    "model_mutation": "none_read_only_restored_after_every_probe",
+    "window_selection": "first_n_complete_windows_per_document",
+    "artifacts": [
+      {
+        "path": "crates/nsrl-train/src/production/training.rs",
+        "sha256": "9e6b907fe4f6e4922434d3487beb404b0a1dfc61647e96904ddba6942ecbebb1"
+      },
+      {
+        "path": "crates/nsrl-train/src/production.rs",
+        "sha256": "6c84e77ba648cddbceb816a55032d9b17fa95b92a0670d16e397a3d7e7cce78c"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-model.rs",
+        "sha256": "37cb11d65d3664e54255b50a51e17dd57c79307552e243c5691ef63bbe201901"
+      }
+    ]
+  },
+  "parent_evidence": {
+    "commit": "241424758a4d84f7cb1fa89aab3f622283aa2623",
+    "path": "benchmarks/production-model-v1/p10m-direct-head-nll-safe-set-v1-training-gate.json",
+    "sha256": "3c97f55120f1d2cf4ebd1f48eaa570d05f3b41ee927323bd0687d2f6d36c17f8",
+    "proposal_document": 0,
+    "guard_document": 1
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v9-health-scale/chunk-3/model.nsrlpm",
+    "model_hash": "0xd2b9c7b907595967",
+    "artifact_sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22",
+    "frozen_parameter_hash": "0x847bca28ae53d52e"
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8"
+  },
+  "surface": {
+    "context_tokens": 64,
+    "document_start": 2,
+    "documents": 8,
+    "windows_per_document": 32,
+    "document_end_exclusive": 10,
+    "prior_lineage_documents_excluded": [0, 1]
+  },
+  "directions": [
+    { "global_coordinate": 8303, "delta": 1, "parent_proposal_nll_improvement_q20": 61290, "parent_guard_nll_improvement_q20": -601 },
+    { "global_coordinate": 8310, "delta": -1, "parent_proposal_nll_improvement_q20": 57061, "parent_guard_nll_improvement_q20": -963 },
+    { "global_coordinate": 8445, "delta": 1, "parent_proposal_nll_improvement_q20": 57212, "parent_guard_nll_improvement_q20": -586 },
+    { "global_coordinate": 8335, "delta": -1, "parent_proposal_nll_improvement_q20": 57210, "parent_guard_nll_improvement_q20": -586 },
+    { "global_coordinate": 8428, "delta": 1, "parent_proposal_nll_improvement_q20": 57145, "parent_guard_nll_improvement_q20": -583 },
+    { "global_coordinate": 8377, "delta": 1, "parent_proposal_nll_improvement_q20": 57211, "parent_guard_nll_improvement_q20": -578 },
+    { "global_coordinate": 8263, "delta": 1, "parent_proposal_nll_improvement_q20": 48929, "parent_guard_nll_improvement_q20": -666 },
+    { "global_coordinate": 8431, "delta": -1, "parent_proposal_nll_improvement_q20": 53069, "parent_guard_nll_improvement_q20": -582 }
+  ],
+  "classification": {
+    "stable_direction_descent_documents_minimum": 6,
+    "stable_direction_total_nll_improvement_q20_minimum_exclusive": 0,
+    "stable_directions_minimum_for_same_coordinate_family_followup": 1,
+    "mixed_direction_descent_documents_minimum": 3,
+    "mixed_direction_descent_documents_maximum": 5,
+    "consistent_regression_descent_documents_maximum": 2
+  },
+  "gates": {
+    "exact_trace_rerun_replay": true,
+    "complete_direction_document_matrix": true,
+    "source_model_unchanged": true,
+    "frozen_parameters_unchanged": true,
+    "same_coordinate_family_followup_requires_stable_direction": true
+  },
+  "authorization": {
+    "local_cpu_audit": true,
+    "additional_training_documents": true,
+    "model_writes": false,
+    "public_development_evaluation": false,
+    "public_test_evaluation": false,
+    "open_generation": false,
+    "hidden_panel_access": false,
+    "paid_scaling": false,
+    "p20m_p30m_scaling": false
+  },
+  "known_non_claims": [
+    "the_audit_covers_eight_frozen_output_weight_directions_not_the_full_head",
+    "document_level_sign_stability_does_not_establish_joint_move_safety",
+    "the_additional_surfaces_are_training_corpus_documents_not_public_or_hidden_evaluation",
+    "no_candidate_model_is_created",
+    "success_would_only_authorize_a_new_prospective_same_family_followup",
+    "public_and_hidden_evaluation_remain_unauthorized"
+  ]
+}
