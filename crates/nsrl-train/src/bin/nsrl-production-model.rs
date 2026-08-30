@@ -105,6 +105,7 @@ struct Config {
     descent_guard_signed_representation_blocks: bool,
     descent_guard_signed_representation_zero_saturation: bool,
     direct_head_dev_guard: bool,
+    direct_head_exact_safe_set: bool,
     backward_quantization: ProductionBackwardQuantization,
     backward_stochastic_seed: u64,
     alignment_coordinates_per_group: usize,
@@ -199,6 +200,7 @@ impl Default for Config {
             descent_guard_signed_representation_zero_saturation: full
                 .descent_guard_signed_representation_zero_saturation,
             direct_head_dev_guard: false,
+            direct_head_exact_safe_set: false,
             backward_quantization: full.backward_quantization,
             backward_stochastic_seed: full.backward_stochastic_seed,
             alignment_coordinates_per_group: 1,
@@ -1071,7 +1073,9 @@ fn direct_head_train(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         probability_gradient_fractional_bits: config.probability_gradient_fractional_bits,
         probability_normalization: config.probability_normalization,
         sample_seed: config.seed,
-        require_dev_nll_nonworsening: config.direct_head_dev_guard,
+        require_dev_nll_nonworsening: config.direct_head_dev_guard
+            || config.direct_head_exact_safe_set,
+        exact_safe_set_selection: config.direct_head_exact_safe_set,
     };
     let trace =
         train_production_direct_head_search(&mut model, &tokens, token_stream_hash, head_config)?;
@@ -1568,6 +1572,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
                 config.descent_guard_signed_representation_zero_saturation = true
             }
             "--direct-head-dev-guard" => config.direct_head_dev_guard = true,
+            "--direct-head-exact-safe-set" => config.direct_head_exact_safe_set = true,
             "--backward-quantization" => {
                 let value = next(&mut args, "--backward-quantization")?;
                 config.backward_quantization = match value.as_str() {
@@ -1731,7 +1736,7 @@ fn print_help() {
         "Smoke-training sampling:\n  pass --spread-windows to select deterministic uniformly spaced target windows across the complete document stream. For target-margin-train, pass --window-schedule-windows N to bind short and full runs to the same N-window update schedule; --max-windows then selects a prefix of that schedule. Pass --targets-per-window N on full-train-smoke to supervise the causal suffix of each context with an averaged multi-target objective. Pass --training-workers N to parallelize deterministic output-head work without changing the schedule or trained bytes. The schedule-bound --embedding-learning-rate-boost-shift N option permits an embedding learning rate above the fixed-point mean-shift floor. Pass --flush-batched-embedding-residuals to apply accumulated embedding residuals for every token touched anywhere in a committed batch. Pass --descent-guard-windows N to reject moving batches that worsen canonical NLL on N fixed windows disjoint from the complete bound update schedule while still consuming the batch cursor. Add --descent-guard-signed-representation-blocks to search reverse/zero/forward steps for embeddings, K, V, and O, choosing the non-worsening minimum with a sparse deterministic tie-break. Add --descent-guard-signed-representation-zero-saturation to discard candidates with any forward residual saturation on that training-only guard before applying the NLL tie-break. Pass --output-bias-learning-rate-shift N to control output-bias updates independently from RMS vectors. Pass --backward-quantization rescued-rhu|late-rhu|late-stochastic to select the schedule-bound intermediate-gradient quantizer; stochastic mode also binds --backward-stochastic-seed N for exact restart replay.\n"
     );
     println!(
-        "Direct head search:\n  pass --direct-head-dev-guard to require every exact full-train NLL descent step to also be non-worsening on the fixed, training-corpus dev surface. A rejected step is not applied and stops the bounded search.\n"
+        "Direct head search:\n  pass --direct-head-dev-guard to require every exact full-train NLL descent step to also be non-worsening on the fixed, training-corpus dev surface. A rejected step is not applied and stops the bounded search. Pass --direct-head-exact-safe-set to imply that guard, check both unit directions for every gradient-ranked coordinate on the complete train and dev surfaces, choose the safe direction with the largest exact train improvement, and explicitly retain the source when no safe direction exists.\n"
     );
     println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
@@ -1744,7 +1749,7 @@ fn print_help() {
     );
     println!(
         "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model numeric-contract [--profile p10m|p20m|p30m | --model PATH] [--trace PATH] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model generate --tokenizer PATH --model PATH (--prompt TEXT | --prompt-file PATH) --trace PATH [--generated-out PATH] [--context-tokens N] [--max-new-tokens N] [--top-k N] [--seed N] [--no-stop-on-eos]\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model evaluate-canonical --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model gradient-alignment-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N] [--transfer-windows N] [--documents-per-surface N] [--rescue-stratified-sampling] [--include-mass-corrected-no-rescue] [--coordinates-per-group N] [--seed N] [training numeric options]\n  nsrl-production-model compare-evaluate --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-resolution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-signal-attribution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model target-margin-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--targets-per-window N] [--training-workers N] [--spread-windows] [--max-windows N] [--evaluation-windows N] [--epochs N] [--feature-shift N] [--margin-q8 N] [--batch-windows N] [--max-optimizer-steps N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--targets-per-window N] [--spread-windows] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--reject-saturated-batch] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--embedding-learning-rate-boost-shift N] [--output-learning-rate-shift N] [--output-backward-shift N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division]
-  nsrl-production-model direct-head-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--direct-head-dev-guard] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]
+  nsrl-production-model direct-head-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--direct-head-dev-guard] [--direct-head-exact-safe-set] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]
   nsrl-production-model direct-feature-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]"
     );
 }
@@ -1872,6 +1877,14 @@ mod tests {
             .expect("direct head guard argument");
         assert_eq!(config.command, "direct-head-train");
         assert!(config.direct_head_dev_guard);
+    }
+
+    #[test]
+    fn direct_head_accepts_exact_safe_set_argument() {
+        let config = parse_args(args(&["direct-head-train", "--direct-head-exact-safe-set"]))
+            .expect("direct head exact safe-set argument");
+        assert_eq!(config.command, "direct-head-train");
+        assert!(config.direct_head_exact_safe_set);
     }
 
     #[test]
