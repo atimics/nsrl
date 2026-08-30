@@ -10,6 +10,7 @@ use nsrl_eval::contract::{
 use nsrl_eval::open_generation::{
     load_open_generation_manifest, open_generation_contract_json_line,
 };
+use nsrl_eval::q22::{check_q22_predictions, encode_q22_dataset, load_q22_manifest};
 
 fn main() {
     if let Err(error) = run() {
@@ -39,6 +40,57 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "{}",
                 load_open_generation_manifest(&manifest)?.to_json_line()
             );
+        }
+        Some("q22-manifest") => {
+            let manifest = single_path_option(&mut args, "--manifest")?;
+            print!("{}", load_q22_manifest(&manifest)?.to_json_line());
+        }
+        Some("q22-encode") => {
+            let mut manifest = None;
+            let mut dataset = None;
+            let mut output = None;
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--manifest" => {
+                        manifest = Some(PathBuf::from(required(&mut args, "--manifest")?))
+                    }
+                    "--dataset" => dataset = Some(PathBuf::from(required(&mut args, "--dataset")?)),
+                    "--out" => output = Some(PathBuf::from(required(&mut args, "--out")?)),
+                    other => return Err(format!("unknown q22-encode argument: {other}").into()),
+                }
+            }
+            let manifest =
+                load_q22_manifest(&manifest.ok_or("q22-encode requires --manifest PATH")?)?;
+            let encoded = encode_q22_dataset(
+                &dataset.ok_or("q22-encode requires --dataset PATH")?,
+                &manifest,
+            )?;
+            fs::write(output.ok_or("q22-encode requires --out PATH")?, encoded)?;
+        }
+        Some("q22-check") => {
+            let mut manifest = None;
+            let mut evaluation = None;
+            let mut predictions = None;
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--manifest" => {
+                        manifest = Some(PathBuf::from(required(&mut args, "--manifest")?))
+                    }
+                    "--eval" => evaluation = Some(PathBuf::from(required(&mut args, "--eval")?)),
+                    "--predictions" => {
+                        predictions = Some(PathBuf::from(required(&mut args, "--predictions")?))
+                    }
+                    other => return Err(format!("unknown q22-check argument: {other}").into()),
+                }
+            }
+            let manifest =
+                load_q22_manifest(&manifest.ok_or("q22-check requires --manifest PATH")?)?;
+            let check = check_q22_predictions(
+                &evaluation.ok_or("q22-check requires --eval PATH")?,
+                &predictions.ok_or("q22-check requires --predictions PATH")?,
+                &manifest,
+            )?;
+            print!("{}", check.to_json_line());
         }
         Some("manifest") => {
             let manifest = single_path_option(&mut args, "--manifest")?;
@@ -120,6 +172,6 @@ fn required(
 
 fn print_help() {
     println!(
-        "Usage:\n  nsrl-eval contract\n  nsrl-eval manifest --manifest PATH\n  nsrl-eval check-baselines --manifest PATH --results PATH\n  nsrl-eval check --manifest PATH --results PATH\n  nsrl-eval open-generation-contract\n  nsrl-eval open-generation-manifest --manifest PATH\n\nThe check command exits 0 only when the integer candidate beats retrieval, byte-ngram, and float-reference baselines under the frozen proof contract."
+        "Usage:\n  nsrl-eval contract\n  nsrl-eval manifest --manifest PATH\n  nsrl-eval check-baselines --manifest PATH --results PATH\n  nsrl-eval check --manifest PATH --results PATH\n  nsrl-eval open-generation-contract\n  nsrl-eval open-generation-manifest --manifest PATH\n  nsrl-eval q22-manifest --manifest PATH\n  nsrl-eval q22-encode --manifest PATH --dataset PATH --out PATH\n  nsrl-eval q22-check --manifest PATH --eval PATH --predictions PATH\n\nThe Q22 commands bind Solomon to the shared Zero/Solomon operation-routing task. Encoding writes a byte-identity training surface; checking validates the frozen evaluation bytes and exact operation predictions."
     );
 }
