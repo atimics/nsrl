@@ -41,6 +41,7 @@ node scripts/check-production-training-liveness-self-test.mjs
 node scripts/check-production-optimizer-residual-analysis-self-test.mjs
 node scripts/freeze-integer-transformer-proof-candidate.mjs --check
 scripts/check-open-generation-v1.sh
+node scripts/run-q22-solomon-prospective.mjs --check-contract
 scripts/check-production-corpus-v1.sh
 node scripts/freeze-production-model-v1.mjs --check
 node scripts/freeze-production-full-train-v1.mjs --check
