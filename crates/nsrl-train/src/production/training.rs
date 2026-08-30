@@ -4742,6 +4742,7 @@ pub fn train_production_direct_feature(
                 probability_normalization: config.probability_normalization,
                 sample_seed: config.sample_seed.wrapping_add(round_index as u64),
                 require_dev_nll_nonworsening: false,
+                exact_safe_set_selection: false,
             },
             output_weight_count,
         )?;
@@ -4961,6 +4962,7 @@ pub struct DirectHeadTrainConfig {
     pub probability_normalization: SoftmaxNormalization,
     pub sample_seed: u64,
     pub require_dev_nll_nonworsening: bool,
+    pub exact_safe_set_selection: bool,
 }
 
 impl Default for DirectHeadTrainConfig {
@@ -4976,11 +4978,26 @@ impl Default for DirectHeadTrainConfig {
             probability_normalization: SoftmaxNormalization::Q47Newton1,
             sample_seed: 0,
             require_dev_nll_nonworsening: false,
+            exact_safe_set_selection: false,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectHeadExactCandidateTrace {
+    pub global_coordinate: usize,
+    pub output_weight_coordinate: Option<usize>,
+    pub output_bias_coordinate: Option<usize>,
+    pub proposed_delta: i8,
+    pub train_nll_improvement_q20: i64,
+    pub dev_nll_improvement_q20: i64,
+    pub train_descent: bool,
+    pub dev_guard_safe: bool,
+    pub safe: bool,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectHeadTrainRound {
     pub round: usize,
     pub candidates_evaluated: usize,
@@ -4997,6 +5014,10 @@ pub struct DirectHeadTrainRound {
     pub weight_saturation_count: usize,
     pub function_visible: bool,
     pub dev_guard_rejected: bool,
+    pub exact_directions_evaluated: usize,
+    pub exact_safe_candidates: usize,
+    pub exact_guard_rejections: usize,
+    pub exact_candidates: Vec<DirectHeadExactCandidateTrace>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5031,6 +5052,10 @@ pub struct DirectHeadTrainTrace {
     pub rounds_with_descent: usize,
     pub dev_guard_rejections: usize,
     pub require_dev_nll_nonworsening: bool,
+    pub exact_safe_set_selection: bool,
+    pub total_exact_directions_evaluated: usize,
+    pub total_exact_safe_candidates: usize,
+    pub total_exact_guard_rejections: usize,
     pub train_bindings: Vec<DirectTrainWindowBinding>,
     pub dev_bindings: Vec<DirectTrainWindowBinding>,
     pub round_traces: Vec<DirectHeadTrainRound>,
@@ -5040,12 +5065,17 @@ impl DirectHeadTrainTrace {
     pub fn to_json_line(&self) -> String {
         let mut json = String::new();
         use std::fmt::Write;
+        let method = if self.exact_safe_set_selection {
+            "gradient_ranked_exact_two_surface_safe_set_coordinate_descent"
+        } else {
+            "gradient_ranked_probe_scored_coordinate_descent"
+        };
         write!(
             json,
             concat!(
                 "{{\"schema\":\"nsrl.direct_head_train.v1\",",
                 "\"objective\":\"integer_base2_softmax_nll_q20\",",
-                "\"method\":\"gradient_ranked_probe_scored_coordinate_descent\",",
+                "\"method\":\"{}\",",
                 "\"claims\":{{\"trunk\":\"frozen_no_backprop_through_layers\",",
                 "\"output_head\":\"unit_finite_difference_full_train_verified\",",
                 "\"gradient_use\":\"candidate_ranking_only_not_update_rule\"}},",
@@ -5055,6 +5085,7 @@ impl DirectHeadTrainTrace {
                 "\"training\":{{\"context_tokens\":{},\"train_windows\":{},",
                 "\"dev_windows\":{},\"candidates_per_round\":{},",
                 "\"max_rounds\":{},\"require_dev_nll_nonworsening\":{},",
+                "\"exact_safe_set_selection\":{},",
                 "\"probability_gradient_fractional_bits\":{},",
                 "\"probability_normalization\":\"{}\",\"sample_seed\":{}}},",
                 "\"quality\":{{\"initial_train_nll_q20\":{},",
@@ -5072,8 +5103,12 @@ impl DirectHeadTrainTrace {
                 "\"output_rounds\":{},\"bias_rounds\":{},",
                 "\"total_descent_steps\":{},",
                 "\"total_candidates_evaluated\":{},",
-                "\"dev_guard_rejections\":{}}},\"rounds\":["
+                "\"dev_guard_rejections\":{},",
+                "\"total_exact_directions_evaluated\":{},",
+                "\"total_exact_safe_candidates\":{},",
+                "\"total_exact_guard_rejections\":{}}},\"rounds\":["
             ),
+            method,
             self.profile,
             self.parameter_count,
             self.tokenizer_hash,
@@ -5084,6 +5119,7 @@ impl DirectHeadTrainTrace {
             self.candidates_per_round,
             self.max_rounds,
             self.require_dev_nll_nonworsening,
+            self.exact_safe_set_selection,
             self.probability_gradient_fractional_bits,
             self.probability_normalization,
             self.sample_seed,
@@ -5107,6 +5143,9 @@ impl DirectHeadTrainTrace {
             self.total_descent_steps,
             self.total_candidates_evaluated,
             self.dev_guard_rejections,
+            self.total_exact_directions_evaluated,
+            self.total_exact_safe_candidates,
+            self.total_exact_guard_rejections,
         )
         .expect("writing direct head train JSON cannot fail");
         for (index, round) in self.round_traces.iter().enumerate() {
@@ -5157,7 +5196,12 @@ impl DirectHeadTrainTrace {
                     "\"output_gradient_sum\":{},",
                     "\"weight_saturation_count\":{},",
                     "\"function_visible\":{},",
-                    "\"dev_guard_rejected\":{}}}"
+                    "\"dev_guard_rejected\":{},",
+                    "\"source_selected\":{},",
+                    "\"exact_directions_evaluated\":{},",
+                    "\"exact_safe_candidates\":{},",
+                    "\"exact_guard_rejections\":{},",
+                    "\"exact_candidates\":["
                 ),
                 round.applied_delta,
                 round.train_nll_q20_after,
@@ -5167,8 +5211,48 @@ impl DirectHeadTrainTrace {
                 round.weight_saturation_count,
                 round.function_visible,
                 round.dev_guard_rejected,
+                round.applied_delta == 0,
+                round.exact_directions_evaluated,
+                round.exact_safe_candidates,
+                round.exact_guard_rejections,
             )
             .expect("writing round tail");
+            for (candidate_index, candidate) in round.exact_candidates.iter().enumerate() {
+                if candidate_index > 0 {
+                    json.push(',');
+                }
+                let parameter_group = if candidate.output_bias_coordinate.is_some() {
+                    "output_bias"
+                } else {
+                    "output_weight"
+                };
+                write!(
+                    json,
+                    concat!(
+                        "{{\"global_coordinate\":{},\"parameter_group\":\"{}\",",
+                        "\"local_coordinate\":{},\"proposed_delta\":{},",
+                        "\"train_nll_improvement_q20\":{},",
+                        "\"dev_nll_improvement_q20\":{},",
+                        "\"train_descent\":{},\"dev_guard_safe\":{},",
+                        "\"safe\":{},\"selected\":{}}}"
+                    ),
+                    candidate.global_coordinate,
+                    parameter_group,
+                    candidate
+                        .output_weight_coordinate
+                        .or(candidate.output_bias_coordinate)
+                        .expect("direct-head exact candidate has a local coordinate"),
+                    candidate.proposed_delta,
+                    candidate.train_nll_improvement_q20,
+                    candidate.dev_nll_improvement_q20,
+                    candidate.train_descent,
+                    candidate.dev_guard_safe,
+                    candidate.safe,
+                    candidate.selected,
+                )
+                .expect("writing exact candidate");
+            }
+            json.push_str("]}");
         }
         json.push_str("],\"window_selection\":\"different_document_else_nonoverlap_context_plus_target\",\"window_bindings\":{\"train\":");
         push_direct_window_bindings_json(&mut json, &self.train_bindings);
@@ -5193,6 +5277,7 @@ pub fn train_production_direct_head_search(
         || config.candidates_per_round == 0
         || config.max_rounds == 0
         || config.min_train_nll_delta < 0
+        || (config.exact_safe_set_selection && !config.require_dev_nll_nonworsening)
         || !(15..=31).contains(&config.probability_gradient_fractional_bits)
     {
         return Err(TrainError::InvalidConfig);
@@ -5223,13 +5308,115 @@ pub fn train_production_direct_head_search(
     let mut bias_rounds = 0_usize;
     let mut rounds_with_descent = 0_usize;
     let mut dev_guard_rejections = 0_usize;
+    let mut total_exact_directions_evaluated = 0_usize;
+    let mut total_exact_safe_candidates = 0_usize;
+    let mut total_exact_guard_rejections = 0_usize;
     // Score candidates on a small probe subset, then verify on full train
     let probe_windows = train_windows.len().min(16);
     let score_surface = &train_windows[..probe_windows];
     for round_index in 0..config.max_rounds {
-        let current_score = evaluate_surface(model, score_surface)?;
         let top_candidates =
             select_top_gradient_candidates(model, train_windows, &config, output_weight_count)?;
+        if config.exact_safe_set_selection {
+            let current_train = evaluate_surface(model, train_windows)?;
+            let current_dev = evaluate_surface(model, dev_windows)?;
+            let current_dev_mistakes = count_mistakes(model, dev_windows)?;
+            let ExactSafeSetPlan {
+                candidates_evaluated,
+                candidates_with_descent,
+                output_gradient_sum,
+                exact_safe_candidates,
+                exact_guard_rejections,
+                exact_candidates,
+                selected,
+            } = evaluate_exact_safe_set(
+                model,
+                train_windows,
+                dev_windows,
+                &config,
+                output_weight_count,
+                &top_candidates,
+                current_train.nll_q20,
+                current_dev.nll_q20,
+            )?;
+            total_candidates_evaluated =
+                total_candidates_evaluated.saturating_add(candidates_evaluated);
+            total_exact_directions_evaluated =
+                total_exact_directions_evaluated.saturating_add(exact_candidates.len());
+            total_exact_safe_candidates =
+                total_exact_safe_candidates.saturating_add(exact_safe_candidates);
+            total_exact_guard_rejections =
+                total_exact_guard_rejections.saturating_add(exact_guard_rejections);
+            if let Some(selection) = selected {
+                shift_parameter(model, selection.group, selection.local, selection.delta)?;
+                if selection.is_bias {
+                    bias_rounds = bias_rounds.saturating_add(1);
+                } else {
+                    output_rounds = output_rounds.saturating_add(1);
+                }
+                rounds_with_descent = rounds_with_descent.saturating_add(1);
+                total_descent_steps = total_descent_steps.saturating_add(1);
+                let post_dev_mistakes = count_mistakes(model, dev_windows)?;
+                let function_visible = selection.dev.logits != current_dev.logits;
+                round_traces.push(DirectHeadTrainRound {
+                    round: round_index,
+                    candidates_evaluated,
+                    candidates_with_descent,
+                    best_delta_train_nll_q20: selection.train_improvement_q20,
+                    best_delta_dev_nll_q20: selection.dev_improvement_q20,
+                    output_weight_coordinate: if selection.is_bias {
+                        None
+                    } else {
+                        Some(selection.local)
+                    },
+                    output_bias_coordinate: if selection.is_bias {
+                        Some(selection.local)
+                    } else {
+                        None
+                    },
+                    applied_delta: selection.delta,
+                    train_nll_q20_after: selection.train.nll_q20,
+                    dev_nll_q20_after: selection.dev.nll_q20,
+                    dev_mistakes: post_dev_mistakes,
+                    output_gradient_sum,
+                    weight_saturation_count: 0,
+                    function_visible,
+                    dev_guard_rejected: false,
+                    exact_directions_evaluated: exact_candidates.len(),
+                    exact_safe_candidates,
+                    exact_guard_rejections,
+                    exact_candidates,
+                });
+                continue;
+            }
+            let dev_guard_rejected = exact_guard_rejections > 0;
+            if dev_guard_rejected {
+                dev_guard_rejections = dev_guard_rejections.saturating_add(1);
+            }
+            round_traces.push(DirectHeadTrainRound {
+                round: round_index,
+                candidates_evaluated,
+                candidates_with_descent,
+                best_delta_train_nll_q20: 0,
+                best_delta_dev_nll_q20: 0,
+                output_weight_coordinate: None,
+                output_bias_coordinate: None,
+                applied_delta: 0,
+                train_nll_q20_after: current_train.nll_q20,
+                dev_nll_q20_after: current_dev.nll_q20,
+                dev_mistakes: current_dev_mistakes,
+                output_gradient_sum,
+                weight_saturation_count: 0,
+                function_visible: false,
+                dev_guard_rejected,
+                exact_directions_evaluated: exact_candidates.len(),
+                exact_safe_candidates,
+                exact_guard_rejections,
+                exact_candidates,
+            });
+            break;
+        }
+        let current_score = evaluate_surface(model, score_surface)?;
         let mut best_coord = None;
         let mut best_is_bias = false;
         let mut best_delta = 0_i8;
@@ -5303,6 +5490,10 @@ pub fn train_production_direct_head_search(
                     weight_saturation_count: 0,
                     function_visible: false,
                     dev_guard_rejected: false,
+                    exact_directions_evaluated: 0,
+                    exact_safe_candidates: 0,
+                    exact_guard_rejections: 0,
+                    exact_candidates: Vec::new(),
                 });
                 break;
             }
@@ -5331,6 +5522,10 @@ pub fn train_production_direct_head_search(
                     weight_saturation_count: 0,
                     function_visible: false,
                     dev_guard_rejected: true,
+                    exact_directions_evaluated: 0,
+                    exact_safe_candidates: 0,
+                    exact_guard_rejections: 0,
+                    exact_candidates: Vec::new(),
                 });
                 break;
             }
@@ -5362,6 +5557,10 @@ pub fn train_production_direct_head_search(
                 weight_saturation_count: 0,
                 function_visible,
                 dev_guard_rejected: false,
+                exact_directions_evaluated: 0,
+                exact_safe_candidates: 0,
+                exact_guard_rejections: 0,
+                exact_candidates: Vec::new(),
             });
         } else {
             round_traces.push(DirectHeadTrainRound {
@@ -5380,6 +5579,10 @@ pub fn train_production_direct_head_search(
                 weight_saturation_count: 0,
                 function_visible: false,
                 dev_guard_rejected: false,
+                exact_directions_evaluated: 0,
+                exact_safe_candidates: 0,
+                exact_guard_rejections: 0,
+                exact_candidates: Vec::new(),
             });
             break;
         }
@@ -5418,9 +5621,156 @@ pub fn train_production_direct_head_search(
         rounds_with_descent,
         dev_guard_rejections,
         require_dev_nll_nonworsening: config.require_dev_nll_nonworsening,
+        exact_safe_set_selection: config.exact_safe_set_selection,
+        total_exact_directions_evaluated,
+        total_exact_safe_candidates,
+        total_exact_guard_rejections,
         train_bindings: direct_window_bindings(train_windows),
         dev_bindings: direct_window_bindings(dev_windows),
         round_traces,
+    })
+}
+
+struct ExactSafeSetSelection {
+    global: usize,
+    group: usize,
+    local: usize,
+    delta: i8,
+    is_bias: bool,
+    train: SurfaceEval,
+    dev: SurfaceEval,
+    train_improvement_q20: i64,
+    dev_improvement_q20: i64,
+}
+
+struct ExactSafeSetPlan {
+    candidates_evaluated: usize,
+    candidates_with_descent: usize,
+    output_gradient_sum: i64,
+    exact_safe_candidates: usize,
+    exact_guard_rejections: usize,
+    exact_candidates: Vec<DirectHeadExactCandidateTrace>,
+    selected: Option<ExactSafeSetSelection>,
+}
+
+fn exact_safe_candidate_preferred(
+    candidate_improvement_q20: i64,
+    candidate_global: usize,
+    candidate_delta: i8,
+    selected: Option<&ExactSafeSetSelection>,
+) -> bool {
+    selected.is_none_or(|best| {
+        candidate_improvement_q20 > best.train_improvement_q20
+            || (candidate_improvement_q20 == best.train_improvement_q20
+                && (candidate_global, candidate_delta) < (best.global, best.delta))
+    })
+}
+
+fn evaluate_exact_safe_set(
+    model: &mut ProductionModelV1,
+    train_windows: &[DocumentWindow],
+    dev_windows: &[DocumentWindow],
+    config: &DirectHeadTrainConfig,
+    output_weight_count: usize,
+    top_candidates: &[(usize, i64)],
+    current_train_nll_q20: u64,
+    current_dev_nll_q20: u64,
+) -> Result<ExactSafeSetPlan, TrainError> {
+    let mut candidates_evaluated = 0_usize;
+    let mut candidates_with_descent = 0_usize;
+    let mut output_gradient_sum = 0_i64;
+    let mut exact_safe_candidates = 0_usize;
+    let mut exact_guard_rejections = 0_usize;
+    let mut exact_candidates = Vec::with_capacity(top_candidates.len().saturating_mul(2));
+    let mut selected = None;
+
+    for &(global, gradient) in top_candidates {
+        let gradient_magnitude = gradient.unsigned_abs().min(i64::MAX as u64) as i64;
+        output_gradient_sum = output_gradient_sum.saturating_add(gradient_magnitude);
+        let is_bias = global >= output_weight_count;
+        let group = if is_bias { 12 } else { 11 };
+        let local = if is_bias {
+            global - output_weight_count
+        } else {
+            global
+        };
+        if !can_perturb(model, group, local, -1) || !can_perturb(model, group, local, 1) {
+            continue;
+        }
+        candidates_evaluated = candidates_evaluated.saturating_add(1);
+        let mut coordinate_has_descent = false;
+        for delta in [-1_i8, 1_i8] {
+            let train = evaluate_parameter_delta(model, group, local, delta, train_windows)?;
+            let dev = evaluate_parameter_delta(model, group, local, delta, dev_windows)?;
+            let train_improvement_q20 =
+                signed_nll_improvement(current_train_nll_q20, train.nll_q20);
+            let dev_improvement_q20 = signed_nll_improvement(current_dev_nll_q20, dev.nll_q20);
+            let train_descent = train_improvement_q20 > config.min_train_nll_delta;
+            let dev_guard_safe = dev.nll_q20 <= current_dev_nll_q20;
+            let safe = train_descent && dev_guard_safe;
+            coordinate_has_descent |= train_descent;
+            if safe {
+                exact_safe_candidates = exact_safe_candidates.saturating_add(1);
+            } else if train_descent {
+                exact_guard_rejections = exact_guard_rejections.saturating_add(1);
+            }
+            exact_candidates.push(DirectHeadExactCandidateTrace {
+                global_coordinate: global,
+                output_weight_coordinate: (!is_bias).then_some(local),
+                output_bias_coordinate: is_bias.then_some(local),
+                proposed_delta: delta,
+                train_nll_improvement_q20: train_improvement_q20,
+                dev_nll_improvement_q20: dev_improvement_q20,
+                train_descent,
+                dev_guard_safe,
+                safe,
+                selected: false,
+            });
+            if safe
+                && exact_safe_candidate_preferred(
+                    train_improvement_q20,
+                    global,
+                    delta,
+                    selected.as_ref(),
+                )
+            {
+                selected = Some(ExactSafeSetSelection {
+                    global,
+                    group,
+                    local,
+                    delta,
+                    is_bias,
+                    train,
+                    dev,
+                    train_improvement_q20,
+                    dev_improvement_q20,
+                });
+            }
+        }
+        if coordinate_has_descent {
+            candidates_with_descent = candidates_with_descent.saturating_add(1);
+        }
+    }
+    if let Some(best) = selected.as_ref() {
+        let selected_trace = exact_candidates
+            .iter_mut()
+            .find(|candidate| {
+                candidate.global_coordinate == best.global && candidate.proposed_delta == best.delta
+            })
+            .ok_or(TrainError::CoreRejected(
+                "direct_head_exact_safe_set_selection_not_traced",
+            ))?;
+        selected_trace.selected = true;
+    }
+
+    Ok(ExactSafeSetPlan {
+        candidates_evaluated,
+        candidates_with_descent,
+        output_gradient_sum,
+        exact_safe_candidates,
+        exact_guard_rejections,
+        exact_candidates,
+        selected,
     })
 }
 
@@ -5827,6 +6177,186 @@ mod direct_search_tests {
                 .to_json_line()
                 .contains("\"frozen_parameters_unchanged\":true")
         );
+    }
+
+    #[test]
+    fn direct_head_exact_safe_set_checks_both_directions_and_replays() {
+        let tokens = token_fixture();
+        let config = DirectHeadTrainConfig {
+            context_tokens: 2,
+            train_windows: 2,
+            dev_windows: 2,
+            candidates_per_round: 8,
+            max_rounds: 3,
+            require_dev_nll_nonworsening: true,
+            exact_safe_set_selection: true,
+            ..DirectHeadTrainConfig::default()
+        };
+        let source = tiny_model();
+        let mut left = source.clone();
+        let mut right = source;
+        let left_trace = train_production_direct_head_search(&mut left, &tokens, 0x3333, config)
+            .expect("exact safe-set direct head train");
+        let right_trace = train_production_direct_head_search(&mut right, &tokens, 0x3333, config)
+            .expect("exact safe-set direct head replay");
+
+        assert_eq!(left, right);
+        assert_eq!(left_trace, right_trace);
+        assert!(left_trace.exact_safe_set_selection);
+        assert!(left_trace.total_exact_directions_evaluated > 0);
+        assert_eq!(
+            left_trace.initial_frozen_parameter_hash,
+            left_trace.final_frozen_parameter_hash
+        );
+        assert!(left_trace.final_train_nll_q20 <= left_trace.initial_train_nll_q20);
+        assert!(left_trace.final_dev_nll_q20 <= left_trace.initial_dev_nll_q20);
+        assert_eq!(
+            left_trace.total_candidates_evaluated,
+            left_trace
+                .round_traces
+                .iter()
+                .map(|round| round.candidates_evaluated)
+                .sum()
+        );
+        assert_eq!(
+            left_trace.total_exact_directions_evaluated,
+            left_trace
+                .round_traces
+                .iter()
+                .map(|round| round.exact_directions_evaluated)
+                .sum()
+        );
+        assert_eq!(
+            left_trace.total_exact_safe_candidates,
+            left_trace
+                .round_traces
+                .iter()
+                .map(|round| round.exact_safe_candidates)
+                .sum()
+        );
+        assert_eq!(
+            left_trace.total_exact_guard_rejections,
+            left_trace
+                .round_traces
+                .iter()
+                .map(|round| round.exact_guard_rejections)
+                .sum()
+        );
+
+        for round in &left_trace.round_traces {
+            assert_eq!(
+                round.exact_directions_evaluated,
+                round.candidates_evaluated * 2
+            );
+            assert_eq!(
+                round.exact_candidates.len(),
+                round.exact_directions_evaluated
+            );
+            assert!(round.exact_candidates.chunks_exact(2).all(|directions| {
+                directions[0].global_coordinate == directions[1].global_coordinate
+                    && directions[0].proposed_delta == -1
+                    && directions[1].proposed_delta == 1
+            }));
+            assert!(round.exact_candidates.iter().all(|candidate| {
+                candidate.safe == (candidate.train_descent && candidate.dev_guard_safe)
+                    && (!candidate.selected || candidate.safe)
+            }));
+            let mut safe = round
+                .exact_candidates
+                .iter()
+                .filter(|candidate| candidate.safe)
+                .collect::<Vec<_>>();
+            safe.sort_by(|left, right| {
+                right
+                    .train_nll_improvement_q20
+                    .cmp(&left.train_nll_improvement_q20)
+                    .then_with(|| left.global_coordinate.cmp(&right.global_coordinate))
+                    .then_with(|| left.proposed_delta.cmp(&right.proposed_delta))
+            });
+            let selected = round
+                .exact_candidates
+                .iter()
+                .filter(|candidate| candidate.selected)
+                .collect::<Vec<_>>();
+            assert!(selected.len() <= 1);
+            match safe.first() {
+                Some(expected) => {
+                    assert_eq!(selected, vec![*expected]);
+                    assert_eq!(round.applied_delta, expected.proposed_delta);
+                    assert_eq!(
+                        round.best_delta_train_nll_q20,
+                        expected.train_nll_improvement_q20
+                    );
+                    assert_eq!(
+                        round.best_delta_dev_nll_q20,
+                        expected.dev_nll_improvement_q20
+                    );
+                }
+                None => {
+                    assert!(selected.is_empty());
+                    assert_eq!(round.applied_delta, 0);
+                }
+            }
+        }
+
+        let json = left_trace.to_json_line();
+        assert!(json.contains("\"exact_safe_set_selection\":true"));
+        assert!(json.contains(
+            "\"method\":\"gradient_ranked_exact_two_surface_safe_set_coordinate_descent\""
+        ));
+        assert!(json.contains("\"exact_candidates\":["));
+    }
+
+    #[test]
+    fn direct_head_exact_safe_set_explicitly_retains_source_when_no_move_is_safe() {
+        let tokens = token_fixture();
+        let source = tiny_model();
+        let mut candidate = source.clone();
+        let trace = train_production_direct_head_search(
+            &mut candidate,
+            &tokens,
+            0x4444,
+            DirectHeadTrainConfig {
+                context_tokens: 2,
+                train_windows: 2,
+                dev_windows: 2,
+                candidates_per_round: 8,
+                max_rounds: 3,
+                min_train_nll_delta: i64::MAX,
+                require_dev_nll_nonworsening: true,
+                exact_safe_set_selection: true,
+                ..DirectHeadTrainConfig::default()
+            },
+        )
+        .expect("exact safe-set source retention");
+
+        assert_eq!(candidate, source);
+        assert_eq!(trace.rounds, 1);
+        assert_eq!(trace.total_descent_steps, 0);
+        assert_eq!(trace.round_traces[0].applied_delta, 0);
+        assert!(
+            trace.round_traces[0]
+                .exact_candidates
+                .iter()
+                .all(|candidate| !candidate.selected)
+        );
+        assert!(trace.to_json_line().contains("\"source_selected\":true"));
+    }
+
+    #[test]
+    fn direct_head_exact_safe_set_requires_the_dev_guard() {
+        let mut model = tiny_model();
+        let result = train_production_direct_head_search(
+            &mut model,
+            &token_fixture(),
+            0x5555,
+            DirectHeadTrainConfig {
+                exact_safe_set_selection: true,
+                require_dev_nll_nonworsening: false,
+                ..DirectHeadTrainConfig::default()
+            },
+        );
+        assert!(matches!(result, Err(TrainError::InvalidConfig)));
     }
 
     #[test]
