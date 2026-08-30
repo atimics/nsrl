@@ -1288,3 +1288,21 @@ surfaces and select the best safe coordinate with the source retained as an
 explicit candidate. Public test, open generation, hidden data, p20m/p30m
 execution, and paid scaling were not opened. Frozen evidence is in
 `benchmarks/production-model-v1/p10m-direct-head-nll-guard-v1-development-gate.json`.
+
+The prospective `p10m_direct_head_nll_safe_set_v1` follow-up is frozen but has
+not yet been run. It keeps the same healthy v9 source, 64-window proposal
+surface, 32-window document-disjoint guard, eight gradient-ranked coordinates,
+and eight-round bound. For every evaluable ranked coordinate, both unit
+directions must be measured exactly on the complete proposal and guard
+surfaces. Only strict proposal-NLL descent with guard-NLL nonworsening enters
+the safe set. The largest exact proposal improvement wins, with a stable
+coordinate and direction tie-break; an empty safe set retains the source and
+stops.
+
+Training and replay must first pass a private gate that checks byte replay,
+every candidate trace, safe-set membership, selection, frozen parameters, zero
+saturation, at least one applied move, strict proposal improvement, and guard
+nonworsening. Public development stays unopened unless that gate passes.
+Public test, open generation, hidden data, p20m/p30m execution, and paid scaling
+remain separately gated or unauthorized. The prospective contract is in
+`benchmarks/production-model-v1/p10m-direct-head-nll-safe-set-v1-contract.json`.

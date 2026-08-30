@@ -1,0 +1,155 @@
+{
+  "schema": "nsrl.production_direct_head_nll_safe_set_contract.v1",
+  "objective": "test_whether_exact_two_surface_safe_set_coordinate_descent_can_find_an_output_head_move_that_improves_canonical_training_nll_without_worsening_a_fixed_disjoint_training_guard_or_public_evaluation",
+  "profile": "p10m",
+  "parameter_count": 9317632,
+  "implementation": {
+    "support_commit": "af4f76496b2f6b8add0075e19925391896674e58",
+    "command": "nsrl-production-model direct-head-train --direct-head-exact-safe-set",
+    "objective": "integer_base2_softmax_nll_q20",
+    "method": "gradient_ranked_exact_two_surface_safe_set_coordinate_descent",
+    "gradient_use": "candidate_ranking_only_not_update_rule",
+    "parameter_scope": "output_matrix_and_output_bias_only",
+    "direction_set": [-1, 1],
+    "proposal_acceptance": "exact_complete_train_surface_nll_strict_descent",
+    "guard_acceptance": "exact_fixed_training_corpus_dev_surface_nll_nonworsening",
+    "selection": "largest_exact_proposal_nll_improvement_then_lowest_global_coordinate_then_negative_direction",
+    "source_always_candidate": true,
+    "empty_safe_set_action": "retain_source_and_stop_bounded_search_before_public_development",
+    "frozen_parameter_groups": [
+      "embeddings", "attention_rms", "mlp_rms", "final_rms", "q", "k", "v", "o", "up", "gate", "down"
+    ],
+    "artifacts": [
+      {
+        "path": "crates/nsrl-train/src/production/training.rs",
+        "sha256": "a2b841c1bc7cc94e6a3d2604223767f1d364327da9412431d0cfb44e01509a34"
+      },
+      {
+        "path": "crates/nsrl-train/src/production/margin_training.rs",
+        "sha256": "c69f808112d0442905f170a7ced28fef90e3a69fb3affb88554dec50f17608ac"
+      },
+      {
+        "path": "crates/nsrl-train/src/production.rs",
+        "sha256": "eb10ca54aa85b1dffbfc647cd5576b806c9606809bd57e92dbba1d3db59d9430"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-production-model.rs",
+        "sha256": "5dbf955abd342e7ec724982da2c3dfb924c2f3f7b79043580f953d038b6a5ec5"
+      }
+    ]
+  },
+  "source": {
+    "model_path": "data/experiments/production-model-v1/p10m-causal-tail-representation-v9-health-scale/chunk-3/model.nsrlpm",
+    "model_hash": "0xd2b9c7b907595967",
+    "artifact_sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22",
+    "development_total_nll_millibits": 6526624,
+    "test_total_nll_millibits": 6526743,
+    "teacher_forced_top1_matches": 0,
+    "teacher_forced_mean_target_rank": 1969,
+    "free_running_self_loop_transition_per_mille": 1000,
+    "context_unique_greedy_tokens": 2,
+    "context_greedy_self_loops": 11
+  },
+  "bindings": {
+    "tokenizer_path": "data/processed/production-corpus-v1/tokenizer.nsrlbpe",
+    "tokenizer_hash": "0xf4fe71d93c438c1a",
+    "tokenizer_sha256": "9a9f96e4b7114726966ce0c2f5a0969939900e28f50860749fc1d1ebc31a25ce",
+    "train_tokens_path": "data/processed/production-corpus-v1/train.nsrltok",
+    "train_token_stream_hash": "0x97e5254c31c27bda",
+    "train_tokens_sha256": "08b759945cfbbbcd15e65a2538d7a34040c8a5e7346cb19f995be05b06ad24b8",
+    "dev_tokens_path": "data/processed/production-corpus-v1/dev.nsrltok",
+    "dev_token_stream_hash": "0xda195778ceb603ab",
+    "dev_tokens_sha256": "8b02253e619f047cb3cb30bf42069fa511f3367d57ed3bb697783fc3257e37b8",
+    "test_tokens_path": "data/processed/production-corpus-v1/test.nsrltok",
+    "test_token_stream_hash": "0xaa9e97e34df7cd03",
+    "test_tokens_sha256": "dc6c350fd02269a61b6c11e7f8c94c8ce7c0e015a337e9bf52ad9e92a0f1d1ce"
+  },
+  "training": {
+    "context_tokens": 64,
+    "train_windows": 64,
+    "guard_windows": 32,
+    "window_selection": "different_document_else_nonoverlap_context_plus_target",
+    "candidates_per_round": 8,
+    "max_rounds": 8,
+    "minimum_train_nll_delta_q20": 0,
+    "probability_gradient_fractional_bits": 23,
+    "probability_normalization": "q47_newton1",
+    "sample_seed": 0,
+    "require_guard_nll_nonworsening": true,
+    "exact_safe_set_selection": true,
+    "exact_full_rerun_replay": true
+  },
+  "training_gates": {
+    "descent_steps_minimum": 1,
+    "model_movement_required": true,
+    "training_nll_strictly_improves": true,
+    "guard_nll_regression_q20_maximum": 0,
+    "guard_mistakes_must_not_increase": true,
+    "frozen_parameters_unchanged": true,
+    "weight_saturation_maximum": 0,
+    "candidate_model_exact_rerun_replay": true,
+    "training_trace_exact_rerun_replay": true,
+    "directions_per_evaluable_coordinate": 2,
+    "every_direction_trace_must_be_consistent": true,
+    "only_safe_candidates_may_be_selected": true,
+    "selected_candidate_must_be_best_safe_candidate": true,
+    "empty_safe_set_must_select_source": true
+  },
+  "development_gates": {
+    "development_nll_regression_per_mille_maximum": 0,
+    "development_residual_saturation_must_not_increase": true,
+    "development_teacher_forced_mean_target_rank_improvement_per_mille_minimum": 0,
+    "development_teacher_forced_top1_must_not_decrease": true,
+    "development_teacher_forced_mean_target_probability_must_not_decrease": true,
+    "rollout_windows": 64,
+    "rollout_tokens": 16
+  },
+  "confirmation_gates": {
+    "test_nll_regression_per_mille_maximum": 0,
+    "test_residual_saturation_must_not_increase": true,
+    "teacher_forced_mean_target_rank_improvement_per_mille_minimum": 0,
+    "teacher_forced_top1_must_not_decrease": true,
+    "teacher_forced_mean_target_probability_must_not_decrease": true,
+    "free_running_self_loop_transition_per_mille_must_not_increase": true,
+    "rollout_windows": 64,
+    "rollout_tokens": 16
+  },
+  "open_generation_gates": {
+    "context_unique_greedy_tokens_minimum": 4,
+    "context_greedy_self_loops_maximum": 10,
+    "context_and_manifest_residual_saturation_maximum": 0
+  },
+  "authorization": {
+    "local_cpu_training": true,
+    "public_development_only_after_training_gate": true,
+    "public_test_only_after_development_gate": true,
+    "open_generation_only_after_confirmation_gate": true,
+    "hidden_panel_access": false,
+    "paid_scaling": false,
+    "p20m_p30m_scaling": false
+  },
+  "research_basis": [
+    {
+      "claim": "language-model maximum-likelihood training minimizes token negative log likelihood",
+      "source": "https://papers.nips.cc/paper_files/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html"
+    },
+    {
+      "claim": "coordinate descent can optimize a multivariable objective through bounded coordinate updates",
+      "source": "https://doi.org/10.1007/s10107-015-0892-3"
+    },
+    {
+      "claim": "a fixed guard surface can constrain updates to a locally safe region",
+      "source": "https://proceedings.mlr.press/v37/schulman15.html"
+    }
+  ],
+  "known_non_claims": [
+    "bounded_public_p10m_pilot_not_full_corpus_training",
+    "gradient_ranking_does_not_define_the_update_rule",
+    "the_internal_guard_is_train_disjoint_but_not_a_held_out_dataset",
+    "public_test_has_prior_confirmatory_reads_for_earlier_candidates",
+    "output_head_updates_do_not_test_trunk_learning",
+    "success_does_not_establish_human_language_quality",
+    "complete_promotion_requires_baselines_human_review_and_an_untouched_hidden_panel",
+    "paid_scaling_remains_unauthorized"
+  ]
+}
