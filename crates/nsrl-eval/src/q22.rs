@@ -61,9 +61,9 @@ impl Q22Check {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct TaskRecord {
-    input: String,
-    model_request: String,
+pub struct Q22TrainingRecord {
+    pub input: String,
+    pub model_request: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,10 +102,7 @@ pub fn load_q22_manifest(path: &Path) -> Result<Q22Manifest, String> {
 }
 
 pub fn encode_q22_dataset(path: &Path, manifest: &Q22Manifest) -> Result<Vec<u8>, String> {
-    let input = fs::read(path)
-        .map_err(|error| format!("cannot read Q22 dataset {}: {error}", path.display()))?;
-    require_hash(&input, &manifest.dataset_sha256, "Q22 dataset")?;
-    let records = parse_training_records(&input, manifest.train_records)?;
+    let records = load_q22_training_records(path, manifest)?;
     let mut encoded = Vec::new();
     for record in records {
         encoded.extend_from_slice(b"[q22]\ninput: ");
@@ -120,6 +117,112 @@ pub fn encode_q22_dataset(path: &Path, manifest: &Q22Manifest) -> Result<Vec<u8>
         "Q22 Solomon encoding",
     )?;
     Ok(encoded)
+}
+
+pub fn load_q22_training_records(
+    path: &Path,
+    manifest: &Q22Manifest,
+) -> Result<Vec<Q22TrainingRecord>, String> {
+    let input = fs::read(path)
+        .map_err(|error| format!("cannot read Q22 dataset {}: {error}", path.display()))?;
+    require_hash(&input, &manifest.dataset_sha256, "Q22 dataset")?;
+    parse_training_records(&input, manifest.train_records)
+}
+
+pub fn load_q22_encoded_training_records(
+    path: &Path,
+    manifest: &Q22Manifest,
+) -> Result<Vec<Q22TrainingRecord>, String> {
+    let encoded = fs::read(path).map_err(|error| {
+        format!(
+            "cannot read encoded Q22 training data {}: {error}",
+            path.display()
+        )
+    })?;
+    require_hash(
+        &encoded,
+        &manifest.encoded_dataset_sha256,
+        "Q22 Solomon encoding",
+    )?;
+    let text = std::str::from_utf8(&encoded).map_err(|_| "Q22 encoding must be UTF-8")?;
+    if !text.ends_with('\n') {
+        return Err("Q22 encoding must end with one newline".to_string());
+    }
+    let lines = text.lines().collect::<Vec<_>>();
+    if !lines.len().is_multiple_of(4) {
+        return Err("Q22 encoding must contain four lines per record".to_string());
+    }
+    let mut records = Vec::with_capacity(lines.len() / 4);
+    for (index, chunk) in lines.chunks_exact(4).enumerate() {
+        let input = chunk[1]
+            .strip_prefix("input: ")
+            .ok_or_else(|| format!("encoded Q22 row {} has no input", index + 1))?;
+        let operation = chunk[2]
+            .strip_prefix("operation: ")
+            .ok_or_else(|| format!("encoded Q22 row {} has no operation", index + 1))?;
+        if chunk[0] != "[q22]"
+            || chunk[3] != "[/q22]"
+            || input.is_empty()
+            || input.contains(['\t', '\r', '\n'])
+            || !is_operation(operation)
+        {
+            return Err(format!("invalid encoded Q22 row {}", index + 1));
+        }
+        records.push(Q22TrainingRecord {
+            input: input.to_string(),
+            model_request: operation.to_string(),
+        });
+    }
+    if records.len() != manifest.train_records {
+        return Err(format!(
+            "Q22 encoding has {} records, expected {}",
+            records.len(),
+            manifest.train_records
+        ));
+    }
+    Ok(records)
+}
+
+pub fn blind_q22_evaluation(path: &Path, manifest: &Q22Manifest) -> Result<Vec<u8>, String> {
+    let evaluation = fs::read(path)
+        .map_err(|error| format!("cannot read Q22 evaluation {}: {error}", path.display()))?;
+    require_hash(&evaluation, &manifest.eval_sha256, "Q22 evaluation")?;
+    let text = std::str::from_utf8(&evaluation).map_err(|_| "Q22 evaluation must be UTF-8 TSV")?;
+    let mut lines = text.lines();
+    if lines.next() != Some(EVAL_HEADER) {
+        return Err("Q22 evaluation header is invalid".to_string());
+    }
+    let mut blinded = String::from("id\tinput\n");
+    let mut ids = BTreeSet::new();
+    for (offset, line) in lines.enumerate() {
+        let line_number = offset + 2;
+        let fields = line.split('\t').collect::<Vec<_>>();
+        if fields.len() != 8
+            || fields[1] != "quantity"
+            || fields[2] != PREVIOUS_SUMMARY
+            || !fields[0].starts_with("quantity-request/promotion/")
+            || fields[0].contains(['\r', '\n'])
+            || fields[3].contains(['\t', '\r', '\n'])
+            || !ids.insert(fields[0])
+        {
+            return Err(format!("invalid Q22 evaluation row {line_number}"));
+        }
+        // The blinded surface intentionally copies only identity and input. It does
+        // not validate or expose the label-bearing columns; the independent checker
+        // remains the only component that interprets those columns.
+        blinded.push_str(fields[0]);
+        blinded.push('\t');
+        blinded.push_str(fields[3]);
+        blinded.push('\n');
+    }
+    if ids.len() != manifest.eval_records {
+        return Err(format!(
+            "Q22 evaluation has {} records, expected {}",
+            ids.len(),
+            manifest.eval_records
+        ));
+    }
+    Ok(blinded.into_bytes())
 }
 
 pub fn check_q22_predictions(
@@ -150,7 +253,10 @@ pub fn check_q22_predictions(
     })
 }
 
-fn parse_training_records(input: &[u8], expected_count: usize) -> Result<Vec<TaskRecord>, String> {
+fn parse_training_records(
+    input: &[u8],
+    expected_count: usize,
+) -> Result<Vec<Q22TrainingRecord>, String> {
     let text = std::str::from_utf8(input).map_err(|_| "Q22 dataset must be UTF-8 JSONL")?;
     if !text.ends_with('\n') {
         return Err("Q22 dataset must end with one newline".to_string());
@@ -179,7 +285,7 @@ fn parse_training_records(input: &[u8], expected_count: usize) -> Result<Vec<Tas
         if !ids.insert(id.clone()) {
             return Err(format!("duplicate Q22 training ID {id}"));
         }
-        records.push(TaskRecord {
+        records.push(Q22TrainingRecord {
             input,
             model_request,
         });
@@ -609,5 +715,61 @@ mod tests {
         };
         assert_eq!(check.operation_exact_rate_ppm(), 800_000);
         assert!(check.to_json_line().contains("\"valid\":true"));
+    }
+
+    #[test]
+    fn blinding_removes_every_label_bearing_column() {
+        let evaluation = format!(
+            "{EVAL_HEADER}\nquantity-request/promotion/000001\tquantity\t{PREVIOUS_SUMMARY}\tadd -2 7\tquantity.add\trequest quantity.add\tresult 5\tkernel committed result 5\n"
+        );
+        let path = std::env::temp_dir().join(format!(
+            "nsrl-q22-blind-{}-{}.tsv",
+            std::process::id(),
+            stable_hash_for_test(evaluation.as_bytes())
+        ));
+        fs::write(&path, &evaluation).expect("fixture");
+        let manifest = Q22Manifest {
+            dataset_sha256: "a".repeat(64),
+            eval_sha256: sha256_hex(evaluation.as_bytes()),
+            encoded_dataset_sha256: "b".repeat(64),
+            train_records: 1,
+            eval_records: 1,
+        };
+        let blinded = blind_q22_evaluation(&path, &manifest).expect("blind");
+        fs::remove_file(path).expect("remove fixture");
+        assert_eq!(
+            blinded,
+            b"id\tinput\nquantity-request/promotion/000001\tadd -2 7\n"
+        );
+        assert!(!String::from_utf8(blinded).unwrap().contains("quantity.add"));
+    }
+
+    #[test]
+    fn encoded_loader_requires_the_frozen_solomon_surface() {
+        let encoded = b"[q22]\ninput: solve 2*x+1=5\noperation: quantity.solve-linear\n[/q22]\n";
+        let path = std::env::temp_dir().join(format!(
+            "nsrl-q22-encoded-{}-{}.txt",
+            std::process::id(),
+            stable_hash_for_test(encoded)
+        ));
+        fs::write(&path, encoded).expect("fixture");
+        let manifest = Q22Manifest {
+            dataset_sha256: "a".repeat(64),
+            eval_sha256: "b".repeat(64),
+            encoded_dataset_sha256: sha256_hex(encoded),
+            train_records: 1,
+            eval_records: 1,
+        };
+        let records = load_q22_encoded_training_records(&path, &manifest).expect("load");
+        fs::remove_file(path).expect("remove fixture");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].input, "solve 2*x+1=5");
+        assert_eq!(records[0].model_request, "quantity.solve-linear");
+    }
+
+    fn stable_hash_for_test(bytes: &[u8]) -> u32 {
+        bytes.iter().fold(2_166_136_261_u32, |hash, &byte| {
+            (hash ^ u32::from(byte)).wrapping_mul(16_777_619)
+        })
     }
 }

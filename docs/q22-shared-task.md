@@ -33,5 +33,32 @@ cargo run -p nsrl-eval -- q22-check \
   --predictions /path/to/predictions.tsv
 ```
 
-This closes the encoding and verifier infrastructure gap. It does not train a
-Solomon model and does not claim replication success.
+## Prospective Solomon run
+
+The registered Solomon experiment uses the same sparse integer class-head
+lineage as the Solomon v2 retrieval spine. It fixes an 8,192-feature signed
+integer perceptron, four epochs, and seeds 1, 2, and 3. The command below is the
+only supported full run:
+
+```bash
+node scripts/run-q22-solomon-prospective.mjs \
+  --train-dataset /path/to/quantity-request.train.jsonl \
+  --eval /path/to/quantity-request.promotion.tsv \
+  --out-dir /path/to/new-empty-output-directory
+```
+
+The runner trains and hashes all three models before it reads the evaluation
+file. It then creates a two-column blinded ID/input file. The proposer never
+receives the gold operation, request, artifact, or summary columns. Training or
+model selection after that point is forbidden.
+
+The family result is `go` only when every seed reaches 950,000
+`operation_exact_rate_ppm` and all 500 predictions are identical across all
+three seeds. A completed miss is a valid `no_go`, not an execution failure.
+The local CPU budget is 60 seconds per seed, 180 seconds total, with no paid
+compute and no network.
+
+The frozen contract is
+`benchmarks/q22-solomon-prospective-v1/contract.json`. Its checked-in state is
+`preregistered_not_run`; result artifacts belong in a later evidence change so
+the outcome cannot rewrite the design.

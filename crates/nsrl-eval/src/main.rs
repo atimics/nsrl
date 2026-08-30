@@ -10,7 +10,9 @@ use nsrl_eval::contract::{
 use nsrl_eval::open_generation::{
     load_open_generation_manifest, open_generation_contract_json_line,
 };
-use nsrl_eval::q22::{check_q22_predictions, encode_q22_dataset, load_q22_manifest};
+use nsrl_eval::q22::{
+    blind_q22_evaluation, check_q22_predictions, encode_q22_dataset, load_q22_manifest,
+};
 
 fn main() {
     if let Err(error) = run() {
@@ -66,6 +68,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &manifest,
             )?;
             fs::write(output.ok_or("q22-encode requires --out PATH")?, encoded)?;
+        }
+        Some("q22-blind") => {
+            let mut manifest = None;
+            let mut evaluation = None;
+            let mut output = None;
+            while let Some(arg) = args.next() {
+                match arg.as_str() {
+                    "--manifest" => {
+                        manifest = Some(PathBuf::from(required(&mut args, "--manifest")?))
+                    }
+                    "--eval" => evaluation = Some(PathBuf::from(required(&mut args, "--eval")?)),
+                    "--out" => output = Some(PathBuf::from(required(&mut args, "--out")?)),
+                    other => return Err(format!("unknown q22-blind argument: {other}").into()),
+                }
+            }
+            let manifest =
+                load_q22_manifest(&manifest.ok_or("q22-blind requires --manifest PATH")?)?;
+            let blinded = blind_q22_evaluation(
+                &evaluation.ok_or("q22-blind requires --eval PATH")?,
+                &manifest,
+            )?;
+            fs::write(output.ok_or("q22-blind requires --out PATH")?, blinded)?;
         }
         Some("q22-check") => {
             let mut manifest = None;
@@ -172,6 +196,6 @@ fn required(
 
 fn print_help() {
     println!(
-        "Usage:\n  nsrl-eval contract\n  nsrl-eval manifest --manifest PATH\n  nsrl-eval check-baselines --manifest PATH --results PATH\n  nsrl-eval check --manifest PATH --results PATH\n  nsrl-eval open-generation-contract\n  nsrl-eval open-generation-manifest --manifest PATH\n  nsrl-eval q22-manifest --manifest PATH\n  nsrl-eval q22-encode --manifest PATH --dataset PATH --out PATH\n  nsrl-eval q22-check --manifest PATH --eval PATH --predictions PATH\n\nThe Q22 commands bind Solomon to the shared Zero/Solomon operation-routing task. Encoding writes a byte-identity training surface; checking validates the frozen evaluation bytes and exact operation predictions."
+        "Usage:\n  nsrl-eval contract\n  nsrl-eval manifest --manifest PATH\n  nsrl-eval check-baselines --manifest PATH --results PATH\n  nsrl-eval check --manifest PATH --results PATH\n  nsrl-eval open-generation-contract\n  nsrl-eval open-generation-manifest --manifest PATH\n  nsrl-eval q22-manifest --manifest PATH\n  nsrl-eval q22-encode --manifest PATH --dataset PATH --out PATH\n  nsrl-eval q22-blind --manifest PATH --eval PATH --out PATH\n  nsrl-eval q22-check --manifest PATH --eval PATH --predictions PATH\n\nThe Q22 commands bind Solomon to the shared Zero/Solomon operation-routing task. Encoding writes a byte-identity training surface; blinding exposes only IDs and inputs after model freeze; checking validates the frozen evaluation bytes and exact operation predictions."
     );
 }

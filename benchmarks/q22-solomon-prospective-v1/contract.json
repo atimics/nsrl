@@ -1,0 +1,110 @@
+{
+  "schema": "nsrl.q22_solomon_prospective_contract.v1",
+  "id": "solomon.q22-operation.prospective-v1",
+  "status": "preregistered_not_run",
+  "shared_task_id": "zero-solomon.q22-operation.v1",
+  "family": "solomon",
+  "hypothesis": "A frozen Solomon sparse integer class head learns the five Q22 operation routes from the shared training set, reaches at least 950000 exact-rate ppm on every declared seed, and makes identical predictions across all three seeds.",
+  "dataset": {
+    "manifest": "benchmarks/q22-shared-task-v1/manifest.tsv",
+    "manifest_sha256": "8bc20345afea89735b742139b7c78942812b025605c034b59736b4f7458545a5",
+    "train_sha256": "815fac312664f49eaaa33942828ffa1511fd81091ccd88d47b4480b6c27a5fa4",
+    "encoded_train_sha256": "2f03c80eb286e64eeb22521a929184d6018991667e0ddd410b6e22acbb9bef61",
+    "eval_sha256": "9270ea2b72af90235407bd7924a0864b8eba35b2969e1657ed1c15bf04449519",
+    "train_records": 9500,
+    "eval_records": 500,
+    "encoding": "solomon.q22-operation.byte-v1",
+    "verifier": "verifier://solomon/q22-operation/v1"
+  },
+  "model": {
+    "schema": "nsrl.q22_integer_class_head.v1",
+    "kind": "sparse_integer_perceptron_class_head",
+    "lineage": "Solomon v2 sparse integer retrieval/class head",
+    "feature_count": 8192,
+    "feature_map": "fnv1a64-hashed first-token, token, positioned-token, and byte 1-to-4-gram counts",
+    "class_order": [
+      "quantity.add",
+      "quantity.multiply",
+      "quantity.add-rational",
+      "quantity.convert",
+      "quantity.solve-linear"
+    ],
+    "initialization": "all-zero signed 32-bit weights and biases",
+    "trainer": "seeded shuffled multiclass perceptron",
+    "artifact_binding": "each model stores the frozen Solomon encoded-training SHA-256",
+    "epochs": 4,
+    "integer_only": true,
+    "adaptive_repair_allowed": false
+  },
+  "replicas": {
+    "seeds": [1, 2, 3],
+    "seed_role": "deterministic per-epoch training order",
+    "run_all": true,
+    "early_family_stop_allowed": false
+  },
+  "compute_budget": {
+    "execution": "local_cpu_only",
+    "network": "off",
+    "paid_compute_allowed": false,
+    "max_wall_seconds_per_seed": 60,
+    "max_total_wall_seconds": 180,
+    "max_training_examples_per_seed": 38000,
+    "max_model_bytes_per_seed": 200000
+  },
+  "evaluation_firewall": {
+    "policy": "models_first_evaluation_later",
+    "ordered_steps": [
+      "train all seeds using only the hash-checked training dataset",
+      "write and hash all three final model artifacts",
+      "write models-frozen.json with evaluation_opened=false",
+      "first open the frozen evaluation file only after model freeze to create id-and-input-only blinded rows",
+      "predict from the blinded rows without any label-bearing columns",
+      "run the independent verifier after all models are immutable",
+      "forbid retraining, hyperparameter changes, or model selection after evaluation opens"
+    ],
+    "training_process_receives_eval_path": false,
+    "prediction_process_receives_gold_columns": false,
+    "retraining_after_eval_allowed": false,
+    "model_selection_after_eval_allowed": false
+  },
+  "outcome_rule": {
+    "primary_metric": "minimum_operation_exact_rate_ppm",
+    "minimum_seed_exact_rate_ppm": 950000,
+    "agreement_metric": "all_seed_agreement_rate_ppm",
+    "minimum_all_seed_agreement_rate_ppm": 1000000,
+    "all_seeds_must_pass": true,
+    "go": "every seed reaches 950000 ppm and all 500 per-input predictions agree across seeds",
+    "no_go": "a valid run completes but either threshold is missed",
+    "execution_failure": "the run violates hashes, budget, firewall ordering, artifact immutability, or process completion"
+  },
+  "implementation": {
+    "source_state": "merge commit must be pinned by the ilXyr experiment before execution",
+    "runner": "scripts/run-q22-solomon-prospective.mjs",
+    "source_files": [
+      {
+        "path": "crates/nsrl-eval/src/q22.rs",
+        "sha256": "05f057a8217190709ff5965ea3e8d488a15770b8b84d7d216efaf36ce24f5135"
+      },
+      {
+        "path": "crates/nsrl-eval/src/main.rs",
+        "sha256": "4aa1d35ea0468c310c52e09f0051c6a5afd4f0bfa02111f6d9a8b5535bc22d4f"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-q22-proposer.rs",
+        "sha256": "2bf5350717679210f694c4453d70882e39130a5b3965f169692705d78f7a849e"
+      },
+      {
+        "path": "scripts/run-q22-solomon-prospective.mjs",
+        "sha256": "631e95705577854381b8d8c10aa63b426c52a4beb067054403c72dbaa1ed7726"
+      }
+    ]
+  },
+  "development_evidence": {
+    "scope": "training-data liveness only",
+    "promotion_evaluation_opened": false,
+    "seeds": [1, 2, 3],
+    "mistakes_by_epoch_each_seed": [5, 0, 0, 0],
+    "final_training_exact_rate_ppm_each_seed": 1000000,
+    "used_for_outcome": false
+  }
+}
