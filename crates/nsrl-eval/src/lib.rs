@@ -2,6 +2,7 @@
 
 pub mod contract;
 pub mod open_generation;
+pub mod q22;
 
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};

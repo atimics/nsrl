@@ -1,0 +1,2 @@
+schema	contract	dataset_sha256	eval_sha256	encoding	encoded_dataset_sha256	verifier	train_records	eval_records
+nsrl.q22_shared_task_manifest.v1	zero-solomon.q22-operation.v1	815fac312664f49eaaa33942828ffa1511fd81091ccd88d47b4480b6c27a5fa4	9270ea2b72af90235407bd7924a0864b8eba35b2969e1657ed1c15bf04449519	solomon.q22-operation.byte-v1	2f03c80eb286e64eeb22521a929184d6018991667e0ddd410b6e22acbb9bef61	verifier://solomon/q22-operation/v1	9500	500
