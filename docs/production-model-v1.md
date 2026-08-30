@@ -1311,3 +1311,19 @@ has no safe descent direction. The required movement and strict proposal-NLL
 gates failed, so public development, public test, open generation, hidden data,
 p20m/p30m execution, and paid scaling were not opened. Frozen evidence is in
 `benchmarks/production-model-v1/p10m-direct-head-nll-safe-set-v1-training-gate.json`.
+
+The prospective `p10m_direct_head_cross_document_stability_v1` audit is frozen
+before execution. It keeps the same healthy v9 source and the eight exact unit
+directions that improved the earlier proposal document while worsening its
+guard. It will measure those fixed directions on the first 32 complete
+64-token windows of training documents 2 through 9, which were not used by the
+proposal or guard surfaces.
+
+A direction counts as stable only if it strictly improves at least six of the
+eight new documents and has positive aggregate NLL improvement. At least one
+stable direction is required before another follow-up in this coordinate family
+is supported. The audit is read-only and must replay byte-for-byte. It does not
+create a candidate or authorize public development, public test, open
+generation, hidden data, p20m/p30m execution, or paid scaling. The prospective
+rules are in
+`benchmarks/production-model-v1/p10m-direct-head-cross-document-stability-v1-contract.json`.
