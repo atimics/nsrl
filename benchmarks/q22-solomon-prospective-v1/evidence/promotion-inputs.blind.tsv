@@ -1,0 +1,501 @@
+id	input
+quantity-request/promotion/000000	add -205 829
+quantity-request/promotion/000001	multiply -81 -6
+quantity-request/promotion/000002	add-rational -5/19 -22/9
+quantity-request/promotion/000003	convert 543 m-to-cm
+quantity-request/promotion/000004	solve 16*x+-53=1371
+quantity-request/promotion/000005	add -361 8
+quantity-request/promotion/000006	multiply -59 -92
+quantity-request/promotion/000007	add-rational 8/2 -14/5
+quantity-request/promotion/000008	convert 115 cm-to-mm
+quantity-request/promotion/000009	solve 20*x+-11=389
+quantity-request/promotion/000010	add 881 -983
+quantity-request/promotion/000011	multiply -45 83
+quantity-request/promotion/000012	add-rational 10/7 -15/18
+quantity-request/promotion/000013	convert 60 m-to-cm
+quantity-request/promotion/000014	solve 20*x+41=-759
+quantity-request/promotion/000015	add -272 -631
+quantity-request/promotion/000016	multiply 80 77
+quantity-request/promotion/000017	add-rational 17/16 18/17
+quantity-request/promotion/000018	convert 764 m-to-cm
+quantity-request/promotion/000019	solve 22*x+12=-1176
+quantity-request/promotion/000020	add -668 803
+quantity-request/promotion/000021	multiply -13 -63
+quantity-request/promotion/000022	add-rational 2/14 -19/23
+quantity-request/promotion/000023	convert 698 kg-to-g
+quantity-request/promotion/000024	solve 4*x+-49=55
+quantity-request/promotion/000025	add -658 563
+quantity-request/promotion/000026	multiply -14 77
+quantity-request/promotion/000027	add-rational -8/8 -12/5
+quantity-request/promotion/000028	convert 95 kg-to-g
+quantity-request/promotion/000029	solve 11*x+-10=-395
+quantity-request/promotion/000030	add 246 795
+quantity-request/promotion/000031	multiply 0 -89
+quantity-request/promotion/000032	add-rational 5/17 -1/16
+quantity-request/promotion/000033	convert 221 m-to-cm
+quantity-request/promotion/000034	solve 9*x+-4=212
+quantity-request/promotion/000035	add -383 612
+quantity-request/promotion/000036	multiply -73 -40
+quantity-request/promotion/000037	add-rational -22/10 -12/4
+quantity-request/promotion/000038	convert 240 m-to-cm
+quantity-request/promotion/000039	solve 3*x+1=-248
+quantity-request/promotion/000040	add -941 -540
+quantity-request/promotion/000041	multiply -59 -92
+quantity-request/promotion/000042	add-rational 0/1 -14/17
+quantity-request/promotion/000043	convert 667 kg-to-g
+quantity-request/promotion/000044	solve 7*x+-26=-313
+quantity-request/promotion/000045	add -407 -124
+quantity-request/promotion/000046	multiply 85 -15
+quantity-request/promotion/000047	add-rational -11/12 7/12
+quantity-request/promotion/000048	convert 993 kg-to-g
+quantity-request/promotion/000049	solve 10*x+23=543
+quantity-request/promotion/000050	add -728 793
+quantity-request/promotion/000051	multiply -99 -34
+quantity-request/promotion/000052	add-rational -6/1 -7/18
+quantity-request/promotion/000053	convert 390 kg-to-g
+quantity-request/promotion/000054	solve 20*x+-7=-327
+quantity-request/promotion/000055	add -21 -930
+quantity-request/promotion/000056	multiply 75 -82
+quantity-request/promotion/000057	add-rational -8/15 4/14
+quantity-request/promotion/000058	convert 812 kg-to-g
+quantity-request/promotion/000059	solve 14*x+46=298
+quantity-request/promotion/000060	add -745 -894
+quantity-request/promotion/000061	multiply -78 37
+quantity-request/promotion/000062	add-rational 7/8 23/12
+quantity-request/promotion/000063	convert 773 m-to-cm
+quantity-request/promotion/000064	solve 9*x+-33=327
+quantity-request/promotion/000065	add 116 822
+quantity-request/promotion/000066	multiply -37 -28
+quantity-request/promotion/000067	add-rational -10/3 8/22
+quantity-request/promotion/000068	convert 637 kg-to-g
+quantity-request/promotion/000069	solve 7*x+-11=136
+quantity-request/promotion/000070	add -97 551
+quantity-request/promotion/000071	multiply 29 62
+quantity-request/promotion/000072	add-rational 5/4 3/10
+quantity-request/promotion/000073	convert 800 kg-to-g
+quantity-request/promotion/000074	solve 3*x+39=-15
+quantity-request/promotion/000075	add 644 -726
+quantity-request/promotion/000076	multiply -98 -29
+quantity-request/promotion/000077	add-rational 8/21 -18/23
+quantity-request/promotion/000078	convert 228 kg-to-g
+quantity-request/promotion/000079	solve 18*x+-14=1534
+quantity-request/promotion/000080	add -20 576
+quantity-request/promotion/000081	multiply 54 12
+quantity-request/promotion/000082	add-rational 3/16 -6/23
+quantity-request/promotion/000083	convert 716 kg-to-g
+quantity-request/promotion/000084	solve 21*x+-2=1174
+quantity-request/promotion/000085	add -663 -290
+quantity-request/promotion/000086	multiply -14 79
+quantity-request/promotion/000087	add-rational -2/9 -9/3
+quantity-request/promotion/000088	convert 355 cm-to-mm
+quantity-request/promotion/000089	solve 2*x+-8=-114
+quantity-request/promotion/000090	add 593 423
+quantity-request/promotion/000091	multiply 61 -64
+quantity-request/promotion/000092	add-rational 1/7 -24/13
+quantity-request/promotion/000093	convert 683 cm-to-mm
+quantity-request/promotion/000094	solve 10*x+39=-361
+quantity-request/promotion/000095	add 5 -447
+quantity-request/promotion/000096	multiply -26 27
+quantity-request/promotion/000097	add-rational -8/10 -6/3
+quantity-request/promotion/000098	convert 673 cm-to-mm
+quantity-request/promotion/000099	solve 19*x+-46=1702
+quantity-request/promotion/000100	add 29 701
+quantity-request/promotion/000101	multiply 27 -35
+quantity-request/promotion/000102	add-rational 1/22 11/19
+quantity-request/promotion/000103	convert 280 m-to-cm
+quantity-request/promotion/000104	solve 10*x+98=628
+quantity-request/promotion/000105	add -33 -652
+quantity-request/promotion/000106	multiply -88 27
+quantity-request/promotion/000107	add-rational 17/19 -3/10
+quantity-request/promotion/000108	convert 600 m-to-cm
+quantity-request/promotion/000109	solve 7*x+-64=328
+quantity-request/promotion/000110	add 834 -203
+quantity-request/promotion/000111	multiply 21 -48
+quantity-request/promotion/000112	add-rational 12/11 20/18
+quantity-request/promotion/000113	convert 69 cm-to-mm
+quantity-request/promotion/000114	solve 2*x+-64=-18
+quantity-request/promotion/000115	add -589 880
+quantity-request/promotion/000116	multiply -1 72
+quantity-request/promotion/000117	add-rational 1/13 13/8
+quantity-request/promotion/000118	convert 954 m-to-cm
+quantity-request/promotion/000119	solve 5*x+69=539
+quantity-request/promotion/000120	add -47 606
+quantity-request/promotion/000121	multiply -73 31
+quantity-request/promotion/000122	add-rational -4/10 -21/5
+quantity-request/promotion/000123	convert 509 m-to-cm
+quantity-request/promotion/000124	solve 4*x+27=-185
+quantity-request/promotion/000125	add 299 -46
+quantity-request/promotion/000126	multiply -26 -85
+quantity-request/promotion/000127	add-rational -10/14 -6/13
+quantity-request/promotion/000128	convert 921 kg-to-g
+quantity-request/promotion/000129	solve 8*x+-28=-276
+quantity-request/promotion/000130	add 105 -470
+quantity-request/promotion/000131	multiply -65 -20
+quantity-request/promotion/000132	add-rational -13/22 15/24
+quantity-request/promotion/000133	convert 760 kg-to-g
+quantity-request/promotion/000134	solve 14*x+-58=390
+quantity-request/promotion/000135	add -115 -993
+quantity-request/promotion/000136	multiply -74 24
+quantity-request/promotion/000137	add-rational 6/1 24/9
+quantity-request/promotion/000138	convert 429 m-to-cm
+quantity-request/promotion/000139	solve 10*x+14=454
+quantity-request/promotion/000140	add 424 -675
+quantity-request/promotion/000141	multiply 84 -75
+quantity-request/promotion/000142	add-rational 15/2 15/15
+quantity-request/promotion/000143	convert 58 cm-to-mm
+quantity-request/promotion/000144	solve 5*x+-78=-543
+quantity-request/promotion/000145	add -664 789
+quantity-request/promotion/000146	multiply -39 -85
+quantity-request/promotion/000147	add-rational -17/15 -12/11
+quantity-request/promotion/000148	convert 38 kg-to-g
+quantity-request/promotion/000149	solve 9*x+96=-435
+quantity-request/promotion/000150	add 875 -324
+quantity-request/promotion/000151	multiply 69 -73
+quantity-request/promotion/000152	add-rational -4/1 3/4
+quantity-request/promotion/000153	convert 805 m-to-cm
+quantity-request/promotion/000154	solve 14*x+62=552
+quantity-request/promotion/000155	add 603 714
+quantity-request/promotion/000156	multiply -36 -33
+quantity-request/promotion/000157	add-rational -16/22 21/4
+quantity-request/promotion/000158	convert 802 cm-to-mm
+quantity-request/promotion/000159	solve 19*x+3=-1612
+quantity-request/promotion/000160	add 691 -261
+quantity-request/promotion/000161	multiply 23 4
+quantity-request/promotion/000162	add-rational -10/14 -7/16
+quantity-request/promotion/000163	convert 56 cm-to-mm
+quantity-request/promotion/000164	solve 1*x+28=108
+quantity-request/promotion/000165	add 213 880
+quantity-request/promotion/000166	multiply -23 -64
+quantity-request/promotion/000167	add-rational 9/16 -10/1
+quantity-request/promotion/000168	convert 524 cm-to-mm
+quantity-request/promotion/000169	solve 16*x+50=626
+quantity-request/promotion/000170	add -711 -837
+quantity-request/promotion/000171	multiply 58 28
+quantity-request/promotion/000172	add-rational 24/7 -17/17
+quantity-request/promotion/000173	convert 57 cm-to-mm
+quantity-request/promotion/000174	solve 6*x+-14=-578
+quantity-request/promotion/000175	add 691 -33
+quantity-request/promotion/000176	multiply 50 99
+quantity-request/promotion/000177	add-rational 11/15 6/21
+quantity-request/promotion/000178	convert 605 cm-to-mm
+quantity-request/promotion/000179	solve 18*x+3=255
+quantity-request/promotion/000180	add 441 -25
+quantity-request/promotion/000181	multiply 15 -17
+quantity-request/promotion/000182	add-rational 5/14 3/6
+quantity-request/promotion/000183	convert 106 cm-to-mm
+quantity-request/promotion/000184	solve 22*x+13=-163
+quantity-request/promotion/000185	add 729 -588
+quantity-request/promotion/000186	multiply 87 13
+quantity-request/promotion/000187	add-rational 14/6 7/15
+quantity-request/promotion/000188	convert 710 kg-to-g
+quantity-request/promotion/000189	solve 20*x+68=1668
+quantity-request/promotion/000190	add -60 -621
+quantity-request/promotion/000191	multiply 14 -8
+quantity-request/promotion/000192	add-rational 3/3 1/17
+quantity-request/promotion/000193	convert 97 m-to-cm
+quantity-request/promotion/000194	solve 7*x+-35=7
+quantity-request/promotion/000195	add 957 -79
+quantity-request/promotion/000196	multiply -35 -49
+quantity-request/promotion/000197	add-rational -20/1 9/6
+quantity-request/promotion/000198	convert 514 kg-to-g
+quantity-request/promotion/000199	solve 2*x+55=-51
+quantity-request/promotion/000200	add -605 -633
+quantity-request/promotion/000201	multiply -40 86
+quantity-request/promotion/000202	add-rational -10/10 8/5
+quantity-request/promotion/000203	convert 826 kg-to-g
+quantity-request/promotion/000204	solve 19*x+-5=-1715
+quantity-request/promotion/000205	add 307 553
+quantity-request/promotion/000206	multiply -2 46
+quantity-request/promotion/000207	add-rational 24/2 -11/10
+quantity-request/promotion/000208	convert 191 cm-to-mm
+quantity-request/promotion/000209	solve 24*x+-81=-81
+quantity-request/promotion/000210	add 891 -639
+quantity-request/promotion/000211	multiply 0 60
+quantity-request/promotion/000212	add-rational -22/9 -17/7
+quantity-request/promotion/000213	convert 369 kg-to-g
+quantity-request/promotion/000214	solve 22*x+-40=-1492
+quantity-request/promotion/000215	add -218 839
+quantity-request/promotion/000216	multiply 58 -35
+quantity-request/promotion/000217	add-rational -16/15 -2/12
+quantity-request/promotion/000218	convert 442 kg-to-g
+quantity-request/promotion/000219	solve 6*x+48=-450
+quantity-request/promotion/000220	add 347 106
+quantity-request/promotion/000221	multiply 62 69
+quantity-request/promotion/000222	add-rational 9/11 -17/2
+quantity-request/promotion/000223	convert 870 m-to-cm
+quantity-request/promotion/000224	solve 2*x+10=172
+quantity-request/promotion/000225	add -331 484
+quantity-request/promotion/000226	multiply -71 13
+quantity-request/promotion/000227	add-rational 21/2 -16/13
+quantity-request/promotion/000228	convert 950 kg-to-g
+quantity-request/promotion/000229	solve 21*x+35=1337
+quantity-request/promotion/000230	add 22 638
+quantity-request/promotion/000231	multiply 55 -72
+quantity-request/promotion/000232	add-rational 22/18 -3/20
+quantity-request/promotion/000233	convert 745 kg-to-g
+quantity-request/promotion/000234	solve 4*x+-97=223
+quantity-request/promotion/000235	add 890 -813
+quantity-request/promotion/000236	multiply 75 64
+quantity-request/promotion/000237	add-rational -19/21 -11/14
+quantity-request/promotion/000238	convert 952 cm-to-mm
+quantity-request/promotion/000239	solve 13*x+-16=894
+quantity-request/promotion/000240	add 195 -215
+quantity-request/promotion/000241	multiply 61 -61
+quantity-request/promotion/000242	add-rational 20/14 -4/1
+quantity-request/promotion/000243	convert 608 kg-to-g
+quantity-request/promotion/000244	solve 22*x+-72=1380
+quantity-request/promotion/000245	add 994 860
+quantity-request/promotion/000246	multiply -43 64
+quantity-request/promotion/000247	add-rational 18/22 18/17
+quantity-request/promotion/000248	convert 825 cm-to-mm
+quantity-request/promotion/000249	solve 23*x+61=291
+quantity-request/promotion/000250	add -166 -281
+quantity-request/promotion/000251	multiply -54 -88
+quantity-request/promotion/000252	add-rational -11/24 6/2
+quantity-request/promotion/000253	convert 525 kg-to-g
+quantity-request/promotion/000254	solve 3*x+96=-39
+quantity-request/promotion/000255	add 56 -251
+quantity-request/promotion/000256	multiply -59 70
+quantity-request/promotion/000257	add-rational -17/19 7/2
+quantity-request/promotion/000258	convert 282 cm-to-mm
+quantity-request/promotion/000259	solve 18*x+24=-642
+quantity-request/promotion/000260	add -377 -778
+quantity-request/promotion/000261	multiply -78 -60
+quantity-request/promotion/000262	add-rational 8/20 23/1
+quantity-request/promotion/000263	convert 917 cm-to-mm
+quantity-request/promotion/000264	solve 3*x+-31=-34
+quantity-request/promotion/000265	add -147 801
+quantity-request/promotion/000266	multiply -76 62
+quantity-request/promotion/000267	add-rational -4/17 0/10
+quantity-request/promotion/000268	convert 870 m-to-cm
+quantity-request/promotion/000269	solve 15*x+-16=389
+quantity-request/promotion/000270	add 344 287
+quantity-request/promotion/000271	multiply -19 44
+quantity-request/promotion/000272	add-rational -8/4 -17/23
+quantity-request/promotion/000273	convert 720 cm-to-mm
+quantity-request/promotion/000274	solve 23*x+83=566
+quantity-request/promotion/000275	add -858 855
+quantity-request/promotion/000276	multiply -63 -47
+quantity-request/promotion/000277	add-rational -13/5 13/7
+quantity-request/promotion/000278	convert 531 kg-to-g
+quantity-request/promotion/000279	solve 4*x+-51=301
+quantity-request/promotion/000280	add -129 858
+quantity-request/promotion/000281	multiply -26 36
+quantity-request/promotion/000282	add-rational 4/5 19/7
+quantity-request/promotion/000283	convert 72 kg-to-g
+quantity-request/promotion/000284	solve 11*x+46=-878
+quantity-request/promotion/000285	add -485 -74
+quantity-request/promotion/000286	multiply 25 -98
+quantity-request/promotion/000287	add-rational 17/6 -10/18
+quantity-request/promotion/000288	convert 520 cm-to-mm
+quantity-request/promotion/000289	solve 10*x+-69=691
+quantity-request/promotion/000290	add -907 -397
+quantity-request/promotion/000291	multiply 53 24
+quantity-request/promotion/000292	add-rational 9/9 -14/23
+quantity-request/promotion/000293	convert 779 cm-to-mm
+quantity-request/promotion/000294	solve 12*x+-52=404
+quantity-request/promotion/000295	add -261 -728
+quantity-request/promotion/000296	multiply -41 -24
+quantity-request/promotion/000297	add-rational 20/19 15/8
+quantity-request/promotion/000298	convert 509 m-to-cm
+quantity-request/promotion/000299	solve 17*x+57=-181
+quantity-request/promotion/000300	add 741 -92
+quantity-request/promotion/000301	multiply -85 -59
+quantity-request/promotion/000302	add-rational -9/12 24/1
+quantity-request/promotion/000303	convert 42 m-to-cm
+quantity-request/promotion/000304	solve 24*x+69=237
+quantity-request/promotion/000305	add 624 -297
+quantity-request/promotion/000306	multiply 27 -83
+quantity-request/promotion/000307	add-rational 1/19 -18/21
+quantity-request/promotion/000308	convert 778 m-to-cm
+quantity-request/promotion/000309	solve 5*x+7=377
+quantity-request/promotion/000310	add -709 -606
+quantity-request/promotion/000311	multiply -53 75
+quantity-request/promotion/000312	add-rational -14/1 -24/16
+quantity-request/promotion/000313	convert 828 kg-to-g
+quantity-request/promotion/000314	solve 21*x+-63=-588
+quantity-request/promotion/000315	add -342 685
+quantity-request/promotion/000316	multiply -59 96
+quantity-request/promotion/000317	add-rational 2/5 -13/12
+quantity-request/promotion/000318	convert 889 cm-to-mm
+quantity-request/promotion/000319	solve 24*x+-86=-2222
+quantity-request/promotion/000320	add 230 583
+quantity-request/promotion/000321	multiply 76 39
+quantity-request/promotion/000322	add-rational 5/11 17/17
+quantity-request/promotion/000323	convert 660 kg-to-g
+quantity-request/promotion/000324	solve 9*x+76=148
+quantity-request/promotion/000325	add -237 928
+quantity-request/promotion/000326	multiply -74 94
+quantity-request/promotion/000327	add-rational 16/16 1/13
+quantity-request/promotion/000328	convert 304 cm-to-mm
+quantity-request/promotion/000329	solve 17*x+-70=-1685
+quantity-request/promotion/000330	add -148 -787
+quantity-request/promotion/000331	multiply 95 -78
+quantity-request/promotion/000332	add-rational -24/2 8/10
+quantity-request/promotion/000333	convert 596 kg-to-g
+quantity-request/promotion/000334	solve 7*x+-96=191
+quantity-request/promotion/000335	add 755 -28
+quantity-request/promotion/000336	multiply -83 97
+quantity-request/promotion/000337	add-rational -10/22 10/15
+quantity-request/promotion/000338	convert 874 cm-to-mm
+quantity-request/promotion/000339	solve 3*x+8=62
+quantity-request/promotion/000340	add -852 -835
+quantity-request/promotion/000341	multiply 20 -93
+quantity-request/promotion/000342	add-rational 19/5 2/14
+quantity-request/promotion/000343	convert 262 m-to-cm
+quantity-request/promotion/000344	solve 11*x+46=-856
+quantity-request/promotion/000345	add 55 231
+quantity-request/promotion/000346	multiply -12 82
+quantity-request/promotion/000347	add-rational -11/15 8/11
+quantity-request/promotion/000348	convert 472 m-to-cm
+quantity-request/promotion/000349	solve 21*x+51=-1083
+quantity-request/promotion/000350	add 44 391
+quantity-request/promotion/000351	multiply 12 -20
+quantity-request/promotion/000352	add-rational 14/23 -9/9
+quantity-request/promotion/000353	convert 441 cm-to-mm
+quantity-request/promotion/000354	solve 8*x+35=-357
+quantity-request/promotion/000355	add 529 -423
+quantity-request/promotion/000356	multiply -85 38
+quantity-request/promotion/000357	add-rational -5/8 20/4
+quantity-request/promotion/000358	convert 194 kg-to-g
+quantity-request/promotion/000359	solve 11*x+-68=570
+quantity-request/promotion/000360	add -128 814
+quantity-request/promotion/000361	multiply -14 -45
+quantity-request/promotion/000362	add-rational -2/14 -12/13
+quantity-request/promotion/000363	convert 910 kg-to-g
+quantity-request/promotion/000364	solve 16*x+-47=1057
+quantity-request/promotion/000365	add 428 466
+quantity-request/promotion/000366	multiply 24 19
+quantity-request/promotion/000367	add-rational 14/14 21/4
+quantity-request/promotion/000368	convert 826 kg-to-g
+quantity-request/promotion/000369	solve 17*x+37=-1136
+quantity-request/promotion/000370	add -265 -274
+quantity-request/promotion/000371	multiply -51 -9
+quantity-request/promotion/000372	add-rational -4/10 -2/20
+quantity-request/promotion/000373	convert 695 cm-to-mm
+quantity-request/promotion/000374	solve 22*x+-30=-822
+quantity-request/promotion/000375	add -498 63
+quantity-request/promotion/000376	multiply -30 8
+quantity-request/promotion/000377	add-rational 10/19 21/5
+quantity-request/promotion/000378	convert 818 kg-to-g
+quantity-request/promotion/000379	solve 16*x+-22=410
+quantity-request/promotion/000380	add 580 -385
+quantity-request/promotion/000381	multiply 56 -74
+quantity-request/promotion/000382	add-rational -7/18 18/3
+quantity-request/promotion/000383	convert 270 cm-to-mm
+quantity-request/promotion/000384	solve 2*x+75=-117
+quantity-request/promotion/000385	add -751 150
+quantity-request/promotion/000386	multiply -52 -65
+quantity-request/promotion/000387	add-rational -13/16 -5/6
+quantity-request/promotion/000388	convert 925 cm-to-mm
+quantity-request/promotion/000389	solve 10*x+-98=-528
+quantity-request/promotion/000390	add 137 -892
+quantity-request/promotion/000391	multiply 64 -91
+quantity-request/promotion/000392	add-rational -22/10 14/20
+quantity-request/promotion/000393	convert 266 cm-to-mm
+quantity-request/promotion/000394	solve 8*x+-84=276
+quantity-request/promotion/000395	add 606 635
+quantity-request/promotion/000396	multiply 6 74
+quantity-request/promotion/000397	add-rational 20/5 -9/3
+quantity-request/promotion/000398	convert 557 m-to-cm
+quantity-request/promotion/000399	solve 6*x+-7=467
+quantity-request/promotion/000400	add 444 -979
+quantity-request/promotion/000401	multiply 91 11
+quantity-request/promotion/000402	add-rational -6/12 13/1
+quantity-request/promotion/000403	convert 71 kg-to-g
+quantity-request/promotion/000404	solve 14*x+92=-930
+quantity-request/promotion/000405	add 823 413
+quantity-request/promotion/000406	multiply 29 40
+quantity-request/promotion/000407	add-rational -4/2 3/8
+quantity-request/promotion/000408	convert 171 m-to-cm
+quantity-request/promotion/000409	solve 13*x+-87=-1075
+quantity-request/promotion/000410	add -844 542
+quantity-request/promotion/000411	multiply -70 55
+quantity-request/promotion/000412	add-rational -19/21 -4/4
+quantity-request/promotion/000413	convert 52 cm-to-mm
+quantity-request/promotion/000414	solve 19*x+16=1517
+quantity-request/promotion/000415	add 406 -344
+quantity-request/promotion/000416	multiply -6 -45
+quantity-request/promotion/000417	add-rational 8/18 -17/3
+quantity-request/promotion/000418	convert 577 kg-to-g
+quantity-request/promotion/000419	solve 14*x+-3=-479
+quantity-request/promotion/000420	add 298 654
+quantity-request/promotion/000421	multiply 4 -64
+quantity-request/promotion/000422	add-rational -13/22 -11/15
+quantity-request/promotion/000423	convert 215 m-to-cm
+quantity-request/promotion/000424	solve 3*x+-83=-290
+quantity-request/promotion/000425	add -527 -608
+quantity-request/promotion/000426	multiply -97 23
+quantity-request/promotion/000427	add-rational 2/5 -3/12
+quantity-request/promotion/000428	convert 427 kg-to-g
+quantity-request/promotion/000429	solve 3*x+-3=-258
+quantity-request/promotion/000430	add -726 -159
+quantity-request/promotion/000431	multiply -42 -25
+quantity-request/promotion/000432	add-rational 14/7 21/10
+quantity-request/promotion/000433	convert 543 kg-to-g
+quantity-request/promotion/000434	solve 11*x+-92=-444
+quantity-request/promotion/000435	add -63 288
+quantity-request/promotion/000436	multiply -48 -7
+quantity-request/promotion/000437	add-rational 14/4 15/12
+quantity-request/promotion/000438	convert 578 cm-to-mm
+quantity-request/promotion/000439	solve 1*x+-18=-39
+quantity-request/promotion/000440	add 826 -40
+quantity-request/promotion/000441	multiply 40 -36
+quantity-request/promotion/000442	add-rational -13/22 4/4
+quantity-request/promotion/000443	convert 274 m-to-cm
+quantity-request/promotion/000444	solve 9*x+12=12
+quantity-request/promotion/000445	add 322 665
+quantity-request/promotion/000446	multiply 2 -38
+quantity-request/promotion/000447	add-rational 10/13 16/17
+quantity-request/promotion/000448	convert 398 cm-to-mm
+quantity-request/promotion/000449	solve 17*x+-8=1233
+quantity-request/promotion/000450	add 749 797
+quantity-request/promotion/000451	multiply -3 80
+quantity-request/promotion/000452	add-rational 23/9 -22/1
+quantity-request/promotion/000453	convert 916 cm-to-mm
+quantity-request/promotion/000454	solve 11*x+50=1018
+quantity-request/promotion/000455	add -870 -391
+quantity-request/promotion/000456	multiply -25 97
+quantity-request/promotion/000457	add-rational -11/23 -16/7
+quantity-request/promotion/000458	convert 379 cm-to-mm
+quantity-request/promotion/000459	solve 3*x+2=-253
+quantity-request/promotion/000460	add -961 -960
+quantity-request/promotion/000461	multiply -93 -27
+quantity-request/promotion/000462	add-rational 23/17 14/7
+quantity-request/promotion/000463	convert 989 m-to-cm
+quantity-request/promotion/000464	solve 8*x+5=461
+quantity-request/promotion/000465	add 339 403
+quantity-request/promotion/000466	multiply -94 -46
+quantity-request/promotion/000467	add-rational 0/13 -5/23
+quantity-request/promotion/000468	convert 198 cm-to-mm
+quantity-request/promotion/000469	solve 23*x+-2=-669
+quantity-request/promotion/000470	add 84 633
+quantity-request/promotion/000471	multiply -26 -5
+quantity-request/promotion/000472	add-rational -16/9 -12/4
+quantity-request/promotion/000473	convert 955 cm-to-mm
+quantity-request/promotion/000474	solve 20*x+-75=-1715
+quantity-request/promotion/000475	add -447 -394
+quantity-request/promotion/000476	multiply 61 76
+quantity-request/promotion/000477	add-rational 12/8 12/18
+quantity-request/promotion/000478	convert 914 kg-to-g
+quantity-request/promotion/000479	solve 1*x+-65=-118
+quantity-request/promotion/000480	add 660 -935
+quantity-request/promotion/000481	multiply -28 -6
+quantity-request/promotion/000482	add-rational -5/21 10/16
+quantity-request/promotion/000483	convert 740 kg-to-g
+quantity-request/promotion/000484	solve 12*x+48=804
+quantity-request/promotion/000485	add 584 -119
+quantity-request/promotion/000486	multiply -97 5
+quantity-request/promotion/000487	add-rational -6/11 -20/4
+quantity-request/promotion/000488	convert 777 cm-to-mm
+quantity-request/promotion/000489	solve 21*x+-62=400
+quantity-request/promotion/000490	add 555 903
+quantity-request/promotion/000491	multiply 69 73
+quantity-request/promotion/000492	add-rational -9/6 1/7
+quantity-request/promotion/000493	convert 878 cm-to-mm
+quantity-request/promotion/000494	solve 5*x+-72=-262
+quantity-request/promotion/000495	add -619 862
+quantity-request/promotion/000496	multiply -29 -9
+quantity-request/promotion/000497	add-rational -3/13 12/8
+quantity-request/promotion/000498	convert 70 cm-to-mm
+quantity-request/promotion/000499	solve 10*x+-85=-1035

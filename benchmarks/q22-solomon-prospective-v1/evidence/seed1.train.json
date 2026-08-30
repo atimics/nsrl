@@ -1,0 +1,1 @@
+{"schema":"nsrl.q22_integer_class_head_train.v1","model_schema":"nsrl.q22_integer_class_head.v1","seed":1,"epochs":4,"feature_count":8192,"train_records":9500,"encoded_dataset_sha256":"2f03c80eb286e64eeb22521a929184d6018991667e0ddd410b6e22acbb9bef61","mistakes_by_epoch":[5,0,0,0],"train_exact":9500,"train_exact_rate_ppm":1000000,"model_hash":"f234921d","integer_only":true}

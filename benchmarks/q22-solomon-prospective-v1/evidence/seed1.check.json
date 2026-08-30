@@ -1,0 +1,9 @@
+{
+  "schema": "nsrl.q22_shared_task_check.v1",
+  "contract": "zero-solomon.q22-operation.v1",
+  "eval_sha256": "9270ea2b72af90235407bd7924a0864b8eba35b2969e1657ed1c15bf04449519",
+  "cases": 500,
+  "operation_exact": 500,
+  "operation_exact_rate_ppm": 1000000,
+  "valid": true
+}
