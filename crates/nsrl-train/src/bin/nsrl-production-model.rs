@@ -8,11 +8,12 @@ use std::path::PathBuf;
 use nsrl_core::SoftmaxNormalization;
 use nsrl_corpus::subword::SubwordTokenizer;
 use nsrl_train::production::{
-    DirectFeatureTrainConfig, DirectHeadTrainConfig, ProductionAtomicDocumentRange,
-    ProductionAtomicSourceBinding, ProductionBackwardQuantization,
-    ProductionBooleanJetAnalysisRole, ProductionBooleanJetConfirmationConfig,
-    ProductionBooleanJetConfirmationV2Config, ProductionBooleanJetMatchedControlV2Config,
-    ProductionBooleanJetMove, ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
+    DirectFeatureTrainConfig, DirectHeadCoordinateDirection, DirectHeadCrossDocumentAuditConfig,
+    DirectHeadTrainConfig, ProductionAtomicDocumentRange, ProductionAtomicSourceBinding,
+    ProductionBackwardQuantization, ProductionBooleanJetAnalysisRole,
+    ProductionBooleanJetConfirmationConfig, ProductionBooleanJetConfirmationV2Config,
+    ProductionBooleanJetMatchedControlV2Config, ProductionBooleanJetMove,
+    ProductionBooleanJetMoveContract, ProductionBooleanJetObjectiveSpec,
     ProductionBooleanJetProtocolBindings, ProductionBooleanJetProtocolVersion,
     ProductionBooleanJetRankTwoConfig, ProductionFullTrainConfig, ProductionGenerationConfig,
     ProductionGradientAlignmentConfig, ProductionMarginOptimizerStateV1,
@@ -20,8 +21,8 @@ use nsrl_train::production::{
     ProductionNumericContract, ProductionOptimizerStateV2, ProductionProjectionScales,
     ProductionSmokeConfig, ProductionTrainingNumericContract, audit_production_atomic_structure,
     audit_production_boolean_jet_confirmation, audit_production_boolean_jet_confirmation_v2,
-    audit_production_boolean_jet_rank_two, audit_production_gradient_alignment,
-    audit_production_probability_normalization,
+    audit_production_boolean_jet_rank_two, audit_production_direct_head_cross_document,
+    audit_production_gradient_alignment, audit_production_probability_normalization,
     audit_production_probability_normalization_signal_attribution,
     audit_production_probability_resolution, compare_production_models, decode_bound_token_stream,
     evaluate_production_model, evaluate_production_model_canonical_nll_default_floor,
@@ -106,6 +107,10 @@ struct Config {
     descent_guard_signed_representation_zero_saturation: bool,
     direct_head_dev_guard: bool,
     direct_head_exact_safe_set: bool,
+    direct_head_cross_document_directions: Vec<DirectHeadCoordinateDirection>,
+    direct_head_document_start: usize,
+    direct_head_documents: usize,
+    direct_head_windows_per_document: usize,
     backward_quantization: ProductionBackwardQuantization,
     backward_stochastic_seed: u64,
     alignment_coordinates_per_group: usize,
@@ -201,6 +206,10 @@ impl Default for Config {
                 .descent_guard_signed_representation_zero_saturation,
             direct_head_dev_guard: false,
             direct_head_exact_safe_set: false,
+            direct_head_cross_document_directions: Vec::new(),
+            direct_head_document_start: 2,
+            direct_head_documents: 8,
+            direct_head_windows_per_document: 32,
             backward_quantization: full.backward_quantization,
             backward_stochastic_seed: full.backward_stochastic_seed,
             alignment_coordinates_per_group: 1,
@@ -249,6 +258,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "target-margin-train" => target_margin_train(config),
         "full-train-smoke" => full_train_smoke(config),
         "direct-head-train" => direct_head_train(config),
+        "direct-head-cross-document-audit" => direct_head_cross_document_audit(config),
         "direct-feature-train" => direct_feature_train(config),
         "generate" => generate(config),
         "evaluate" => evaluate(config),
@@ -273,7 +283,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         _ => Err(
-            "expected init, inspect, numeric-contract, smoke-train, target-margin-train, full-train-smoke, direct-head-train, direct-feature-train, generate, evaluate, evaluate-canonical, gradient-alignment-audit, boolean-jet-rank-two-audit, boolean-jet-audit, boolean-jet-freeze-matched-control, boolean-jet-confirmation-audit, boolean-jet-stability-confirmation-v2, boolean-jet-protocol-bindings, boolean-jet-atomic-structure-contract, boolean-jet-atomic-structure-audit, compare-evaluate, probability-resolution-audit, probability-normalization-audit, or probability-normalization-signal-attribution-audit"
+            "expected init, inspect, numeric-contract, smoke-train, target-margin-train, full-train-smoke, direct-head-train, direct-head-cross-document-audit, direct-feature-train, generate, evaluate, evaluate-canonical, gradient-alignment-audit, boolean-jet-rank-two-audit, boolean-jet-audit, boolean-jet-freeze-matched-control, boolean-jet-confirmation-audit, boolean-jet-stability-confirmation-v2, boolean-jet-protocol-bindings, boolean-jet-atomic-structure-contract, boolean-jet-atomic-structure-audit, compare-evaluate, probability-resolution-audit, probability-normalization-audit, or probability-normalization-signal-attribution-audit"
                 .into(),
         ),
     }
@@ -1084,6 +1094,39 @@ fn direct_head_train(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn direct_head_cross_document_audit(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
+    let tokens_path = required(config.tokens, "--tokens")?;
+    let model_path = required(config.model, "--model")?;
+    let trace_path = required(config.trace, "--trace")?;
+    let tokenizer = SubwordTokenizer::from_bytes(&fs::read(tokenizer_path)?)?;
+    let model = ProductionModelV1::from_bytes(&fs::read(model_path)?)?;
+    if tokenizer.tokenizer_hash() != model.tokenizer_hash
+        || tokenizer.vocab_size() != model.config.vocab_size
+    {
+        return Err("model and tokenizer binding mismatch".into());
+    }
+    let (tokens, token_stream_hash) = decode_bound_token_stream(
+        &fs::read(tokens_path)?,
+        model.tokenizer_hash,
+        model.config.vocab_size,
+    )?;
+    let trace = audit_production_direct_head_cross_document(
+        &model,
+        &tokens,
+        token_stream_hash,
+        DirectHeadCrossDocumentAuditConfig {
+            context_tokens: config.context_tokens,
+            document_start: config.direct_head_document_start,
+            documents: config.direct_head_documents,
+            windows_per_document: config.direct_head_windows_per_document,
+            directions: config.direct_head_cross_document_directions,
+        },
+    )?;
+    fs::write(trace_path, trace.to_json_line())?;
+    Ok(())
+}
+
 fn direct_feature_train(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let tokenizer_path = required(config.tokenizer, "--tokenizer")?;
     let tokens_path = required(config.tokens, "--tokens")?;
@@ -1380,6 +1423,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             | "target-margin-train"
             | "full-train-smoke"
             | "direct-head-train"
+            | "direct-head-cross-document-audit"
             | "direct-feature-train"
             | "generate"
             | "evaluate"
@@ -1573,6 +1617,24 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Config, Box<dyn std:
             }
             "--direct-head-dev-guard" => config.direct_head_dev_guard = true,
             "--direct-head-exact-safe-set" => config.direct_head_exact_safe_set = true,
+            "--direct-head-coordinate-direction" => config
+                .direct_head_cross_document_directions
+                .push(parse_direct_head_coordinate_direction(&next(
+                    &mut args,
+                    "--direct-head-coordinate-direction",
+                )?)?),
+            "--direct-head-document-start" => {
+                config.direct_head_document_start =
+                    next(&mut args, "--direct-head-document-start")?.parse()?
+            }
+            "--direct-head-documents" => {
+                config.direct_head_documents =
+                    next(&mut args, "--direct-head-documents")?.parse()?
+            }
+            "--direct-head-windows-per-document" => {
+                config.direct_head_windows_per_document =
+                    next(&mut args, "--direct-head-windows-per-document")?.parse()?
+            }
             "--backward-quantization" => {
                 let value = next(&mut args, "--backward-quantization")?;
                 config.backward_quantization = match value.as_str() {
@@ -1703,6 +1765,27 @@ fn parse_u64_literal(value: &str) -> Result<u64, Box<dyn std::error::Error>> {
     }
 }
 
+fn parse_direct_head_coordinate_direction(
+    value: &str,
+) -> Result<DirectHeadCoordinateDirection, Box<dyn std::error::Error>> {
+    let mut parts = value.split(':');
+    let global_coordinate = parts
+        .next()
+        .ok_or("direct-head direction is missing COORDINATE")?
+        .parse()?;
+    let delta = parts
+        .next()
+        .ok_or("direct-head direction is missing DELTA")?
+        .parse()?;
+    if parts.next().is_some() || !matches!(delta, -1 | 1) {
+        return Err("direct-head direction requires COORDINATE:DELTA with unit DELTA".into());
+    }
+    Ok(DirectHeadCoordinateDirection {
+        global_coordinate,
+        delta,
+    })
+}
+
 fn parse_boolean_jet_move(value: &str) -> Result<BooleanJetMoveArg, Box<dyn std::error::Error>> {
     let mut parts = value.split(':');
     let group_index = parts
@@ -1739,6 +1822,9 @@ fn print_help() {
         "Direct head search:\n  pass --direct-head-dev-guard to require every exact full-train NLL descent step to also be non-worsening on the fixed, training-corpus dev surface. A rejected step is not applied and stops the bounded search. Pass --direct-head-exact-safe-set to imply that guard, check both unit directions for every gradient-ranked coordinate on the complete train and dev surfaces, choose the safe direction with the largest exact train improvement, and explicitly retain the source when no safe direction exists.\n"
     );
     println!(
+        "Direct head cross-document audit:\n  pass one or more --direct-head-coordinate-direction COORDINATE:DELTA values to measure frozen unit output-head directions exactly on a fixed range of training documents. The audit never writes a candidate model and records the complete direction-by-document NLL matrix.\n"
+    );
+    println!(
         "Additional audit:\n  nsrl-production-model boolean-jet-rank-two-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--expected-trunk-moves N] [--expected-head-moves N] [--expected-move-fingerprint U64] [gradient-alignment and training numeric options]\n"
     );
     println!(
@@ -1750,6 +1836,7 @@ fn print_help() {
     println!(
         "Usage:\n  nsrl-production-model init --profile p10m|p20m|p30m --tokenizer PATH --model-out PATH --trace PATH [--seed N] [--output-init-amplitude N] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model inspect --model PATH\n  nsrl-production-model numeric-contract [--profile p10m|p20m|p30m | --model PATH] [--trace PATH] [--output-forward-shift N] [--up-forward-shift N]\n  nsrl-production-model generate --tokenizer PATH --model PATH (--prompt TEXT | --prompt-file PATH) --trace PATH [--generated-out PATH] [--context-tokens N] [--max-new-tokens N] [--top-k N] [--seed N] [--no-stop-on-eos]\n  nsrl-production-model evaluate --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model evaluate-canonical --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N]\n  nsrl-production-model gradient-alignment-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH [--context-tokens N] [--max-windows N] [--transfer-windows N] [--documents-per-surface N] [--rescue-stratified-sampling] [--include-mass-corrected-no-rescue] [--coordinates-per-group N] [--seed N] [training numeric options]\n  nsrl-production-model compare-evaluate --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-resolution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model probability-normalization-signal-attribution-audit --tokenizer PATH --tokens PATH --model SOURCE --candidate-model CANDIDATE --trace PATH [--context-tokens N] [--max-windows N] [--up-forward-shift N]\n  nsrl-production-model smoke-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--epochs N] [--feature-shift N] [--bias-step-q8 N] [--margin-q8 N]\n  nsrl-production-model target-margin-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--targets-per-window N] [--training-workers N] [--spread-windows] [--max-windows N] [--evaluation-windows N] [--epochs N] [--feature-shift N] [--margin-q8 N] [--batch-windows N] [--max-optimizer-steps N]\n  nsrl-production-model full-train-smoke --tokenizer PATH --tokens PATH --model PATH --model-out PATH --optimizer-state-out PATH --trace PATH [--optimizer-state PATH] [--context-tokens N] [--targets-per-window N] [--spread-windows] [--max-windows N] [--evaluation-windows N] [--epochs N] [--batch-windows N] [--max-optimizer-steps N] [--reject-saturated-batch] [--matrix-learning-rate-shift N] [--q-learning-rate-shift N] [--k-learning-rate-shift N] [--v-learning-rate-shift N] [--o-learning-rate-shift N] [--up-learning-rate-shift N] [--gate-learning-rate-shift N] [--down-learning-rate-shift N] [--vector-learning-rate-shift N] [--embedding-learning-rate-shift N] [--embedding-learning-rate-boost-shift N] [--output-learning-rate-shift N] [--output-backward-shift N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division]
   nsrl-production-model direct-head-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--direct-head-dev-guard] [--direct-head-exact-safe-set] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]
+  nsrl-production-model direct-head-cross-document-audit --tokenizer PATH --tokens PATH --model PATH --trace PATH --direct-head-coordinate-direction COORDINATE:DELTA... [--context-tokens N] [--direct-head-document-start N] [--direct-head-documents N] [--direct-head-windows-per-document N]
   nsrl-production-model direct-feature-train --tokenizer PATH --tokens PATH --model PATH --model-out PATH --trace PATH [--context-tokens N] [--max-windows N] [--evaluation-windows N] [--max-optimizer-steps N] [--coordinates-per-group N] [--probability-gradient-fractional-bits 15..31] [--probability-normalization legacy-q31-lut|q47-lut|q47-newton1|q47-exact-division] [--seed N]"
     );
 }
@@ -1885,6 +1972,42 @@ mod tests {
             .expect("direct head exact safe-set argument");
         assert_eq!(config.command, "direct-head-train");
         assert!(config.direct_head_exact_safe_set);
+    }
+
+    #[test]
+    fn direct_head_cross_document_audit_accepts_frozen_directions_and_surface() {
+        let config = parse_args(args(&[
+            "direct-head-cross-document-audit",
+            "--direct-head-coordinate-direction",
+            "8445:1",
+            "--direct-head-coordinate-direction",
+            "8310:-1",
+            "--direct-head-document-start",
+            "2",
+            "--direct-head-documents",
+            "8",
+            "--direct-head-windows-per-document",
+            "32",
+        ]))
+        .expect("direct-head cross-document arguments");
+        assert_eq!(config.command, "direct-head-cross-document-audit");
+        assert_eq!(
+            config.direct_head_cross_document_directions,
+            vec![
+                DirectHeadCoordinateDirection {
+                    global_coordinate: 8445,
+                    delta: 1,
+                },
+                DirectHeadCoordinateDirection {
+                    global_coordinate: 8310,
+                    delta: -1,
+                },
+            ]
+        );
+        assert_eq!(config.direct_head_document_start, 2);
+        assert_eq!(config.direct_head_documents, 8);
+        assert_eq!(config.direct_head_windows_per_document, 32);
+        assert!(parse_direct_head_coordinate_direction("8445:2").is_err());
     }
 
     #[test]

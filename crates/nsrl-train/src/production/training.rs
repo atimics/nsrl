@@ -5263,6 +5263,363 @@ impl DirectHeadTrainTrace {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectHeadCoordinateDirection {
+    pub global_coordinate: usize,
+    pub delta: i8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectHeadCrossDocumentAuditConfig {
+    pub context_tokens: usize,
+    pub document_start: usize,
+    pub documents: usize,
+    pub windows_per_document: usize,
+    pub directions: Vec<DirectHeadCoordinateDirection>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectHeadCrossDocumentSurfaceTrace {
+    pub document: usize,
+    pub windows: usize,
+    pub baseline_nll_q20: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectHeadCrossDocumentSampleTrace {
+    pub document: usize,
+    pub baseline_nll_q20: u64,
+    pub candidate_nll_q20: u64,
+    pub nll_improvement_q20: i64,
+    pub strict_descent: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectHeadCrossDocumentDirectionTrace {
+    pub global_coordinate: usize,
+    pub output_weight_coordinate: Option<usize>,
+    pub output_bias_coordinate: Option<usize>,
+    pub delta: i8,
+    pub descent_documents: usize,
+    pub regression_documents: usize,
+    pub unchanged_documents: usize,
+    pub total_nll_improvement_q20: i64,
+    pub minimum_nll_improvement_q20: i64,
+    pub maximum_nll_improvement_q20: i64,
+    pub samples: Vec<DirectHeadCrossDocumentSampleTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirectHeadCrossDocumentAuditTrace {
+    pub profile: &'static str,
+    pub parameter_count: usize,
+    pub tokenizer_hash: u64,
+    pub token_stream_hash: u64,
+    pub context_tokens: usize,
+    pub document_start: usize,
+    pub documents: usize,
+    pub windows_per_document: usize,
+    pub initial_model_hash: u64,
+    pub final_model_hash: u64,
+    pub initial_frozen_parameter_hash: u64,
+    pub final_frozen_parameter_hash: u64,
+    pub surfaces: Vec<DirectHeadCrossDocumentSurfaceTrace>,
+    pub directions: Vec<DirectHeadCrossDocumentDirectionTrace>,
+    pub window_bindings: Vec<DirectTrainWindowBinding>,
+}
+
+impl DirectHeadCrossDocumentAuditTrace {
+    pub fn to_json_line(&self) -> String {
+        let mut json = String::new();
+        use std::fmt::Write;
+
+        write!(
+            json,
+            concat!(
+                "{{\"schema\":\"nsrl.direct_head_cross_document_audit.v1\",",
+                "\"objective\":\"integer_base2_softmax_nll_q20\",",
+                "\"method\":\"exact_frozen_direction_cross_document_matrix\",",
+                "\"profile\":\"{}\",\"parameter_count\":{},",
+                "\"bindings\":{{\"tokenizer_hash\":\"0x{:016x}\",",
+                "\"token_stream_hash\":\"0x{:016x}\"}},",
+                "\"surface\":{{\"context_tokens\":{},\"document_start\":{},",
+                "\"documents\":{},\"windows_per_document\":{}}},",
+                "\"hashes\":{{\"initial_model\":\"0x{:016x}\",",
+                "\"final_model\":\"0x{:016x}\",",
+                "\"initial_frozen_parameters\":\"0x{:016x}\",",
+                "\"final_frozen_parameters\":\"0x{:016x}\"}},",
+                "\"gates\":{{\"source_model_unchanged\":{},",
+                "\"frozen_parameters_unchanged\":{},",
+                "\"public_development_opened\":false,",
+                "\"public_test_opened\":false,",
+                "\"open_generation_opened\":false,",
+                "\"hidden_panel_opened\":false}},\"surfaces\":["
+            ),
+            self.profile,
+            self.parameter_count,
+            self.tokenizer_hash,
+            self.token_stream_hash,
+            self.context_tokens,
+            self.document_start,
+            self.documents,
+            self.windows_per_document,
+            self.initial_model_hash,
+            self.final_model_hash,
+            self.initial_frozen_parameter_hash,
+            self.final_frozen_parameter_hash,
+            self.initial_model_hash == self.final_model_hash,
+            self.initial_frozen_parameter_hash == self.final_frozen_parameter_hash,
+        )
+        .expect("writing cross-document audit JSON cannot fail");
+        for (index, surface) in self.surfaces.iter().enumerate() {
+            if index > 0 {
+                json.push(',');
+            }
+            write!(
+                json,
+                concat!(
+                    "{{\"document\":{},\"windows\":{},",
+                    "\"baseline_nll_q20\":{}}}"
+                ),
+                surface.document, surface.windows, surface.baseline_nll_q20,
+            )
+            .expect("writing cross-document surface JSON cannot fail");
+        }
+        json.push_str("],\"directions\":[");
+        for (direction_index, direction) in self.directions.iter().enumerate() {
+            if direction_index > 0 {
+                json.push(',');
+            }
+            let parameter_group = if direction.output_bias_coordinate.is_some() {
+                "output_bias"
+            } else {
+                "output_weight"
+            };
+            write!(
+                json,
+                concat!(
+                    "{{\"global_coordinate\":{},\"parameter_group\":\"{}\",",
+                    "\"local_coordinate\":{},\"delta\":{},",
+                    "\"summary\":{{\"descent_documents\":{},",
+                    "\"regression_documents\":{},\"unchanged_documents\":{},",
+                    "\"total_nll_improvement_q20\":{},",
+                    "\"minimum_nll_improvement_q20\":{},",
+                    "\"maximum_nll_improvement_q20\":{}}},\"samples\":["
+                ),
+                direction.global_coordinate,
+                parameter_group,
+                direction
+                    .output_weight_coordinate
+                    .or(direction.output_bias_coordinate)
+                    .expect("cross-document direction has a local coordinate"),
+                direction.delta,
+                direction.descent_documents,
+                direction.regression_documents,
+                direction.unchanged_documents,
+                direction.total_nll_improvement_q20,
+                direction.minimum_nll_improvement_q20,
+                direction.maximum_nll_improvement_q20,
+            )
+            .expect("writing cross-document direction JSON cannot fail");
+            for (sample_index, sample) in direction.samples.iter().enumerate() {
+                if sample_index > 0 {
+                    json.push(',');
+                }
+                write!(
+                    json,
+                    concat!(
+                        "{{\"document\":{},\"baseline_nll_q20\":{},",
+                        "\"candidate_nll_q20\":{},\"nll_improvement_q20\":{},",
+                        "\"strict_descent\":{}}}"
+                    ),
+                    sample.document,
+                    sample.baseline_nll_q20,
+                    sample.candidate_nll_q20,
+                    sample.nll_improvement_q20,
+                    sample.strict_descent,
+                )
+                .expect("writing cross-document sample JSON cannot fail");
+            }
+            json.push_str("]}");
+        }
+        json.push_str(
+            "],\"window_selection\":\"first_n_complete_windows_per_document\",\"window_bindings\":",
+        );
+        push_direct_window_bindings_json(&mut json, &self.window_bindings);
+        json.push_str("}\n");
+        json
+    }
+}
+
+pub fn audit_production_direct_head_cross_document(
+    model: &ProductionModelV1,
+    tokens: &[u32],
+    token_stream_hash: u64,
+    config: DirectHeadCrossDocumentAuditConfig,
+) -> Result<DirectHeadCrossDocumentAuditTrace, TrainError> {
+    model.validate()?;
+    let document_end = config
+        .document_start
+        .checked_add(config.documents)
+        .ok_or(TrainError::InvalidConfig)?;
+    if config.context_tokens == 0
+        || config.context_tokens > model.config.context_tokens
+        || config.documents == 0
+        || config.windows_per_document == 0
+        || config.directions.is_empty()
+    {
+        return Err(TrainError::InvalidConfig);
+    }
+    let output_weight_count = checked_product(model.config.vocab_size, model.config.d_model)?;
+    let total_head_parameters = output_weight_count
+        .checked_add(model.config.vocab_size)
+        .ok_or(TrainError::InvalidConfig)?;
+    let mut unique = BTreeSet::new();
+    for direction in &config.directions {
+        if direction.global_coordinate >= total_head_parameters
+            || !matches!(direction.delta, -1 | 1)
+            || !unique.insert((direction.global_coordinate, direction.delta))
+        {
+            return Err(TrainError::InvalidConfig);
+        }
+    }
+
+    let all_windows =
+        super::alignment::document_windows_with_coordinates(tokens, config.context_tokens);
+    let mut document_windows = Vec::with_capacity(config.documents);
+    let mut flat_windows = Vec::with_capacity(
+        config
+            .documents
+            .checked_mul(config.windows_per_document)
+            .ok_or(TrainError::InvalidConfig)?,
+    );
+    for document in config.document_start..document_end {
+        let selected = all_windows
+            .iter()
+            .filter(|window| window.document == document)
+            .take(config.windows_per_document)
+            .cloned()
+            .collect::<Vec<_>>();
+        if selected.len() != config.windows_per_document {
+            return Err(TrainError::CoreRejected(
+                "direct_head_cross_document_windows_missing",
+            ));
+        }
+        flat_windows.extend(selected.iter().cloned());
+        document_windows.push(selected);
+    }
+
+    let mut working = model.clone();
+    let initial_model_hash = working.model_hash();
+    let initial_frozen_parameter_hash = super::margin_training::frozen_parameter_hash(&working);
+    let baselines = document_windows
+        .iter()
+        .map(|windows| evaluate_surface(&working, windows))
+        .collect::<Result<Vec<_>, _>>()?;
+    let surfaces = baselines
+        .iter()
+        .enumerate()
+        .map(|(index, baseline)| DirectHeadCrossDocumentSurfaceTrace {
+            document: config.document_start + index,
+            windows: config.windows_per_document,
+            baseline_nll_q20: baseline.nll_q20,
+        })
+        .collect::<Vec<_>>();
+    let mut direction_traces = Vec::with_capacity(config.directions.len());
+    for direction in &config.directions {
+        let is_bias = direction.global_coordinate >= output_weight_count;
+        let group = if is_bias { 12 } else { 11 };
+        let local = if is_bias {
+            direction.global_coordinate - output_weight_count
+        } else {
+            direction.global_coordinate
+        };
+        if !can_perturb(&working, group, local, direction.delta) {
+            return Err(TrainError::CoreRejected(
+                "direct_head_cross_document_delta_out_of_range",
+            ));
+        }
+        let mut samples = Vec::with_capacity(config.documents);
+        for (index, windows) in document_windows.iter().enumerate() {
+            let candidate =
+                evaluate_parameter_delta(&mut working, group, local, direction.delta, windows)?;
+            let improvement = signed_nll_improvement(baselines[index].nll_q20, candidate.nll_q20);
+            samples.push(DirectHeadCrossDocumentSampleTrace {
+                document: config.document_start + index,
+                baseline_nll_q20: baselines[index].nll_q20,
+                candidate_nll_q20: candidate.nll_q20,
+                nll_improvement_q20: improvement,
+                strict_descent: improvement > 0,
+            });
+        }
+        let descent_documents = samples
+            .iter()
+            .filter(|sample| sample.nll_improvement_q20 > 0)
+            .count();
+        let regression_documents = samples
+            .iter()
+            .filter(|sample| sample.nll_improvement_q20 < 0)
+            .count();
+        let unchanged_documents = samples
+            .len()
+            .saturating_sub(descent_documents)
+            .saturating_sub(regression_documents);
+        let total_nll_improvement_q20 = samples.iter().fold(0_i64, |total, sample| {
+            total.saturating_add(sample.nll_improvement_q20)
+        });
+        let minimum_nll_improvement_q20 = samples
+            .iter()
+            .map(|sample| sample.nll_improvement_q20)
+            .min()
+            .ok_or(TrainError::InvalidConfig)?;
+        let maximum_nll_improvement_q20 = samples
+            .iter()
+            .map(|sample| sample.nll_improvement_q20)
+            .max()
+            .ok_or(TrainError::InvalidConfig)?;
+        direction_traces.push(DirectHeadCrossDocumentDirectionTrace {
+            global_coordinate: direction.global_coordinate,
+            output_weight_coordinate: (!is_bias).then_some(local),
+            output_bias_coordinate: is_bias.then_some(local),
+            delta: direction.delta,
+            descent_documents,
+            regression_documents,
+            unchanged_documents,
+            total_nll_improvement_q20,
+            minimum_nll_improvement_q20,
+            maximum_nll_improvement_q20,
+            samples,
+        });
+    }
+    let final_model_hash = working.model_hash();
+    let final_frozen_parameter_hash = super::margin_training::frozen_parameter_hash(&working);
+    if final_model_hash != initial_model_hash
+        || final_frozen_parameter_hash != initial_frozen_parameter_hash
+    {
+        return Err(TrainError::CoreRejected(
+            "direct_head_cross_document_model_not_restored",
+        ));
+    }
+
+    Ok(DirectHeadCrossDocumentAuditTrace {
+        profile: model.config.profile_id().unwrap_or("custom"),
+        parameter_count: model.parameter_count(),
+        tokenizer_hash: model.tokenizer_hash,
+        token_stream_hash,
+        context_tokens: config.context_tokens,
+        document_start: config.document_start,
+        documents: config.documents,
+        windows_per_document: config.windows_per_document,
+        initial_model_hash,
+        final_model_hash,
+        initial_frozen_parameter_hash,
+        final_frozen_parameter_hash,
+        surfaces,
+        directions: direction_traces,
+        window_bindings: direct_window_bindings(&flat_windows),
+    })
+}
+
 pub fn train_production_direct_head_search(
     model: &mut ProductionModelV1,
     tokens: &[u32],
@@ -6177,6 +6534,94 @@ mod direct_search_tests {
                 .to_json_line()
                 .contains("\"frozen_parameters_unchanged\":true")
         );
+    }
+
+    #[test]
+    fn direct_head_cross_document_audit_is_exact_read_only_and_replayable() {
+        let model = tiny_model();
+        let output_weight_count = model.output_weights.len();
+        let config = DirectHeadCrossDocumentAuditConfig {
+            context_tokens: 2,
+            document_start: 0,
+            documents: 2,
+            windows_per_document: 2,
+            directions: vec![
+                DirectHeadCoordinateDirection {
+                    global_coordinate: 0,
+                    delta: 1,
+                },
+                DirectHeadCoordinateDirection {
+                    global_coordinate: output_weight_count,
+                    delta: -1,
+                },
+            ],
+        };
+        let initial_hash = model.model_hash();
+        let left = audit_production_direct_head_cross_document(
+            &model,
+            &token_fixture(),
+            0x6666,
+            config.clone(),
+        )
+        .expect("cross-document audit");
+        let right =
+            audit_production_direct_head_cross_document(&model, &token_fixture(), 0x6666, config)
+                .expect("cross-document audit replay");
+
+        assert_eq!(left, right);
+        assert_eq!(model.model_hash(), initial_hash);
+        assert_eq!(left.initial_model_hash, left.final_model_hash);
+        assert_eq!(
+            left.initial_frozen_parameter_hash,
+            left.final_frozen_parameter_hash
+        );
+        assert_eq!(left.surfaces.len(), 2);
+        assert_eq!(left.directions.len(), 2);
+        assert_eq!(left.window_bindings.len(), 4);
+        assert_eq!(left.window_bindings[0].document, 0);
+        assert_eq!(left.window_bindings[2].document, 1);
+        for direction in &left.directions {
+            assert_eq!(direction.samples.len(), 2);
+            assert_eq!(
+                direction.descent_documents
+                    + direction.regression_documents
+                    + direction.unchanged_documents,
+                2
+            );
+            for sample in &direction.samples {
+                assert_eq!(
+                    sample.nll_improvement_q20,
+                    signed_nll_improvement(sample.baseline_nll_q20, sample.candidate_nll_q20)
+                );
+                assert_eq!(sample.strict_descent, sample.nll_improvement_q20 > 0);
+            }
+        }
+        let json = left.to_json_line();
+        assert!(json.contains("\"schema\":\"nsrl.direct_head_cross_document_audit.v1\""));
+        assert!(json.contains("\"source_model_unchanged\":true"));
+        assert!(json.contains("\"public_development_opened\":false"));
+    }
+
+    #[test]
+    fn direct_head_cross_document_audit_rejects_duplicate_directions() {
+        let model = tiny_model();
+        let direction = DirectHeadCoordinateDirection {
+            global_coordinate: 0,
+            delta: 1,
+        };
+        let result = audit_production_direct_head_cross_document(
+            &model,
+            &token_fixture(),
+            0x7777,
+            DirectHeadCrossDocumentAuditConfig {
+                context_tokens: 2,
+                document_start: 0,
+                documents: 2,
+                windows_per_document: 1,
+                directions: vec![direction, direction],
+            },
+        );
+        assert!(matches!(result, Err(TrainError::InvalidConfig)));
     }
 
     #[test]

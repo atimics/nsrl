@@ -76,12 +76,15 @@ pub use structure_audit::{
     audit_production_atomic_structure, freeze_production_atomic_structure_contract,
 };
 pub use training::{
-    DirectFeatureTrainConfig, DirectFeatureTrainTrace, DirectHeadTrainConfig,
-    DirectTrainWindowBinding, ProductionBackwardQuantization, ProductionDescentRejectedBatchTrace,
-    ProductionFullTrainConfig, ProductionFullTrainTrace, ProductionGradientProposalLane,
-    ProductionOptimizerStateV2, ProductionRejectedBatchTrace, ProductionSignedBlockSelectionTrace,
-    train_production_direct_feature, train_production_direct_head_search,
-    train_production_full_smoke,
+    DirectFeatureTrainConfig, DirectFeatureTrainTrace, DirectHeadCoordinateDirection,
+    DirectHeadCrossDocumentAuditConfig, DirectHeadCrossDocumentAuditTrace,
+    DirectHeadCrossDocumentDirectionTrace, DirectHeadCrossDocumentSampleTrace,
+    DirectHeadCrossDocumentSurfaceTrace, DirectHeadTrainConfig, DirectTrainWindowBinding,
+    ProductionBackwardQuantization, ProductionDescentRejectedBatchTrace, ProductionFullTrainConfig,
+    ProductionFullTrainTrace, ProductionGradientProposalLane, ProductionOptimizerStateV2,
+    ProductionRejectedBatchTrace, ProductionSignedBlockSelectionTrace,
+    audit_production_direct_head_cross_document, train_production_direct_feature,
+    train_production_direct_head_search, train_production_full_smoke,
 };
 
 pub const PRODUCTION_MODEL_V1_SCHEMA: &str = "nsrl.production_model.v1";
