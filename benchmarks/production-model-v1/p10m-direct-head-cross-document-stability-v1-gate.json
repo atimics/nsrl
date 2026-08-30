@@ -1,0 +1,156 @@
+{
+  "schema": "nsrl.production_direct_head_cross_document_stability_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-direct-head-cross-document-stability-v1-contract.json",
+    "bytes": 5105,
+    "sha256": "13dedcd040940e761c526d558be446076b10b157ebfe359a40d331a0242277c3"
+  },
+  "audit": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-cross-document-stability-v1/audit.json",
+    "bytes": 35136,
+    "sha256": "7a908ae32be4971eaebcb486e1ea62e9610e284f53f28a29f1eac127c51fe17d"
+  },
+  "replay_audit": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-cross-document-stability-v1/replay-audit.json",
+    "bytes": 35136,
+    "sha256": "7a908ae32be4971eaebcb486e1ea62e9610e284f53f28a29f1eac127c51fe17d"
+  },
+  "measurements": {
+    "documents": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "windows_per_document": 32,
+    "directions": [
+      {
+        "global_coordinate": 8303,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8303,
+        "delta": 1,
+        "descent_documents": 4,
+        "regression_documents": 4,
+        "unchanged_documents": 0,
+        "total_nll_improvement_q20": -2803,
+        "minimum_nll_improvement_q20": -1175,
+        "maximum_nll_improvement_q20": 256,
+        "classification": "mixed"
+      },
+      {
+        "global_coordinate": 8310,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8310,
+        "delta": -1,
+        "descent_documents": 2,
+        "regression_documents": 6,
+        "unchanged_documents": 0,
+        "total_nll_improvement_q20": -2228,
+        "minimum_nll_improvement_q20": -1048,
+        "maximum_nll_improvement_q20": 297,
+        "classification": "consistent_regression"
+      },
+      {
+        "global_coordinate": 8445,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8445,
+        "delta": 1,
+        "descent_documents": 4,
+        "regression_documents": 4,
+        "unchanged_documents": 0,
+        "total_nll_improvement_q20": -2047,
+        "minimum_nll_improvement_q20": -1374,
+        "maximum_nll_improvement_q20": 388,
+        "classification": "mixed"
+      },
+      {
+        "global_coordinate": 8335,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8335,
+        "delta": -1,
+        "descent_documents": 4,
+        "regression_documents": 4,
+        "unchanged_documents": 0,
+        "total_nll_improvement_q20": -2047,
+        "minimum_nll_improvement_q20": -1374,
+        "maximum_nll_improvement_q20": 388,
+        "classification": "mixed"
+      },
+      {
+        "global_coordinate": 8428,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8428,
+        "delta": 1,
+        "descent_documents": 4,
+        "regression_documents": 4,
+        "unchanged_documents": 0,
+        "total_nll_improvement_q20": -2062,
+        "minimum_nll_improvement_q20": -1374,
+        "maximum_nll_improvement_q20": 388,
+        "classification": "mixed"
+      },
+      {
+        "global_coordinate": 8377,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8377,
+        "delta": 1,
+        "descent_documents": 4,
+        "regression_documents": 4,
+        "unchanged_documents": 0,
+        "total_nll_improvement_q20": -2052,
+        "minimum_nll_improvement_q20": -1374,
+        "maximum_nll_improvement_q20": 388,
+        "classification": "mixed"
+      },
+      {
+        "global_coordinate": 8263,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8263,
+        "delta": 1,
+        "descent_documents": 3,
+        "regression_documents": 5,
+        "unchanged_documents": 0,
+        "total_nll_improvement_q20": -3607,
+        "minimum_nll_improvement_q20": -1518,
+        "maximum_nll_improvement_q20": 375,
+        "classification": "mixed"
+      },
+      {
+        "global_coordinate": 8431,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8431,
+        "delta": -1,
+        "descent_documents": 4,
+        "regression_documents": 4,
+        "unchanged_documents": 0,
+        "total_nll_improvement_q20": -1925,
+        "minimum_nll_improvement_q20": -1374,
+        "maximum_nll_improvement_q20": 388,
+        "classification": "mixed"
+      }
+    ],
+    "stable_directions": [],
+    "stable_direction_count": 0,
+    "mixed_direction_count": 7,
+    "consistent_regression_direction_count": 1,
+    "expected_matrix_cells": 64,
+    "observed_matrix_cells": 64
+  },
+  "gates": {
+    "exact_trace_rerun_replay": true,
+    "complete_direction_document_matrix": true,
+    "source_model_unchanged": true,
+    "frozen_parameters_unchanged": true,
+    "same_coordinate_family_followup_requires_stable_direction": false
+  },
+  "same_coordinate_family_followup_supported": false,
+  "public_development_opened": false,
+  "public_test_opened": false,
+  "open_generation_opened": false,
+  "hidden_panel_opened": false,
+  "paid_scaling_opened": false
+}
