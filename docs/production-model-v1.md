@@ -1312,18 +1312,25 @@ gates failed, so public development, public test, open generation, hidden data,
 p20m/p30m execution, and paid scaling were not opened. Frozen evidence is in
 `benchmarks/production-model-v1/p10m-direct-head-nll-safe-set-v1-training-gate.json`.
 
-The prospective `p10m_direct_head_cross_document_stability_v1` audit is frozen
-before execution. It keeps the same healthy v9 source and the eight exact unit
-directions that improved the earlier proposal document while worsening its
-guard. It will measure those fixed directions on the first 32 complete
-64-token windows of training documents 2 through 9, which were not used by the
-proposal or guard surfaces.
+The `p10m_direct_head_cross_document_stability_v1` audit is complete and stops
+this coordinate family. It kept the same healthy v9 source and measured the
+eight exact unit directions that improved the earlier proposal document while
+worsening its guard. The two complete runs reproduced trace bytes exactly over
+all 64 direction/document cells: the first 32 complete 64-token windows of
+training documents 2 through 9. The source model and frozen-trunk hashes stayed
+unchanged.
 
-A direction counts as stable only if it strictly improves at least six of the
-eight new documents and has positive aggregate NLL improvement. At least one
-stable direction is required before another follow-up in this coordinate family
-is supported. The audit is read-only and must replay byte-for-byte. It does not
-create a candidate or authorize public development, public test, open
-generation, hidden data, p20m/p30m execution, or paid scaling. The prospective
-rules are in
-`benchmarks/production-model-v1/p10m-direct-head-cross-document-stability-v1-contract.json`.
+No direction met the prospective stability rule of strict descent on at least
+six of eight new documents plus positive aggregate NLL improvement. Seven
+directions were mixed, improving three or four documents and regressing on the
+rest. Coordinate 8310 with delta -1 improved two documents and regressed on
+six. Every direction had negative aggregate improvement, ranging from -1,925
+to -3,607 Q20 units. The stable set was empty, so a joint or other same-family
+follow-up is not supported by this lineage.
+
+This is evidence that the earlier proposal descent was document-specific for
+all eight tested directions, not proof that the full output head or another
+training method has no useful update. No candidate was created, and public
+development, public test, open generation, hidden data, p20m/p30m execution,
+and paid scaling remain closed. Frozen evidence is in
+`benchmarks/production-model-v1/p10m-direct-head-cross-document-stability-v1-gate.json`.
