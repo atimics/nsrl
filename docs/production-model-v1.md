@@ -1289,20 +1289,25 @@ explicit candidate. Public test, open generation, hidden data, p20m/p30m
 execution, and paid scaling were not opened. Frozen evidence is in
 `benchmarks/production-model-v1/p10m-direct-head-nll-guard-v1-development-gate.json`.
 
-The prospective `p10m_direct_head_nll_safe_set_v1` follow-up is frozen but has
-not yet been run. It keeps the same healthy v9 source, 64-window proposal
-surface, 32-window document-disjoint guard, eight gradient-ranked coordinates,
-and eight-round bound. For every evaluable ranked coordinate, both unit
-directions must be measured exactly on the complete proposal and guard
-surfaces. Only strict proposal-NLL descent with guard-NLL nonworsening enters
-the safe set. The largest exact proposal improvement wins, with a stable
-coordinate and direction tie-break; an empty safe set retains the source and
-stops.
+The prospective `p10m_direct_head_nll_safe_set_v1` follow-up is complete and
+stopped at its private training gate. It kept the same healthy v9 source,
+64-window proposal surface from document 0, 32-window guard from document 1,
+eight gradient-ranked coordinates, and eight-round bound. Both complete runs
+reproduced model and trace bytes exactly. All 16 unit directions were traced,
+the frozen-trunk hash stayed `0x847bca28ae53d52e`, and saturation stayed zero.
 
-Training and replay must first pass a private gate that checks byte replay,
-every candidate trace, safe-set membership, selection, frozen parameters, zero
-saturation, at least one applied move, strict proposal improvement, and guard
-nonworsening. Public development stays unopened unless that gate passes.
-Public test, open generation, hidden data, p20m/p30m execution, and paid scaling
-remain separately gated or unauthorized. The prospective contract is in
-`benchmarks/production-model-v1/p10m-direct-head-nll-safe-set-v1-contract.json`.
+Every ranked coordinate had one direction that strictly improved proposal NLL.
+Those eight improvements ranged from 48,929 to 61,290 Q20 units, but every one
+worsened guard NLL, by 578 to 963 Q20 units. Six opposite directions improved
+the guard but worsened the proposal; the other two worsened both surfaces. The
+exact safe set was therefore empty. The trainer explicitly selected the source
+and stopped in round zero with model hash `0xd2b9c7b907595967`, zero steps, and
+unchanged proposal and guard metrics.
+
+The result is evidence of local proposal/guard anti-alignment across both unit
+directions of all eight tested coordinates. It does not establish that a wider
+coordinate set, a joint multi-coordinate move, or a different training surface
+has no safe descent direction. The required movement and strict proposal-NLL
+gates failed, so public development, public test, open generation, hidden data,
+p20m/p30m execution, and paid scaling were not opened. Frozen evidence is in
+`benchmarks/production-model-v1/p10m-direct-head-nll-safe-set-v1-training-gate.json`.

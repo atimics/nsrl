@@ -1,0 +1,150 @@
+{
+  "schema": "nsrl.production_direct_head_nll_safe_set_training_gate.v1",
+  "contract": {
+    "path": "benchmarks/production-model-v1/p10m-direct-head-nll-safe-set-v1-contract.json",
+    "bytes": 7202,
+    "sha256": "fcac9263a4c5366a0ed05034f87a4c0f5c15e40469e18b31ee275e91da5be404"
+  },
+  "training": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-safe-set-v1/train.json",
+    "bytes": 14847,
+    "sha256": "6ecb4d839f45a6dc7fb021b1422de22b80edd66011ba23c3b9fedd34993b3971"
+  },
+  "replay_training": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-safe-set-v1/replay-train.json",
+    "bytes": 14847,
+    "sha256": "6ecb4d839f45a6dc7fb021b1422de22b80edd66011ba23c3b9fedd34993b3971"
+  },
+  "candidate": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-safe-set-v1/candidate.nsrlpm",
+    "bytes": 13539906,
+    "sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22"
+  },
+  "replay_candidate": {
+    "path": "data/experiments/production-model-v1/p10m-direct-head-nll-safe-set-v1/replay-candidate.nsrlpm",
+    "bytes": 13539906,
+    "sha256": "14f568de85931696dfd2c7b4cb35883d7b8c88430e5395b0c9c7f9f2660d5c22"
+  },
+  "candidate_model_hash": "0xd2b9c7b907595967",
+  "measurements": {
+    "training_documents": [
+      0
+    ],
+    "guard_documents": [
+      1
+    ],
+    "training_guard_document_overlap": [],
+    "training_initial_nll_q20": 833298369,
+    "training_final_nll_q20": 833298369,
+    "training_nll_improvement_q20": 0,
+    "guard_initial_nll_q20": 428748538,
+    "guard_final_nll_q20": 428748538,
+    "guard_nll_regression_q20": 0,
+    "guard_initial_mistakes": 32,
+    "guard_final_mistakes": 32,
+    "rounds": 1,
+    "descent_steps": 0,
+    "ranked_coordinates_evaluated": 8,
+    "exact_directions_evaluated": 16,
+    "exact_safe_candidates": 0,
+    "exact_guard_rejections": 8,
+    "round_weight_saturation_count": 0,
+    "selected_moves": [],
+    "guard_rejected_directions": [
+      {
+        "round": 0,
+        "global_coordinate": 8303,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8303,
+        "proposed_delta": 1,
+        "train_nll_improvement_q20": 61290,
+        "guard_nll_improvement_q20": -601
+      },
+      {
+        "round": 0,
+        "global_coordinate": 8310,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8310,
+        "proposed_delta": -1,
+        "train_nll_improvement_q20": 57061,
+        "guard_nll_improvement_q20": -963
+      },
+      {
+        "round": 0,
+        "global_coordinate": 8445,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8445,
+        "proposed_delta": 1,
+        "train_nll_improvement_q20": 57212,
+        "guard_nll_improvement_q20": -586
+      },
+      {
+        "round": 0,
+        "global_coordinate": 8335,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8335,
+        "proposed_delta": -1,
+        "train_nll_improvement_q20": 57210,
+        "guard_nll_improvement_q20": -586
+      },
+      {
+        "round": 0,
+        "global_coordinate": 8428,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8428,
+        "proposed_delta": 1,
+        "train_nll_improvement_q20": 57145,
+        "guard_nll_improvement_q20": -583
+      },
+      {
+        "round": 0,
+        "global_coordinate": 8377,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8377,
+        "proposed_delta": 1,
+        "train_nll_improvement_q20": 57211,
+        "guard_nll_improvement_q20": -578
+      },
+      {
+        "round": 0,
+        "global_coordinate": 8263,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8263,
+        "proposed_delta": 1,
+        "train_nll_improvement_q20": 48929,
+        "guard_nll_improvement_q20": -666
+      },
+      {
+        "round": 0,
+        "global_coordinate": 8431,
+        "parameter_group": "output_weight",
+        "local_coordinate": 8431,
+        "proposed_delta": -1,
+        "train_nll_improvement_q20": 53069,
+        "guard_nll_improvement_q20": -582
+      }
+    ]
+  },
+  "gates": {
+    "candidate_model_exact_rerun_replay": true,
+    "training_trace_exact_rerun_replay": true,
+    "source_model_was_a_candidate": true,
+    "model_movement_required": false,
+    "descent_steps_minimum": false,
+    "training_nll_strictly_improves": false,
+    "guard_nll_regression_q20_maximum": true,
+    "guard_mistakes_must_not_increase": true,
+    "frozen_parameters_unchanged": true,
+    "weight_saturation_maximum": true,
+    "every_direction_trace_must_be_consistent": true,
+    "only_safe_candidates_may_be_selected": true,
+    "selected_candidate_must_be_best_safe_candidate": true,
+    "empty_safe_set_must_select_source": true
+  },
+  "training_gate_passed": false,
+  "public_development_authorized": false,
+  "public_development_opened": false,
+  "public_test_opened": false,
+  "open_generation_opened": false,
+  "hidden_panel_opened": false
+}
