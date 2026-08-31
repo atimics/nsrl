@@ -3,6 +3,7 @@
 pub mod contract;
 pub mod open_generation;
 pub mod q22;
+pub mod q22_compositional;
 
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
