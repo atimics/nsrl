@@ -1,0 +1,134 @@
+{
+  "schema": "nsrl.q22_compositional_solomon_prospective_contract.v1",
+  "id": "solomon.q22-compositional-routing.prospective-v1",
+  "status": "preregistered_not_run",
+  "shared_task_id": "zero-solomon.q22-compositional-routing.v1",
+  "family": "solomon",
+  "hypothesis": "The inherited Solomon sparse integer class head can route five operations from held-out sentence templates despite a shared prefix and a balanced wrong-operation distractor, reaching at least 900000 exact-rate ppm on every seed, at least 800000 ppm for every seed-class pair, and at least 950000 ppm prediction agreement across seeds.",
+  "dataset": {
+    "zero_source_commit": "8deeb138e4c01ba5b64bb22e5125d5c823c37f78",
+    "zero_surface_manifest": "benchmarks/zero4-q22-compositional-shared-task-v1/manifest.json",
+    "zero_surface_manifest_sha256": "8d7196afc3a80f89998a272dd689d309df9db2e0ac9202cbe3a2f41b9390c1ee",
+    "manifest": "benchmarks/q22-compositional-shared-task-v1/manifest.tsv",
+    "manifest_sha256": "51f06ae293f338a27c1bbcc4fb52d66cffc5a7727b15998fa606b1a073ee8e21",
+    "train_sha256": "1f997d174ea1e3f3675612e24ecced15f8145abd29819e532b2f890f36245e8f",
+    "encoded_train_sha256": "6fc74419d063ecbba1bf86bcb5e9cc0df8e134fc3b401ea67e48be4edf2a99a5",
+    "eval_sha256": "42902d61d9edc2ceb5a33875deddbdd9e9b523b06fb1aa13a22249acbf2983fe",
+    "train_records": 10000,
+    "eval_records": 1000,
+    "class_count": 5,
+    "common_prefix": "Route this quantity case.",
+    "prefix_only_exact_rate_ppm": 200000,
+    "train_template_families": 30,
+    "promotion_template_families": 20,
+    "template_families_disjoint": true,
+    "normalized_template_surfaces_disjoint": true,
+    "decoy_classes_balanced_per_target": true,
+    "literal_operation_identifiers_absent_from_inputs": true,
+    "encoding": "solomon.q22-compositional-operation.byte-v1",
+    "verifier": "verifier://solomon/q22-compositional-operation/v1"
+  },
+  "model": {
+    "schema": "nsrl.q22_compositional_integer_class_head.v1",
+    "kind": "sparse_integer_perceptron_class_head",
+    "lineage": "unchanged Solomon Q22 sparse integer class-head geometry",
+    "feature_count": 8192,
+    "feature_map": "fnv1a64-hashed first-token, token, positioned-token, and byte 1-to-4-gram counts",
+    "shortcut_control": "the inherited first-token feature is constant across all five exactly balanced classes",
+    "class_order": [
+      "quantity.add",
+      "quantity.multiply",
+      "quantity.add-rational",
+      "quantity.convert",
+      "quantity.solve-linear"
+    ],
+    "initialization": "all-zero signed 32-bit weights and biases",
+    "trainer": "seeded shuffled multiclass perceptron",
+    "artifact_binding": "each model stores the frozen Solomon encoded-training SHA-256",
+    "epochs": 4,
+    "integer_only": true,
+    "adaptive_repair_allowed": false
+  },
+  "replicas": {
+    "seeds": [1, 2, 3],
+    "seed_role": "deterministic per-epoch training order",
+    "run_all": true,
+    "early_family_stop_allowed": false
+  },
+  "compute_budget": {
+    "execution": "local_cpu_only",
+    "network": "off",
+    "paid_compute_allowed": false,
+    "max_wall_seconds_per_seed": 60,
+    "max_total_wall_seconds": 180,
+    "max_training_examples_per_seed": 40000,
+    "max_model_bytes_per_seed": 200000
+  },
+  "evaluation_firewall": {
+    "policy": "models_first_evaluation_later",
+    "ordered_steps": [
+      "train all seeds using only the hash-checked training dataset",
+      "write and hash all three final model artifacts",
+      "write models-frozen.json with evaluation_opened=false",
+      "first open the frozen evaluation file only after model freeze to create id-and-input-only blinded rows",
+      "predict from the blinded rows without any label-bearing columns",
+      "run the independent verifier after all models are immutable",
+      "forbid retraining, hyperparameter changes, threshold changes, or model selection after evaluation opens"
+    ],
+    "training_process_receives_eval_path": false,
+    "prediction_process_receives_gold_columns": false,
+    "retraining_after_eval_allowed": false,
+    "model_selection_after_eval_allowed": false
+  },
+  "outcome_rule": {
+    "primary_metric": "minimum_operation_exact_rate_ppm",
+    "minimum_seed_exact_rate_ppm": 900000,
+    "per_class_metric": "minimum_seed_per_class_exact_rate_ppm",
+    "minimum_seed_per_class_exact_rate_ppm": 800000,
+    "agreement_metric": "all_seed_agreement_rate_ppm",
+    "minimum_all_seed_agreement_rate_ppm": 950000,
+    "all_seeds_must_pass": true,
+    "go": "every seed reaches 900000 ppm overall, every seed-class pair reaches 800000 ppm, and at least 950 of 1000 per-input predictions agree across all three seeds",
+    "no_go": "a valid run completes but any frozen threshold is missed",
+    "execution_failure": "the run violates hashes, budget, firewall ordering, artifact immutability, or process completion"
+  },
+  "implementation": {
+    "source_state": "merge commit must be pinned by the ilXyr experiment before execution",
+    "runner": "scripts/run-q22-compositional-solomon-prospective.mjs",
+    "source_files": [
+      {
+        "path": "crates/nsrl-eval/src/lib.rs",
+        "sha256": "a84d470b39c13945078dfe169baf8be1ee8f77e24517a6adaf72e381cefe29e6"
+      },
+      {
+        "path": "crates/nsrl-eval/src/q22_compositional.rs",
+        "sha256": "ab224c965a352882eeebb0bff7f8f7393759a6f3c35be1d4493952ce9691dc46"
+      },
+      {
+        "path": "crates/nsrl-eval/src/bin/nsrl-q22-compositional-eval.rs",
+        "sha256": "e6d4b54a0bc8b546f8630443d8e0bf67dc770cb2a7b4f2095415ae67ac35bf61"
+      },
+      {
+        "path": "crates/nsrl-train/src/bin/nsrl-q22-compositional-proposer.rs",
+        "sha256": "8caa5121b9bd2a2c64db378cb207eef15974a174baa32e6d9ab7d70afd9fbdef"
+      },
+      {
+        "path": "scripts/run-q22-compositional-solomon-prospective.mjs",
+        "sha256": "2cf2a578ad093a78c4e224dff7d009472ef43435ac26856ba6af29e1df9f88c4"
+      }
+    ]
+  },
+  "development_evidence": {
+    "scope": "training-data liveness only",
+    "promotion_evaluation_opened": false,
+    "seeds": [1, 2, 3],
+    "mistakes_by_epoch": {
+      "1": [462, 0, 0, 0],
+      "2": [525, 0, 0, 0],
+      "3": [391, 0, 0, 0]
+    },
+    "final_training_exact_rate_ppm_each_seed": 1000000,
+    "held_out_template_score_observed": false,
+    "used_for_outcome": false
+  }
+}
