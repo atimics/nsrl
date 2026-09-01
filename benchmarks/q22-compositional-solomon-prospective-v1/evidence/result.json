@@ -1,0 +1,68 @@
+{
+  "schema": "nsrl.q22_compositional_solomon_prospective_result.v1",
+  "contract_sha256": "f5fdd260ae7e7ef2fdab85bb4aaf0aaebb2716015b3e8026a677aaf8fa8d0ae4",
+  "model_freeze_sha256": "928d912b56018d696ab2dda2497a5ca98c41f55eafe5ae1a63535d69c4fc9526",
+  "eval_sha256": "42902d61d9edc2ceb5a33875deddbdd9e9b523b06fb1aa13a22249acbf2983fe",
+  "seeds": [
+    {
+      "seed": 1,
+      "schema": "nsrl.q22_compositional_shared_task_check.v1",
+      "contract": "zero-solomon.q22-compositional-routing.v1",
+      "eval_sha256": "42902d61d9edc2ceb5a33875deddbdd9e9b523b06fb1aa13a22249acbf2983fe",
+      "cases": 1000,
+      "operation_exact": 425,
+      "operation_exact_rate_ppm": 425000,
+      "per_class_exact_rate_ppm": {
+        "quantity.add": 0,
+        "quantity.multiply": 595000,
+        "quantity.add-rational": 750000,
+        "quantity.convert": 750000,
+        "quantity.solve-linear": 30000
+      },
+      "valid": true
+    },
+    {
+      "seed": 2,
+      "schema": "nsrl.q22_compositional_shared_task_check.v1",
+      "contract": "zero-solomon.q22-compositional-routing.v1",
+      "eval_sha256": "42902d61d9edc2ceb5a33875deddbdd9e9b523b06fb1aa13a22249acbf2983fe",
+      "cases": 1000,
+      "operation_exact": 430,
+      "operation_exact_rate_ppm": 430000,
+      "per_class_exact_rate_ppm": {
+        "quantity.add": 165000,
+        "quantity.multiply": 750000,
+        "quantity.add-rational": 410000,
+        "quantity.convert": 750000,
+        "quantity.solve-linear": 75000
+      },
+      "valid": true
+    },
+    {
+      "seed": 3,
+      "schema": "nsrl.q22_compositional_shared_task_check.v1",
+      "contract": "zero-solomon.q22-compositional-routing.v1",
+      "eval_sha256": "42902d61d9edc2ceb5a33875deddbdd9e9b523b06fb1aa13a22249acbf2983fe",
+      "cases": 1000,
+      "operation_exact": 533,
+      "operation_exact_rate_ppm": 533000,
+      "per_class_exact_rate_ppm": {
+        "quantity.add": 250000,
+        "quantity.multiply": 605000,
+        "quantity.add-rational": 295000,
+        "quantity.convert": 960000,
+        "quantity.solve-linear": 555000
+      },
+      "valid": true
+    }
+  ],
+  "minimum_operation_exact_rate_ppm": 425000,
+  "minimum_per_class_exact_rate_ppm": 0,
+  "mean_operation_exact_rate_ppm": 462666,
+  "prefix_only_exact_rate_ppm": 200000,
+  "minimum_margin_over_prefix_ppm": 225000,
+  "all_seed_agreement_cases": 531,
+  "all_seed_agreement_rate_ppm": 531000,
+  "family_passed": false,
+  "outcome": "no_go"
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "nsrl.q22_compositional_model_freeze.v1",
+  "contract_sha256": "f5fdd260ae7e7ef2fdab85bb4aaf0aaebb2716015b3e8026a677aaf8fa8d0ae4",
+  "evaluation_opened": false,
+  "models": [
+    {
+      "seed": 1,
+      "model": "seed1.nsrlq22c",
+      "model_sha256": "7e65210bc40be1728007a8b8ba9bf5c05983779e44dbaab8b240e533e51dec07",
+      "train_trace": "seed1.train.json",
+      "train_trace_sha256": "fe8e34364392465c4bea4d1cf7a251818ea66218c6b5fabbdef08c28e2d13cdf"
+    },
+    {
+      "seed": 2,
+      "model": "seed2.nsrlq22c",
+      "model_sha256": "e73196d52784c2928e65326a50de035c7c9ffd19d79e96029bc0557acbbcc688",
+      "train_trace": "seed2.train.json",
+      "train_trace_sha256": "1f902f209518af91f776527db168cd20ee192dc406f03c7642a948fc2c970e27"
+    },
+    {
+      "seed": 3,
+      "model": "seed3.nsrlq22c",
+      "model_sha256": "8c8f620ba4e8cca5b9e3503753523007d1f37b15eda14eb9b9e2bf0a3989da56",
+      "train_trace": "seed3.train.json",
+      "train_trace_sha256": "bdaf90f41d721221a25b4efc13a243a47347bc7d20604f492034b867059443f9"
+    }
+  ]
+}
