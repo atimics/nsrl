@@ -44,6 +44,7 @@ scripts/check-open-generation-v1.sh
 node scripts/run-q22-solomon-prospective.mjs --check-contract
 node scripts/check-q22-solomon-evidence.mjs
 node scripts/run-q22-compositional-solomon-prospective.mjs --check-contract
+node scripts/check-q22-compositional-solomon-evidence.mjs
 scripts/check-production-corpus-v1.sh
 node scripts/freeze-production-model-v1.mjs --check
 node scripts/freeze-production-full-train-v1.mjs --check

@@ -1,0 +1,8 @@
+{
+  "schema": "nsrl.q22_compositional_evaluation_open.v1",
+  "contract_sha256": "f5fdd260ae7e7ef2fdab85bb4aaf0aaebb2716015b3e8026a677aaf8fa8d0ae4",
+  "model_freeze_sha256": "928d912b56018d696ab2dda2497a5ca98c41f55eafe5ae1a63535d69c4fc9526",
+  "eval_sha256": "42902d61d9edc2ceb5a33875deddbdd9e9b523b06fb1aa13a22249acbf2983fe",
+  "blind_inputs_sha256": "871ab80d0b1fc55df785fd33f53baf1395efb2dd0db228aa330e6e5eef29ee45",
+  "retraining_allowed": false
+}

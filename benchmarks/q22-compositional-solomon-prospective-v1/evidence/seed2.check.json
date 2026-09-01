@@ -1,0 +1,16 @@
+{
+  "schema": "nsrl.q22_compositional_shared_task_check.v1",
+  "contract": "zero-solomon.q22-compositional-routing.v1",
+  "eval_sha256": "42902d61d9edc2ceb5a33875deddbdd9e9b523b06fb1aa13a22249acbf2983fe",
+  "cases": 1000,
+  "operation_exact": 430,
+  "operation_exact_rate_ppm": 430000,
+  "per_class_exact_rate_ppm": {
+    "quantity.add": 165000,
+    "quantity.multiply": 750000,
+    "quantity.add-rational": 410000,
+    "quantity.convert": 750000,
+    "quantity.solve-linear": 75000
+  },
+  "valid": true
+}
