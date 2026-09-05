@@ -11,6 +11,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  probability-controls:
+    name: Fixed-answer probability controls
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test integer scores
+        run: cargo test -p nsrl-train --bin nsrl-mini-transformer-eval --features mini-heads-8,mini-calibrated
+      - name: Build frozen model evaluator
+        run: cargo build --release -p nsrl-train --bin nsrl-mini-transformer-eval --features mini-heads-8,mini-calibrated
+      - name: Check sixteen known windows and historical count control
+        run: python3 scripts/check-probability-controls.py
+
   rust:
     name: Rust Checks
     runs-on: ubuntu-latest

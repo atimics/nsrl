@@ -4,11 +4,15 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+use nsrl_core::attention::base2_softmax_i32_q15;
 use nsrl_train::{
     MiniTransformerAttentionKind, MiniTransformerMlpEvalConfig, MiniTransformerMlpModel,
     MiniTransformerPositionPolicy, evaluate_mini_transformer_mlp_model,
     evaluate_mini_transformer_mlp_windows,
 };
+
+#[path = "support/probability_controls.rs"]
+mod probability_controls;
 
 fn main() {
     if let Err(error) = run() {
@@ -23,6 +27,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut out_path = None;
     let mut details_out_path = None;
     let mut logits_out_path = None;
+    let mut probability_controls_out_path = None;
     let mut stride = 1_usize;
     let mut max_windows = None;
     let mut attention_kind = MiniTransformerAttentionKind::Linear;
@@ -39,6 +44,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--logits-out" => {
                 logits_out_path = Some(PathBuf::from(required(&mut args, "--logits-out")?))
+            }
+            "--probability-controls-out" => {
+                probability_controls_out_path = Some(PathBuf::from(required(
+                    &mut args,
+                    "--probability-controls-out",
+                )?))
             }
             "--stride" => stride = required(&mut args, "--stride")?.parse()?,
             "--max-windows" => max_windows = Some(required(&mut args, "--max-windows")?.parse()?),
@@ -58,7 +69,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" | "-h" => {
                 println!(
-                    "Usage: nsrl-mini-transformer-eval --tokens PATH --model PATH [--out PATH] [--details-out PATH] [--logits-out PATH] \
+                    "Usage: nsrl-mini-transformer-eval --tokens PATH --model PATH [--out PATH] [--details-out PATH] [--logits-out PATH] [--probability-controls-out PATH] \
                      [--stride N] [--max-windows N] [--attention base2-softmax|linear] \
                      [--position learned-absolute|nope]"
                 );
@@ -79,12 +90,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         position_policy,
     };
     let trace = evaluate_mini_transformer_mlp_model(&tokens, &model, config)?.to_json_line();
-    if details_out_path.is_some() || logits_out_path.is_some() {
+    if details_out_path.is_some()
+        || logits_out_path.is_some()
+        || probability_controls_out_path.is_some()
+    {
         let records = evaluate_mini_transformer_mlp_windows(&tokens, &model, config)?;
         let mut details = String::from(
             "start\tend\ttarget\tpredicted\tprevious\ttarget_logit_q8\tpredicted_logit_q8\ttarget_seen_in_context\ttarget_last_distance\tprobability_error_q15\n",
         );
         let mut raw_logits = Vec::with_capacity(records.len().saturating_mul(256 * 4));
+        let mut controls = String::from(
+            "start\tend\ttarget\tpredicted\tarm\tprobability_mass_q15\tprobability_error_q15\tbrier_numerator\tbrier_denominator\tzero_target_probability\tprobabilities_q15\n",
+        );
         for record in records {
             let target = tokens[record.end];
             let previous = tokens[record.end - 1];
@@ -92,6 +109,45 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .predicted_token
                 .ok_or("evaluation record has no prediction")?;
             let logits = record.logits_q8.ok_or("evaluation record has no logits")?;
+            if probability_controls_out_path.is_some() {
+                let mut raw = [0; 256];
+                base2_softmax_i32_q15(&logits, &mut raw)
+                    .ok_or("probability control softmax failed")?;
+                let raw_scores = probability_controls::score(&raw, target)?;
+                if raw_scores.l1 != record.probability_error_q15 as u64 {
+                    return Err(
+                        "reconstructed probability score differs from native forward".into(),
+                    );
+                }
+                for (arm, probabilities) in [
+                    ("native", raw),
+                    ("point_mass", probability_controls::point_mass(predicted)),
+                    (
+                        "smoothed_point_mass",
+                        probability_controls::smoothed_point_mass(predicted),
+                    ),
+                ] {
+                    let scores = probability_controls::score(&probabilities, target)?;
+                    controls.push_str(&format!(
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                        record.start,
+                        record.end,
+                        target,
+                        predicted,
+                        arm,
+                        scores.mass,
+                        scores.l1,
+                        scores.brier_numerator,
+                        scores.brier_denominator,
+                        usize::from(scores.zero_target_probability),
+                        probabilities
+                            .iter()
+                            .map(i16::to_string)
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ));
+                }
+            }
             let context = &tokens[record.start..record.end];
             let target_last_distance = context
                 .iter()
@@ -120,6 +176,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(path) = logits_out_path {
             fs::write(path, raw_logits)?;
+        }
+        if let Some(path) = probability_controls_out_path {
+            fs::write(path, controls)?;
         }
     }
     if let Some(path) = out_path {

@@ -1,0 +1,94 @@
+{
+  "existing_count_counterfactual": {
+    "combined": {
+      "answers_changed": 0,
+      "historical_l1_q15": 260536589,
+      "l1_reduction_fraction": "97881201/260536589",
+      "mistakes": 2482,
+      "point_mass_l1_q15": 162655388,
+      "point_mass_normalized_brier_mean": "1241/1474",
+      "point_mass_zero_target_probability_count": 2482,
+      "targets": 5896
+    },
+    "suffix-memory-only": {
+      "answers_changed": 0,
+      "historical_l1_q15": 384884984,
+      "l1_reduction_fraction": "55557399/96221246",
+      "mistakes": 2482,
+      "point_mass_l1_q15": 162655388,
+      "point_mass_normalized_brier_mean": "1241/1474",
+      "point_mass_zero_target_probability_count": 2482,
+      "targets": 5896
+    },
+    "transformer-only": {
+      "answers_changed": 0,
+      "historical_l1_q15": 337139495,
+      "l1_reduction_fraction": "472757/48162785",
+      "mistakes": 5094,
+      "point_mass_l1_q15": 333830196,
+      "point_mass_normalized_brier_mean": "2547/1474",
+      "point_mass_zero_target_probability_count": 5094,
+      "targets": 5896
+    }
+  },
+  "model_hash": "0x6ffd37de48a3121b",
+  "native_smoke": {
+    "controls_sha256": "a325aca43c5b1a0c5b3143ef52e80ba66c4da4268303858d14c01a8d34c23230",
+    "rows": 48,
+    "scores": {
+      "native": {
+        "l1": 666174,
+        "maximum_mass": 33007,
+        "minimum_mass": 32771,
+        "mistakes": 4,
+        "normalized_brier_mean": "1420335975978148766363188142973448605069246555099550495025021098739217652436015141422087318517574363782467663067327107/2022529072966686760923120238703827496436699864270007965445030720176869235839317452946132765458333406147099805430230400",
+        "zeros": 2
+      },
+      "point_mass": {
+        "l1": 262136,
+        "maximum_mass": 32767,
+        "minimum_mass": 32767,
+        "mistakes": 4,
+        "normalized_brier_mean": "1/2",
+        "zeros": 4
+      },
+      "smoothed_point_mass": {
+        "l1": 340656,
+        "maximum_mass": 32767,
+        "minimum_mass": 32767,
+        "mistakes": 4,
+        "normalized_brier_mean": "493727109/1073676289",
+        "zeros": 0
+      }
+    },
+    "trace_sha256": "1ed4f25fd38abfc81b07c9efba74bd1d329f3017b8dd77586de476b8b78936f1",
+    "windows": 16
+  },
+  "promotion_evidence": false,
+  "schema": "nsrl.probability_controls.v1",
+  "scope": "sixteen_known_windows_and_analytic_existing_count_control",
+  "sources": {
+    "Cargo.lock": "693fe94eed9651f5f06c6d8a476000c7921e5d145325150889b755ea8811aa03",
+    "Cargo.toml": "0a7db57aa40095c05a1b3117f181421aa5ab468369cc2c1d7568f9f9825d68cd",
+    "benchmarks/integer-transformer-proof-v1/component-ablation.json": "72cdd787a0286b6b6d2619a5aefe2832f2fba788c6367221fc0fd6cd7b5051ed",
+    "benchmarks/integer-transformer-proof-v1/eval.txt": "11237cca31d90410ec3389bc8e1bf52be3e68b51c3da62c9ce73d424c482328a",
+    "benchmarks/integer-transformer-proof-v1/promoted-candidate.json": "eecf669accecd242ff1619a7a37fa9e2afad20ba6dc0bf69a9229669bbc44536",
+    "crates/nsrl-core/src/attention.rs": "52673324c3810340acf3d398ac89a291d764e9fca3a644f80386a8ae023149ec",
+    "crates/nsrl-core/src/lib.rs": "0ff51477552445a2413eddd0ab08754a61884d619a1ea4313ea0b24960eddbec",
+    "crates/nsrl-core/src/linear.rs": "f79b7f4c9f7f139b8538acc0f9beef06744e162d4e56e3a6e3f658d087b4064b",
+    "crates/nsrl-core/src/lut.rs": "5c3bf9d2722b48a5c8fef93e58a4478d709cb5354328f0ba2e64efc4ded8e5d8",
+    "crates/nsrl-core/src/mlp.rs": "9f55c40f36739f97e20c91a3f196ed1acb0c31be711307144a7da4a75b9ff748",
+    "crates/nsrl-core/src/numeric.rs": "85926552e6942f16d4f435af2ab2e4ebd6d1c7cb74dfba023c1f6d2dbec13831",
+    "crates/nsrl-core/src/rms_norm.rs": "85c51963d6eb514841b177a7136f242062216d56c57eb7e46c5180f878ebae45",
+    "crates/nsrl-core/src/rsqrt_lut_8bit.rs": "5f4809cca846300ee56f130d5851f371e2e3c829abe0a5c46e01594cf10c2544",
+    "crates/nsrl-core/src/tensor.rs": "1d9e1d0218185190bef728fc579a2b534170fdff331c2888e7c4869fac280996",
+    "crates/nsrl-train-core/src/lib.rs": "e0ac57b9ee1b410772b3c4dffbe59d079b107f970dc08d18ab72c662c36bcbe0",
+    "crates/nsrl-train/Cargo.toml": "c8be9a68061a48eb5df26c42da8a5a872a11d3b6558ecd3a668f6ce1b426a654",
+    "crates/nsrl-train/src/bin/nsrl-mini-transformer-eval.rs": "f19c8cf13a3ddb2f6fd1b9eb83ddc24c14aa4d709853b008b4f04ee134507133",
+    "crates/nsrl-train/src/bin/support/probability_controls.rs": "f787b3d97a42e291e2464e4cffd6f7a862ea5c4cc778fe5d2569bd6443399e53",
+    "crates/nsrl-train/src/lib.rs": "79709f27c4158686d8eac36befc1ad2da56dae8405ff84ea01f4345deea8d771",
+    "data/experiments/integer-transformer-proof-v1/candidate-default/candidate.eval.json": "fcfd5233474e5be997388821390ad393661aed95df60b0618491368d510a7565",
+    "data/experiments/integer-transformer-proof-v1/candidate-default/candidate.nsrlmt": "37acae6a4f763182730c76f762c351eda5bb37d6d197358c252733b1f08dca10",
+    "scripts/check-probability-controls.py": "e191c0687916ff0b4cb0f501363fb5f8cbb9c2f7e5a8cc78c4cac620cc4462e6"
+  }
+}
