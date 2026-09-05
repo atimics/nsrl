@@ -191,3 +191,8 @@ an explicit compatibility review rather than an incidental edit in the trainer.
 The next extraction boundary is model serialization itself, followed by
 optimizer state and experiment runners. Each extraction must preserve the
 existing public API until callers have migrated.
+# Probability score audit
+
+The [fixed-answer controls](probability-controls-v1.md) hold each chosen byte
+constant and measure confidence separately. They preserve this proof's original
+metrics and add exact normalized Brier scores for the next comparison.
