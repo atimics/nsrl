@@ -938,10 +938,34 @@ function buildReport(config) {
     product_evidence: productEvidence,
     headline_eval: collectHeadlineEval(productEvidence),
     diagnostic: collectDiagnostic(config),
+    substrate: collectSubstrateProof(),
   };
   report.status = deriveStatus(report);
   report.next_commands = nextCommands(report);
   return report;
+}
+
+function collectSubstrateProof() {
+  const base = "benchmarks/integer-transformer-proof-v1";
+  const freeze = maybeReadJson(`${base}/promoted-candidate.json`);
+  const ablation = maybeReadJson(`${base}/component-ablation.json`);
+  const check = freeze ? runCommand("node", ["scripts/freeze-integer-transformer-proof-candidate.mjs", "--check"]) : null;
+  const valid = freeze?.schema === "nsrl.integer_transformer_proof_freeze.v1"
+    && freeze.contract === "integer-transformer-proof-v1"
+    && freeze.status === "promoted"
+    && check?.ok === true;
+  return {
+    state: valid ? "promoted" : freeze ? "unverified" : "missing",
+    contract: freeze?.contract ?? null,
+    profile: valid ? freeze.quantization_profile : null,
+    targets: valid ? freeze.metrics.targets : null,
+    mistakes: valid ? freeze.metrics.mistakes : null,
+    probability_error_q15: valid ? freeze.metrics.probability_error_q15 : null,
+    verification_error: check && !check.ok ? shortText(check.stderr || check.error) : null,
+    ablation: valid && ablation?.contract === freeze.contract && ablation.promotion_evidence === false
+      ? { promotion_evidence: false, metrics: ablation.metrics, contrasts: ablation.contrasts }
+      : null,
+  };
 }
 
 function nextCommands(report) {
@@ -981,6 +1005,22 @@ function renderMarkdown(report) {
   lines.push("");
   lines.push(`Overall: **${report.status.release_ready ? "release-ready" : "not release-ready"}**`);
   lines.push(`LLM path: **${report.status.llm_path_state}**`);
+  lines.push(`Substrate proof: **${report.substrate.state}** (combined system; separate from product readiness)`);
+  lines.push("");
+
+  lines.push("## Integer Transformer Substrate");
+  lines.push("");
+  if (report.substrate.state === "promoted") {
+    lines.push(`- Frozen profile: \`${report.substrate.profile}\`; ${report.substrate.targets} held-out targets, ${report.substrate.mistakes} mistakes, probability error Q15 ${report.substrate.probability_error_q15}.`);
+    if (report.substrate.ablation) {
+      const { combined, "transformer-only": transformer, "suffix-memory-only": suffix } = report.substrate.ablation.metrics;
+      lines.push(`- Diagnostic component ablation on the opened fixture: combined ${combined.mistakes}, transformer-only ${transformer.mistakes}, suffix-memory-only ${suffix.mistakes} mistakes.`);
+      lines.push(`- Adding transformer logits to suffix memory changes probability error by ${report.substrate.ablation.contrasts.transformer_logits_added_to_suffix_memory.probability_error_reduction_q15} Q15 units, with ${report.substrate.ablation.contrasts.transformer_logits_added_to_suffix_memory.mistake_reduction} fewer mistakes. This ablation is not promotion evidence.`);
+    }
+  } else {
+    lines.push(`- Frozen proof: ${report.substrate.state}${report.substrate.verification_error ? ` (${report.substrate.verification_error})` : ""}.`);
+  }
+  lines.push("- The separate Solomon multimodal product gates appear below.");
   lines.push("");
 
   lines.push("## Current Read");
