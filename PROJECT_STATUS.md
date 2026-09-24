@@ -21,35 +21,27 @@ node scripts/nsrl-status.mjs --refresh-fast-diagnostic
 
 ## Current Read
 
-As of 2026-07-10, NSRL is not release-ready. The integer runtime and research
-artifacts exist, but the Solomon product proof is incomplete.
+The substrate contract `integer-transformer-proof-v1` has a promoted **combined**
+checkpoint. [The frozen record](benchmarks/integer-transformer-proof-v1/promoted-candidate.json)
+binds the checkpoint, passing proof matrix, health evidence and 5,896 held-out
+targets. Verify its exact bytes with
+`node scripts/freeze-integer-transformer-proof-candidate.mjs --check`.
+The promoted profile includes fitted suffix memory. On the already opened
+[component ablation](benchmarks/integer-transformer-proof-v1/component-ablation.json),
+combined and suffix-memory-only each made 2,482 mistakes; transformer-only
+made 5,094. Transformer logits reduced probability error when added to suffix
+memory without reducing mistakes on that fixture. The ablation is diagnostic,
+not a separate promotion test. See [the proof contract](docs/integer-transformer-proof-v1.md)
+for baselines and exact decision rules, and the [fresh-document comparison](https://github.com/cenetex/ilXyr/blob/main/experiments/research-step-51/REPORT.md)
+for a distinct Brier-score confidence result whose metric is not interchangeable
+with the substrate proof's Q15 probability error.
 
-The repository now has one substrate promotion contract:
-`integer-transformer-proof-v1`. Run `cargo run -p nsrl-eval -- contract` to
-inspect it and `cargo run -p nsrl-eval -- check --manifest MANIFEST --results
-PATH` to validate a candidate/baseline matrix. The frozen manifest contains 5,896 held-out targets
-with dataset hash `0x8fe7b86378f81951`; deterministic retrieval, byte n-gram,
-and offline floating-point reference rows are checked in. No candidate row or
-passing full matrix is checked in yet, so the substrate milestone remains open.
-Solomon and literary results are experiment evidence rather than alternate
-headline criteria.
-
-The project headline is `NSRL-MME v0`, a model-native multimodal LLM eval
-defined in `docs/multimodal-llm-eval.md`. The current local score is **371 per
-mille**, below the 700 target. The quality report and generated-output integrity
-gates remain red, so this is measured diagnostic evidence rather than a passing
-headline result.
-
-Known facts from the status command:
-
-- the working tree is dirty,
-- the headline multimodal LLM eval is measured but failing at 371 per mille,
-- the checked-in attention artifacts are smoke-scale, not promoted-profile,
-- local quality-report and objective-coverage artifacts exist,
-- no `release-proof.json` or completed Solomon `pipeline-complete.json` is
-  present under `data/`,
-- raw/free-running attention text is still diagnostic-only,
-- coherent Solomon text currently comes from prompted or memory-assisted paths.
+The **Solomon multimodal product** remains on separate gates. The July 10, 2026
+snapshot measured 371 per mille on `NSRL-MME v0` against its 700 target, with
+quality and generated-output checks still red at that time. That historical
+measurement is not a current status reading. Run `node scripts/nsrl-status.mjs`
+for the current product blockers and the independently verified substrate state.
+Local artifacts and product checks do not themselves establish product readiness.
 
 ## Headline Eval
 
